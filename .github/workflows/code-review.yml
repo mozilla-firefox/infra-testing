@@ -1,15 +1,40 @@
 name: Code Review bot trigger
+permissions: {}
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, reopened]
 jobs:
   run:
     runs-on: ubuntu-latest
+    permissions:
+      - read
     steps:
-      - name: checkout
-        uses: actions/checkout@v6
-        with:
-          sparse-checkout: "python/code-review"
-      - name: close
-        run: python ./python/code-review/test.py
+      - name: lando-push-to-try
+        env:
+          # Expose the pull request number and github repo
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
 
+          # Lando Auth (with a Phabricator token) is provided from Github actions secrets
+          PHABRICATOR_API_TOKEN: ${{ secrets.PhabricatorAPIToken }}
+
+          #
+          # Set the following variables at the repository level [0].
+          # [0] https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-variables#defining-configuration-variables-for-multiple-workflows
+          #
+          LANDO_BASE_URL: ${{ vars.LANDO_BASE_URL }}
+          LANDO_REPO: ${{ vars.LANDO_REPO }}
+          #
+          # If they are empty, the following will be used to determine sane defaults.
+          #
+          DEFAULT_LANDO_BASE_URL: https://lando.moz.tools
+          TARGET_BRANCH: ${{ github.base_ref }}
+          USER_AGENT: "Code-review-github-action/1.0"
+
+        run: |
+          LANDO_BASE_URL="${LANDO_BASE_URL:-${DEFAULT_LANDO_BASE_URL}}"
+          # We extract the GitHub repo name and target branch to use as
+          # default LANDO_REPO if unspecified.
+          LANDO_REPO="${LANDO_REPO:-${GH_REPO/*\//}-${TARGET_BRANCH}}"
+
+          curl -X POST -H "X-Phabricator-API-Key: $PHABRICATOR_API_TOKEN" "$LANDO_BASE_URL/api/pulls/$LANDO_REPO/$PR/try_jobs"
