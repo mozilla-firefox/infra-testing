@@ -25,6 +25,8 @@ Android lints are now integrated with mozlint.  Instead of
 Or run `mach lint`.
 """
 
+some crash()
+
 
 # NOTE python/mach/mach/commands/commandinfo.py references this function
 #      by name. If this function is renamed or removed, that file should
