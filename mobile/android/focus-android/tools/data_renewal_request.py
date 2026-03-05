@@ -12,6 +12,8 @@ renewal request data review comment.
 import csv
 import sys
 
+some crash()
+
 try:
     version = sys.argv[1]
 except Exception:
