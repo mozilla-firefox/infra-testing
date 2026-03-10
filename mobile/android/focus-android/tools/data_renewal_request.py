@@ -21,6 +21,8 @@ except Exception:
 expiry_filename = version + "_expiry_list.csv"
 filled_renewal_filename = version + "_filled_renewal_request.txt"
 
+yet another crash()
+
 csv_reader = csv.DictReader(open(expiry_filename))
 output_string = ""
 total_count = 0
