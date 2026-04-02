@@ -14,6 +14,11 @@
             "infra-testing-autoland",
             "infra-testing-main"
           ]
+        },
+        {
+          "type": "differential-affected-files",
+          "operator": "matches-regexp",
+          "value": "/.*"
         }
       ],
       "actions": [
