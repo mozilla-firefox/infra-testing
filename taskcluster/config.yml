@@ -34,6 +34,7 @@ release-branches:
     cypress: true
 treeherder:
     group-names:
+        'test-thing': 'shtrom was ere'
         'js-bench-sm': 'JavaScript shell benchmarks with Spidermonkey'
         'js-bench-v8': 'JavaScript shell benchmarks with Google V8'
         'node': 'Node tests'
