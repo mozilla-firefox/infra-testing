@@ -122,7 +122,12 @@ const MERINO_SPONSORED_SUGGESTION = {
   click_url: "https://example.com/click",
   impression_url: "https://example.com/impression",
   advertiser: "TestAdvertiser",
-  icon: "1234",
+  icon: "https://example.com/icon",
+  custom_details: {
+    amp: {
+      suggestion_id: "amp-suggestion-id",
+    },
+  },
 };
 
 const MERINO_ADDON_SUGGESTION = {
@@ -637,7 +642,7 @@ function makeExpectedAmpResult({
     clickUrl: suggestion.click_url,
     blockId: suggestion.id,
     advertiser: suggestion.advertiser,
-    icon: suggestion.icon,
+    icon: UrlbarTestUtils.makeMozRemoteImageUrl(suggestion.icon),
     // Expect index -1 for amp results because we test
     // without the search suggestions provider.
     suggestedIndex: -1,
@@ -664,7 +669,7 @@ function makeExpectedAddonResult({ suggestion, source, provider }) {
     description: suggestion.description,
     url: suggestion.url,
     originalUrl: suggestion.url,
-    icon: suggestion.icon,
+    icon: UrlbarTestUtils.makeMozRemoteImageUrl(suggestion.icon),
   });
 }
 
@@ -680,7 +685,7 @@ function makeExpectedDefaultMerinoResult({ suggestion }) {
       isSponsored: !!suggestion.is_sponsored,
       title: suggestion.title,
       url: suggestion.url,
-      icon: suggestion.icon,
+      icon: UrlbarTestUtils.makeMozRemoteImageUrl(suggestion.icon),
       descriptionL10n: suggestion.is_sponsored
         ? { id: "urlbar-result-action-sponsored" }
         : undefined,

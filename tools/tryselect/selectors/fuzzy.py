@@ -85,6 +85,15 @@ class FuzzyParser(BaseTryParser):
             },
         ],
         [
+            ["--include-duplicates"],
+            {
+                "action": "store_true",
+                "default": False,
+                "help": "Include tasks copied from other kinds by the duplicate "
+                "transforms, such as the -appservices-in-tree tasks.",
+            },
+        ],
+        [
             ["--show-chunk-numbers"],
             {
                 "action": "store_true",
@@ -110,6 +119,7 @@ class FuzzyParser(BaseTryParser):
         "target-tasks-method",
         "test-tag",
         "pernosco",
+        "pushdate",
         "rebuild",
         "routes",
         "worker-overrides",
@@ -127,12 +137,14 @@ def run(
     save_query=False,
     stage_changes=False,
     dry_run=False,
+    write_task_config=False,
     message="{msg}",
     test_paths=None,
     test_tag=None,
     exact=False,
     closed_tree=False,
     disable_target_task_filter=False,
+    include_duplicates=False,
     push_to_vcs=False,
     show_chunk_numbers=False,
     new_test_config=False,
@@ -148,7 +160,7 @@ def run(
         print(FZF_NOT_FOUND)
         return 1
 
-    push = not stage_changes and not dry_run
+    push = not stage_changes and not dry_run and not write_task_config
     check_working_directory(push)
 
     target_tasks_method = None
@@ -172,6 +184,13 @@ def run(
             task_name: task
             for task_name, task in all_tasks.items()
             if filter_by_uncommon_try_tasks(task_name)
+        }
+
+    if not include_duplicates:
+        all_tasks = {
+            task_name: task
+            for task_name, task in all_tasks.items()
+            if "duplicate-of" not in task.attributes
         }
 
     if try_config_params.get("try_task_config", {}).get("worker-types", []):
@@ -275,6 +294,7 @@ def run(
         try_task_config=try_task_config,
         stage_changes=stage_changes,
         dry_run=dry_run,
+        write_task_config=write_task_config,
         closed_tree=closed_tree,
         push_to_vcs=push_to_vcs,
     )

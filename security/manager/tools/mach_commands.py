@@ -76,6 +76,7 @@ def is_specification_file(filename):
     "generate-test-certs",
     category="devenv",
     description="Generate test certificates and keys from specifications.",
+    virtualenv_name="generate-test-certs",
 )
 @CommandArgument(
     "specifications",
@@ -120,7 +121,7 @@ def find_all_specifications(command_context):
     and returns them as a list."""
     specifications = []
     inclusions = [
-        "browser/base/content/test/siteIdentity/",
+        "browser/base/content/test/browser-siteIdentity/",
         "netwerk/test/marionette",
         "netwerk/test/unit",
         "security/manager/ssl",

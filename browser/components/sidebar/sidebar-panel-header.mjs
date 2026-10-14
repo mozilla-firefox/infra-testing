@@ -35,8 +35,10 @@ export class SidebarPanelHeader extends MozLitElement {
     const controller = this.getWindow().SidebarController;
     // In "hide-launcher" mode there is no launcher to return to, so keep the
     // panel remembered rather than revealing the launcher.
-    controller.hide({
-      dismissPanel: !controller._state.launcherHiddenWithPanel,
+    controller._maybeAnimate(() => {
+      controller.hide({
+        dismissPanel: !controller._state.launcherHiddenWithPanel,
+      });
     });
   }
 
@@ -52,7 +54,7 @@ export class SidebarPanelHeader extends MozLitElement {
           @click=${this.closeSidebarPanel}
           view=${this.view}
           size="default"
-          type="icon primary"
+          type="icon ghost"
         >
         </moz-button>
       </div>

@@ -3,6 +3,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 
+use gleam::gl;
+use std::cell::RefCell;
+use std::rc::Rc;
 use crate::blob;
 use crossbeam::sync::chase_lev;
 #[cfg(windows)]
@@ -222,6 +225,9 @@ impl WrenchThing for CapturedSequence {
 pub struct Wrench {
     window_size: DeviceIntSize,
 
+    /// The GL context the renderer draws with, shared so that wrench can
+    /// create GL textures to hand to the renderer as external images.
+    gl: Rc<dyn gl::Gl>,
     pub renderer: webrender::Renderer,
     pub api: RenderApi,
     pub document_id: DocumentId,
@@ -266,6 +272,10 @@ pub struct Wrench {
 }
 
 impl Wrench {
+    pub fn gl(&self) -> &dyn gl::Gl {
+        &*self.gl
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         window: &mut WindowWrapper,
@@ -341,12 +351,47 @@ impl Wrench {
             Box::new(Notifier(data))
         });
 
+        let gl = window.clone_gl();
+
+        // Build the shaders on a device of their own and share them with the
+        // renderer, as Gecko does, so that programs created or linked through
+        // one device are drawn with through another.
+        let shaders = {
+            let mut device = webrender::Device::new(
+                webrender::GpuBackendConfig::Gl(webrender::GlBackendConfig::new(gl.clone())),
+                webrender::DeviceOptions {
+                    crash_annotator: None,
+                    resource_override_path: opts.resource_override_path.clone(),
+                    use_optimized_shaders: opts.use_optimized_shaders,
+                    upload_method: opts.upload_method.clone(),
+                    batched_upload_threshold: opts.batched_upload_threshold,
+                    cached_programs: None,
+                    allow_texture_swizzling: opts.allow_texture_swizzling,
+                    dump_shader_source: opts.dump_shader_source.clone(),
+                    surface_origin_is_top_left: opts.surface_origin_is_top_left,
+                },
+            );
+            device.begin_frame();
+            let mut shaders = webrender::Shaders::new(&mut device, &opts).unwrap();
+            let precache_flags = if precache_shaders {
+                ShaderPrecacheFlags::FULL_COMPILE
+            } else {
+                ShaderPrecacheFlags::ASYNC_COMPILE
+            };
+            let mut pending = shaders.precache_all(precache_flags);
+            while shaders.resume_precache(&mut device, &mut pending).unwrap() {}
+            device.end_frame();
+            Rc::new(RefCell::new(shaders))
+        };
+
         let (renderer, sender) = webrender::create_webrender_instance(
-            window.clone_gl(),
+            webrender::GpuBackendConfig::Gl(webrender::GlBackendConfig::new(gl.clone())),
             notifier,
             opts,
-            None,
+            Some(&shaders),
         ).unwrap();
+        // The renderer now holds the only reference, so its deinit releases them.
+        drop(shaders);
 
         let api = sender.create_api();
         let document_id = api.add_document(size);
@@ -355,6 +400,7 @@ impl Wrench {
 
         let mut wrench = Wrench {
             window_size: size,
+            gl,
 
             renderer,
             api,
@@ -515,6 +561,13 @@ impl Wrench {
 
     pub fn put_dl_builder(&mut self, pipeline_id: PipelineId, builder: DisplayListBuilder) {
         self.dl_builders.insert(pipeline_id, builder);
+    }
+
+    /// Forget every retained builder, so the next display list for a pipeline is
+    /// built by a new one. Models the content process for that pipeline being
+    /// replaced; see `test_invalidation`'s `new-builder` option.
+    pub fn drop_dl_builders(&mut self) {
+        self.dl_builders.clear();
     }
 
     pub fn set_title(&mut self, extra: &str) {

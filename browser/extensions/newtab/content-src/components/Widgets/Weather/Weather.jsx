@@ -5,11 +5,12 @@
 import React, { useCallback, useEffect, useRef } from "react";
 import { useSelector, batch } from "react-redux";
 import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
-import { PREF_WEATHER_SIZE } from "common/WidgetsRegistry.mjs";
-import { useIntersectionObserver } from "../../../lib/utils";
+import { PREF_WEATHER_SIZE, WIDGET_REGISTRY } from "common/WidgetsRegistry.mjs";
 import { LocationSearch } from "content-src/components/Weather/LocationSearch";
 import { SizeSubmenu } from "../SizeSubmenu";
+import { WidgetMenuButton } from "../WidgetMenuButton";
 import { WidgetMenuFooter } from "../WidgetMenuFooter";
+import { useWidgetTelemetry } from "../useWidgetTelemetry";
 
 const USER_ACTION_TYPES = {
   CHANGE_LOCATION: "change_location",
@@ -22,6 +23,8 @@ const USER_ACTION_TYPES = {
 };
 
 const WEATHER_PROVIDER = "AccuWeather®";
+
+const WEATHER_ENTRY = WIDGET_REGISTRY.find(w => w.id === "weather");
 
 function SponsoredText({ size }) {
   if (size === "small") {
@@ -44,7 +47,11 @@ function SponsoredText({ size }) {
 function Weather({ dispatch, size, widgetEnabledMap }) {
   const prefs = useSelector(state => state.Prefs.values);
   const weatherData = useSelector(state => state.Weather);
-  const impressionFired = useRef(false);
+  const { impressionRef, recordUserAction, recordError } = useWidgetTelemetry({
+    dispatch,
+    widget: WEATHER_ENTRY,
+    widgetSize: size,
+  });
   const errorTelemetrySent = useRef(false);
   const errorRef = useRef(null);
   const currentWeatherSize = prefs[PREF_WEATHER_SIZE] || "medium";
@@ -68,40 +75,15 @@ function Weather({ dispatch, size, widgetEnabledMap }) {
             },
           })
         );
-        dispatch(
-          ac.OnlyToMain({
-            type: at.WIDGETS_USER_EVENT,
-            data: {
-              widget_name: "weather",
-              widget_source: "context_menu",
-              user_action: USER_ACTION_TYPES.CHANGE_SIZE,
-              action_value: newSize,
-              widget_size: newSize,
-            },
-          })
-        );
+        recordUserAction(USER_ACTION_TYPES.CHANGE_SIZE, {
+          source: "context_menu",
+          value: newSize,
+          size: newSize,
+        });
       });
     },
-    [dispatch]
+    [dispatch, recordUserAction]
   );
-
-  const handleIntersection = useCallback(() => {
-    if (impressionFired.current) {
-      return;
-    }
-    impressionFired.current = true;
-    dispatch(
-      ac.AlsoToMain({
-        type: at.WIDGETS_IMPRESSION,
-        data: {
-          widget_name: "weather",
-          widget_size: size,
-        },
-      })
-    );
-  }, [dispatch, size]);
-
-  const weatherRef = useIntersectionObserver(handleIntersection);
 
   const weatherExperimentEnabled = prefs.trainhopConfig?.weather?.enabled;
   const isWeatherEnabled =
@@ -121,20 +103,11 @@ function Weather({ dispatch, size, widgetEnabledMap }) {
     entries => {
       const entry = entries.find(e => e.isIntersecting);
       if (entry && !errorTelemetrySent.current) {
-        dispatch(
-          ac.AlsoToMain({
-            type: at.WIDGETS_ERROR,
-            data: {
-              widget_name: "weather",
-              widget_size: size,
-              error_type: "load_error",
-            },
-          })
-        );
+        recordError("load_error");
         errorTelemetrySent.current = true;
       }
     },
-    [dispatch, size]
+    [recordError]
   );
 
   useEffect(() => {
@@ -159,6 +132,7 @@ function Weather({ dispatch, size, widgetEnabledMap }) {
 
   const weatherOptIn = prefs["system.showWeatherOptIn"];
   const nimbusWeatherOptInEnabled =
+    prefs.trainhopConfig?.widgetWeather?.weatherOptInEnabled ??
     prefs.trainhopConfig?.weather?.weatherOptInEnabled;
   const isOptInEnabled = weatherOptIn || nimbusWeatherOptInEnabled;
   const optInUserChoice = prefs["weather.optInAccepted"];
@@ -179,17 +153,9 @@ function Weather({ dispatch, size, widgetEnabledMap }) {
           data: true,
         })
       );
-      dispatch(
-        ac.OnlyToMain({
-          type: at.WIDGETS_USER_EVENT,
-          data: {
-            widget_name: "weather",
-            widget_source: "context_menu",
-            user_action: USER_ACTION_TYPES.CHANGE_LOCATION,
-            widget_size: size,
-          },
-        })
-      );
+      recordUserAction(USER_ACTION_TYPES.CHANGE_LOCATION, {
+        source: "context_menu",
+      });
     });
   }
 
@@ -200,17 +166,9 @@ function Weather({ dispatch, size, widgetEnabledMap }) {
           type: at.WEATHER_USER_OPT_IN_LOCATION,
         })
       );
-      dispatch(
-        ac.OnlyToMain({
-          type: at.WIDGETS_USER_EVENT,
-          data: {
-            widget_name: "weather",
-            widget_source: "context_menu",
-            user_action: USER_ACTION_TYPES.DETECT_LOCATION,
-            widget_size: size,
-          },
-        })
-      );
+      recordUserAction(USER_ACTION_TYPES.DETECT_LOCATION, {
+        source: "context_menu",
+      });
     });
   }
 
@@ -225,47 +183,21 @@ function Weather({ dispatch, size, widgetEnabledMap }) {
           },
         })
       );
-      dispatch(
-        ac.OnlyToMain({
-          type: at.WIDGETS_USER_EVENT,
-          data: {
-            widget_name: "weather",
-            widget_source: "context_menu",
-            user_action: USER_ACTION_TYPES.CHANGE_TEMP_UNIT,
-            widget_size: size,
-            action_value: unit,
-          },
-        })
-      );
+      recordUserAction(USER_ACTION_TYPES.CHANGE_TEMP_UNIT, {
+        source: "context_menu",
+        value: unit,
+      });
     });
   }
 
   function handleLearnMore() {
-    dispatch(
-      ac.OnlyToMain({
-        type: at.WIDGETS_USER_EVENT,
-        data: {
-          widget_name: "weather",
-          widget_source: "context_menu",
-          user_action: USER_ACTION_TYPES.LEARN_MORE,
-          widget_size: size,
-        },
-      })
-    );
+    recordUserAction(USER_ACTION_TYPES.LEARN_MORE, { source: "context_menu" });
   }
 
   function handleProviderLinkClick() {
-    dispatch(
-      ac.OnlyToMain({
-        type: at.WIDGETS_USER_EVENT,
-        data: {
-          widget_name: "weather",
-          widget_source: "widget",
-          user_action: USER_ACTION_TYPES.PROVIDER_LINK_CLICK,
-          widget_size: size,
-        },
-      })
-    );
+    recordUserAction(USER_ACTION_TYPES.PROVIDER_LINK_CLICK, {
+      source: "widget",
+    });
   }
 
   function handleOptInChooseLocation() {
@@ -282,18 +214,10 @@ function Weather({ dispatch, size, widgetEnabledMap }) {
           data: true,
         })
       );
-      dispatch(
-        ac.OnlyToMain({
-          type: at.WIDGETS_USER_EVENT,
-          data: {
-            widget_name: "weather",
-            widget_source: "widget",
-            user_action: USER_ACTION_TYPES.OPT_IN_ACCEPTED,
-            widget_size: size,
-            action_value: "choose_location",
-          },
-        })
-      );
+      recordUserAction(USER_ACTION_TYPES.OPT_IN_ACCEPTED, {
+        source: "widget",
+        value: "choose_location",
+      });
     });
   }
 
@@ -310,33 +234,25 @@ function Weather({ dispatch, size, widgetEnabledMap }) {
           data: "use_location",
         })
       );
-      dispatch(
-        ac.OnlyToMain({
-          type: at.WIDGETS_USER_EVENT,
-          data: {
-            widget_name: "weather",
-            widget_source: "widget",
-            user_action: USER_ACTION_TYPES.OPT_IN_ACCEPTED,
-            widget_size: size,
-            action_value: "use_location",
-          },
-        })
-      );
+      recordUserAction(USER_ACTION_TYPES.OPT_IN_ACCEPTED, {
+        source: "widget",
+        value: "use_location",
+      });
     });
   }
 
   function renderContextMenu() {
     return (
       <div className="weather-context-menu-wrapper">
-        <moz-button
+        <WidgetMenuButton
           className="weather-context-menu-button"
-          data-l10n-id="newtab-menu-section-tooltip"
-          iconSrc="chrome://global/skin/icons/more.svg"
           menuId="weather-widget-context-menu"
-          type="ghost"
-          size="small"
+          l10nId="newtab-weather-widget-open-menu-button"
         />
-        <panel-list id="weather-widget-context-menu">
+        <panel-list
+          className="panel-list-no-icons"
+          id="weather-widget-context-menu"
+        >
           {!showOptInState &&
             (prefs["weather.temperatureUnits"] === "f" ? (
               <panel-item
@@ -412,12 +328,7 @@ function Weather({ dispatch, size, widgetEnabledMap }) {
   }
 
   return (
-    <article
-      className={getArticleClassNames()}
-      ref={el => {
-        weatherRef.current = [el];
-      }}
-    >
+    <article className={getArticleClassNames()} ref={impressionRef}>
       {!hasError && !showOptInState && (
         <a
           className="weather-anchor"
@@ -433,7 +344,9 @@ function Weather({ dispatch, size, widgetEnabledMap }) {
       <div className="widget-title-bar">
         <div className="widget-title">
           {!showOptInState && !searchActive && (
-            <h3>{weatherData.locationData.city}</h3>
+            <h3 className="newtab-widget-title">
+              {weatherData.locationData.city}
+            </h3>
           )}
         </div>
         {!searchActive && renderContextMenu()}

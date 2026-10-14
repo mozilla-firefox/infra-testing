@@ -114,7 +114,7 @@ IPCResult FetchParent::RecvFetchOp(FetchOpArgs&& aArgs) {
     // The inference process uses ChromeWorkers which have a system principal,
     // so system principals must be allowed there.
     EnumSet<ValidatePrincipalOptions> options;
-    if (contentHandle->GetRemoteType() == INFERENCE_REMOTE_TYPE) {
+    if (contentHandle->GetRemoteType().IsInference()) {
       options += ValidatePrincipalOptions::AllowSystemIfLoaded;
     }
     if (!contentHandle->ValidatePrincipal(principal, options)) {
@@ -134,6 +134,13 @@ IPCResult FetchParent::RecvFetchOp(FetchOpArgs&& aArgs) {
       !StaticPrefs::dom_fetch_allow_force_allowed_dtd()) {
     return IPC_FAIL(this,
                     "RecvFetchOp FORCE_ALLOWED_DTD not allowed from content");
+  }
+
+  if (contentHandle && InternalRequest::IsNavigationContentPolicy(
+                           aArgs.request().contentPolicyType())) {
+    return IPC_FAIL(this,
+                    "RecvFetchOp navigation content policy type not allowed "
+                    "from content");
   }
 
   mRequest = MakeSafeRefPtr<InternalRequest>(std::move(aArgs.request()));

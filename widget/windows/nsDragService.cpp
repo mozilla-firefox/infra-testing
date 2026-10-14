@@ -92,7 +92,7 @@ bool nsDragSession::CreateDragImage(nsINode* aDOMNode,
   }
 
   RefPtr<DrawTarget> dt = Factory::CreateDrawTargetForData(
-      BackendType::CAIRO, map.mData, dataSurface->GetSize(), map.mStride,
+      BackendType::SKIA, map.mData, dataSurface->GetSize(), map.mStride,
       dataSurface->GetFormat());
   if (!dt) {
     dataSurface->Unmap();
@@ -405,7 +405,7 @@ nsDragSession::GetNumDropItems(uint32_t* aNumItems) {
   FORMATETC fe2;
   SET_FORMATETC(fe2, CF_HDROP, 0, DVASPECT_CONTENT, -1, TYMED_HGLOBAL);
   if (SUCCEEDED(mDataObject->QueryGetData(&fe2))) {
-    STGMEDIUM stm;
+    STGMEDIUM stm{};
     if (FAILED(mDataObject->GetData(&fe2, &stm))) {
       *aNumItems = 1;
       return NS_OK;
@@ -428,7 +428,7 @@ nsDragSession::GetNumDropItems(uint32_t* aNumItems) {
   // Next check if we have a virtual file drop.
   SET_FORMATETC(fe2, nsClipboard::GetClipboardFileDescriptorFormatW(), 0,
                 DVASPECT_CONTENT, -1, TYMED_HGLOBAL);
-  STGMEDIUM stm;
+  STGMEDIUM stm{};
 
   if (SUCCEEDED(mDataObject->GetData(&fe2, &stm))) {
     *aNumItems = 0;

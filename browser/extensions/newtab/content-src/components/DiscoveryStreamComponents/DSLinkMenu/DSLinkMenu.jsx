@@ -121,7 +121,11 @@ export class _DSLinkMenu extends React.PureComponent {
           menuId={menuId}
           tabindex={this.props.tabIndex}
         />
-        <panel-list id={menuId} ref={this.panelListRef}>
+        <panel-list
+          className="panel-list-no-icons"
+          id={menuId}
+          ref={this.panelListRef}
+        >
           <PanelListItems options={options} />
         </panel-list>
       </div>

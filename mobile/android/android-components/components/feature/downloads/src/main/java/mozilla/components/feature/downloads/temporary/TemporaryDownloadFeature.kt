@@ -73,7 +73,7 @@ abstract class TemporaryDownloadFeature(
     }
 
     init {
-        CoroutineScope(ioDispatcher).launch {
+        CoroutineScope(ioDispatcher).launch(coroutineExceptionHandler("Cache cleanup")) {
             cleanupCache()
         }
     }
@@ -94,21 +94,31 @@ abstract class TemporaryDownloadFeature(
                     requireNotNull(internetResource.response)
                 }
 
-            if (response.status != Response.SUCCESS) {
-                response.close()
-                // We experienced a problem trying to fetch the file, nothing more we can do.
-                throw (RuntimeException("Resource is not available to download"))
-            }
-
-            var tempFile: File? = null
-            response.body.useStream { input ->
-                val fileExtension = '.' + getFileExtension(response.headers, input)
-                tempFile = getTempFile(fileExtension)
-                FileOutputStream(tempFile).use { output -> input.copyTo(output) }
-            }
-
-            tempFile!!
+            persistResponseToTempFile(response)
         }
+    }
+
+    @VisibleForTesting(otherwise = PROTECTED)
+    internal suspend fun downloadDirectResource(response: Response): File =
+        withContext(ioDispatcher) {
+            persistResponseToTempFile(response)
+        }
+
+    private fun persistResponseToTempFile(response: Response): File {
+        if (response.status != Response.SUCCESS) {
+            response.close()
+            // We experienced a problem trying to fetch the file, nothing more we can do.
+            throw (RuntimeException("Resource is not available to download"))
+        }
+
+        var tempFile: File? = null
+        response.body.useStream { input ->
+            val fileExtension = '.' + getFileExtension(response.headers, input)
+            tempFile = getTempFile(fileExtension)
+            FileOutputStream(tempFile).use { output -> input.copyTo(output) }
+        }
+
+        return tempFile!!
     }
 
     @VisibleForTesting
@@ -138,11 +148,21 @@ abstract class TemporaryDownloadFeature(
     @VisibleForTesting
     internal fun cleanupCache() {
         logger.debug("Deleting previous cache of shared files")
-        val success = getCacheDirectory().listFiles()?.all { it.deleteRecursively() } ?: true
-        if (!success) {
+        // Every entry is attempted; one that cannot be deleted must not strand the rest.
+        val failures = getCacheDirectory().listFiles()?.count { !it.deleteCacheEntry() } ?: 0
+        if (failures > 0) {
             logger.debug("Cleanup incomplete: some files were locked or could not be removed.")
         }
     }
+
+    // Sibling features share this directory. deleteRecursively() asserts on an entry another
+    // cleanup removed mid-walk instead of reporting a failure.
+    private fun File.deleteCacheEntry() =
+        try {
+            deleteRecursively()
+        } catch (_: AssertionError) {
+            !exists()
+        }
 
     protected fun coroutineExceptionHandler(action: String) = CoroutineExceptionHandler { _, throwable ->
         when (throwable) {
@@ -151,9 +171,12 @@ abstract class TemporaryDownloadFeature(
             }
 
             is IOException,
-            is RuntimeException,
-            is NullPointerException -> {
+            is RuntimeException -> {
                 logger.warn("$action failed: $throwable")
+            }
+
+            else -> {
+                logger.warn("$action failed unexpectedly: $throwable")
             }
         }
     }

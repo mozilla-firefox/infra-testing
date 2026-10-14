@@ -57,8 +57,8 @@
 
 // Free-float the context menu in the top-right corner (mirrors FocusTimer).
 .privacy-title-wrapper {
-  inset-block-start: var(--space-small);
-  inset-inline-end: var(--space-small);
+  inset-block-start: var(--space-medium);
+  inset-inline-end: var(--space-medium);
   inset-inline-start: auto;
   margin-block-end: 0;
   position: absolute;
@@ -91,10 +91,15 @@
     display: flex;
     flex-direction: column;
     text-transform: lowercase;
+    font-size: var(--font-size-small);
 
     .medium-widget & {
       margin-block-end: var(--space-medium);
       font-size: var(--newtab-font-size-xsmall);
+    }
+
+    .large-widget.is-count-only & {
+      font-size: var(--font-size-root);
     }
 
     .has-streak.medium-widget &,
@@ -106,20 +111,12 @@
   .has-streak.medium-widget &,
   .has-tip-msg.medium-widget & {
     justify-content: flex-start;
-
-    .privacy-count {
-      flex-direction: row;
-      align-items: center;
-      gap: var(--space-small);
-    }
   }
 
-  // Large styles
   .large-widget & {
-    align-items: flex-start;
-    justify-content: flex-end;
     gap: var(--space-large);
     padding-inline: var(--space-small);
+    padding-block-end: var(--space-small);
   }
 
   // Streak reuses the count-block layout (no divider): count then message
@@ -128,42 +125,83 @@
     gap: var(--space-small);
   }
 
-  // Empty state: center the image + message in the card.
-  .is-empty & {
+  // Empty and ETP-off states: center the image + message in the card.
+  .is-empty &,
+  .is-etp-off & {
     align-items: center;
     justify-content: center;
   }
 }
 
-.privacy-empty {
+.privacy-empty,
+.privacy-etp-off {
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  // Stretch to the body width so the message's max-width is 75% of the card.
+  height: 100%;
+  justify-content: space-evenly;
   align-self: stretch;
-  gap: var(--space-medium);
 
   .large-widget & {
-    gap: var(--space-large);
-  }
+    justify-content: center;
 
-  .privacy-empty-details {
-    color: var(--text-color-deemphasized);
-    max-width: 75%;
-    text-decoration: none;
+    .privacy-image {
+      margin-block-end: var(--space-large);
 
-    &:hover {
-      color: var(--color-accent-primary);
+      .privacy-image-icon {
+        max-height: calc(var(--icon-size-large) * 3);
+      }
     }
   }
 
-  .privacy-empty-message {
+  .privacy-empty-details,
+  .privacy-etp-off-details {
+    color: inherit;
+    text-decoration: none;
+    font-size: var(--newtab-font-size-xsmall);
+
+    .large-widget & {
+      font-size: var(--font-size-root);
+    }
+
+    &:hover {
+      color: var(--link-color);
+    }
+
+    .privacy-etp-off-bold {
+      font-weight: var(--font-weight-bold);
+      margin-block: 0;
+    }
+
+    .privacy-etp-off-message {
+      margin-block: 0;
+    }
+  }
+
+  .privacy-etp-off-details {
+    max-width: 70%;
+
+    .large-widget & {
+      max-width: 95%;
+    }
+  }
+
+  .privacy-empty-message-wrapper p {
     margin: 0;
 
+    .medium-widget & {
+      display: inline;
+    }
+  }
+
+  .privacy-empty-message,
+  .privacy-etp-off-message {
     &::after {
       content: '';
       display: inline-block;
+      // vertical-align: center has full support starting from Firefox v149
+      // https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/vertical-align
       vertical-align: center;
       background-color: currentColor;
       block-size: var(--icon-size-xsmall);
@@ -180,11 +218,22 @@
 .privacy-image-icon {
   .medium-widget & {
     margin-block-start: var(--space-small);
-    max-height: var(--icon-size-xlarge)
+    max-height: var(--icon-size-xlarge);
+  }
+
+  .medium-widget.is-count-only & {
+    margin-block-start: 0;
+    height: var(--size-image-xsmall);
+    max-height: none;
   }
 
   .large-widget & {
-    max-height: calc( var(--icon-size-large) * 2 );
+    max-height: calc(var(--icon-size-large) * 2);
+  }
+
+  .large-widget.is-count-only & {
+    max-height: var(--size-image-medium);
+    width: 52px;
   }
 }
 
@@ -195,7 +244,19 @@
   text-decoration: none;
 
   &:hover {
-    color: var(--color-accent-primary);
+    color: var(--link-color);
+  }
+
+  .medium-widget.is-count-only & {
+    flex-direction: row;
+    align-items: last baseline;
+    gap: var(--space-medium);
+  }
+
+  .medium-widget:not(.is-count-only) & {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-small);
   }
 
   .privacy-count-number-wrapper {
@@ -206,25 +267,33 @@
     // celebration sparkles rendered inside it.
     position: relative;
     width: fit-content;
+
+    .medium-widget.is-count-only & {
+      gap: var(--space-xsmall);
+    }
+
+    .large-widget.is-count-only & {
+      align-items: end;
+      line-height: 0.8;
+      margin-block-end: var(--space-medium);
+    }
   }
 
   .privacy-count-number {
     font-size: calc(var(--font-size-root) * 2.5); // ~36px
+
+    .medium-widget.is-count-only & {
+      font-size: calc(var(--font-size-root) * 3.2); // 48px
+    }
+
     .large-widget & {
       font-size: calc(var(--font-size-root) * 4.5); // ~67px
     }
-  }
 
-  // The visible number is aria-hidden while it counts up, so this stable copy
-  // is what assistive tech reads. No shared visually-hidden mixin exists here;
-  // FocusTimer declares its own the same way.
-  .privacy-count-number-a11y {
-    clip-path: inset(50%);
-    height: 1px;
-    overflow: hidden;
-    position: absolute;
-    white-space: nowrap;
-    width: 1px;
+    // The count-only card has the row to itself, so the number goes bigger.
+    .large-widget.is-count-only & {
+      font-size: calc(var(--font-size-root) * 5.5); // ~82px
+    }
   }
 
   .privacy-count-text > :last-child {
@@ -276,11 +345,11 @@
     display: flex;
     gap: var(--space-small);
   }
+}
 
-  .privacy-tip-message {
-    align-self: flex-start;
-    margin: 0;
-  }
+.privacy-tip-message {
+  align-self: flex-start;
+  margin: 0;
 }
 
 // Message text stacked above its CTA button (icon, when present, sits beside
@@ -290,15 +359,15 @@
   display: flex;
   width: 100%;
   flex-direction: column;
-}
-
-.privacy-tip-content {
   align-items: flex-end;
-  gap: var(--space-xxsmall);
 
   .medium-widget & {
     flex-grow: 1;
   }
+}
+
+.privacy-tip-content {
+  gap: var(--space-xxsmall);
 
   .large-widget & {
     gap: var(--space-small);
@@ -306,18 +375,7 @@
 }
 
 .privacy-streak {
-  align-items: flex-end;
-  width: 100%;
   gap: var(--space-small);
-
-  .medium-widget & {
-    flex-grow: 1;
-  }
-
-  .privacy-tip-message {
-    align-self: flex-start;
-    margin: 0;
-  }
 }
 
 // The CTA is the widget's bottom-most element

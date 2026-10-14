@@ -70,7 +70,8 @@ struct nssPKIObjectStr {
     NSSArena *arena;
     /* Atomically incremented/decremented reference counting */
     PRInt32 refCount;
-    /* lock protects the array of nssCryptokiInstance's of the object */
+    /* lock protects the array of nssCryptokiInstance's of the object,
+     * as well as the NSSCryptoContext (cryptoContext). */
     union {
         PRLock *lock;
         PRMonitor *mlock;
@@ -129,12 +130,6 @@ struct NSSCertificateStr {
     NSSASCII7 *email;
     nssDecodedCert *decoding;
 };
-
-struct NSSPrivateKeyStr;
-
-struct NSSPublicKeyStr;
-
-struct NSSSymmetricKeyStr;
 
 typedef struct nssTDCertificateCacheStr nssTDCertificateCache;
 

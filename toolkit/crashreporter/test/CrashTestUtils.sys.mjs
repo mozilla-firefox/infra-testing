@@ -37,6 +37,7 @@ export var CrashTestUtils = {
   CRASH_EXC_GUARD: 25,
   CRASH_STACK_OVERFLOW: 26,
   CRASH_STL_VECTOR_OOB: 27,
+  CRASH_SIGSYS: 28,
 
   // Constants for dumpHasStream()
   // From google_breakpad/common/minidump_format.h
@@ -57,11 +58,6 @@ CrashTestUtils.crash = lib.declare(
   ctypes.default_abi,
   ctypes.void_t,
   ctypes.int16_t
-);
-CrashTestUtils.saveAppMemory = lib.declare(
-  "SaveAppMemory",
-  ctypes.default_abi,
-  ctypes.uint64_t
 );
 CrashTestUtils.enablePHC = lib.declare(
   "EnablePHC",
@@ -87,13 +83,6 @@ CrashTestUtils.dumpHasStream = lib.declare(
 
 CrashTestUtils.dumpHasInstructionPointerMemory = lib.declare(
   "DumpHasInstructionPointerMemory",
-  ctypes.default_abi,
-  ctypes.bool,
-  ctypes.char.ptr
-);
-
-CrashTestUtils.dumpCheckMemory = lib.declare(
-  "DumpCheckMemory",
   ctypes.default_abi,
   ctypes.bool,
   ctypes.char.ptr

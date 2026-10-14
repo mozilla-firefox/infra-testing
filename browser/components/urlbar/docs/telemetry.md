@@ -1,9 +1,9 @@
 (urlbar-telemetry)=
 
-# Address Bar Telemetry
+# Telemetry
 
 This section describes existing telemetry probes measuring interaction with the
-Address Bar.
+address bar and the search bars.
 
 This document only covers Legacy telemetry, not Glean telemetry.
 Glean metrics are self-documenting and can be looked up in the Glean dictionary.
@@ -594,6 +594,8 @@ Changelog
 
 ### urlbar.zeroprefix.abandonment
 
+NOTE: This telemetry is no longer collected. See changelog below.
+
 A uint recording the number of abandonments of the zero-prefix view.
 "Zero-prefix" means the search string was empty, so the zero-prefix view is
 the view that's shown when the user clicks in the urlbar before typing a
@@ -602,7 +604,17 @@ the user's top sites. "Abandonment" means the user opened the zero-prefix view
 but it was closed without the user picking a result inside it. This scalar was
 introduced in Firefox 110.0 in bug 1806765.
 
+Changelog
+: Firefox 157
+
+  : Legacy `urlbar.zeroprefix.abandonment` telemetry removed, and the Glean
+    metric replaced by `urlbar.zeroprefix2.abandonment`, a labeled counter
+    keyed by search access point, so it covers the search bar, New Tab's
+    search bar and the smartbar besides the address bar. (See bug 2066165)
+
 ### urlbar.zeroprefix.engagement
+
+NOTE: This telemetry is no longer collected. See changelog below.
 
 A uint recording the number of engagements in the zero-prefix view.
 "Zero-prefix" means the search string was empty, so the zero-prefix view is
@@ -611,7 +623,17 @@ search string. Often it's called the "top sites" view since normally it shows
 the user's top sites. "Engagement" means the user picked a result inside the
 view. This scalar was introduced in Firefox 110.0 in bug 1806765.
 
+Changelog
+: Firefox 157
+
+  : Legacy `urlbar.zeroprefix.engagement` telemetry removed, and the Glean
+    metric replaced by `urlbar.zeroprefix2.engagement`, a labeled counter
+    keyed by search access point, so it covers the search bar, New Tab's
+    search bar and the smartbar besides the address bar. (See bug 2066165)
+
 ### urlbar.zeroprefix.exposure
+
+NOTE: This telemetry is no longer collected. See changelog below.
 
 A uint recording the number of times the user was exposed to the zero-prefix
 view; that is, the number of times it was shown. "Zero-prefix" means the
@@ -619,6 +641,14 @@ search string was empty, so the zero-prefix view is the view that's shown when
 the user clicks in the urlbar before typing a search string. Often it's called
 the "top sites" view since normally it shows the user's top sites. This scalar
 was introduced in Firefox 110.0 in bug 1806765.
+
+Changelog
+: Firefox 157
+
+  : Legacy `urlbar.zeroprefix.exposure` telemetry removed, and the Glean
+    metric replaced by `urlbar.zeroprefix2.exposure`, a labeled counter
+    keyed by search access point, so it covers the search bar, New Tab's
+    search bar and the smartbar besides the address bar. (See bug 2066165)
 
 ### urlbar.quickaction.picked
 
@@ -682,6 +712,30 @@ Changelog
   Firefox 125
 
   : The "impression" engagement event has been removed. \[Bug [1878983](https://bugzilla.mozilla.org/show_bug.cgi?id=1878983)\]
+
+### Engagements from a search bar in a web page
+
+A search bar in a content process, such as the one on about:newtab, builds the
+engagement event in the child and sends it to the parent in a
+`RecordEngagement` message. The parent adds the parent-only fields and makes the
+Glean call.
+
+A pick that loads a page in the same tab still records its engagement, because
+`UrlbarChildTelemetry.record()` sends `RecordEngagement` before the input sends
+its `LoadURL` query. Both messages travel in order over the window global's
+actor channel, so the parent has the engagement data before it starts the load.
+A session that ends without a pick is recorded as an abandonment on the `blur`
+event fired when the page is hidden, while the document can still run script.
+
+The child keeps the session's exposures until the session ends, so an
+engagement recorded while the session is still ongoing doesn't send them. If the
+page unloads before the session ends, the whole exposure list is lost, not just
+one event. How often this happens isn't measured, and a dropped
+`RecordEngagement` message leaves no diagnostic
+([Bug 2066851](https://bugzilla.mozilla.org/show_bug.cgi?id=2066851)).
+
+A new search bar has to register its search access point in several places
+before its engagements record correctly; {doc}`adding-a-search-bar` lists them.
 
 ## Custom pings for Contextual Services
 

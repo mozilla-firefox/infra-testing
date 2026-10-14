@@ -1,0 +1,491 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+package org.mozilla.fenix.privacyreport
+
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context
+import android.os.Looper
+import androidx.concurrent.futures.await
+import androidx.core.app.NotificationManagerCompat
+import androidx.work.Configuration
+import androidx.work.DelegatingWorkerFactory
+import androidx.work.ListenableWorker.Result
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import androidx.work.WorkerFactory
+import androidx.work.WorkerParameters
+import androidx.work.testing.TestListenableWorkerBuilder
+import androidx.work.testing.WorkManagerTestInitHelper
+import androidx.work.workDataOf
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.util.concurrent.TimeUnit
+import kotlin.test.assertNotNull
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runTest
+import mozilla.components.browser.state.store.BrowserStore
+import mozilla.components.concept.engine.Engine
+import mozilla.components.concept.engine.content.blocking.TrackingProtectionEvent
+import mozilla.components.concept.engine.content.blocking.TrackingProtectionEvent.Companion.TRACKERS
+import mozilla.components.feature.session.TrackingProtectionUseCases
+import mozilla.components.support.base.android.NotificationsDelegate
+import mozilla.components.support.test.fakes.engine.FakeEngine
+import mozilla.components.support.test.robolectric.testContext
+import mozilla.components.support.utils.FakeDateTimeProvider
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.mozilla.fenix.GleanMetrics.Pings
+import org.mozilla.fenix.GleanMetrics.TrackingProtection
+import org.mozilla.fenix.helpers.FenixGleanTestRule
+import org.mozilla.fenix.privacyreport.PrivacyReportNotificationAvailability.APP_NOTIFICATIONS_DISABLED
+import org.mozilla.fenix.privacyreport.PrivacyReportNotificationAvailability.CHANNEL_DISABLED
+import org.mozilla.fenix.privacyreport.PrivacyReportNotificationAvailability.TRACKING_PROTECTION_DISABLED
+import org.mozilla.fenix.privacyreport.PrivacyReportNotificationWorker.Companion.cancel
+import org.mozilla.fenix.privacyreport.PrivacyReportNotificationWorker.Companion.nextClampedNotificationTimeMillis
+import org.mozilla.fenix.privacyreport.PrivacyReportNotificationWorker.Companion.nextNotificationTimeMillis
+import org.mozilla.fenix.privacyreport.PrivacyReportNotificationWorker.Companion.schedule
+import org.mozilla.fenix.utils.Settings
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+
+private const val NOW = 1_700_000_000_000L
+private const val PRIVACY_REPORT_NOTIFICATION_WORK_NAME = "org.mozilla.fenix.privacyreport.work"
+private const val NOTIFICATION_TIME_MILLIS_KEY = "privacy_report_notification_time_millis"
+
+/**
+ * Fake current time used by scheduling tests. It matches the onboarding completion timestamp below, producing a
+ * one-week initial delay and preventing WorkManager's synchronous test executor from running the worker during
+ * scheduling-only tests.
+ */
+private const val SCHEDULING_FAKE_NOW = 1_000L
+
+@RunWith(RobolectricTestRunner::class)
+class PrivacyReportNotificationWorkerTest {
+
+    @get:Rule val gleanRule = FenixGleanTestRule(testContext)
+
+    private lateinit var settings: Settings
+    private lateinit var fakeEngine: ControllableFakeEngine
+    private lateinit var trackingProtectionUseCases: TrackingProtectionUseCases
+    private lateinit var notificationsDelegate: NotificationsDelegate
+
+    @Before
+    fun setUp() {
+        settings = Settings(testContext)
+
+        fakeEngine = ControllableFakeEngine()
+        trackingProtectionUseCases = TrackingProtectionUseCases(BrowserStore(), fakeEngine)
+
+        notificationsDelegate = NotificationsDelegate(NotificationManagerCompat.from(testContext))
+        shadowOf(testContext.getSystemService(NotificationManager::class.java) as NotificationManager)
+            .setNotificationsEnabled(true)
+
+        // The default WorkManager instance doesn't go through FenixApplication's
+        // Configuration.Provider in this test environment, so schedule()/cancel() need their own
+        // WorkerFactory wiring to be able to actually construct the worker.
+        val configuration =
+            Configuration.Builder()
+                .setWorkerFactory(
+                    DelegatingWorkerFactory().apply {
+                        addFactory(
+                            PrivacyReportWorkerFactory(settings, trackingProtectionUseCases, notificationsDelegate)
+                        )
+                    }
+                )
+                .build()
+        WorkManagerTestInitHelper.initializeTestWorkManager(testContext, configuration)
+    }
+
+    @After
+    fun tearDown() {
+        // Close WorkManager's internal database to prevent leaked SQLite resources from being reported against
+        // subsequent tests.
+        WorkManagerTestInitHelper.closeWorkDatabase()
+    }
+
+    private fun buildWorker(scheduledNotificationTimeMillis: Long? = NOW): PrivacyReportNotificationWorker =
+        TestListenableWorkerBuilder<PrivacyReportNotificationWorker>(testContext)
+            .apply {
+                scheduledNotificationTimeMillis?.let {
+                    setInputData(workDataOf(NOTIFICATION_TIME_MILLIS_KEY to it))
+                }
+            }
+            .setWorkerFactory(
+                object : WorkerFactory() {
+                    override fun createWorker(
+                        appContext: Context,
+                        workerClassName: String,
+                        workerParameters: WorkerParameters,
+                    ) =
+                        PrivacyReportNotificationWorker(
+                            appContext,
+                            workerParameters,
+                            settings = settings,
+                            trackingProtectionUseCases = trackingProtectionUseCases,
+                            notificationsDelegate = notificationsDelegate,
+                            dateTimeProvider = FakeDateTimeProvider(currentTime = NOW),
+                        )
+                }
+            )
+            .build()
+
+    @Test
+    fun `GIVEN onboarding was completed WHEN scheduling THEN work is enqueued`() = runTest {
+        settings.onboardingCompletedTimestamp = 1_000L
+
+        schedule(testContext, settings, FakeDateTimeProvider(currentTime = SCHEDULING_FAKE_NOW))
+
+        val workExists =
+            WorkManager.getInstance(testContext)
+                .getWorkInfosForUniqueWork(PRIVACY_REPORT_NOTIFICATION_WORK_NAME)
+                .await()
+                .isNotEmpty()
+        assertTrue(workExists)
+    }
+
+    @Test
+    fun `GIVEN work is scheduled WHEN cancelled THEN its state becomes cancelled`() = runTest {
+        settings.onboardingCompletedTimestamp = 1_000L
+        schedule(testContext, settings, FakeDateTimeProvider(currentTime = SCHEDULING_FAKE_NOW))
+
+        cancel(testContext)
+
+        val state =
+            WorkManager.getInstance(testContext)
+                .getWorkInfosForUniqueWork(PRIVACY_REPORT_NOTIFICATION_WORK_NAME)
+                .await()
+                .first()
+                .state
+        assertEquals(WorkInfo.State.CANCELLED, state)
+    }
+
+    @Test
+    fun `GIVEN scheduled notification timestamp is missing WHEN doWork runs THEN work fails`() = runTest {
+        val worker = buildWorker(scheduledNotificationTimeMillis = null)
+
+        val result = worker.doWork()
+
+        assertEquals(Result.failure(), result)
+        assertEquals(0, fakeEngine.fetchTrackingEventsCallCount)
+    }
+
+    @Test
+    fun `GIVEN tracking protection is disabled WHEN doWork runs THEN no tracker count is fetched`() = runTest {
+        settings.shouldUseTrackingProtection = false
+
+        val worker = buildWorker()
+        val result = worker.doWork()
+
+        assertEquals(Result.success(), result)
+        assertEquals(0, fakeEngine.fetchTrackingEventsCallCount)
+    }
+
+    @Test
+    fun `GIVEN blocked trackers meets the notification threshold WHEN doWork runs THEN it fetches exactly the past 7 days and shows the notification`() =
+        runTest {
+            settings.shouldUseTrackingProtection = true
+            fakeEngine.trackingEventsResult =
+                listOf(
+                    TrackingProtectionEvent(type = TRACKERS, count = 20, date = null),
+                    TrackingProtectionEvent(type = TRACKERS, count = 28, date = null),
+                )
+
+            val worker = buildWorker()
+            val resultDeferred = async { worker.doWork() }
+            testScheduler.runCurrent()
+            shadowOf(Looper.getMainLooper()).idle()
+
+            assertEquals(Result.success(), resultDeferred.await())
+            assertEquals(NOW - TimeUnit.DAYS.toMillis(7), fakeEngine.lastDateFrom)
+            assertEquals(NOW, fakeEngine.lastDateTo)
+
+            val notifications = shownNotifications()
+            assertEquals(1, notifications.size)
+            val notification = shadowOf(notifications.first())
+
+            val expectedContent =
+                PrivacyReportNotificationContent.trackersBlocked(testContext, trackersBlockedCount = 48)
+            assertEquals(expectedContent.title, notification.contentTitle)
+            assertEquals(expectedContent.text, notification.contentText)
+        }
+
+    @Test
+    fun `GIVEN blocked trackers is below the notification threshold WHEN doWork runs THEN trackers are fetched and the no-trackers notification is shown`() =
+        runTest {
+            settings.shouldUseTrackingProtection = true
+            fakeEngine.trackingEventsResult = listOf(TrackingProtectionEvent(type = TRACKERS, count = 47, date = null))
+
+            val worker = buildWorker()
+            val resultDeferred = async { worker.doWork() }
+            testScheduler.runCurrent()
+            shadowOf(Looper.getMainLooper()).idle()
+
+            assertEquals(Result.success(), resultDeferred.await())
+            assertEquals(1, fakeEngine.fetchTrackingEventsCallCount)
+
+            val notifications = shownNotifications()
+            assertEquals(1, notifications.size)
+            val notification = shadowOf(notifications.first())
+
+            val expectedContent = PrivacyReportNotificationContent.noTrackersBlocked(testContext)
+            assertEquals(expectedContent.title, notification.contentTitle)
+            assertEquals(expectedContent.text, notification.contentText)
+        }
+
+    // region tests for nextNotificationTimeMillis().
+    @Test
+    fun `GIVEN anchor before window WHEN calculating next time THEN returns noon on 7th day`() {
+        val zoneId = ZoneId.of("Europe/Bucharest")
+        val anchor = ZonedDateTime.of(2026, 9, 1, 10, 30, 0, 0, zoneId).toInstant().toEpochMilli()
+        val expected = ZonedDateTime.of(2026, 9, 8, 12, 0, 0, 0, zoneId).toInstant().toEpochMilli()
+
+        assertEquals(expected, nextNotificationTimeMillis(anchor, zoneId))
+    }
+
+    @Test
+    fun `GIVEN anchor during window WHEN calculating next time THEN preserves time on 7th day`() {
+        val zoneId = ZoneId.of("Europe/Bucharest")
+        val anchor = ZonedDateTime.of(2026, 9, 1, 14, 30, 0, 0, zoneId).toInstant().toEpochMilli()
+        val expected = ZonedDateTime.of(2026, 9, 8, 14, 30, 0, 0, zoneId).toInstant().toEpochMilli()
+
+        assertEquals(expected, nextNotificationTimeMillis(anchor, zoneId))
+    }
+
+    @Test
+    fun `GIVEN anchor after window WHEN calculating next time THEN returns noon on 8th day`() {
+        val zoneId = ZoneId.of("Europe/Bucharest")
+        val anchor = ZonedDateTime.of(2026, 9, 1, 18, 30, 0, 0, zoneId).toInstant().toEpochMilli()
+        val expected = ZonedDateTime.of(2026, 9, 9, 12, 0, 0, 0, zoneId).toInstant().toEpochMilli()
+
+        assertEquals(expected, nextNotificationTimeMillis(anchor, zoneId))
+    }
+
+    // endregion
+
+    // region tests for nextClampedNotificationTimeMillis().
+    @Test
+    fun `GIVEN next candidate time is in the future WHEN calculating THEN returns the candidate time`() {
+        val zoneId = ZoneId.of("Europe/Bucharest")
+        val anchor = ZonedDateTime.of(2026, 9, 1, 14, 0, 0, 0, zoneId).toInstant().toEpochMilli()
+        val now = ZonedDateTime.of(2026, 9, 2, 10, 0, 0, 0, zoneId).toInstant().toEpochMilli()
+        val expected = ZonedDateTime.of(2026, 9, 8, 14, 0, 0, 0, zoneId).toInstant().toEpochMilli()
+
+        assertEquals(expected, nextClampedNotificationTimeMillis(anchor, now, zoneId))
+    }
+
+    @Test
+    fun `GIVEN candidate time passed and now is before window WHEN calculating THEN returns noon today`() {
+        val zoneId = ZoneId.of("Europe/Bucharest")
+        val anchor = ZonedDateTime.of(2026, 9, 1, 9, 0, 0, 0, zoneId).toInstant().toEpochMilli()
+        val now = ZonedDateTime.of(2026, 9, 20, 10, 30, 0, 0, zoneId).toInstant().toEpochMilli()
+        val expected = ZonedDateTime.of(2026, 9, 20, 12, 0, 0, 0, zoneId).toInstant().toEpochMilli()
+
+        assertEquals(expected, nextClampedNotificationTimeMillis(anchor, now, zoneId))
+    }
+
+    @Test
+    fun `GIVEN candidate time passed and now is during window WHEN calculating THEN returns now`() {
+        val zoneId = ZoneId.of("Europe/Bucharest")
+        val anchor = ZonedDateTime.of(2026, 9, 1, 9, 0, 0, 0, zoneId).toInstant().toEpochMilli()
+        val now = ZonedDateTime.of(2026, 9, 20, 15, 30, 0, 0, zoneId).toInstant().toEpochMilli()
+
+        assertEquals(now, nextClampedNotificationTimeMillis(anchor, now, zoneId))
+    }
+
+    @Test
+    fun `GIVEN candidate time passed and now is after window WHEN calculating THEN returns noon tomorrow`() {
+        val zoneId = ZoneId.of("Europe/Bucharest")
+        val anchor = ZonedDateTime.of(2026, 9, 1, 9, 0, 0, 0, zoneId).toInstant().toEpochMilli()
+        val now = ZonedDateTime.of(2026, 9, 20, 18, 30, 0, 0, zoneId).toInstant().toEpochMilli()
+        val expected = ZonedDateTime.of(2026, 9, 21, 12, 0, 0, 0, zoneId).toInstant().toEpochMilli()
+
+        assertEquals(expected, nextClampedNotificationTimeMillis(anchor, now, zoneId))
+    }
+
+    @Test
+    fun `GIVEN candidate time passed and now is exactly at window start WHEN calculating THEN returns now`() {
+        val zoneId = ZoneId.of("Europe/Bucharest")
+        val anchor = ZonedDateTime.of(2026, 9, 1, 9, 0, 0, 0, zoneId).toInstant().toEpochMilli()
+        val now = ZonedDateTime.of(2026, 9, 20, 12, 0, 0, 0, zoneId).toInstant().toEpochMilli()
+
+        assertEquals(now, nextClampedNotificationTimeMillis(anchor, now, zoneId))
+    }
+
+    @Test
+    fun `GIVEN candidate time passed and now is exactly at window end WHEN calculating THEN returns noon tomorrow`() {
+        val zoneId = ZoneId.of("Europe/Bucharest")
+        val anchor = ZonedDateTime.of(2026, 9, 1, 9, 0, 0, 0, zoneId).toInstant().toEpochMilli()
+        val now = ZonedDateTime.of(2026, 9, 20, 17, 0, 0, 0, zoneId).toInstant().toEpochMilli()
+        val expected = ZonedDateTime.of(2026, 9, 21, 12, 0, 0, 0, zoneId).toInstant().toEpochMilli()
+
+        assertEquals(expected, nextClampedNotificationTimeMillis(anchor, now, zoneId))
+    }
+
+    // endregion
+
+    private fun shownNotifications() =
+        shadowOf(testContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).allNotifications
+
+    @Test
+    fun `GIVEN tracking protection is disabled WHEN doWork runs THEN it reports why nothing was shown`() = runTest {
+        settings.shouldUseTrackingProtection = false
+
+        buildWorker().doWork()
+
+        val event = TrackingProtection.privacyReportNotificationNotSent.testGetValue()!!.single()
+        assertEquals(TRACKING_PROTECTION_DISABLED.telemetryId, event.extra?.get("reason"))
+    }
+
+    @Test
+    fun `GIVEN app notifications are disabled WHEN doWork runs THEN it reports the app-level opt-out`() = runTest {
+        settings.shouldUseTrackingProtection = true
+        shadowOf(testContext.getSystemService(NotificationManager::class.java) as NotificationManager)
+            .setNotificationsEnabled(false)
+
+        buildWorker().doWork()
+
+        val event = TrackingProtection.privacyReportNotificationNotSent.testGetValue()!!.single()
+        assertEquals(APP_NOTIFICATIONS_DISABLED.telemetryId, event.extra?.get("reason"))
+        assertEquals(0, fakeEngine.fetchTrackingEventsCallCount)
+    }
+
+    @Test
+    fun `GIVEN the notification channel is disabled WHEN doWork runs THEN it reports the channel-level opt-out`() =
+        runTest {
+            settings.shouldUseTrackingProtection = true
+            (testContext.getSystemService(NotificationManager::class.java) as NotificationManager)
+                .createNotificationChannel(
+                    NotificationChannel(
+                        PRIVACY_REPORT_NOTIFICATION_CHANNEL_ID,
+                        "Privacy report",
+                        NotificationManager.IMPORTANCE_NONE,
+                    )
+                )
+
+            buildWorker().doWork()
+
+            val event = TrackingProtection.privacyReportNotificationNotSent.testGetValue()!!.single()
+            assertEquals(CHANNEL_DISABLED.telemetryId, event.extra?.get("reason"))
+            assertEquals(0, fakeEngine.fetchTrackingEventsCallCount)
+        }
+
+    @Test
+    fun `GIVEN nothing blocks the notification WHEN doWork runs THEN no not-sent event is recorded`() = runTest {
+        settings.shouldUseTrackingProtection = true
+        fakeEngine.trackingEventsResult = listOf(TrackingProtectionEvent(type = TRACKERS, count = 48, date = null))
+
+        val resultDeferred = async { buildWorker().doWork() }
+        testScheduler.runCurrent()
+        shadowOf(Looper.getMainLooper()).idle()
+        resultDeferred.await()
+
+        assertNull(TrackingProtection.privacyReportNotificationNotSent.testGetValue())
+    }
+
+    @Test
+    fun `WHEN scheduling THEN the schedule is reported`() = runTest {
+        settings.onboardingCompletedTimestamp = 1_000L
+
+        schedule(testContext, settings, FakeDateTimeProvider(currentTime = SCHEDULING_FAKE_NOW))
+
+        assertTrue(TrackingProtection.privacyReportNotificationWorkerScheduled.testGetValue()!!)
+        assertNotNull(TrackingProtection.privacyReportNotificationScheduledAt.testGetValue())
+    }
+
+    @Test
+    fun `GIVEN work is scheduled WHEN cancelled THEN the worker is reported as no longer scheduled`() = runTest {
+        settings.onboardingCompletedTimestamp = 1_000L
+        schedule(testContext, settings, FakeDateTimeProvider(currentTime = SCHEDULING_FAKE_NOW))
+
+        cancel(testContext)
+
+        assertFalse(TrackingProtection.privacyReportNotificationWorkerScheduled.testGetValue()!!)
+    }
+
+    @Test
+    fun `GIVEN the worker was never scheduled WHEN cancelled THEN it is reported as not scheduled`() = runTest {
+        cancel(testContext)
+
+        assertFalse(TrackingProtection.privacyReportNotificationWorkerScheduled.testGetValue()!!)
+    }
+
+    @Test
+    fun `GIVEN the notification is not sent WHEN doWork runs THEN the ping is submitted with the run`() = runTest {
+        settings.shouldUseTrackingProtection = false
+        TrackingProtection.privacyReportNotificationWorkerRunCount.add(4)
+        val job =
+            Pings.privacyReportNotification.testBeforeNextSubmit { reason ->
+                assertEquals(Pings.privacyReportNotificationReasonCodes.workerRun, reason)
+                assertNotNull(TrackingProtection.privacyReportNotificationWorkerRan.testGetValue())
+                assertNotNull(TrackingProtection.privacyReportNotificationNotSent.testGetValue())
+                assertEquals(5, TrackingProtection.privacyReportNotificationWorkerRunCount.testGetValue())
+            }
+
+        buildWorker().doWork()
+
+        job.join()
+        assertEquals(5, TrackingProtection.privacyReportNotificationWorkerRunCount.testGetValue())
+    }
+
+    @Test
+    fun `WHEN doWork runs THEN it records the run event`() = runTest {
+        settings.shouldUseTrackingProtection = false
+
+        buildWorker().doWork()
+
+        assertEquals(1, TrackingProtection.privacyReportNotificationWorkerRan.testGetValue()!!.size)
+    }
+
+    @Test
+    fun `GIVEN a notification is shown WHEN doWork runs THEN the ping carries both the run and the notification`() =
+        runTest {
+            settings.shouldUseTrackingProtection = true
+            fakeEngine.trackingEventsResult = listOf(TrackingProtectionEvent(type = TRACKERS, count = 48, date = null))
+            val job =
+                Pings.privacyReportNotification.testBeforeNextSubmit {
+                    assertNotNull(TrackingProtection.privacyReportNotificationWorkerRan.testGetValue())
+                    assertNotNull(TrackingProtection.privacyReportNotificationSent.testGetValue())
+                }
+
+            val resultDeferred = async { buildWorker().doWork() }
+            testScheduler.runCurrent()
+            shadowOf(Looper.getMainLooper()).idle()
+            resultDeferred.await()
+
+            job.join()
+        }
+}
+
+/**
+ * A [FakeEngine] whose tracking-events fetch is controllable and records what it was called with, so tests can assert
+ * on the requested date range without mocking [Engine].
+ */
+private class ControllableFakeEngine(private val delegate: Engine = FakeEngine()) : Engine by delegate {
+    var trackingEventsResult: List<TrackingProtectionEvent> = emptyList()
+    var lastDateFrom: Long? = null
+    var lastDateTo: Long? = null
+    var fetchTrackingEventsCallCount = 0
+        private set
+
+    override fun getTrackingProtectionEventsByDateRange(
+        dateFrom: Long,
+        dateTo: Long,
+        onSuccess: (List<TrackingProtectionEvent>) -> Unit,
+        onError: (Throwable) -> Unit,
+    ) {
+        fetchTrackingEventsCallCount++
+        lastDateFrom = dateFrom
+        lastDateTo = dateTo
+        onSuccess(trackingEventsResult)
+    }
+}

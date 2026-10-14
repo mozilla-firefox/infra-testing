@@ -33,7 +33,7 @@
 #  include "WMFDecoderModule.h"
 #endif
 #ifdef MOZ_WIDGET_ANDROID
-#  include "mozilla/java/MediaDrmProxyWrappers.h"
+#  include "mozilla/gfx/gfxVars.h"
 #endif
 
 namespace mozilla::dom {
@@ -161,9 +161,12 @@ MediaKeySystemStatus MediaKeySystemAccess::GetKeySystemStatus(
 #ifdef MOZ_WIDGET_ANDROID
     } else if (Preferences::GetBool("media.mediadrm-widevinecdm.visible",
                                     false)) {
-      bool supported =
-          mozilla::java::MediaDrmProxy::IsSchemeSupported(keySystem);
-      if (!supported) {
+      media::DrmSchemeSupport support = gfx::gfxVars::WidevineSupport();
+      if (support == media::DrmSchemeSupport::Unknown) {
+        aOutMessage = "Waiting for MediaDrm Widevine support"_ns;
+        return MediaKeySystemStatus::Cdm_not_installed;
+      }
+      if (support != media::DrmSchemeSupport::Supported) {
         aOutMessage = nsLiteralCString(
             "KeySystem or Minimum API level not met for Widevine EME");
         return MediaKeySystemStatus::Cdm_not_supported;
@@ -606,10 +609,7 @@ static Sequence<MediaKeySystemMediaCapability> GetSupportedCapabilities(
     const nsString& contentTypeString = capabilities.mContentType;
     // Let robustness be requested media capability's robustness member.
     const nsString& robustness = capabilities.mRobustness;
-    // Optional encryption scheme extension, see
-    // https://github.com/WICG/encrypted-media-encryption-scheme/blob/master/explainer.md
-    // This will only be exposed to JS if
-    // media.eme.encrypted-media-encryption-scheme.enabled is preffed on.
+    // Expose EME Encrypted Media Encryption Scheme to JS.
     const nsString encryptionScheme = capabilities.mEncryptionScheme;
     // If content type is the empty string, return null.
     if (contentTypeString.IsEmpty()) {

@@ -31,6 +31,10 @@ pub const MAX_BORDER_RESOLUTION: u32 = 2048;
 /// a list of per-dot information in the first place.
 pub const MAX_DASH_COUNT: u32 = 2048;
 
+/// Dotted edges at most this many device pixels wide are drawn with square
+/// dots.
+const MAX_SQUARE_DOT_WIDTH: f32 = 2.0;
+
 // TODO(gw): Perhaps there is a better way to store
 //           the border cache key than duplicating
 //           all the border structs with hashable
@@ -81,15 +85,12 @@ impl<'a> SceneBuilder<'a> {
         spatial_node_index: SpatialNodeIndex,
         clip_node_id: ClipNodeId,
     ) {
-        let mut border = *border;
-        ensure_no_corner_overlap(&mut border.radius, info.rect.size());
-
         self.add_primitive(
             spatial_node_index,
             clip_node_id,
             info,
             NormalBorderPrim {
-                border: border.into(),
+                border: (*border).into(),
                 widths: widths.to_au(),
             },
         );
@@ -291,10 +292,11 @@ fn write_dotted_corner_instances(
 
     if max_dot_count == 1 {
         let dot_diameter = lerp(widths.width, widths.height, 0.5);
+        let is_square = widths.width == widths.height && dot_diameter <= MAX_SQUARE_DOT_WIDTH;
         instances.push(BorderInstance {
             flags: base_instance.flags | ((BorderClipKind::Dot as i32) << 24),
             clip_params: [
-                widths.width / 2.0, widths.height / 2.0, 0.5 * dot_diameter, 0.,
+                widths.width / 2.0, widths.height / 2.0, 0.5 * dot_diameter, is_square as i32 as f32,
                 0., 0., 0., 0.,
             ],
             .. *base_instance
@@ -562,6 +564,26 @@ pub fn create_border_segments(
         widths.left - overlap.width / 2.0,
     );
 
+    // Where the corner segments' clips meet in the middle when the widths
+    // overlap. `min + non_overlapping.top` and `max - non_overlapping.bottom`
+    // are the same number mathematically (the two non-overlapping widths sum to
+    // the rect size) but not in f32, and a one-ULP disagreement is enough for
+    // the two adjoining segments to round their shared, non-antialiased device
+    // edge in opposite directions, leaving a 1px hole (bug 2059620). Evaluate
+    // each split once so both sides see identical bits.
+    let split_x = rect.min.x + non_overlapping_widths.left;
+    let split_y = rect.min.y + non_overlapping_widths.top;
+    let (clip_split_x_from_min, clip_split_x_from_max) = if overlap.width > 0.0 {
+        (split_x, split_x)
+    } else {
+        (split_x, rect.max.x - non_overlapping_widths.right)
+    };
+    let (clip_split_y_from_min, clip_split_y_from_max) = if overlap.height > 0.0 {
+        (split_y, split_y)
+    } else {
+        (split_y, rect.max.y - non_overlapping_widths.bottom)
+    };
+
     let inset_tl = LayoutSize::new(border.inset.left, border.inset.top);
     let inset_tr = LayoutSize::new(border.inset.right, border.inset.top);
     let inset_br = LayoutSize::new(border.inset.right, border.inset.bottom);
@@ -729,8 +751,8 @@ pub fn create_border_segments(
         LayoutRect::from_floats(
             rect.min.x,
             rect.min.y,
-            rect.max.x - non_overlapping_widths.right,
-            rect.max.y - non_overlapping_widths.bottom
+            clip_split_x_from_max,
+            clip_split_y_from_max,
         ),
         border.left,
         border.top,
@@ -756,10 +778,10 @@ pub fn create_border_segments(
             rect.min.y + local_size_tr.height,
         ),
         LayoutRect::from_floats(
-            rect.min.x + non_overlapping_widths.left,
+            clip_split_x_from_min,
             rect.min.y,
             rect.max.x,
-            rect.max.y - non_overlapping_widths.bottom,
+            clip_split_y_from_max,
         ),
         border.top,
         border.right,
@@ -785,8 +807,8 @@ pub fn create_border_segments(
             rect.min.y + rect.height(),
         ),
         LayoutRect::from_floats(
-            rect.min.x + non_overlapping_widths.left,
-            rect.min.y + non_overlapping_widths.top,
+            clip_split_x_from_min,
+            clip_split_y_from_min,
             rect.max.x,
             rect.max.y,
         ),
@@ -815,8 +837,8 @@ pub fn create_border_segments(
         ),
         LayoutRect::from_floats(
             rect.min.x,
-            rect.min.y + non_overlapping_widths.top,
-            rect.max.x - non_overlapping_widths.right,
+            clip_split_y_from_min,
+            clip_split_x_from_max,
             rect.max.y,
         ),
         border.bottom,
@@ -963,20 +985,29 @@ fn add_segment(
                     });
                 }
                 BorderStyle::Dotted => {
-                    let (x, y, r) = if is_vertical {
-                        (widths.width * 0.5,
-                         widths.width,
-                         widths.width * 0.5)
+                    let width = if is_vertical { widths.width } else { widths.height };
+                    let r = width * 0.5;
+
+                    // Like Gecko, draw dots no wider than two device pixels as
+                    // squares, placed on the pixel grid so that each one is
+                    // fully covered rather than an antialiased circle.
+                    let is_square = width <= MAX_SQUARE_DOT_WIDTH;
+                    let along = if is_square {
+                        (width * 0.5).round() + r
                     } else {
-                        (widths.height,
-                         widths.height * 0.5,
-                         widths.height * 0.5)
+                        width
+                    };
+
+                    let (x, y) = if is_vertical {
+                        (r, along)
+                    } else {
+                        (along, r)
                     };
 
                     instances.push(BorderInstance {
                         flags: base_flags | ((BorderClipKind::Dot as i32) << 24),
                         clip_params: [
-                            x, y, r, 0.0, 0.0, 0.0, 0.0, 0.0,
+                            x, y, r, is_square as i32 as f32, 0.0, 0.0, 0.0, 0.0,
                         ],
                         ..base_instance
                     });
@@ -1233,11 +1264,19 @@ pub fn build_border_instances(
     let color0 = side0.border_color(flip0);
     let color1 = side1.border_color(flip1);
 
-    let widths = (LayoutSize::from_au(cache_key.size) * scale).ceil();
-    let radius = (LayoutSize::from_au(cache_key.radius) * scale).ceil();
+    // The corner box is a whole number of device pixels (see `snap_radius` in
+    // `prim_store::borders`), so the geometry below is representable in the task
+    // exactly. Rounding it up here instead would draw the arc with a radius and
+    // thickness of up to a whole pixel more than was asked for. A hairline side
+    // still gets a texel of its own so it can't drop out of the cached arc
+    // entirely, but a side with no width keeps none.
+    let side_texels = |v: f32| if v > 0.0 { (v * scale.0).max(1.0) } else { 0.0 };
+    let size = LayoutSize::from_au(cache_key.size);
+    let widths = DeviceSize::new(side_texels(size.width), side_texels(size.height));
+    let radius = LayoutSize::from_au(cache_key.radius) * scale;
     let shape = f32::from_bits(cache_key.shape);
-    let shape_offset = (LayoutSize::from_au(cache_key.shape_offset) * scale).ceil();
-    let inset = (LayoutSize::from_au(cache_key.inset) * scale).ceil();
+    let shape_offset = LayoutSize::from_au(cache_key.shape_offset) * scale;
+    let inset = LayoutSize::from_au(cache_key.inset) * scale;
 
     let h_corner_outer = (LayoutPoint::from_au(cache_key.h_adjacent_corner_outer) * scale).round();
     let h_corner_radius = (LayoutSize::from_au(cache_key.h_adjacent_corner_radius) * scale).ceil();

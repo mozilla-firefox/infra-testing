@@ -572,10 +572,12 @@ ImgDrawResult nsImageRenderer::Draw(nsPresContext* aPresContext,
     case StyleImage::Tag::Image: {
       const auto fill = LayoutDeviceRect::FromAppUnits(
           aFill, aPresContext->AppUnitsPerDevPixel());
-      ctx->GetDrawTarget()->FillRect(
-          fill.ToUnknownRect(),
-          ColorPattern(ToDeviceColor(mImage->AsImage()->CalcColor(mForFrame))),
-          DrawOptions(/* aAlpha = */ aOpacity));
+      nscolor color = mImage->AsImage()->CalcColor(mForFrame);
+      if (NS_GET_A(color)) {
+        ctx->GetDrawTarget()->FillRect(fill.ToUnknownRect(),
+                                       ColorPattern(ToDeviceColor(color)),
+                                       DrawOptions(/* aAlpha = */ aOpacity));
+      }
       break;
     }
     case StyleImage::Tag::Gradient: {
@@ -688,10 +690,11 @@ ImgDrawResult nsImageRenderer::BuildWebRenderDisplayItems(
           LayoutDeviceRect::FromAppUnits(aFill, appUnitsPerDevPixel);
       auto stretchSize = wr::ToLayoutSize(destRect.Size());
 
+      bool rasterizedForDest = false;
       gfx::IntSize decodeSize =
           nsLayoutUtils::ComputeImageContainerDrawingParameters(
               mImageContainer, mForFrame, destRect, clipRect, aSc,
-              containerFlags, svgContext, region);
+              containerFlags, svgContext, region, &rasterizedForDest);
 
       RefPtr<image::WebRenderImageProvider> provider;
       drawResult = mImageContainer->GetImageProvider(
@@ -717,7 +720,8 @@ ImgDrawResult nsImageRenderer::BuildWebRenderDisplayItems(
         // The image is not repeating. Just push as a regular image.
         aBuilder.PushImage(dest, clip, !aItem->BackfaceIsHidden(), false,
                            rendering, key.value(), true,
-                           wr::ColorF{1.0f, 1.0f, 1.0f, aOpacity});
+                           wr::ColorF{1.0f, 1.0f, 1.0f, aOpacity}, false, false,
+                           rasterizedForDest);
       } else {
         nsPoint firstTilePos = nsLayoutUtils::GetBackgroundFirstTilePos(
             aDest.TopLeft(), aFill.TopLeft(), aRepeatSize);
@@ -754,13 +758,16 @@ ImgDrawResult nsImageRenderer::BuildWebRenderDisplayItems(
       break;
     }
     case StyleImage::Tag::Image: {
-      const int32_t appUnitsPerDevPixel = aPresContext->AppUnitsPerDevPixel();
-      auto fillRect = wr::ToLayoutRect(
-          LayoutDeviceRect::FromAppUnits(aFill, appUnitsPerDevPixel));
-      aBuilder.PushRect(
-          fillRect, fillRect, !aItem->BackfaceIsHidden(),
-          /* aFoceAntiAliasing = */ false, /* aIsCheckerboard = */ false,
-          wr::ToColorF(ToDeviceColor(mImage->AsImage()->CalcColor(mForFrame))));
+      nscolor color = mImage->AsImage()->CalcColor(mForFrame);
+      if (NS_GET_A(color)) {
+        const int32_t appUnitsPerDevPixel = aPresContext->AppUnitsPerDevPixel();
+        auto fillRect = wr::ToLayoutRect(
+            LayoutDeviceRect::FromAppUnits(aFill, appUnitsPerDevPixel));
+        aBuilder.PushRect(fillRect, fillRect, !aItem->BackfaceIsHidden(),
+                          /* aFoceAntiAliasing = */ false,
+                          /* aIsCheckerboard = */ false,
+                          wr::ToColorF(ToDeviceColor(color)));
+      }
       break;
     }
     default:

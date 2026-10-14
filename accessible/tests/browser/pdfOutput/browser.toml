@@ -8,11 +8,12 @@ support-files = [
 ]
 prefs = [
   "security.allow_eval_with_system_principal=true",
-  "print.experimental.skpdf=true",
   "accessibility.tagged_pdf_output.enabled=true",
 ]
 
 ["browser_a11yLifecycle.js"]
+
+["browser_artifacts.js"]
 
 ["browser_outline.js"]
 

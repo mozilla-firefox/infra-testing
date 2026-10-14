@@ -353,11 +353,13 @@ void HttpChannelChild::ProcessOnStartRequest(
   LOG(("HttpChannelChild::ProcessOnStartRequest [this=%p]\n", this));
   MOZ_ASSERT(OnSocketThread());
 
-  mAltDataInputStream = DeserializeIPCStream(aAltData.altDataInputStream());
+  nsCOMPtr<nsIInputStream> altDataInputStream =
+      DeserializeIPCStream(aAltData.altDataInputStream());
 
   mEventQ->RunOrEnqueue(MakeUnique<NeckoTargetChannelFunctionEvent>(
       this, [self = UnsafePtr<HttpChannelChild>(this), aResponseHead,
-             aUseResponseHead, aRequestHeaders, aArgs]() {
+             aUseResponseHead, aRequestHeaders, aArgs, altDataInputStream]() {
+        self->mAltDataInputStream = altDataInputStream;
         self->OnStartRequest(aResponseHead, aUseResponseHead, aRequestHeaders,
                              aArgs);
       }));
@@ -662,8 +664,10 @@ void HttpChannelChild::OnTransportAndData(const nsresult& aChannelStatus,
                                           const nsACString& aData) {
   LOG(("HttpChannelChild::OnTransportAndData [this=%p]\n", this));
 
-  if (!mCanceled && NS_SUCCEEDED(mStatus)) {
-    mStatus = aChannelStatus;
+  nsresult status = mStatus;
+  while (!mCanceled && NS_SUCCEEDED(status) &&
+         !mStatus.compareExchange(status, aChannelStatus)) {
+    status = mStatus;
   }
 
   if (mCanceled || NS_FAILED(mStatus)) {
@@ -2049,7 +2053,6 @@ NS_IMETHODIMP
 HttpChannelChild::OnRedirectVerifyCallback(nsresult aResult) {
   LOG(("HttpChannelChild::OnRedirectVerifyCallback [this=%p]\n", this));
   MOZ_ASSERT(NS_IsMainThread());
-  nsCOMPtr<nsIURI> redirectURI;
 
   DebugOnly<nsresult> rv = NS_OK;
 
@@ -2097,13 +2100,6 @@ HttpChannelChild::OnRedirectVerifyCallback(nsresult aResult) {
     // "http-on-modify-request" observers the chance to cancel before that.
     // base->CallOnModifyRequestObservers();
 
-    nsCOMPtr<nsIHttpChannelInternal> newHttpChannelInternal =
-        do_QueryInterface(mRedirectChannelChild);
-    if (newHttpChannelInternal) {
-      (void)newHttpChannelInternal->GetApiRedirectToURI(
-          getter_AddRefs(redirectURI));
-    }
-
     nsCOMPtr<nsIRequest> request = do_QueryInterface(mRedirectChannelChild);
     if (request) {
       request->GetLoadFlags(&loadFlags);
@@ -2125,7 +2121,7 @@ HttpChannelChild::OnRedirectVerifyCallback(nsresult aResult) {
   if (CanSend()) {
     SendRedirect2Verify(aResult, *headerTuples, sourceRequestBlockingReason,
                         targetLoadInfoForwarder, loadFlags, referrerInfo,
-                        redirectURI, corsPreflightArgs);
+                        corsPreflightArgs);
   }
 
   return NS_OK;
@@ -2512,9 +2508,6 @@ nsresult HttpChannelChild::ContinueAsyncOpen() {
   openArgs.uri() = mURI;
   openArgs.original() = mOriginalURI;
   openArgs.doc() = mDocumentURI;
-  if (mAPIRedirectTo) {
-    openArgs.apiRedirectTo() = mAPIRedirectTo->first();
-  }
   openArgs.loadFlags() = mLoadFlags;
   openArgs.requestHeaders() = mClientSetRequestHeaders;
   mRequestHead.Method(openArgs.requestMethod());
@@ -2538,10 +2531,10 @@ nsresult HttpChannelChild::ContinueAsyncOpen() {
 
   openArgs.preflightArgs() = optionalCorsPreflightArgs;
 
+  openArgs.uploadStreamIsStreaming() = LoadUploadStreamIsStreaming();
   openArgs.priority() = mPriority;
   openArgs.classOfService() = mClassOfService;
   openArgs.redirectionLimit() = mRedirectionLimit;
-  openArgs.allowSTS() = LoadAllowSTS();
   openArgs.thirdPartyFlags() = LoadThirdPartyFlags();
   openArgs.resumeAt() = mSendResumeAt;
   openArgs.startPos() = mStartPos;
@@ -2587,8 +2580,6 @@ nsresult HttpChannelChild::ContinueAsyncOpen() {
   openArgs.dispatchFetchEventEnd() = mDispatchFetchEventEnd;
   openArgs.handleFetchEventStart() = mHandleFetchEventStart;
   openArgs.handleFetchEventEnd() = mHandleFetchEventEnd;
-
-  openArgs.forceMainDocumentChannel() = LoadForceMainDocumentChannel();
 
   openArgs.navigationStartTimeStamp() = navigationStartTimeStamp;
   openArgs.earlyHintPreloaderId() = mEarlyHintPreloaderId;

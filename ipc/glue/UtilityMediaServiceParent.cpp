@@ -21,11 +21,6 @@
 #  include "mozilla/ipc/UtilityProcessImpl.h"
 #endif  // defined(XP_WIN) && defined(MOZ_SANDBOX)
 
-#ifdef MOZ_WIDGET_ANDROID
-#  include "mozilla/StaticPrefs_media.h"
-#  include "AndroidDecoderModule.h"
-#endif
-
 #include "mozilla/ipc/UtilityProcessChild.h"
 #include "mozilla/RemoteDecodeUtils.h"
 
@@ -102,7 +97,7 @@ void UtilityMediaServiceParent::WMFPreloadForSandbox() {
 
 #  if defined(NS_FREE_PERMANENT_DATA)
   // WMF Shutdown requires this or it will badly crash
-  UtilityProcessImpl::LoadLibraryOrCrash(L"ole32.dll");
+  UtilityProcessImpl::LoadLibraryOrCrash(L"user32.dll");
 #  endif  // defined(NS_FREE_PERMANENT_DATA)
 
   auto rv = wmf::MediaFoundationInitializer::HasInitialized();
@@ -119,12 +114,6 @@ void UtilityMediaServiceParent::Start(
 
   DebugOnly<bool> ok = std::move(aEndpoint).Bind(this);
   MOZ_ASSERT(ok);
-
-#ifdef MOZ_WIDGET_ANDROID
-  if (StaticPrefs::media_utility_android_media_codec_enabled()) {
-    AndroidDecoderModule::SetSupportedMimeTypes();
-  }
-#endif
 
   auto supported = media::MCSInfo::GetSupportFromFactory();
   (void)SendUpdateMediaCodecsSupported(GetRemoteMediaInFromKind(mKind),

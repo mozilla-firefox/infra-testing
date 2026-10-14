@@ -13,7 +13,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   ASRouter: "resource:///modules/asrouter/ASRouter.sys.mjs",
-  BackupService: "resource:///modules/backup/BackupService.sys.mjs",
+  BackupService: "moz-src:///browser/components/backup/BackupService.sys.mjs",
   EveryWindow: "resource:///modules/EveryWindow.sys.mjs",
   formAutofillStorage: "resource://autofill/FormAutofillStorage.sys.mjs",
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
@@ -199,9 +199,11 @@ export class ProfilesParent extends JSWindowActorParent {
         let historyCount = visitCount + cookieCount;
 
         await lazy.formAutofillStorage.initialize();
-        let autofillCount =
-          lazy.formAutofillStorage.addresses._data.length +
-          lazy.formAutofillStorage.creditCards?._data.length;
+        const [addresses, creditCards] = await Promise.all([
+          lazy.formAutofillStorage.addresses.getAll(),
+          lazy.formAutofillStorage.creditCards.getAll(),
+        ]);
+        let autofillCount = addresses.length + creditCards.length;
 
         return {
           profile: profileObj,

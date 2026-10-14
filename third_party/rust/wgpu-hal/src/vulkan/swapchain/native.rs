@@ -4,7 +4,7 @@ use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::any::Any;
 
 use ash::{khr, vk};
-use parking_lot::{Mutex, MutexGuard};
+use wgpu_sync::{Mutex, MutexGuard};
 
 use crate::vulkan::{
     conv, map_host_device_oom_and_lost_err,
@@ -12,7 +12,7 @@ use crate::vulkan::{
     swapchain::{
         Surface, SurfaceTextureMetadata, Swapchain, SwapchainSubmissionSemaphoreGuard, WindowHandle,
     },
-    DeviceShared, InstanceShared,
+    DeviceShared, InstanceShared, PnextChain,
 };
 
 pub(crate) struct NativeSurface {
@@ -23,6 +23,12 @@ pub(crate) struct NativeSurface {
     /// query; `None` for non-Win32 surfaces.
     #[cfg(windows)]
     hdr_source: Option<crate::auxil::dxgi::hdr::DxgiHdrSource>,
+    /// A caller-provided `pNext` chain to attach to the [`vk::SwapchainCreateInfoKHR`]
+    /// of the next swapchain created for this surface.
+    ///
+    /// Set only through
+    /// [`Surface::set_next_swapchain_create_chain()`](crate::vulkan::Surface::set_next_swapchain_create_chain).
+    next_swapchain_create_chain: Mutex<Option<PnextChain>>,
 }
 
 impl NativeSurface {
@@ -40,11 +46,19 @@ impl NativeSurface {
             instance: Arc::clone(&instance.shared),
             #[cfg(windows)]
             hdr_source: hwnd.map(|wh| crate::auxil::dxgi::hdr::DxgiHdrSource::new(wh.0)),
+            next_swapchain_create_chain: Mutex::new(None),
         }
     }
 
     pub fn as_raw(&self) -> vk::SurfaceKHR {
         self.raw
+    }
+
+    /// # Safety
+    ///
+    /// See [`Surface::set_next_swapchain_create_chain()`](crate::vulkan::Surface::set_next_swapchain_create_chain).
+    pub unsafe fn set_next_swapchain_create_chain(&self, chain: *mut core::ffi::c_void) {
+        *self.next_swapchain_create_chain.lock() = Some(PnextChain::new(chain));
     }
 }
 
@@ -233,6 +247,13 @@ impl Surface for NativeSurface {
             info = info.push_next(&mut format_list_info);
         }
 
+        let create_chain = self.next_swapchain_create_chain.lock().take();
+        if let Some(chain) = create_chain {
+            // SAFETY: The contract on `Surface::set_next_swapchain_create_chain()` keeps
+            // the chain valid and unaliased until this swapchain creation returns.
+            info.p_next = unsafe { chain.splice_into(info.p_next) };
+        }
+
         let result = {
             profiling::scope!("vkCreateSwapchainKHR");
             unsafe { functor.create_swapchain(&info, None) }
@@ -299,6 +320,7 @@ impl Surface for NativeSurface {
             next_acquire_index: 0,
             present_semaphores,
             next_present_time: None,
+            next_present_chain: None,
         }))
     }
 
@@ -365,12 +387,44 @@ pub(crate) struct NativeSwapchain {
     /// This must only be set if [`wgt::Features::VULKAN_GOOGLE_DISPLAY_TIMING`] is enabled, and
     /// so the VK_GOOGLE_display_timing extension is present.
     next_present_time: Option<vk::PresentTimeGOOGLE>,
+
+    /// A caller-provided `pNext` chain to attach to the [`vk::PresentInfoKHR`] of the next
+    /// call to [`present()`](crate::Queue::present()).
+    ///
+    /// Set only through
+    /// [`Surface::set_next_present_chain()`](crate::vulkan::Surface::set_next_present_chain).
+    next_present_chain: Option<PnextChain>,
 }
 
 impl Drop for NativeSwapchain {
     fn drop(&mut self) {
         unsafe {
             self.functor.destroy_swapchain(self.raw, None);
+        }
+    }
+}
+
+/// Destroy the swapchain semaphores that are no longer referenced by a live
+/// surface texture. A still-referenced semaphore is skipped, as the texture
+/// may still submit work using it.
+///
+/// The vectors are drained.
+fn destroy_swapchain_semaphores(
+    acquire_semaphores: &mut Vec<Arc<Mutex<SwapchainAcquireSemaphore>>>,
+    present_semaphores: &mut Vec<Arc<Mutex<SwapchainPresentSemaphores>>>,
+    device: &crate::vulkan::Device,
+) {
+    for semaphore in acquire_semaphores.drain(..) {
+        if let Some(mutex_removed) = Arc::into_inner(semaphore) {
+            let semaphore_removed = mutex_removed.into_inner();
+            unsafe { semaphore_removed.destroy(&device.shared.raw) };
+        }
+    }
+
+    for semaphore in present_semaphores.drain(..) {
+        if let Some(mutex_removed) = Arc::into_inner(semaphore) {
+            let semaphore_removed = mutex_removed.into_inner();
+            unsafe { semaphore_removed.destroy(&device.shared.raw) };
         }
     }
 }
@@ -395,24 +449,11 @@ impl Swapchain for NativeSwapchain {
             unsafe { device.shared.raw.destroy_fence(fence, None) }
         }
 
-        // We cannot take this by value, as the function returns `self`.
-        for semaphore in self.acquire_semaphores.drain(..) {
-            let arc_removed = Arc::into_inner(semaphore).expect(
-                "Trying to destroy a SwapchainAcquireSemaphore that is still in use by a SurfaceTexture",
-            );
-            let mutex_removed = arc_removed.into_inner();
-
-            unsafe { mutex_removed.destroy(&device.shared.raw) };
-        }
-
-        for semaphore in self.present_semaphores.drain(..) {
-            let arc_removed = Arc::into_inner(semaphore).expect(
-                "Trying to destroy a SwapchainPresentSemaphores that is still in use by a SurfaceTexture",
-            );
-            let mutex_removed = arc_removed.into_inner();
-
-            unsafe { mutex_removed.destroy(&device.shared.raw) };
-        }
+        destroy_swapchain_semaphores(
+            &mut self.acquire_semaphores,
+            &mut self.present_semaphores,
+            device,
+        );
     }
 
     unsafe fn acquire(
@@ -595,7 +636,7 @@ impl Swapchain for NativeSwapchain {
 
         let mut display_timing;
         let present_times;
-        let vk_info = if let Some(present_time) = self.next_present_time.take() {
+        let mut vk_info = if let Some(present_time) = self.next_present_time.take() {
             debug_assert!(
                 self.device
                     .features
@@ -609,6 +650,12 @@ impl Swapchain for NativeSwapchain {
         } else {
             vk_info
         };
+
+        if let Some(chain) = self.next_present_chain.take() {
+            // SAFETY: The contract on `Surface::set_next_present_chain()` keeps the chain
+            // valid and unaliased until this present completes.
+            vk_info.p_next = unsafe { chain.splice_into(vk_info.p_next) };
+        }
 
         let suboptimal = {
             profiling::scope!("vkQueuePresentKHR");
@@ -661,6 +708,13 @@ impl NativeSwapchain {
                 features
             );
         }
+    }
+
+    /// # Safety
+    ///
+    /// See [`Surface::set_next_present_chain()`](crate::vulkan::Surface::set_next_present_chain).
+    pub unsafe fn set_next_present_chain(&mut self, chain: *mut core::ffi::c_void) {
+        self.next_present_chain = Some(PnextChain::new(chain));
     }
 
     /// Mark the current frame finished, advancing to the next acquire semaphore.

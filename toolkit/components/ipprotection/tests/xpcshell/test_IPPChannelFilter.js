@@ -4,7 +4,7 @@
 
 "use strict";
 
-const { IPPChannelFilter, IPPMode } = ChromeUtils.importESModule(
+const { IPPChannelFilter } = ChromeUtils.importESModule(
   "moz-src:///toolkit/components/ipprotection/IPPChannelFilter.sys.mjs"
 );
 
@@ -815,7 +815,7 @@ add_task(async function test_shouldProxy_system_principal() {
 });
 
 add_task(async function test_shouldProxy_ipp_exception() {
-  IPPExceptionsManager.init();
+  IPPSiteRuleManager.init();
 
   const filter = IPPChannelFilter.create();
   filter.proxyInfo = {};
@@ -831,7 +831,7 @@ add_task(async function test_shouldProxy_ipp_exception() {
       {}
     );
 
-  IPPExceptionsManager.addExclusion(excludedPrincipal);
+  IPPPermissionRules.setRule(excludedPrincipal, IPPPrincipalRules.EXCLUDED);
 
   // Channel with an excluded loadingPrincipal should not be proxied.
   const excludedChannel = NetUtil.newChannel({
@@ -890,7 +890,7 @@ add_task(async function test_shouldProxy_ipp_exception() {
   );
 
   // After removing the exclusion, the channel should be proxied again.
-  IPPExceptionsManager.removeExclusion(excludedPrincipal);
+  IPPPermissionRules.setRule(excludedPrincipal, IPPPrincipalRules.DEFAULT);
 
   const afterRemovalChannel = NetUtil.newChannel({
     uri: "http://cdn.example.com/file.bin",
@@ -902,13 +902,12 @@ add_task(async function test_shouldProxy_ipp_exception() {
     filter.shouldProxy(afterRemovalChannel),
     "Channel should be proxied after removing the exclusion"
   );
-  IPPExceptionsManager.uninit();
+  IPPSiteRuleManager.uninit();
   Services.perms.removeByType("ipp-vpn");
 });
 
 add_task(async function test_shouldProxy() {
   const INCLUSION_PREF = "browser.ipProtection.inclusion.match_patterns";
-  const MODE_PREF = "browser.ipProtection.mode";
   const GUARDIAN_PREF = "browser.ipProtection.guardian.endpoint";
 
   // Excluded origins are derived from the excluded-URL prefs; point one at
@@ -920,9 +919,10 @@ add_task(async function test_shouldProxy() {
 
   // For cases 1-4 we want to test mode/inclusion/exclusion logic, not the
   // pre-init bypass, so give every filter a truthy proxyInfo.
-  const makeFilter = () => {
+  const makeFilter = (mode = IPPMode.MODE_FULL) => {
     const f = IPPChannelFilter.create();
     f.proxyInfo = {};
+    f.mode = mode;
     return f;
   };
 
@@ -953,12 +953,12 @@ add_task(async function test_shouldProxy() {
   Services.prefs.clearUserPref(INCLUSION_PREF);
 
   // 4. MODE_INCLUSION: non-included URL is not proxied
-  Services.prefs.setIntPref(MODE_PREF, IPPMode.MODE_INCLUSION);
   Assert.ok(
-    !makeFilter().shouldProxy(makeChannel("http://example.com/")),
+    !makeFilter(IPPMode.MODE_INCLUSION).shouldProxy(
+      makeChannel("http://example.com/")
+    ),
     "MODE_INCLUSION: non-included URL should not be proxied"
   );
-  Services.prefs.clearUserPref(MODE_PREF);
 
   // 5. Uninitialized filter + system-principal channel → not proxied
   Assert.ok(

@@ -80,7 +80,7 @@ void BaseLocalIter::settle() {
       case MIRType::Double:
       case MIRType::Float32:
       case MIRType::WasmAnyRef:
-#ifdef ENABLE_WASM_SIMD
+#ifdef ENABLE_JIT_SIMD
       case MIRType::Simd128:
 #endif
         if (argsIter_->argInRegister()) {
@@ -110,7 +110,7 @@ void BaseLocalIter::settle() {
       case ValType::I64:
       case ValType::F32:
       case ValType::F64:
-#ifdef ENABLE_WASM_SIMD
+#ifdef ENABLE_JIT_SIMD
       case ValType::V128:
 #endif
       case ValType::Ref:
@@ -139,17 +139,22 @@ void BaseLocalIter::operator++(int) {
 //
 // Stack map methods.
 
+bool BaseCompiler::checkStackHeight() {
+  if (MOZ_UNLIKELY(!fr.checkStackHeight())) {
+    return decoder_.fail(decoder_.beginOffset(), "stack frame is too large");
+  }
+  return true;
+}
+
 bool BaseCompiler::createStackMap(Maybe<Trap> reason) {
-  const ExitStubMapVector noExtras;
-  StackMap* stackMap;
-  return stackMapGenerator_.createStackMap(reason, noExtras,
-                                           HasDebugFrameWithLiveRefs::No, stk_,
-                                           &stackMap) &&
-         (!stackMap || stackMaps_->add(masm.currentOffset(), stackMap));
+  return createStackMap(reason, HasDebugFrameWithLiveRefs::No);
 }
 
 bool BaseCompiler::createStackMap(Maybe<Trap> reason,
                                   CodeOffset assemblerOffset) {
+  if (!checkStackHeight()) {
+    return false;
+  }
   const ExitStubMapVector noExtras;
   StackMap* stackMap;
   return stackMapGenerator_.createStackMap(reason, noExtras,
@@ -160,11 +165,24 @@ bool BaseCompiler::createStackMap(Maybe<Trap> reason,
 
 bool BaseCompiler::createStackMap(
     Maybe<Trap> reason, HasDebugFrameWithLiveRefs debugFrameWithLiveRefs) {
+  if (!checkStackHeight()) {
+    return false;
+  }
   const ExitStubMapVector noExtras;
   StackMap* stackMap;
   return stackMapGenerator_.createStackMap(
              reason, noExtras, debugFrameWithLiveRefs, stk_, &stackMap) &&
          (!stackMap || stackMaps_->add(masm.currentOffset(), stackMap));
+}
+
+bool BaseCompiler::createStackMap(
+    Maybe<Trap> reason, FaultingCodeRange insnRange,
+    HasDebugFrameWithLiveRefs debugFrameWithLiveRefs) {
+  const ExitStubMapVector noExtras;
+  StackMap* stackMap;
+  return stackMapGenerator_.createStackMap(
+             reason, noExtras, debugFrameWithLiveRefs, stk_, &stackMap) &&
+         (!stackMap || stackMaps_->add(insnRange.resumeOffset(), stackMap));
 }
 
 bool BaseCompiler::createDebugOnlyStackMapForNonResumingTrap(StackMap** result,
@@ -174,9 +192,15 @@ bool BaseCompiler::createDebugOnlyStackMapForNonResumingTrap(StackMap** result,
   MOZ_ASSERT(!TrapMightResume(t1));
   MOZ_ASSERT_IF(t2 != Trap::Limit, !TrapMightResume(t2));
 
+  // Ensure `*result` is always defined.
+  *result = nullptr;
+
   if (MOZ_LIKELY(!compilerEnv_.debugEnabled())) {
-    *result = nullptr;
     return true;
+  }
+
+  if (!checkStackHeight()) {
+    return false;
   }
 
   // We can use either `t1` or `t2` (when valid) here, since ::createStackMap
@@ -294,113 +318,131 @@ bool StackMapGenerator::createStackMap(
     }
   }
 
-  // Scan the operand stack, marking pointers in the just-added new
-  // section.
   MOZ_ASSERT_IF(framePushedAtEntryToBody.isNothing(), stk.empty());
   MOZ_ASSERT_IF(framePushedExcludingArgs.isNothing(), stk.empty());
 
-  // In this loop, we tolerate roots in registers only in the case where we
-  // definitely won't resume execution after the instruction with which this
-  // stackmap is associated.  That means the stackmap can't be for a call; it
-  // must be for a definitely-non-resumable trap.
-  bool allowRefsInRegs =
-      // the stackmap isn't for a call
-      reason.isSome() &&
-      // (implied: the stackmap is for trap) which is not resumable
-      !TrapMightResume(reason.value());
+  // Decide what to do about values in registers, per the following:
+  //
+  // `reason` for making           Ref in            NonRef in
+  // a StackMap:                   Reg allowed?      Reg allowed?
+  //
+  // Nothing (call)                No [1][2]         No [2]
+  // Some(trap), might resume      No [3]            Yes
+  // Some(trap), won't resume      Yes               Yes
+  //
+  // [1] because a call will resume, so refs must be in memory
+  // [2] because a call trashes all regs, so all values must be in memory
+  // [3] because this trap might resume, so refs must be in memory
+  //
+  // [1] and [3] are absolute correctness requirements.  If we don't enforce
+  // them here, GC will fail.
+  //
+  // If [2] doesn't hold, there's a bug somewhere in the baseline compiler, in
+  // that all registers holding a live value need to be flushed to memory before
+  // a call.  This doesn't affect stackmap construction, but it's easy to
+  // check/enforce at this point, and so we do.
 
+  // Default settings are for a stackmap associated with a call.
+  bool allowRegRef = false;
+  bool allowRegNonRef = false;
+  if (reason.isSome()) {
+    // Stackmap is for a trap
+    if (TrapMightResume(reason.value())) {
+      allowRegRef = false;
+      allowRegNonRef = true;
+    } else {
+      allowRegRef = true;
+      allowRegNonRef = true;
+    }
+  }
+
+  // Scan the operand stack, note refs in memory, and check everything we
+  // reasonably can.
   for (const Stk& v : stk) {
-    // If refs in regs aren't allowed, hard assert that we don't have them.
-    // Failure of this assertion is serious and should be investigated.
-    if (MOZ_LIKELY(!allowRefsInRegs)) {
-      MOZ_RELEASE_ASSERT(v.kind() != Stk::RegisterRef);
-    }
-
-    // Now filter out everything except refs in memory.  If refs in regs are
-    // allowable then we will ignore them; that's OK because we have established
-    // above that we won't be resuming after the associated trap is handled
-    // (refs in regs are never allowed for stackmaps associated with calls).
-
-#ifndef DEBUG
-    // Ignore everything except refs in memory.
-    if (v.kind() != Stk::MemRef) {
-      continue;
-    }
-
-#else
-    // The same; ignore everything except refs in memory.  However, take the
-    // opportunity to check everything we reasonably can about operand stack
-    // elements.
     switch (v.kind()) {
-      case Stk::MemI32:
-      case Stk::MemI64:
-      case Stk::MemF32:
-      case Stk::MemF64:
+      // These are neither refs nor register-resident, and there's nothing we
+      // can check.  Hence, uninteresting.
       case Stk::ConstI32:
       case Stk::ConstI64:
       case Stk::ConstF32:
       case Stk::ConstF64:
-#  ifdef ENABLE_WASM_SIMD
-      case Stk::MemV128:
+#ifdef ENABLE_JIT_SIMD
       case Stk::ConstV128:
-#  endif
-        // All of these have uninteresting type.
-        continue;
+#endif
       case Stk::LocalI32:
       case Stk::LocalI64:
       case Stk::LocalF32:
       case Stk::LocalF64:
-#  ifdef ENABLE_WASM_SIMD
+#ifdef ENABLE_JIT_SIMD
       case Stk::LocalV128:
-#  endif
-        // These also have uninteresting type.  Check that they live in the
-        // section of stack set up by beginFunction().  The unguarded use of
-        // |value()| here is safe due to the assertion above this loop.
-        MOZ_ASSERT(v.offs() <= framePushedAtEntryToBody.value());
+#endif
         continue;
+
+      // It would be nice to be able to assert that these live in the section
+      // of stack set up by beginFunction(), that is, `v.offs() <=
+      // framePushedAtEntryToBody.value()`.  But that's only true for
+      // `Stk::Mem*` entries carrying incoming parameters to the function.
+      // It's not true for `Stk::Mem*` entries resulting from general spilling,
+      // a.k.a. calls to `sync()`.  See bug 2072424.
+      case Stk::MemI32:
+      case Stk::MemI64:
+      case Stk::MemF32:
+      case Stk::MemF64:
+#ifdef ENABLE_JIT_SIMD
+      case Stk::MemV128:
+#endif
+        continue;
+
+      // These are register-resident, but aren't refs.  Check condition [2].
       case Stk::RegisterI32:
       case Stk::RegisterI64:
       case Stk::RegisterF32:
       case Stk::RegisterF64:
-#  ifdef ENABLE_WASM_SIMD
+#ifdef ENABLE_JIT_SIMD
       case Stk::RegisterV128:
-#  endif
-        // These also have uninteresting type, but more to the point: all
-        // registers holding live values should have been flushed to the
-        // machine stack immediately prior to the instruction to which this
-        // stackmap pertains.  So these can't happen.
-        MOZ_CRASH("createStackMap: operand stack has Register-non-Ref");
+#endif
+        if (allowRegNonRef) {
+          // Ignore
+          continue;
+        }
+        MOZ_CRASH("createStackMap: operand stack has a non-Ref in a register");
+
+      case Stk::RegisterRef:
+        // This is a ref in a register.  Check condition [3].
+        if (allowRegRef) {
+          // Ignore
+          continue;
+        }
+        MOZ_CRASH("createStackMap: operand stack has a Ref in a register");
+
       case Stk::MemRef:
         // This is the only case we care about.  We'll handle it after the
         // switch.
         break;
+
       case Stk::LocalRef:
-        // We need the stackmap to mention this pointer, but it should
-        // already be in the machineStackTracker section created by
-        // beginFunction().
+        // We need the stackmap to mention this pointer, but it should already
+        // be in the machineStackTracker section created by beginFunction().
         MOZ_ASSERT(v.offs() <= framePushedAtEntryToBody.value());
         continue;
+
       case Stk::ConstRef:
         // This can currently only be a null pointer.
         MOZ_ASSERT(v.refval() == 0);
         continue;
-      case Stk::RegisterRef:
-        // This assertion holds because of the release-assertion at the top of
-        // the loop.
-        MOZ_RELEASE_ASSERT(allowRefsInRegs);
-        // The associated instruction isn't resumable, so we tolerate the
-        // register.
-        continue;
+
       default:
         MOZ_CRASH("createStackMap: unknown operand stack element");
     }
-#endif
+
+    // The above switch should have continue'd the loop for all other kinds.
+    MOZ_RELEASE_ASSERT(v.kind() == Stk::MemRef);
 
     // v.offs() holds masm.framePushed() at the point immediately after it
     // was pushed on the stack.  Since it's still on the stack,
     // masm.framePushed() can't be less.
-    MOZ_ASSERT(v.kind() == Stk::MemRef);
     MOZ_ASSERT(v.offs() <= framePushedExcludingArgs.value());
+
     uint32_t offsFromMapLowest = framePushedExcludingArgs.value() - v.offs();
     MOZ_ASSERT(0 == offsFromMapLowest % sizeof(void*));
     augmentedMst.setGCPointer(offsFromMapLowest / sizeof(void*));
@@ -535,14 +577,19 @@ void BaseStackFrame::zeroLocals(BaseRegAlloc* ra) {
     return;
   }
 
-  // For other cases, it's best to have a zero in a register.
+  // For other cases, it's best to have a zero in a register. ARM64 stores an
+  // immediate zero from its zero register.
   //
   // One can do more here with SIMD registers (store 16 bytes at a time) or
   // with instructions like STRD on ARM (store 8 bytes at a time), but that's
   // for another day.
 
+#ifdef JS_CODEGEN_ARM64
+  ImmWord zero(0);
+#else
   RegI32 zero = ra->needI32();
   masm.mov(ImmWord(0), zero);
+#endif
 
   // For the general case we want to have a loop body of UNROLL_LIMIT stores
   // and then a tail of less than UNROLL_LIMIT stores.  When initWords is less
@@ -558,7 +605,9 @@ void BaseStackFrame::zeroLocals(BaseRegAlloc* ra) {
     for (uint32_t i = low; i < high; i += wordSize) {
       masm.storePtr(zero, Address(sp_, localOffset(i + wordSize)));
     }
+#ifndef JS_CODEGEN_ARM64
     ra->freeI32(zero);
+#endif
     return;
   }
 
@@ -591,7 +640,9 @@ void BaseStackFrame::zeroLocals(BaseRegAlloc* ra) {
 
   ra->freeI32(p);
   ra->freeI32(lim);
+#ifndef JS_CODEGEN_ARM64
   ra->freeI32(zero);
+#endif
 }
 
 }  // namespace wasm

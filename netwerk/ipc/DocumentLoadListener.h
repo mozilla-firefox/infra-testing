@@ -9,6 +9,8 @@
 #include "mozilla/MozPromise.h"
 #include "mozilla/Variant.h"
 #include "mozilla/WeakPtr.h"
+#include "mozilla/dom/PrefetchMatchWaiter.h"
+#include "mozilla/dom/RemoteType.h"
 #include "mozilla/dom/SessionHistoryEntry.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/net/NeckoCommon.h"
@@ -410,13 +412,21 @@ class DocumentLoadListener : public nsIInterfaceRequestor,
   // is being performed in. For toplevel loads, this will return `nullptr`.
   dom::WindowGlobalParent* GetParentWindowContext() const;
 
-  // Checks for a completed speculation rules prefetch record matching aURI.
-  // If found, copies the prefetch's cookies into the destination partition
-  // and marks the navigation timing as activated from a prefetch.
-  // Only called for document (navigational) loads.
+  // Looks for a speculation rules prefetch of aURI issued by the document
+  // currently in the browsing context. Activates synchronously if a
+  // completed prefetch matches. If one is still in flight, returns a promise
+  // for AsyncOpenAfterPrefetchWait; otherwise null.
   // Spec:
   // https://wicg.github.io/nav-speculation/prefetch.html#create-navigation-params-from-a-prefetch-record
-  void TryActivateFromPrefetch(nsIURI* aURI);
+  RefPtr<dom::PrefetchMatchPromise> TryActivateFromPrefetch(nsIURI* aURI);
+  // Copies the prefetch's cookies into the destination partition and marks
+  // the navigation timing as activated from a prefetch.
+  void ActivateFromPrefetch(dom::PrefetchRecordParent* aRec);
+  // Waits on aPromise (from TryActivateFromPrefetch), activates from the
+  // resolved record if any, then calls AsyncOpen on mChannel. Does nothing if
+  // the load was cancelled while waiting.
+  void AsyncOpenAfterPrefetchWait(dom::PrefetchMatchPromise* aPromise,
+                                  nsIStreamListener* aListener);
 
   void AddURIVisit(nsIChannel* aChannel, uint32_t aLoadFlags);
   bool HasCrossOriginOpenerPolicyMismatch() const;
@@ -438,7 +448,7 @@ class DocumentLoadListener : public nsIInterfaceRequestor,
   // created a fixed URI to attempt loading instead.
   // If successful, this calls DisconnectListeners to completely finish
   // the current load, and calls BrowsingContext::LoadURI to start the new one.
-  bool MaybeHandleLoadErrorWithURIFixup(nsresult aStatus);
+  MOZ_CAN_RUN_SCRIPT bool MaybeHandleLoadErrorWithURIFixup(nsresult aStatus);
 
   // This defines a variant that describes all the attribute setters (and their
   // parameters) from nsIParentChannel
@@ -608,7 +618,7 @@ class DocumentLoadListener : public nsIInterfaceRequestor,
   // channel to the final document.
   RefPtr<dom::ParentProcessChannelHandle> mParentProcessChannelHandle;
 
-  Maybe<nsCString> mRemoteTypeOverride;
+  Maybe<dom::RemoteType> mRemoteTypeOverride;
 
   // The ContentParent which this channel is currently connected to, or nullptr
   // if connected to the parent process.

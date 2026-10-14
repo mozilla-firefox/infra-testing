@@ -97,6 +97,68 @@ class LitTestHelpers {
     await this.renderTarget.firstElementChild.updateComplete;
     return this.renderTarget;
   }
+
+  /**
+   * Verifies that arrow keys pressed with a modifier are ignored, then that a
+   * bare ArrowDown still navigates so the first checks cannot pass trivially.
+   *
+   * Keydown events are dispatched directly instead of synthesized. Browser
+   * shortcuts such as Alt+Left (Back) fire on keypress, which a dispatched
+   * keydown does not produce, so no combination navigates the test harness.
+   *
+   * @param {object} options
+   * @param {Element} options.target - Focused element to dispatch keydowns at.
+   *     Every arrow direction must navigate away from it when unmodified.
+   * @param {Function} options.getState - Returns the state arrow navigation
+   *     changes, e.g. the selected value.
+   * @param {Function} [options.afterKeydown] - Awaited after each keydown so
+   *     the element can update. Defaults to waiting for an animation frame.
+   */
+  async verifyModifiedArrowKeysIgnored({
+    target,
+    getState,
+    afterKeydown = () => new Promise(r => requestAnimationFrame(r)),
+  }) {
+    const sendKeydown = async (key, modifiers = {}) => {
+      let notPrevented = target.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key,
+          ...modifiers,
+          bubbles: true,
+          composed: true,
+          cancelable: true,
+        })
+      );
+      await afterKeydown();
+      return notPrevented;
+    };
+
+    let initialState = getState();
+    let keys = ["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight"];
+    let modifierSets = [
+      { altKey: true },
+      { ctrlKey: true },
+      { metaKey: true },
+      { shiftKey: true },
+      { altKey: true, metaKey: true },
+    ];
+    for (let key of keys) {
+      for (let modifiers of modifierSets) {
+        let description = `${key} with ${Object.keys(modifiers).join("+")}`;
+        ok(
+          await sendKeydown(key, modifiers),
+          `${description} is not default prevented.`
+        );
+        is(getState(), initialState, `${description} does not navigate.`);
+      }
+    }
+
+    ok(
+      !(await sendKeydown("ArrowDown")),
+      "Bare ArrowDown is default prevented."
+    );
+    isnot(getState(), initialState, "Bare ArrowDown still navigates.");
+  }
 }
 
 /**
@@ -170,6 +232,7 @@ class InputTestHelpers extends LitTestHelpers {
     await this.verifyLabel(elementName);
     await this.verifyAriaLabel(elementName);
     await this.verifyAriaDescription(elementName);
+    await this.verifyTitle(elementName);
     await this.verifyName(elementName);
     await this.verifyValue(elementName);
     await this.verifyIcon(elementName);
@@ -858,6 +921,35 @@ class InputTestHelpers extends LitTestHelpers {
   }
 
   /**
+   * Verifies that the title attribute is applied to the input element.
+   *
+   * @param {string} selector - HTML tag of the element under test.
+   */
+  async verifyTitle(selector) {
+    const TITLE = "More information about this control";
+    let titleTemplate = this.templateFn({
+      value: "default",
+      title: TITLE,
+    });
+    let renderTarget = await this.renderTemplate(titleTemplate);
+    let input = renderTarget.querySelector(selector);
+
+    ok(!input.hasAttribute("title"), "title is not set on the outer element.");
+    is(
+      input.inputEl.getAttribute("title"),
+      TITLE,
+      "The title is set on the input element."
+    );
+
+    input.title = null;
+    await input.updateComplete;
+    ok(
+      !input.inputEl.hasAttribute("title"),
+      "title is cleared from the input element when unset."
+    );
+  }
+
+  /**
    * Verifies the behavior of nested elements for inputs that support nesting.
    *
    * @param {string} selector - HTML tag of the element under test.
@@ -1118,5 +1210,47 @@ class InputTestHelpers extends LitTestHelpers {
       "Input has a readonly property set to false again."
     );
     ok(!firstInput.inputEl.readOnly, "Readonly state is propagated.");
+  }
+
+  /**
+   * Verifies it is possible to set the required attribute on the input
+   * element and that the indicator is shown next to the label.
+   *
+   * @param {string} selector - HTML tag of the element under test.
+   */
+  async verifyRequired(selector) {
+    let requiredTemplate = this.templateFn({ label: "Label" });
+    let renderTarget = await this.renderTemplate(requiredTemplate);
+    let firstInput = renderTarget.querySelector(selector);
+
+    ok(!firstInput.required, "Input is not required by default.");
+    ok(
+      !firstInput.inputEl.required,
+      "Inner element is not required by default either."
+    );
+    ok(
+      !firstInput.labelEl.querySelector(".required-indicator"),
+      "No required indicator is present."
+    );
+
+    firstInput.required = true;
+    await firstInput.updateComplete;
+
+    ok(firstInput.required, "Input is required.");
+    ok(firstInput.inputEl.required, "Required state is propagated.");
+    ok(
+      firstInput.labelEl.querySelector(".required-indicator"),
+      "Required indicator is shown next to the label."
+    );
+
+    firstInput.required = false;
+    await firstInput.updateComplete;
+
+    ok(!firstInput.required, "Input is not required again.");
+    ok(!firstInput.inputEl.required, "Required state is propagated.");
+    ok(
+      !firstInput.labelEl.querySelector(".required-indicator"),
+      "Required indicator is removed."
+    );
   }
 }

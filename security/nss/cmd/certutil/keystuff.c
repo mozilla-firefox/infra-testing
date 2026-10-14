@@ -469,22 +469,18 @@ static CurveNameTagPair nameTagPair[] = {
     { "curve25519", SEC_OID_CURVE25519 },
 };
 
+static CurveNameTagPair edNameTagPair[] = {
+    { "ed25519", SEC_OID_ED25519 },
+    /* with one entry, we could just hand check the
+     * curve name, but by using a table, we can
+     * add 448 support by just adding it to the table */
+};
+
 static SECKEYECParams *
-getECParams(const char *curve)
+buildECEDParams(const char *curve, SECOidTag curveOidTag)
 {
     SECKEYECParams *ecparams;
     SECOidData *oidData = NULL;
-    SECOidTag curveOidTag = SEC_OID_UNKNOWN; /* default */
-    int i, numCurves;
-
-    if (curve != NULL) {
-        numCurves = sizeof(nameTagPair) / sizeof(CurveNameTagPair);
-        for (i = 0; ((i < numCurves) && (curveOidTag == SEC_OID_UNKNOWN));
-             i++) {
-            if (PL_strcmp(curve, nameTagPair[i].curveName) == 0)
-                curveOidTag = nameTagPair[i].curveOidTag;
-        }
-    }
 
     /* Return NULL if curve name is not recognized */
     if ((curveOidTag == SEC_OID_UNKNOWN) ||
@@ -494,7 +490,9 @@ getECParams(const char *curve)
     }
 
     ecparams = SECITEM_AllocItem(NULL, NULL, (2 + oidData->oid.len));
-
+    if (ecparams == NULL) {
+        return NULL;
+    }
     /*
      * ecparams->data needs to contain the ASN encoding of an object ID (OID)
      * representing the named curve. The actual OID is in
@@ -507,6 +505,40 @@ getECParams(const char *curve)
     return ecparams;
 }
 
+static SECKEYECParams *
+getECParams(const char *curve)
+{
+    SECOidTag curveOidTag = SEC_OID_UNKNOWN; /* default */
+    int i, numCurves;
+
+    if (curve != NULL) {
+        numCurves = sizeof(nameTagPair) / sizeof(CurveNameTagPair);
+        for (i = 0; ((i < numCurves) && (curveOidTag == SEC_OID_UNKNOWN));
+             i++) {
+            if (PL_strcmp(curve, nameTagPair[i].curveName) == 0)
+                curveOidTag = nameTagPair[i].curveOidTag;
+        }
+    }
+    return buildECEDParams(curve, curveOidTag);
+}
+
+static SECKEYECParams *
+getEDParams(const char *curve)
+{
+    SECOidTag curveOidTag = SEC_OID_UNKNOWN; /* default */
+    int i, numCurves;
+
+    if (curve != NULL) {
+        numCurves = sizeof(edNameTagPair) / sizeof(CurveNameTagPair);
+        for (i = 0; ((i < numCurves) && (curveOidTag == SEC_OID_UNKNOWN));
+             i++) {
+            if (PL_strcmp(curve, edNameTagPair[i].curveName) == 0)
+                curveOidTag = edNameTagPair[i].curveOidTag;
+        }
+    }
+    return buildECEDParams(curve, curveOidTag);
+}
+
 SECKEYPrivateKey *
 CERTUTIL_GeneratePrivateKey(KeyType keytype, PK11SlotInfo *slot, int size,
                             int publicExponent, const char *noise,
@@ -517,6 +549,7 @@ CERTUTIL_GeneratePrivateKey(KeyType keytype, PK11SlotInfo *slot, int size,
     CK_MECHANISM_TYPE mechanism;
     PK11RSAGenParams rsaparams;
     SECKEYPQGParams *dsaparams = NULL;
+    CK_ULONG paramSet;
     void *params;
     SECKEYPrivateKey *privKey = NULL;
 
@@ -569,6 +602,63 @@ CERTUTIL_GeneratePrivateKey(KeyType keytype, PK11SlotInfo *slot, int size,
             if ((params = (void *)getECParams(pqgFile)) == NULL)
                 return NULL;
             break;
+        case edKey:
+            mechanism = CKM_EC_EDWARDS_KEY_PAIR_GEN;
+            if (pqgFile) {
+                /* For ED keys, PQGFile determines ED parameters */
+                if ((params = (void *)getEDParams(pqgFile)) == NULL) {
+                    return NULL;
+                }
+            } else {
+                if ((params = (void *)buildECEDParams("ed25519", SEC_OID_ED25519)) == NULL) {
+                    return NULL;
+                }
+            }
+            break;
+        case mldsaKey:
+            mechanism = CKM_ML_DSA_KEY_PAIR_GEN;
+            /* set paramset */
+            paramSet = 0;
+            if (pqgFile) {
+                if (PORT_Strcasecmp(pqgFile, "ML-DSA-44") == 0) {
+                    paramSet = CKP_ML_DSA_44;
+                } else if (PORT_Strcasecmp(pqgFile, "ML-DSA-65") == 0) {
+                    paramSet = CKP_ML_DSA_65;
+                } else if (PORT_Strcasecmp(pqgFile, "ML-DSA-87") == 0) {
+                    paramSet = CKP_ML_DSA_87;
+                } else {
+                    /* if we set pqgfile, it had better be right, don't
+                     * fall back to key size */
+                    return NULL;
+                }
+            } else
+                switch (size) {
+                    /* optionally use the size, either the actual size in bytes
+                     * or the short hand ('44', '65', '87') */
+                    case 44:
+                    case 2560:
+                        paramSet = CKP_ML_DSA_44;
+                        break;
+                    case 65:
+                    case 4032:
+                        paramSet = CKP_ML_DSA_65;
+                        break;
+                    case 87:
+                    case 4896:
+                        paramSet = CKP_ML_DSA_87;
+                        break;
+                    default:
+                        /* force a size to be specified somewhere */
+                        return NULL;
+                }
+            /* paranoia, shouldn't be able to happen logically. Code
+             * scanners will scream, but I like belt and suspenders */
+            if (paramSet == 0) {
+                return NULL;
+            }
+            params = &paramSet;
+            break;
+
         default:
             return NULL;
     }
@@ -586,6 +676,7 @@ CERTUTIL_GeneratePrivateKey(KeyType keytype, PK11SlotInfo *slot, int size,
                 CERTUTIL_DestroyParamsPQG(dsaparams);
             break;
         case ecKey:
+        case edKey:
             SECITEM_FreeItem((SECItem *)params, PR_TRUE);
             break;
         default: /* nothing to free */

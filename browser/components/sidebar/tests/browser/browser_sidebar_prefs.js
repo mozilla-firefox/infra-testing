@@ -245,6 +245,10 @@ add_task(async function test_flip_revamp_pref_with_panel() {
     set: [["sidebar.revamp", true]],
   });
 
+  await TestUtils.waitForCondition(
+    () => SidebarController.isOpen,
+    "Waiting for the panel to reopen."
+  );
   ok(SidebarController.isOpen, "panel still open after new");
 
   await SidebarController.hide();

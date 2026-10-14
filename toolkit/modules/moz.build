@@ -200,11 +200,11 @@ EXTRA_JS_MODULES += [
     "PrivateBrowsingUtils.sys.mjs",
     "ProcessType.sys.mjs",
     "ProfileAge.sys.mjs",
+    "ProfileKekPassword.sys.mjs",
     "Region.sys.mjs",
     "RemotePageAccessManager.sys.mjs",
     "ResetProfile.sys.mjs",
     "RustSharedRemoteSettingsService.sys.mjs",
-    "ScheduledTask.sys.mjs",
     "SelectionUtils.sys.mjs",
     "ServiceRequest.sys.mjs",
     "ShortcutUtils.sys.mjs",
@@ -268,8 +268,11 @@ if "Android" != CONFIG["OS_TARGET"]:
         "GMPInstallManager.sys.mjs",
         "GMPUtils.sys.mjs",
         "LightweightThemeConsumer.sys.mjs",
+        "ScheduledTask.sys.mjs",
     ]
-
+    TESTING_JS_MODULES += [
+        "tests/modules/SystemDelay.sys.mjs",
+    ]
     DIRS += [
         "launchonlogin",
         "subprocess",
@@ -291,7 +294,7 @@ for var in (
     "MOZ_APP_DISPLAYNAME",
     "MOZ_APP_VERSION",
     "MOZ_APP_VERSION_DISPLAY",
-    "MOZ_BACKGROUNDTASK_CLSID",
+    "MOZ_BACKGROUNDTASK_ACTIVATABLE_CLASS_ID",
     "MOZ_BING_API_CLIENTID",
     "MOZ_BING_API_KEY",
     "MOZ_GOOGLE_SAFEBROWSING_API_KEY",
@@ -341,6 +344,7 @@ for var in (
     "MOZ_UPDATE_AGENT",
     "MOZ_BITS_DOWNLOAD",
     "MOZ_DEBUG",
+    "MOZ_DIAGNOSTIC_ASSERT_ENABLED",
     "MOZ_ASAN",
     "MOZ_ASAN_REPORTER",
     "MOZ_TSAN",
@@ -360,7 +364,6 @@ for var in (
     "MOZ_SYSTEM_POLICIES",
     "MOZ_SELECTABLE_PROFILES",
     "USE_LIBZ_RS",
-    "MOZ_ANDROID_CONTENT_SERVICE_ISOLATED_PROCESS",
 ):
     DEFINES[f"{var}_BOOL"] = "true" if CONFIG[var] else "false"
 

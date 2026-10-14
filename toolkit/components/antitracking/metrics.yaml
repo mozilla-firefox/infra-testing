@@ -41,8 +41,6 @@ contentblocking:
       This scalar reports the value of the content blocking category pref
       (0 = "standard", 1 = "strict", 2 = "custom", 3 = some other value,
       this is not supported).
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar contentblocking.category.
     bugs:
       - https://bugzil.la/1529425
     data_reviews:
@@ -51,14 +49,11 @@ contentblocking:
       - privacy-team@mozilla.org
     expires: never
     unit: content blocking category
-    telemetry_mirror: CONTENTBLOCKING_CATEGORY
 
   cryptomining_blocking_enabled:
     type: boolean
     description: >
       True if cryptominer blocking is enabled globally at startup.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar contentblocking.cryptomining_blocking_enabled.
     bugs:
       - https://bugzil.la/1522919
     data_reviews:
@@ -66,14 +61,11 @@ contentblocking:
     notification_emails:
       - privacy-team@mozilla.org
     expires: never
-    telemetry_mirror: CONTENTBLOCKING_CRYPTOMINING_BLOCKING_ENABLED
 
   fingerprinting_blocking_enabled:
     type: boolean
     description: >
       True if fingerprinter blocking is enabled globally at startup.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar contentblocking.fingerprinting_blocking_enabled.
     bugs:
       - https://bugzil.la/1522919
     data_reviews:
@@ -81,14 +73,11 @@ contentblocking:
     notification_emails:
       - privacy-team@mozilla.org
     expires: never
-    telemetry_mirror: CONTENTBLOCKING_FINGERPRINTING_BLOCKING_ENABLED
 
   trackers_blocked_count:
     type: counter
     description: >
       A count of the number of tracking events blocked.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar contentblocking.trackers_blocked_count.
     bugs:
       - https://bugzil.la/1577030
       - https://bugzil.la/1610894
@@ -102,7 +91,6 @@ contentblocking:
     notification_emails:
       - privacy-team@mozilla.org
     expires: never
-    telemetry_mirror: CONTENTBLOCKING_TRACKERS_BLOCKED_COUNT
 
   canvas_fingerprinting_per_tab2:
     type: labeled_counter
@@ -117,7 +105,7 @@ contentblocking:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1847990
     notification_emails:
       - seceng-telemetry@mozilla.com
-    expires: 165
+    expires: 170
 
   canvas_fingerprinting_type_text_by_source_per_tab2:
     type: dual_labeled_counter
@@ -155,7 +143,7 @@ contentblocking:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1847990
     notification_emails:
       - seceng-telemetry@mozilla.com
-    expires: 165
+    expires: 170
 
   canvas_fingerprinting_type_alias_by_source_per_tab2:
     type: dual_labeled_counter
@@ -192,7 +180,7 @@ contentblocking:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1847990
     notification_emails:
       - seceng-telemetry@mozilla.com
-    expires: 165
+    expires: 170
 
   font_fingerprinting_per_tab:
     type: labeled_counter
@@ -211,7 +199,7 @@ contentblocking:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1946406
     notification_emails:
       - seceng-telemetry@mozilla.com
-    expires: 160
+    expires: 170
 
   storage_access_granted_count:
     type: labeled_counter
@@ -261,9 +249,6 @@ contentblocking:
     description: >
       The time remaining until expiration per storage access permissions, in
       days (one record per permission, not averaged).
-
-      This metric was generated to correspond to the Legacy Telemetry enumerated
-      histogram STORAGE_ACCESS_REMAINING_DAYS.
     range_min: 0
     range_max: 60
     bucket_count: 61
@@ -275,7 +260,6 @@ contentblocking:
     notification_emails:
       - privacy-team@mozilla.org
     expires: never
-    telemetry_mirror: STORAGE_ACCESS_REMAINING_DAYS
 
   query_stripping_count:
     type: labeled_counter
@@ -380,9 +364,6 @@ contentblocking:
       tracker is in base category and loaded under a known email webapp,
       'content_email_webapp' = The classified email tracker is in content
       category and loaded under a known email webapp.)
-
-      This metric was generated to correspond to the Legacy Telemetry
-      categorical histogram EMAIL_TRACKER_COUNT.
     labels:
       - base_normal
       - content_normal
@@ -390,13 +371,13 @@ contentblocking:
       - content_email_webapp
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1773701
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2061376
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1773701
     notification_emails:
       - tihuang@mozilla.com
       - seceng-telemetry@mozilla.com
     expires: never
-    telemetry_mirror: h#EMAIL_TRACKER_COUNT
 
   email_tracker_embedded_per_tab:
     type: labeled_custom_distribution
@@ -432,16 +413,12 @@ contentblocking:
       - tihuang@mozilla.com
       - seceng-telemetry@mozilla.com
     expires: never
-    telemetry_mirror: EMAIL_TRACKER_EMBEDDED_PER_TAB
 
   strip_on_share_params_removed:
     type: custom_distribution
     description: >
       The number of query parameters removed, if any, when strip on share is
       used
-
-      This metric was generated to correspond to the Legacy Telemetry linear
-      histogram STRIP_ON_SHARE_PARAMS_REMOVED.
     range_min: 1
     range_max: 100
     bucket_count: 50
@@ -449,21 +426,18 @@ contentblocking:
     unit: query parameters
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1833105
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2061367
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1833105
     notification_emails:
       - emz@mozilla.com
     expires: never
-    telemetry_mirror: STRIP_ON_SHARE_PARAMS_REMOVED
 
   strip_on_share_length_decrease:
     type: custom_distribution
     description: >
       The decrease in the length of the URL when strip on share is used, only if
       at least one parameter is stripped
-
-      This metric was generated to correspond to the Legacy Telemetry
-      exponential histogram STRIP_ON_SHARE_LENGTH_DECREASE.
     range_min: 1
     range_max: 1000
     bucket_count: 100
@@ -471,12 +445,12 @@ contentblocking:
     unit: characters
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1833105
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2061367
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1833105
     notification_emails:
       - emz@mozilla.com
     expires: never
-    telemetry_mirror: STRIP_ON_SHARE_LENGTH_DECREASE
 
   cookie_behavior:
     type: custom_distribution
@@ -498,15 +472,11 @@ contentblocking:
     notification_emails:
       - privacy-team@mozilla.org
     expires: never
-    telemetry_mirror: COOKIE_BEHAVIOR
 
   tracking_protection_enabled:
     type: labeled_counter
     description: >
       True if tracking protection is enabled globally at startup.
-
-      This metric was generated to correspond to the Legacy Telemetry boolean
-      histogram TRACKING_PROTECTION_ENABLED.
     labels:
       - "false"
       - "true"
@@ -517,16 +487,12 @@ contentblocking:
     notification_emails:
       - privacy-team@mozilla.org
     expires: never
-    telemetry_mirror: h#TRACKING_PROTECTION_ENABLED
 
   tracking_protection_pbm_disabled:
     type: labeled_counter
     description: >
       True if tracking protection in Private Browsing mode is disabled at
       startup.
-
-      This metric was generated to correspond to the Legacy Telemetry boolean
-      histogram TRACKING_PROTECTION_PBM_DISABLED.
     labels:
       - "false"
       - "true"
@@ -537,7 +503,6 @@ contentblocking:
     notification_emails:
       - privacy-team@mozilla.org
     expires: never
-    telemetry_mirror: h#TRACKING_PROTECTION_PBM_DISABLED
 
   tracking_protection_shield:
     type: custom_distribution
@@ -547,9 +512,6 @@ contentblocking:
       load, this is used as a baseline, 1 = shield crossed out because CB was
       disabled on this page by the user, 2 = shield shown because some content
       was blocked)
-
-      This metric was generated to correspond to the Legacy Telemetry enumerated
-      histogram TRACKING_PROTECTION_SHIELD.
     range_min: 0
     range_max: 4
     bucket_count: 5
@@ -563,7 +525,6 @@ contentblocking:
     notification_emails:
       - safebrowsing-telemetry@mozilla.org
     expires: never
-    telemetry_mirror: TRACKING_PROTECTION_SHIELD
 
   fingerprinters_blocked_count:
     type: labeled_counter
@@ -572,9 +533,6 @@ contentblocking:
       ('pageLoad' = There was a page load, 'blocked' = at least one
       fingerprinter was blocked, 'allowed' = at least one fingerprinter was
       detected and allowed.) Note, pageLoad is used as a baseline measurement.
-
-      This metric was generated to correspond to the Legacy Telemetry
-      categorical histogram FINGERPRINTERS_BLOCKED_COUNT.
     labels:
       - pageLoad
       - blocked
@@ -587,7 +545,6 @@ contentblocking:
       - privacy-team@mozilla.org
       - seceng-telemetry@mozilla.com
     expires: never
-    telemetry_mirror: h#FINGERPRINTERS_BLOCKED_COUNT
 
   cryptominers_blocked_count:
     type: labeled_counter

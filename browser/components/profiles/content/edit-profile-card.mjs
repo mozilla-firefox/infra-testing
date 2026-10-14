@@ -59,6 +59,8 @@ import "chrome://global/content/elements/moz-segmented-control.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://global/content/elements/moz-visual-picker.mjs";
 // eslint-disable-next-line import/no-unassigned-import
+import "chrome://global/content/elements/moz-fieldset.mjs";
+// eslint-disable-next-line import/no-unassigned-import
 import "chrome://browser/content/profiles/avatar.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://browser/content/profiles/profiles-theme-card.mjs";
@@ -106,6 +108,7 @@ export class EditProfileCard extends MozLitElement {
 
   updateNameDebouncer = null;
   clearSavedMessageTimer = null;
+  hasRecordedThemePickerShown = false;
 
   get themeCards() {
     if (this.novaEnabled) {
@@ -137,6 +140,8 @@ export class EditProfileCard extends MozLitElement {
     document.addEventListener("Profiles:AvatarSelected", this);
     window.addEventListener("ThemePickerThemeUpdated", this);
     window.addEventListener("ThemePickerDeviceAppearanceUpdated", this);
+    document.addEventListener("visibilitychange", this);
+    this.addEventListener("ThemePickerInitialState", this);
 
     this.init().then(() => (this.initialized = true));
   }
@@ -150,6 +155,8 @@ export class EditProfileCard extends MozLitElement {
     document.removeEventListener("Profiles:AvatarSelected", this);
     window.removeEventListener("ThemePickerThemeUpdated", this);
     window.removeEventListener("ThemePickerDeviceAppearanceUpdated", this);
+    document.removeEventListener("visibilitychange", this);
+    this.removeEventListener("ThemePickerInitialState", this);
   }
 
   async init() {
@@ -187,6 +194,36 @@ export class EditProfileCard extends MozLitElement {
     this.novaEnabled = novaEnabled;
 
     await this.setInitialInput();
+  }
+
+  #shouldRecordThemePickerShown() {
+    return (
+      this.isConnected && !this.hasRecordedThemePickerShown && !document.hidden
+    );
+  }
+
+  async maybeRecordThemePickerShown() {
+    if (!this.novaEnabled || !this.#shouldRecordThemePickerShown()) {
+      return;
+    }
+
+    await this.getUpdateComplete();
+
+    const themePicker = this.themesPicker;
+    if (!themePicker?.themes.length) {
+      return;
+    }
+
+    await themePicker.updateComplete;
+
+    if (!this.#shouldRecordThemePickerShown()) {
+      return;
+    }
+
+    this.hasRecordedThemePickerShown = true;
+    themePicker.shown();
+    document.removeEventListener("visibilitychange", this);
+    this.removeEventListener("ThemePickerInitialState", this);
   }
 
   async setInitialInput() {
@@ -269,6 +306,11 @@ export class EditProfileCard extends MozLitElement {
       }
       case "pagehide": {
         RPMSendAsyncMessage("Profiles:PageHide");
+        break;
+      }
+      case "ThemePickerInitialState":
+      case "visibilitychange": {
+        this.maybeRecordThemePickerShown();
         break;
       }
       case "Profiles:CustomAvatarUpload": {
@@ -476,20 +518,23 @@ export class EditProfileCard extends MozLitElement {
   }
 
   themesTemplate() {
+    if (this.novaEnabled) {
+      return html`<moz-fieldset
+        id="theme-group"
+        data-l10n-id="edit-profile-page-theme-header-2"
+      >
+        <theme-picker id="themes" installsource="profiles"></theme-picker>
+      </moz-fieldset>`;
+    }
+
+    return this.legacyThemesTemplate();
+  }
+
+  legacyThemesTemplate() {
     if (!this.themes) {
       return null;
     }
 
-    if (!this.novaEnabled) {
-      return this.legacyThemesTemplate();
-    }
-    return html`<theme-picker
-      id="themes"
-      installsource="profiles"
-    ></theme-picker>`;
-  }
-
-  legacyThemesTemplate() {
     return html`<moz-visual-picker
       type="listbox"
       id="themes"

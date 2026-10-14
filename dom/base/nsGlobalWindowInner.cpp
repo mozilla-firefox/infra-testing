@@ -152,6 +152,7 @@
 #include "mozilla/dom/PopupBlocker.h"
 #include "mozilla/dom/PrimitiveConversions.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/dom/PushManager.h"
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/dom/ScriptSettings.h"
@@ -264,6 +265,7 @@
 #include "nsIPermissionManager.h"
 #include "nsIPrefBranch.h"
 #include "nsIPrincipal.h"
+#include "nsIPrintSettings.h"
 #include "nsIPrompt.h"
 #include "nsIRunnable.h"
 #include "nsIScreen.h"
@@ -320,10 +322,6 @@
 #include "prtypes.h"
 #include "xpcprivate.h"
 #include "xpcpublic.h"
-
-#ifdef NS_PRINTING
-#  include "nsIPrintSettings.h"
-#endif
 
 #ifdef MOZ_WEBSPEECH
 #  include "mozilla/dom/SpeechSynthesis.h"
@@ -436,10 +434,12 @@ class nsGlobalWindowObserver final : public nsIObserver,
   explicit nsGlobalWindowObserver(nsGlobalWindowInner* aWindow)
       : mWindow(aWindow) {}
   NS_DECL_ISUPPORTS
-  NS_IMETHOD Observe(nsISupports* aSubject, const char* aTopic,
-                     const char16_t* aData) override {
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHOD
+  Observe(nsISupports* aSubject, const char* aTopic,
+          const char16_t* aData) override {
     if (!mWindow) return NS_OK;
-    return mWindow->Observe(aSubject, aTopic, aData);
+    const RefPtr<nsGlobalWindowInner> win = mWindow;
+    return win->Observe(aSubject, aTopic, aData);
   }
   void Forget() { mWindow = nullptr; }
   NS_IMETHOD GetInterface(const nsIID& aIID, void** aResult) override {
@@ -724,7 +724,7 @@ void nsGlobalWindowInner::RemoveIdleCallback(
                                   Timeout::Reason::eIdleCallbackTimeout);
   }
 
-  aRequest->removeFrom(mIdleRequestCallbacks);
+  aRequest->RemoveFromList();
 }
 
 void nsGlobalWindowInner::RunIdleRequest(IdleRequest* aRequest,
@@ -832,6 +832,7 @@ uint32_t nsGlobalWindowInner::RequestIdleCallback(
     request->SetTimeoutHandle(timeoutHandle);
   }
 
+  request->SetContainer(mIdleRequestCallbacksByHandle);
   mIdleRequestCallbacks.insertBack(request);
 
   if (!IsSuspended()) {
@@ -842,11 +843,8 @@ uint32_t nsGlobalWindowInner::RequestIdleCallback(
 }
 
 void nsGlobalWindowInner::CancelIdleCallback(uint32_t aHandle) {
-  for (IdleRequest* r : mIdleRequestCallbacks) {
-    if (r->Handle() == aHandle) {
-      RemoveIdleCallback(r);
-      break;
-    }
+  if (IdleRequest* request = mIdleRequestCallbacksByHandle->Get(aHandle)) {
+    RemoveIdleCallback(request);
   }
 }
 
@@ -929,6 +927,7 @@ nsGlobalWindowInner::nsGlobalWindowInner(nsGlobalWindowOuter* aOuterWindow,
 #endif
       mFocusMethod(0),
       mIdleRequestCallbackCounter(1),
+      mIdleRequestCallbacksByHandle(new mozilla::dom::IdleRequestMap()),
       mIdleRequestExecutor(nullptr),
       mObservingRefresh(false),
       mIteratingDocumentFlushedResolvers(false),
@@ -1153,6 +1152,10 @@ void nsGlobalWindowInner::FreeInnerObjects() {
   }
   StartDying();
 
+  if (JSObject* global = GetWrapperPreserveColor()) {
+    js::SetRealmIsDyingHint(global);
+  }
+
   ClearHasPointerRawUpdateEventListeners();
 
   if (mDoc && mDoc->GetWindowContext()) {
@@ -1310,6 +1313,7 @@ void nsGlobalWindowInner::FreeInnerObjects() {
   mConsole = nullptr;
   mCookieStore = nullptr;
   mDocumentPiP = nullptr;
+  mPushManager = nullptr;
   mCloseWatcherManager = nullptr;
 
   mPaintWorklet = nullptr;
@@ -1506,6 +1510,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsGlobalWindowInner)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mConsole)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCookieStore)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocumentPiP)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPushManager)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPaintWorklet)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mExternal)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mIntlUtils)
@@ -2170,15 +2175,7 @@ void nsGlobalWindowInner::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
     case eMouseUp:
     case eDragEnd:
       if (aVisitor.mEvent->IsTrusted()) {
-        sMouseDown = false;
-        if (sDragServiceDisabled) {
-          nsCOMPtr<nsIDragService> ds =
-              do_GetService("@mozilla.org/widget/dragservice;1");
-          if (ds) {
-            sDragServiceDisabled = false;
-            ds->Unsuppress();
-          }
-        }
+        MouseButtonReleased();
       }
       break;
     default:
@@ -2186,6 +2183,22 @@ void nsGlobalWindowInner::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
   }
 
   aVisitor.SetParentTarget(GetParentTarget(), true);
+}
+
+/* static */
+void nsGlobalWindowInner::MouseButtonReleased() {
+  if (!sMouseDown) {
+    return;
+  }
+  sMouseDown = false;
+  if (sDragServiceDisabled) {
+    nsCOMPtr<nsIDragService> ds =
+        do_GetService("@mozilla.org/widget/dragservice;1");
+    if (ds) {
+      sDragServiceDisabled = false;
+      ds->Unsuppress();
+    }
+  }
 }
 
 // Editor library types for about:blank compat workaround
@@ -5204,7 +5217,7 @@ void nsGlobalWindowInner::FireOfflineStatusEventIfChanged() {
   } else {
     name.AssignLiteral("online");
   }
-  nsContentUtils::DispatchTrustedEvent(mDoc, this, name, CanBubble::eNo,
+  nsContentUtils::DispatchTrustedEvent(this, this, name, CanBubble::eNo,
                                        Cancelable::eNo);
 }
 
@@ -6256,8 +6269,8 @@ nsresult nsGlobalWindowInner::FireDelayedDOMEvents(bool aIncludeSubWindows) {
     }
 
     for (const nsCOMPtr<nsIDocShellTreeItem>& childShell : children) {
-      if (nsCOMPtr<nsPIDOMWindowOuter> pWin = childShell->GetWindow()) {
-        auto* win = nsGlobalWindowOuter::Cast(pWin);
+      if (const RefPtr<nsGlobalWindowOuter> win =
+              nsGlobalWindowOuter::Cast(childShell->GetWindow())) {
         win->FireDelayedDOMEvents(true);
       }
     }
@@ -7616,6 +7629,14 @@ DocumentPictureInPicture* nsGlobalWindowInner::DocumentPictureInPicture() {
   }
 
   return mDocumentPiP;
+}
+
+mozilla::dom::PushManager* nsGlobalWindowInner::GetPushManager(
+    JSContext* aCx, ErrorResult& aRv) {
+  if (!mPushManager) {
+    mPushManager = PushManager::Create(aCx, this, aRv);
+  }
+  return mPushManager;
 }
 
 bool nsGlobalWindowInner::IsSecureContext() const {

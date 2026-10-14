@@ -32,6 +32,14 @@ class TestLastUsedSidebarPanel(MarionetteTestCase):
             """
         )
 
+    def wait_until_stable(self):
+        self.marionette.execute_script(
+            """
+            const window = BrowserWindowTracker.getTopWindow();
+            return window.SidebarController.waitUntilStable();
+            """
+        )
+
     def is_sidebar_panel_visible(self):
         hidden = self.marionette.execute_script(
             """
@@ -72,6 +80,7 @@ class TestLastUsedSidebarPanel(MarionetteTestCase):
 
         # Click the toolbar button to close the panel
         self.click_toolbar_button()
+        self.wait_until_stable()
 
         self.assertFalse(
             self.is_sidebar_panel_visible(), "The sidebar panel is now closed"

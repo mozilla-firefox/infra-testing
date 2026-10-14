@@ -6,6 +6,7 @@
 
 #include "FFmpegLibWrapper.h"
 #include "FFmpegLog.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "prlink.h"
 
 namespace mozilla {
@@ -197,6 +198,12 @@ bool FFmpegRuntimeLinker::Init() {
   FFMPEGV_LOG(" ]\n");
 
   return false;
+}
+
+/* static */
+bool FFmpegRuntimeLinker::PreferSystemFFmpegForVulkan() {
+  return StaticPrefs::
+      media_hardware_video_decoding_vulkan_prefer_system_ffmpeg();
 }
 
 /* static */

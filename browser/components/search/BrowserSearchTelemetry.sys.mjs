@@ -7,7 +7,6 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 const lazy = XPCOMUtils.declareLazy({
   ConfigSearchEngine:
     "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
-  ContextId: "moz-src:///browser/modules/ContextId.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   SearchSERPTelemetry:
     "moz-src:///browser/components/search/SearchSERPTelemetry.sys.mjs",
@@ -18,7 +17,7 @@ const lazy = XPCOMUtils.declareLazy({
 });
 
 /**
- * @import {SearchEngine} from "moz-src:///toolkit/components/search/SearchEngine.sys.mjs"
+ * @import {SearchSubmissionData, SearchEngine} from "moz-src:///toolkit/components/search/SearchEngine.sys.mjs"
  */
 
 /**
@@ -61,11 +60,13 @@ class BrowserSearchTelemetryHandler {
     contextmenu: "contextmenu",
     contextmenu_visual: "contextmenu_visual",
     errorpage: "errorpage",
+    newtab_search_widget: "newtab-search-widget",
     newtab_searchbar: "newtab-searchbar",
     searchbar: "searchbar",
     smartbar: "smartbar",
     smartwindow_assistant: "smartwindow_assistant",
     system: "system",
+    text_selection: "text_selection",
     urlbar: "urlbar",
     urlbar_handoff: "urlbar-handoff",
     urlbar_persisted: "urlbar-persisted",
@@ -169,14 +170,14 @@ class BrowserSearchTelemetryHandler {
    * @param {Values<typeof lazy.SearchUtils.URL_TYPE>} [details.searchUrlType=undefined]
    *        A `SearchUtils.URL_TYPE` value that indicates the type of search.
    *        Defaults to `SearchUtils.URL_TYPE.SEARCH`, a plain old search.
+   * @param {SearchSubmissionData} [details.submission]
+   *        Submission details used for this event. This is used for recording
+   *        specific details to telemetry.
    * @throws if source is not in the known sources list.
    */
   recordSearch(browser, engine, source, details = {}) {
     if (typeof engine == "string") {
       engine = lazy.SearchService.getEngineById(engine);
-    }
-    if (engine.clickUrl) {
-      this.#reportSearchInGlean(engine.clickUrl);
     }
 
     try {
@@ -195,9 +196,11 @@ class BrowserSearchTelemetryHandler {
         );
       }
 
+      let legacyTelemetryId =
+        details.submission?.telemetryId ?? engine.telemetryId;
       if (source != "contextmenu_visual") {
-        const countIdPrefix = `${engine.telemetryId}.`;
-        const countIdSource = countIdPrefix + this.KNOWN_SEARCH_SOURCES[source];
+        let countIdPrefix = `${legacyTelemetryId}.`;
+        let countIdSource = countIdPrefix + this.KNOWN_SEARCH_SOURCES[source];
 
         // NOTE: When removing the sap.deprecatedCounts telemetry, see the note
         // above KNOWN_SEARCH_SOURCES.
@@ -222,13 +225,16 @@ class BrowserSearchTelemetryHandler {
       let searchUrlType =
         details.searchUrlType ?? lazy.SearchUtils.URL_TYPE.SEARCH;
 
+      let partnerCodeToUse = details.submission
+        ? details.submission.partnerCode
+        : engine.partnerCode;
       // Strict equality is used because we want to only match against the
       // empty string and not other values. We would have `engine.partnerCode`
       // return `undefined`, but the XPCOM interfaces force us to return an
       // empty string.
       let reportPartnerCode =
         !isOverridden &&
-        engine.partnerCode !== "" &&
+        partnerCodeToUse !== "" &&
         !engine.getURLOfType(searchUrlType)?.excludePartnerCodeFromTelemetry;
 
       Glean.sap.counts.record({
@@ -238,7 +244,7 @@ class BrowserSearchTelemetryHandler {
         provider_name: engine.name,
         // If no code is reported, we must returned undefined, Glean will then
         // not report the field.
-        partner_code: reportPartnerCode ? engine.partnerCode : undefined,
+        partner_code: reportPartnerCode ? partnerCodeToUse : undefined,
         overridden_by_third_party: isOverridden.toString(),
       });
 
@@ -246,6 +252,7 @@ class BrowserSearchTelemetryHandler {
       switch (source) {
         case "about_home":
         case "about_newtab":
+        case "newtab_search_widget":
           this.#recordSearch(browser, source, "enter");
           break;
         case "errorpage":
@@ -262,11 +269,18 @@ class BrowserSearchTelemetryHandler {
           this.#recordSearch(browser, source);
           break;
       }
-      if (["urlbar_handoff", "about_home", "about_newtab"].includes(source)) {
+      if (
+        [
+          "about_home",
+          "about_newtab",
+          "newtab_searchbar",
+          "urlbar_handoff",
+        ].includes(source)
+      ) {
         Glean.newtabSearch.issued.record({
           newtab_visit_id: details.newtabSessionId,
           search_access_point: source,
-          telemetry_id: engine.telemetryId,
+          telemetry_id: legacyTelemetryId,
         });
         lazy.SearchSERPTelemetry.recordBrowserNewtabSession(
           browser,
@@ -367,33 +381,6 @@ class BrowserSearchTelemetryHandler {
     let label = action ? "search_" + action : "search";
     let name = source.replace(/_([a-z])/g, (m, p) => p.toUpperCase());
     Glean.browserEngagementNavigation[name][label].add(1);
-  }
-
-  /**
-   * Records the search in Glean for contextual services.
-   *
-   * @param {string} reportingUrl
-   *   The url to be sent to contextual services.
-   */
-  async #reportSearchInGlean(reportingUrl) {
-    let defaultValuesByGleanKey = {
-      contextId: await lazy.ContextId.request(),
-    };
-
-    let sendGleanPing = valuesByGleanKey => {
-      valuesByGleanKey = { ...defaultValuesByGleanKey, ...valuesByGleanKey };
-      for (let [gleanKey, value] of Object.entries(valuesByGleanKey)) {
-        let glean = Glean.searchWith[gleanKey];
-        if (value !== undefined && value !== "") {
-          glean.set(value);
-        }
-      }
-      GleanPings.searchWith.submit();
-    };
-
-    sendGleanPing({
-      reportingUrl,
-    });
   }
 }
 

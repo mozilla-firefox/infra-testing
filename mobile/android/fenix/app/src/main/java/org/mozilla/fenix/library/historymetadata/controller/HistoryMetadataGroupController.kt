@@ -139,7 +139,9 @@ class DefaultHistoryMetadataGroupController(
     }
 
     override fun handleShare(items: Set<History.Metadata>) {
-        val shareData = items.map { ShareData(url = it.url, title = it.title) }
+        val shareData = items.map {
+            ShareData(url = it.url, title = it.title, private = appStore.state.mode.isPrivate)
+        }
 
         shareUseCases.shareItems(
             items = shareData,

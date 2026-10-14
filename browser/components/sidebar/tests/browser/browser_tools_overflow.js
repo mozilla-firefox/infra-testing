@@ -60,6 +60,11 @@ function getToolsHeight({ SidebarController } = window) {
 }
 
 async function resetToolsHeight() {
+  // An expanded launcher lays the tools out as a row, where they overflow on
+  // the inline axis and no splitter drag can clear it.
+  await SidebarController.updateUIState({ launcherExpanded: false });
+  await SidebarController.sidebarMain.updateComplete;
+
   // Reset tools height
   await resizeTools(-500);
   await SidebarController.sidebarMain.requestUpdate();
@@ -126,6 +131,8 @@ add_task(async function test_resize_of_tools() {
   while (gBrowser.tabs.length > 1) {
     BrowserTestUtils.removeTab(gBrowser.tabs.at(-1));
   }
+
+  SidebarTestUtils.restoreToolsHeights(window);
 });
 
 add_task(async function test_overflow_menu() {
@@ -183,6 +190,12 @@ add_task(async function test_overflow_menu() {
   let customizeSidebarButton = overflowMenu.querySelector(
     "moz-button[view=viewCustomizeSidebar]"
   );
+  Assert.equal(
+    document.getElementById("tools-overflow-list").lastElementChild,
+    customizeSidebarButton,
+    "Customize is the last entry of the overflow panel."
+  );
+
   let promisePanelShown = BrowserTestUtils.waitForEvent(window, "SidebarShown");
   customizeSidebarButton.click();
   await promisePanelShown;
@@ -198,6 +211,8 @@ add_task(async function test_overflow_menu() {
   while (gBrowser.tabs.length > 1) {
     BrowserTestUtils.removeTab(gBrowser.tabs.at(-1));
   }
+
+  SidebarTestUtils.restoreToolsHeights(window);
 });
 
 add_task(async function test_overflow_menu_with_keyboard() {
@@ -281,13 +296,11 @@ add_task(async function test_overflow_menu_with_keyboard() {
   );
   info("Press Space key.");
   EventUtils.synthesizeKey(" ", {});
-  await BrowserTestUtils.waitForMutationCondition(
-    overflowButton,
-    { attributes: true },
-    () => {
-      return SidebarController.currentID === "viewCustomizeSidebar";
-    }
+  await TestUtils.waitForCondition(
+    () => SidebarController.currentID === "viewCustomizeSidebar",
+    "Waiting for the customize panel to be shown."
   );
+  await SidebarController.waitUntilStable();
 
   ok(true, "Customize panel is shown.");
 
@@ -299,6 +312,8 @@ add_task(async function test_overflow_menu_with_keyboard() {
   while (gBrowser.tabs.length > 1) {
     BrowserTestUtils.removeTab(gBrowser.tabs.at(-1));
   }
+
+  SidebarTestUtils.restoreToolsHeights(window);
 });
 
 add_task(
@@ -379,6 +394,8 @@ add_task(
     while (gBrowser.tabs.length > 1) {
       BrowserTestUtils.removeTab(gBrowser.tabs.at(-1));
     }
+
+    SidebarTestUtils.restoreToolsHeights(window);
   }
 );
 
@@ -412,4 +429,63 @@ add_task(async function test_tools_overflow() {
       `Tool button is not displaying label text`
     );
   }
+});
+
+add_task(async function test_customize_button_position() {
+  // Use a new window. SidebarController.toolsAndExtensions caches the tools
+  // per window, and toggleTool moves a re-enabled tool to the end of that
+  // cache, so a shared window can carry an order from an earlier task.
+  const win = await BrowserTestUtils.openNewBrowserWindow();
+  await SidebarTestUtils.waitForTabstripOrientation(win, "vertical");
+  const sidebar = win.document.querySelector("sidebar-main");
+
+  const getViews = () =>
+    Array.from(sidebar.toolButtons, button => button.getAttribute("view"));
+
+  await BrowserTestUtils.waitForMutationCondition(
+    sidebar,
+    { subTree: true, childList: true },
+    () => getViews().includes("viewCustomizeSidebar")
+  );
+
+  const launcherViews = async (positionStart, expanded) => {
+    await SpecialPowers.pushPrefEnv({
+      set: [["sidebar.position_start", positionStart]],
+    });
+    sidebar.expanded = expanded;
+    await sidebar.updateComplete;
+    const views = getViews();
+    await SpecialPowers.popPrefEnv();
+    return views;
+  };
+
+  let views = await launcherViews(true, false);
+  Assert.equal(
+    views.at(-1),
+    "viewCustomizeSidebar",
+    `Customize is last in the collapsed launcher at the inline-start. Got: ${views}`
+  );
+
+  views = await launcherViews(true, true);
+  Assert.equal(
+    views.at(-1),
+    "viewCustomizeSidebar",
+    `Customize is last in the expanded launcher at the inline-start. Got: ${views}`
+  );
+
+  views = await launcherViews(false, false);
+  Assert.equal(
+    views.at(-1),
+    "viewCustomizeSidebar",
+    `Customize is last in the collapsed launcher at the inline-end. Got: ${views}`
+  );
+
+  views = await launcherViews(false, true);
+  Assert.equal(
+    views.at(0),
+    "viewCustomizeSidebar",
+    `Customize is first in the expanded launcher at the inline-end. Got: ${views}`
+  );
+
+  await BrowserTestUtils.closeWindow(win);
 });

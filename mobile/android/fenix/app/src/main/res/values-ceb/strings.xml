@@ -37,8 +37,6 @@
   <string name="open_in_app_cfr_positive_button_text">Adto sa settings</string>
   <!-- Text for the negative action button -->
   <string name="open_in_app_cfr_negative_button_text">i-Dismiss</string>
-  <!-- Private browsing erase action "contextual feature recommendation" (CFR) -->
-
   <!-- Text for the info dialog when camera permissions have been denied but user tries to access a camera feature. -->
   <string name="camera_permissions_needed_message">Kinahanglan ug camera access. Adto sa Android settings, i-tap and permissions, ug i-tap ang allow.</string>
   <!-- Text for the positive action button to go to Android Settings to grant permissions. -->
@@ -63,12 +61,6 @@
   <string name="home_screen_shortcut_open_new_tab_2">Bag-o nga tab</string>
   <!-- Shortcut action to open new private tab -->
   <string name="home_screen_shortcut_open_new_private_tab_2">Bag-o nga pribadong tab</string>
-  <!--
-    Recent Tabs
-
-    Header text for jumping back into the recent tab in the home screen
-  -->
-  <string name="recent_tabs_header">Sulod balik</string>
   <!-- Button text for showing all the tabs in the tabs tray -->
   <string name="recent_tabs_show_all">Ipakita tanan</string>
   <!--
@@ -155,10 +147,6 @@
   <string name="search_engine_suggestions_title">Pangitaon %1$s</string>
   <!-- Search engine suggestion description text -->
   <string name="search_engine_suggestions_description">Pangitaa pinaagi sa address bar</string>
-  <!-- ==== Project "Nova" onboarding strings ==== -->
-
-  <!-- ==== End of Project "Nova" onboarding strings ==== -->
-
   <!-- Text preview for smaller sized widgets -->
   <string name="search_widget_text_short">i-Search</string>
   <!-- Text preview for larger sized widgets -->
@@ -216,8 +204,6 @@
   <string name="customize_addon_collection_hint">Ngalan sa Collection</string>
   <!-- Hint displayed on input field for custom collection user ID -->
   <string name="customize_addon_collection_user_hint">Tag-iya sa Collection (User ID)</string>
-  <!-- Header text for jumping back into the recent tab in customize the home screen -->
-  <string name="customize_toggle_jump_back_in">Sulod balik</string>
   <!--
     Title for the customize home screen section with recently visited. Recently visited is
     a section where users see a list of tabs that they have visited in the past few days
@@ -275,13 +261,4 @@
   <string name="exceptions_empty_message_description">Ang mga exception mopalong sa tracking protection sa mga piniling mga site.</string>
   <!-- Text displayed when there are no exceptions, with learn more link that brings users to a tracking protection SUMO page -->
   <string name="exceptions_empty_message_learn_more_link">Dugang pagtuon</string>
-  <!-- Translations feature -->
-
-  <!-- TextField Design System Component -->
-
-  <!-- ==== Terms of use pop up prompt ==== -->
-
-  <!-- ==== Experiment strings. ==== -->
-
-  <!-- ==== End of Terms of use popup prompt. ==== -->
 </resources>

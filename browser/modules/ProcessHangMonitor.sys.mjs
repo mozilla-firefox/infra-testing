@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
-
 /**
  * Elides the middle of a string by replacing it with an elipsis if it is
  * longer than `threshold` characters. Does its best to not break up grapheme
@@ -357,6 +355,14 @@ export var ProcessHangMonitor = {
         uri_type = "extension";
       } else if (report.scriptFileName?.startsWith("debugger")) {
         uri_type = "devtools";
+      } else if (
+        report.scriptFileName?.startsWith(
+          "resource://pdf.js/build/pdf.scripting.mjs"
+        )
+      ) {
+        // PDF scripts are content, but their reported filename is the PDF.js
+        // scripting bundle.
+        uri_type = "content";
       } else {
         try {
           let url = new URL(report.scriptFileName);
@@ -542,11 +548,10 @@ export var ProcessHangMonitor = {
       return;
     }
 
-    // Show the "debug script" button unconditionally if we are in Developer or Nightly
-    // editions, or if DevTools are opened on the slow tab.
+    // Show the "debug script" button only if DevTools are opened on the slow tab.
+    // Never offer it when DevTools are disabled by policy, as debugging would be refused anyway.
     if (
-      AppConstants.MOZ_DEV_EDITION ||
-      AppConstants.NIGHTLY_BUILD ||
+      !Services.prefs.getBoolPref("devtools.policy.disabled", false) &&
       report.scriptBrowser.browsingContext.watchedByDevTools
     ) {
       buttons.push({

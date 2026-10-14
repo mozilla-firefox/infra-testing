@@ -18,6 +18,10 @@ const lazy = XPCOMUtils.declareLazy({
       prefix: "SearchUtils",
       maxLogLevel: SearchUtils.loggingEnabled ? "Debug" : "Warn",
     }),
+  configV3FeatureGate: {
+    pref: "browser.search.configV3.featureGate",
+    default: false,
+  },
 });
 
 const BinaryInputStream = Components.Constructor(
@@ -25,8 +29,6 @@ const BinaryInputStream = Components.Constructor(
   "nsIBinaryInputStream",
   "setInputStream"
 );
-
-const BROWSER_SEARCH_PREF = "browser.search.";
 
 /**
  * Load listener
@@ -148,8 +150,6 @@ export class SearchEngineInstallError extends Error {
 }
 
 export var SearchUtils = {
-  BROWSER_SEARCH_PREF,
-
   /**
    * This is the Remote Settings key that we use to get the ignore lists for
    * engines.
@@ -167,20 +167,21 @@ export var SearchUtils = {
   SETTINGS_ALLOWLIST_KEY: "search-default-override-allowlist",
 
   /**
+   * Returns true if search-config-v3 should be used.
+   */
+  get configV3FeatureGate() {
+    return lazy.configV3FeatureGate;
+  },
+
+  /**
    * This is the Remote Settings key that we use to get the search engine
    * configurations.
    *
    * @readonly
    */
-  SETTINGS_KEY: "search-config-v2",
-
-  /**
-   * This is the Remote Settings key that we use to get the search engine
-   * configuration overrides.
-   *
-   * @readonly
-   */
-  SETTINGS_OVERRIDES_KEY: "search-config-overrides-v2",
+  get SETTINGS_KEY() {
+    return lazy.configV3FeatureGate ? "search-config-v3" : "search-config-v2";
+  },
 
   /**
    * Topic used for observer events involving the service itself.
@@ -688,7 +689,7 @@ export var SearchUtils = {
 XPCOMUtils.defineLazyPreferenceGetter(
   SearchUtils,
   "loggingEnabled",
-  BROWSER_SEARCH_PREF + "log",
+  "browser.search.log",
   false
 );
 

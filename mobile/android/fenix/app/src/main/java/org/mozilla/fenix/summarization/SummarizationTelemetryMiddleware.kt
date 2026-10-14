@@ -28,6 +28,8 @@ import mozilla.components.feature.summarize.SummarizationFailed
 import mozilla.components.feature.summarize.SummarizationRequested
 import mozilla.components.feature.summarize.SummarizationState
 import mozilla.components.feature.summarize.SummarizeSettingsActionWrapper
+import mozilla.components.feature.summarize.SummaryFeedback
+import mozilla.components.feature.summarize.SummaryFeedbackProvided
 import mozilla.components.feature.summarize.ViewAppeared
 import mozilla.components.feature.summarize.ViewDismissed
 import mozilla.components.feature.summarize.content.Content
@@ -116,6 +118,7 @@ class SummarizationTelemetryMiddleware(
             is ReceivedParsedDocument -> handleReceivedParsedDocument()
             is SummarizationCompleted -> recordSummarizationCompleted()
             is SummarizationFailed -> recordSummarizationCompleted(success = false, action.exception)
+            is SummaryFeedbackProvided -> recordFeedback(action.feedback)
             is ViewDismissed -> handleViewDismissed(stateBefore, action)
 
             is OnDeviceSummarizationShakeConsentAction.AllowClicked,
@@ -237,6 +240,20 @@ class SummarizationTelemetryMiddleware(
         AiSummarize.firstResponse.record(
             AiSummarize.FirstResponseExtra(
                 model = sessionTelemetry.model,
+                sessionId = sessionTelemetry.sessionId,
+            )
+        )
+    }
+
+    private fun recordFeedback(feedback: SummaryFeedback) {
+        if (feedback != SummaryFeedback.GOOD && feedback != SummaryFeedback.BAD) {
+            return
+        }
+
+        AiSummarize.feedback.record(
+            AiSummarize.FeedbackExtra(
+                model = sessionTelemetry.model,
+                rating = feedback.name.lowercase(),
                 sessionId = sessionTelemetry.sessionId,
             )
         )

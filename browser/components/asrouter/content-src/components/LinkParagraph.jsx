@@ -25,6 +25,32 @@ function renderSegment(segment, index, handleAction) {
       />
     );
   }
+  if (segment?.action) {
+    return (
+      <a
+        key={index}
+        href={segment.href}
+        value={segment.id}
+        role={segment.href ? null : "link"}
+        className="text-link"
+        tabIndex="0"
+        onClick={event => {
+          event.preventDefault();
+          handleAction(event, segment.action);
+        }}
+        onKeyPress={event => {
+          if (event.key === "Enter" && !event.repeat) {
+            event.preventDefault();
+            handleAction(event, segment.action);
+          }
+        }}
+      >
+        <Localized text={segment}>
+          <span />
+        </Localized>
+      </a>
+    );
+  }
   if (segment?.href) {
     const action = {
       type: "OPEN_URL",

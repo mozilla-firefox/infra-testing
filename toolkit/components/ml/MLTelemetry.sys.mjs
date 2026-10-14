@@ -44,6 +44,8 @@ export class MLTelemetry {
   #flowId;
   /** @type {string|undefined} */
   #featureId;
+  /** @type {string|undefined} */
+  #hostProcess;
   /** @type {number|undefined} */
   #startTime;
 
@@ -54,10 +56,13 @@ export class MLTelemetry {
    * @param {string | null} [options.featureId] - The identifier for the ML feature.
    * @param {string | null} [options.flowId] - An optional unique identifier for
    * this flow. If not provided, a new UUID will be generated.
+   * @param {string} [options.hostProcess] - The process serving the engine,
+   * "inference" or "hwinference"; see host_process in metrics.yaml.
    */
   constructor(options = {}) {
     this.#featureId = options.featureId;
     this.#flowId = options.flowId || crypto.randomUUID();
+    this.#hostProcess = options.hostProcess;
 
     this.logEventToConsole(this.constructor, {
       featureId: this.#featureId,
@@ -188,6 +193,7 @@ export class MLTelemetry {
       flow_id: currentFlowId,
       engineId: actualEngineId,
       duration: Math.round(duration),
+      host_process: this.#hostProcess,
     });
 
     // Also record the old labeled timing distribution metric
@@ -236,6 +242,7 @@ export class MLTelemetry {
       taskName,
       engineId,
       error: errorString,
+      host_process: this.#hostProcess,
     });
 
     this.logEventToConsole(this.recordEngineCreationFailure, {
@@ -307,6 +314,7 @@ export class MLTelemetry {
           metrics.timePerOutputToken != null
             ? Math.round(metrics.timePerOutputToken * 100) / 100
             : undefined,
+        host_process: this.#hostProcess,
       };
 
       Glean.firefoxAiRuntime.runInferenceSuccessFlow.record(gleanPayload);
@@ -345,6 +353,7 @@ export class MLTelemetry {
     Glean.firefoxAiRuntime.runInferenceFailure.record({
       flow_id,
       error: errorString,
+      host_process: this.#hostProcess,
     });
 
     this.logEventToConsole(this.recordRunInferenceFailure, {
@@ -370,6 +379,7 @@ export class MLTelemetry {
    * @param {number | null} [options.characterCount]
    * @param {number | null} [options.timeToFirstChunk]
    * @param {number | null} [options.averageChunkTime]
+   * @param {string | null} [options.backendSourceRevision]
    * @param {string} [options.flow_id]
    * @param {string} [options.feature_id]
    */
@@ -384,6 +394,7 @@ export class MLTelemetry {
     characterCount,
     timeToFirstChunk = null,
     averageChunkTime = null,
+    backendSourceRevision = null,
     flow_id = this.#flowId,
     feature_id = this.#featureId,
   }) {
@@ -420,6 +431,7 @@ export class MLTelemetry {
       engine_id: engineId,
       model_id: modelId,
       backend,
+      backend_source_revision: backendSourceRevision,
       // Specifically use the "||" operator since Glean expects "null" rather than
       // "undefined". When the counts are 0, this can mean nothing was generated for
       // the counts. We should count these as null.
@@ -428,6 +440,7 @@ export class MLTelemetry {
       time_to_first_chunk: round(timeToFirstChunk),
       average_chunk_time: round(averageChunkTime),
       system_memory_mb: MLTelemetry.#systemMemoryMB,
+      host_process: this.#hostProcess,
     };
 
     Glean.firefoxAiRuntime.engineRun.record(payload);

@@ -308,17 +308,14 @@ mozilla::ipc::IPCResult UtilityProcessChild::RecvStartJSOracleService(
 }
 
 #ifndef ANDROID
-mozilla::ipc::IPCResult UtilityProcessChild::RecvStartHWInferenceService(
-    Endpoint<PHWInferenceChild>&& aEndpoint) {
+already_AddRefed<hwinference::PHWInferenceChild>
+UtilityProcessChild::AllocPHWInferenceChild() {
   PROFILER_MARKER_UNTYPED(
-      "UtilityProcessChild::RecvStartHWInferenceService", OTHER,
+      "UtilityProcessChild::AllocPHWInferenceChild", OTHER,
       MarkerOptions(MarkerTiming::IntervalUntilNowFrom(mChildStartTime)));
 
   mHWInferenceInstance = MakeRefPtr<hwinference::HWInferenceChild>();
-  if (!aEndpoint.Bind(mHWInferenceInstance)) {
-    return IPC_FAIL(this, "Invalid endpoint");
-  }
-  return IPC_OK();
+  return do_AddRef(mHWInferenceInstance);
 }
 #endif  // !ANDROID
 
@@ -379,6 +376,43 @@ UtilityProcessChild::RecvUnblockUntrustedModulesThread() {
 }
 #endif  // defined(XP_WIN)
 
+mozilla::ipc::IPCResult UtilityProcessChild::RecvShutdown() {
+  // Send the last bits of Glean data over to the main process. Doing this in
+  // ActorDestroy would be too late: our channel is already gone by then.
+  glean::FlushFOGData(
+      [](ByteBuf&& aBuf) { glean::SendFOGData(std::move(aBuf)); });
+
+  if (mProfilerController) {
+    ProfileAndAdditionalInformation shutdownProfileAndAdditionalInformation =
+        mProfilerController->GrabShutdownProfileAndShutdown();
+    mProfilerController = nullptr;
+
+    if (const size_t len = shutdownProfileAndAdditionalInformation.SizeOf();
+        len >= size_t(IPC::Channel::kMaximumMessageSize)) {
+      shutdownProfileAndAdditionalInformation.mProfile = nsPrintfCString(
+          "*Profile from pid %u bigger (%zu) than IPC max (%zu)",
+          unsigned(profiler_current_process_id().ToNumber()), len,
+          size_t(IPC::Channel::kMaximumMessageSize));
+      shutdownProfileAndAdditionalInformation.mAdditionalInformation.reset();
+    }
+
+    // Send the shutdown profile to the parent process through our own
+    // message channel, which we know will survive for long enough.
+    (void)SendShutdownProfile(
+        std::move(shutdownProfileAndAdditionalInformation));
+  }
+
+  // Now tell the parent to actually destroy our channel, which will end our
+  // process. This is expected to be the last event the parent will ever
+  // process for this UtilityProcessChild.
+  //
+  // Note that we deliberately don't call Close() ourselves here: that would
+  // immediately trigger ActorDestroy(), which exits the process, potentially
+  // killing it before the messages we sent above have been delivered.
+  (void)SendFinishShutdown();
+  return IPC_OK();
+}
+
 void UtilityProcessChild::ActorDestroy(ActorDestroyReason aWhy) {
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
   DestroySandboxProfiler();
@@ -389,14 +423,12 @@ void UtilityProcessChild::ActorDestroy(ActorDestroyReason aWhy) {
     ipc::ProcessChild::QuickExit();
   }
 
-  // Send the last bits of Glean data over to the main process.
-  glean::FlushFOGData(
-      [](ByteBuf&& aBuf) { glean::SendFOGData(std::move(aBuf)); });
-
 #ifndef NS_FREE_PERMANENT_DATA
   ProcessChild::QuickExit();
 #else
 
+  // RecvShutdown normally did this already, but it doesn't run if the parent
+  // could not ask us to shut down gracefully.
   if (mProfilerController) {
     mProfilerController->Shutdown();
     mProfilerController = nullptr;
@@ -409,6 +441,12 @@ void UtilityProcessChild::ActorDestroy(ActorDestroyReason aWhy) {
   }
 
   mJSOracleInstance = nullptr;
+
+#  ifndef ANDROID
+  // A managed actor holds its manager; keeping it alive here would keep this
+  // process' toplevel alive too.
+  mHWInferenceInstance = nullptr;
+#  endif  // !ANDROID
 
 #  ifdef XP_WIN
   mWindowsUtilsInstance = nullptr;

@@ -20,9 +20,12 @@
 #include "js/PropertyDescriptor.h"  // JS::PropertyDescriptor, JS_GetOwnPropertyDescriptorById
 #include "js/SavedFrameAPI.h"
 #include "js/Value.h"  // JS::Value, JS::StringValue
+#include "jsapi.h"
 #include "jsfriendapi.h"
 #include "mozJSModuleLoader.h"
+#include "mozilla/AwakeTimeStamp.h"
 #include "mozilla/Base64.h"
+#include "mozilla/ChromeProfilerCounter.h"
 #include "mozilla/Components.h"
 #include "mozilla/ControllerCommand.h"
 #include "mozilla/CycleCollectedJSRuntime.h"
@@ -52,6 +55,8 @@
 #include "mozilla/dom/PBrowserParent.h"
 #include "mozilla/dom/PopupBlocker.h"
 #include "mozilla/dom/ProcessIsolation.h"
+#include "mozilla/dom/ProfilerCounter.h"
+#include "mozilla/dom/ProfilerCounterBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/Record.h"
 #include "mozilla/dom/ReportingHeader.h"
@@ -275,7 +280,7 @@ void ChromeUtils::RegisterMarkerSchema(GlobalObject& aGlobal,
 //    (empty-name markers are filtered out during schema streaming)
 struct JSCustomMarker : public ::mozilla::BaseMarkerType<JSCustomMarker> {
   static constexpr const char* Name = "";
-  static constexpr bool StoreName = true;
+  static constexpr bool ETWStoreName = true;
 
   using MS = ::mozilla::MarkerSchema;
 
@@ -434,6 +439,16 @@ void ChromeUtils::AddProfilerMarker(
 }
 
 /* static */
+already_AddRefed<ProfilerCounter> ChromeUtils::AddProfilerCounter(
+    GlobalObject& aGlobal, const ProfilerCounterOptions& aOptions) {
+  auto counter = MakeRefPtr<ChromeProfilerCounter>(
+      aOptions.mName, aOptions.mCategory, aOptions.mDescription);
+  RefPtr<ProfilerCounter> wrapper =
+      new ProfilerCounter(aGlobal.GetAsSupports(), counter.forget());
+  return wrapper.forget();
+}
+
+/* static */
 void ChromeUtils::GetXPCOMErrorName(GlobalObject& aGlobal, uint32_t aErrorCode,
                                     nsACString& aRetval) {
   GetErrorName((nsresult)aErrorCode, aRetval);
@@ -579,8 +594,7 @@ void ChromeUtils::ShallowClone(GlobalObject& aGlobal,
       id = valuesIds[i];
       value = values[i];
 
-      JS_MarkCrossZoneId(cx, id);
-      if (!JS_WrapValue(cx, &value) ||
+      if (!JS_WrapId(cx, &id) || !JS_WrapValue(cx, &value) ||
           !JS_SetPropertyById(cx, obj, id, value)) {
         return;
       }
@@ -1847,11 +1861,9 @@ void ChromeUtils::InvalidateResourceCache(GlobalObject& aGlobal,
 
 void ChromeUtils::GetCachedJavaScriptSource(
     GlobalObject& aGlobal, const nsACString& aKey, const nsACString& aURI,
-    const nsACString& aHintCharset, JS::MutableHandle<JS::Value> aRetval,
-    ErrorResult& aRv) {
+    JS::MutableHandle<JS::Value> aRetval, ErrorResult& aRv) {
   JSContext* cx = aGlobal.Context();
-  if (!SharedScriptCache::GetCachedScriptSource(cx, aKey, aURI, aHintCharset,
-                                                aRetval)) {
+  if (!SharedScriptCache::GetCachedScriptSource(cx, aKey, aURI, aRetval)) {
     aRv.NoteJSContextException(aGlobal.Context());
   }
 }
@@ -1895,7 +1907,7 @@ static WebIDLProcType ProcTypeToWebIDL(mozilla::ProcType aType) {
 #ifndef MOZ_ENABLE_FORKSERVER
 #  define SKIP_PROCESS_TYPE_FORKSERVER
 #endif  // MOZ_ENABLE_FORKSERVER
-#include "mozilla/GeckoProcessTypes.h"
+#include "mozilla/GeckoProcessTypes.inc"
 #undef SKIP_PROCESS_TYPE_CONTENT
 #ifndef MOZ_ENABLE_FORKSERVER
 #  undef SKIP_PROCESS_TYPE_FORKSERVER
@@ -1984,7 +1996,7 @@ already_AddRefed<Promise> ChromeUtils::RequestProcInfo(GlobalObject& aGlobal,
 #ifndef MOZ_ENABLE_FORKSERVER
 #  define SKIP_PROCESS_TYPE_FORKSERVER
 #endif  // MOZ_ENABLE_FORKSERVER
-#include "mozilla/GeckoProcessTypes.h"
+#include "mozilla/GeckoProcessTypes.inc"
 #ifndef MOZ_ENABLE_FORKSERVER
 #  undef SKIP_PROCESS_TYPE_FORKSERVER
 #endif  // MOZ_ENABLE_FORKSERVER
@@ -2049,44 +2061,44 @@ already_AddRefed<Promise> ChromeUtils::RequestProcInfo(GlobalObject& aGlobal,
     // Convert the remoteType into a ProcType.
     // Ideally, the remoteType should be strongly typed
     // upstream, this would make the conversion less brittle.
-    const nsAutoCString remoteType(contentParent->GetRemoteType());
-    if (StringBeginsWith(remoteType, FISSION_WEB_REMOTE_TYPE)) {
-      // WARNING: Do not change the order, as
-      // `DEFAULT_REMOTE_TYPE` is a prefix of
-      // `FISSION_WEB_REMOTE_TYPE`.
-      type = mozilla::ProcType::WebIsolated;
-    } else if (StringBeginsWith(remoteType, SERVICEWORKER_REMOTE_TYPE)) {
-      type = mozilla::ProcType::WebServiceWorker;
-    } else if (StringBeginsWith(remoteType,
-                                WITH_COOP_COEP_REMOTE_TYPE_PREFIX)) {
-      type = mozilla::ProcType::WebCOOPCOEP;
-    } else if (remoteType == FILE_REMOTE_TYPE) {
-      type = mozilla::ProcType::File;
-    } else if (remoteType == EXTENSION_REMOTE_TYPE) {
-      type = mozilla::ProcType::Extension;
-    } else if (remoteType == PRIVILEGEDABOUT_REMOTE_TYPE) {
-      type = mozilla::ProcType::PrivilegedAbout;
-    } else if (remoteType == PRIVILEGEDMOZILLA_REMOTE_TYPE) {
-      type = mozilla::ProcType::PrivilegedMozilla;
-    } else if (remoteType == PREALLOC_REMOTE_TYPE) {
-      type = mozilla::ProcType::Preallocated;
-    } else if (remoteType == INFERENCE_REMOTE_TYPE) {
-      type = mozilla::ProcType::Inference;
-    } else if (StringBeginsWith(remoteType, DEFAULT_REMOTE_TYPE)) {
-      type = mozilla::ProcType::Web;
-    } else {
-      MOZ_CRASH_UNSAFE_PRINTF("Unknown remoteType '%s'", remoteType.get());
+    const RemoteType& remoteType = contentParent->GetRemoteType();
+    switch (remoteType.GetKind()) {
+      case RemoteType::Kind::WebContent:
+        type = remoteType.HasOrigin() ? mozilla::ProcType::WebIsolated
+                                      : mozilla::ProcType::Web;
+        break;
+      case RemoteType::Kind::WebServiceWorker:
+        type = mozilla::ProcType::WebServiceWorker;
+        break;
+      case RemoteType::Kind::WebCoopCoep:
+        type = mozilla::ProcType::WebCOOPCOEP;
+        break;
+      case RemoteType::Kind::File:
+        type = mozilla::ProcType::File;
+        break;
+      case RemoteType::Kind::Extension:
+        type = mozilla::ProcType::Extension;
+        break;
+      case RemoteType::Kind::PrivilegedAbout:
+        type = mozilla::ProcType::PrivilegedAbout;
+        break;
+      case RemoteType::Kind::PrivilegedMozilla:
+        type = mozilla::ProcType::PrivilegedMozilla;
+        break;
+      case RemoteType::Kind::Prealloc:
+        type = mozilla::ProcType::Preallocated;
+        break;
+      case RemoteType::Kind::Inference:
+        type = mozilla::ProcType::Inference;
+        break;
+      default: {
+        MOZ_CRASH_UNSAFE_PRINTF("Unknown remoteType '%s'",
+                                remoteType.StringifyKind().get());
+      }
     }
 
-    // By convention, everything after '=' is the origin.
-    nsAutoCString origin;
-    nsACString::const_iterator cursor;
-    nsACString::const_iterator end;
-    remoteType.BeginReading(cursor);
-    remoteType.EndReading(end);
-    if (FindCharInReadable('=', cursor, end)) {
-      origin = Substring(++cursor, end);
-    }
+    // FIXME: We should pass out a parsed remote type to the caller
+    nsAutoCString origin = remoteType.StringifyMeta();
 
     // Attach DOM window information to the process.
     nsTArray<WindowInfo> windows;
@@ -2595,7 +2607,13 @@ already_AddRefed<Promise> ChromeUtils::EnsureHeadlessContentProcess(
     return nullptr;
   }
 
-  ContentParent::GetNewOrUsedBrowserProcessAsync(aRemoteType)
+  RemoteType parsedRemoteType = RemoteType::Parse(aRemoteType);
+  if (!parsedRemoteType) {
+    promise->MaybeReject(NS_ERROR_INVALID_ARG);
+    return promise.forget();
+  }
+
+  ContentParent::GetNewOrUsedBrowserProcessAsync(parsedRemoteType)
       ->Then(
           GetCurrentSerialEventTarget(), __func__,
           [promise](UniqueContentParentKeepAlive&& aKeepAlive) {
@@ -2709,6 +2727,12 @@ double ChromeUtils::DateNow(GlobalObject&) { return JS_Now() / 1000.0; }
 /* static */
 double ChromeUtils::Now(GlobalObject&) {
   return (TimeStamp::Now() - TimeStamp::ProcessCreation()).ToMilliseconds();
+}
+
+/* static */
+double ChromeUtils::AwakeNow(GlobalObject&) {
+  static const AwakeTimeStamp sOrigin = AwakeTimeStamp::Now();
+  return (AwakeTimeStamp::Now() - sOrigin).ToMilliseconds();
 }
 
 /* static */
@@ -2999,8 +3023,8 @@ void ChromeUtils::PredictRemoteTypeForURI(
     GlobalObject& aGlobal, nsIURI* aURI,
     const PredictRemoteTypeOptions& aOptions, nsACString& aRemoteType,
     ErrorResult& aRv) {
-  // If 'useRemoteTabs' is disabled, immediately return with NOT_REMOTE_TYPE,
-  // as we won't perform any process isolation.
+  // If 'useRemoteTabs' is disabled, immediately return with NotRemote as we
+  // won't perform any process isolation.
   bool useRemoteTabs = true;
   if (aOptions.mUseRemoteTabs.WasPassed()) {
     useRemoteTabs = aOptions.mUseRemoteTabs.Value();
@@ -3008,7 +3032,7 @@ void ChromeUtils::PredictRemoteTypeForURI(
     useRemoteTabs = aOptions.mWindow->GetBrowsingContext()->UseRemoteTabs();
   }
   if (!useRemoteTabs) {
-    aRemoteType = NOT_REMOTE_TYPE;
+    aRemoteType = RemoteType::NotRemote().Stringify();
     return;
   }
 
@@ -3029,14 +3053,22 @@ void ChromeUtils::PredictRemoteTypeForURI(
     attrs.mPrivateBrowsingId = aOptions.mWindow->IsPrivateBrowsing() ? 1 : 0;
   }
 
-  nsCString preferredRemoteType = aOptions.mPreferredRemoteType.WasPassed()
-                                      ? aOptions.mPreferredRemoteType.Value()
-                                      : SharedWebRemoteType(attrs);
+  RemoteType preferredRemoteType;
+  if (aOptions.mPreferredRemoteType.WasPassed()) {
+    preferredRemoteType =
+        RemoteType::Parse(aOptions.mPreferredRemoteType.Value());
+    if (!preferredRemoteType) {
+      aRv.ThrowTypeError("Invalid preferredRemoteType value");
+      return;
+    }
+  } else {
+    preferredRemoteType = RemoteType::SharedWeb(attrs);
+  }
 
   // If we got nullptr as our argument URI argument, treat it like an
   // about:blank document, and load it into our preferred remote type.
   if (!aURI) {
-    aRemoteType = preferredRemoteType;
+    aRemoteType = preferredRemoteType.Stringify();
     return;
   }
 
@@ -3047,7 +3079,7 @@ void ChromeUtils::PredictRemoteTypeForURI(
     return;
   }
 
-  aRemoteType = result.unwrap();
+  aRemoteType = result.unwrap().Stringify();
 }
 
 void ChromeUtils::PredictRemoteTypeForURI(

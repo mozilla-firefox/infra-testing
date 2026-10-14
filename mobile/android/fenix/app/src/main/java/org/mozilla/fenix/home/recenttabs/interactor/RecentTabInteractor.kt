@@ -15,9 +15,6 @@ interface RecentTabInteractor {
      */
     fun onRecentTabClicked(tabId: String)
 
-    /** Show the tabs tray. Called when a user clicks on the "Show all" button besides the recent tabs. */
-    fun onRecentTabShowAllClicked()
-
     /**
      * Removes a bookmark from the recent bookmark list. Called when a user clicks the "Remove" button for recently
      * saved bookmarks on the home screen.

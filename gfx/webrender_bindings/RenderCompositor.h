@@ -32,6 +32,7 @@ namespace wr {
 
 class RenderCompositorLayersSWGL;
 class RenderCompositorD3D11SWGL;
+class RenderTextureHost;
 
 class RenderCompositor {
  public:
@@ -104,7 +105,13 @@ class RenderCompositor {
 
   // True if AttachExternalImage supports being used with an external
   // image that maps to a RenderBufferTextureHost
-  virtual bool SupportsExternalBufferTextures() const { return false; }
+  virtual bool SupportsExternalBufferTextures() const {
+#ifdef MOZ_WAYLAND
+    return true;
+#else
+    return false;
+#endif
+  }
 
   virtual LayoutDeviceIntSize GetBufferSize() = 0;
 
@@ -133,7 +140,7 @@ class RenderCompositor {
   virtual void CompositorBeginFrame() {}
   virtual void CompositorEndFrame() {}
   virtual void Bind(wr::NativeTileId aId, wr::DeviceIntPoint* aOffset,
-                    uint32_t* aFboId, wr::DeviceIntRect aDirtyRect,
+                    uint64_t* aSurfaceHandle, wr::DeviceIntRect aDirtyRect,
                     wr::DeviceIntRect aValidRect) {}
   virtual void Unbind() {}
   virtual bool MapTile(wr::NativeTileId aId, wr::DeviceIntRect aDirtyRect,
@@ -143,7 +150,6 @@ class RenderCompositor {
   }
   virtual void UnmapTile() {}
   virtual void CreateSurface(wr::NativeSurfaceId aId,
-                             wr::DeviceIntPoint aVirtualOffset,
                              wr::DeviceIntSize aTileSize, bool aIsOpaque) {}
   virtual void CreateSwapChainSurface(wr::NativeSurfaceId aId,
                                       wr::DeviceIntSize aSize, bool aIsOpaque,
@@ -239,9 +245,11 @@ class RenderCompositor {
   }
 #endif
 
-  virtual RefPtr<layers::Fence> GetAndResetReleaseFence() { return nullptr; }
+  virtual RefPtr<layers::Fence> GetAndResetReadFence() { return nullptr; }
 
   virtual bool IsPaused() { return false; }
+
+  virtual void MaybeWaitingForPendingReadFence(RenderTextureHost* aTexture) {}
 
  protected:
   // We default this to 2, so that mLatestRenderFrameId.Prev() is always valid.

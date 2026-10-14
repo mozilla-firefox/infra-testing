@@ -15,6 +15,43 @@ const KEY_NAMES_TO_CODES = {
 };
 
 /**
+ * Get the letter or digit for an alphanumeric key code.
+ *
+ * @param {number} keyCode A KeyboardEvent.keyCode value.
+ * @param {boolean} isShiftHeld Whether Shift is part of the shortcut.
+ * @returns {string} An upper case letter, a digit, or "" for any other key.
+ */
+function getAlphanumericKey(keyCode, isShiftHeld) {
+  const isLetter = keyCode >= KeyEvent.DOM_VK_A && keyCode <= KeyEvent.DOM_VK_Z;
+  // With Shift held, only the shifted character on the key can match a
+  // shortcut, and on a digit key that is punctuation rather than the digit;
+  // e.g. "@" for the "2" key on a U.S. layout.
+  const isDigit =
+    !isShiftHeld &&
+    keyCode >= KeyEvent.DOM_VK_0 &&
+    keyCode <= KeyEvent.DOM_VK_9;
+  return isLetter || isDigit ? String.fromCharCode(keyCode) : "";
+}
+
+const graphemeSegmenter = new Intl.Segmenter(undefined, {
+  granularity: "grapheme",
+});
+
+/**
+ * Whether a KeyboardEvent.key value is a single character, as the user sees
+ * it. A character may take more than one UTF-16 code unit, e.g. a Hebrew
+ * letter with a dagesh or an emoji, while a named key such as "Enter" is
+ * several characters.
+ *
+ * @param {string} key A KeyboardEvent.key value.
+ * @returns {boolean}
+ */
+function isSingleCharacter(key) {
+  const segments = graphemeSegmenter.segment(key)[Symbol.iterator]();
+  return !segments.next().done && segments.next().done;
+}
+
+/**
  * Actor implementation for about:keyboard.
  */
 export class CustomKeysParent extends JSWindowActorParent {
@@ -53,19 +90,27 @@ export class CustomKeysParent extends JSWindowActorParent {
     };
 
     const keys = {};
+    const toolsCat = topWin.document.getElementById("tools-menu").label;
     // Gather as many keys as we can from the menu bar menus.
     const mainMenuBar = topWin.document.getElementById("main-menubar");
     for (const item of mainMenuBar.querySelectorAll("menuitem[key]")) {
       const menu = item.closest("menu");
-      if (menu.id == "historyUndoMenu" || menu.id == "historyUndoWindowMenu") {
+      if (
+        menu?.id == "historyUndoMenu" ||
+        menu?.id == "historyUndoWindowMenu"
+      ) {
         // The reopen last tab/window commands have the label of the actual
         // tab/window they will reopen. We handle those specially later.
         continue;
       }
-      if (!keys[menu.label]) {
-        keys[menu.label] = {};
+      // Items which aren't inside a menu (like the ones used to build the
+      // macOS application menu) are listed under the "tools" category for now,
+      // to match their location in other platforms.
+      const category = menu ? menu.label : toolsCat;
+      if (!keys[category]) {
+        keys[category] = {};
       }
-      add(keys[menu.label], item.getAttribute("key"), item.label);
+      add(keys[category], item.getAttribute("key"), item.label);
     }
 
     // Add some shortcuts that aren't available in menus.
@@ -114,7 +159,6 @@ export class CustomKeysParent extends JSWindowActorParent {
     );
     add(cat, "key_findPrevious", "customkeys-edit-find-previous");
     add(cat, "key_findPrevious2", "customkeys-edit-find-previous");
-    const toolsCat = topWin.document.getElementById("tools-menu").label;
     cat = keys[toolsCat];
     add(cat, "key_screenshot", "customkeys-tools-screenshot");
     const browserToolsCat =
@@ -285,8 +329,24 @@ export class CustomKeysParent extends JSWindowActorParent {
         return;
       }
       data.isValid = true;
-      if (event.key.length == 1) {
-        data.key = event.key.toUpperCase();
+      // data.key must be a character that GlobalKeyListener looks for when the
+      // shortcut is pressed later. Those characters come from the keyboard
+      // layout with AltGraph excluded. AltGraph is the Option key on macOS and
+      // AltGr elsewhere. With it held, event.key is the character it produced
+      // instead, so the letter or digit from event.keyCode is used. Otherwise
+      // event.key is the character on the key, and a key which produces no
+      // character is stored as a keycode.
+      //
+      // On Windows, AltGraph is only set on a keyboard layout that has an
+      // AltGr key, and it replaces Control and Alt, since pressing those two
+      // together is how AltGr is emulated. So on Windows and Linux this path
+      // records a key only when another modifier is held along with AltGraph.
+      // AltGraph alone leaves modifiers empty and the check below rejects it.
+      const alphanumericKey = event.getModifierState("AltGraph")
+        ? getAlphanumericKey(event.keyCode, event.shiftKey)
+        : "";
+      if (alphanumericKey || isSingleCharacter(event.key)) {
+        data.key = alphanumericKey || event.key.toUpperCase();
         if (!modifiers.length || (event.shiftKey && modifiers.length == 1)) {
           // This is a printable character; e.g. a letter, number or punctuation
           // mark. That's not a valid shortcut key.

@@ -13,6 +13,10 @@ const { FirstStartup } = ChromeUtils.importESModule(
   "resource://gre/modules/FirstStartup.sys.mjs"
 );
 
+const { IndexedDB } = ChromeUtils.importESModule(
+  "resource://gre/modules/IndexedDB.sys.mjs"
+);
+
 const { NimbusTelemetry } = ChromeUtils.importESModule(
   "resource://nimbus/lib/Telemetry.sys.mjs"
 );
@@ -95,7 +99,7 @@ async function setupTest({
     `legacy migration pref should be unset`
   );
 
-  for (const [phase, pref] of Object.keys(NIMBUS_MIGRATION_PREFS)) {
+  for (const [phase, pref] of Object.entries(NIMBUS_MIGRATION_PREFS)) {
     Assert.ok(
       !Services.prefs.prefHasUserValue(pref),
       `${phase} migration pref should be unset`
@@ -1059,159 +1063,138 @@ add_task(async function testMigrateEnrollmentsToSql() {
       { featureId: "prefFlips", value: { prefs: {} } },
       {
         isRollout: true,
-
         userFacingName: "prefFlips-rollout",
         userFacingDescription: "prefFlips-rollout description",
       }
     ),
   ];
 
+  const recipesBySlug = Object.fromEntries(
+    [...experiments, ...secureExperiments].map(recipe => [recipe.slug, recipe])
+  );
+
   const storePath = await NimbusTestUtils.createStoreWith(store => {
     store.set(
       "inactive-1",
-      NimbusTestUtils.factories.experiment.withFeatureConfig(
-        "inactive-1",
-        { featureId: "no-feature-firefox-desktop" },
+      NimbusTestUtils.factories.enrollment(
+        NimbusTestUtils.factories.recipe.withFeatureConfig("inactive-1", {
+          featureId: "no-feature-firefox-desktop",
+        }),
         {
-          active: false,
-          unenrollReason: "reason-1",
-          source: NimbusTelemetry.EnrollmentSource.RS_LOADER,
+          extra: {
+            active: false,
+            unenrollReason: "reason-1",
+          },
         }
       )
     );
     store.set(
       "inactive-2",
-      NimbusTestUtils.factories.experiment.withFeatureConfig(
-        "inactive-2",
-        { branchSlug: "treatment-a", featureId: "no-feature-firefox-desktop" },
+      NimbusTestUtils.factories.enrollment(
+        NimbusTestUtils.factories.recipe.withFeatureConfig("inactive-2", {
+          branchSlug: "treatment-a",
+          featureId: "no-feature-firefox-desktop",
+        }),
         {
-          active: false,
-          unenrollReason: "reason-2",
-          source: NimbusTelemetry.EnrollmentSource.RS_LOADER,
+          extra: {
+            active: false,
+            unenrollReason: "reason-2",
+          },
         }
       )
     );
     store.set(
       "expired-but-active",
-      NimbusTestUtils.factories.experiment.withFeatureConfig(
-        "expired-but-active",
-        { featureId: "no-feature-firefox-desktop" },
-        { source: NimbusTelemetry.EnrollmentSource.RS_LOADER }
+      NimbusTestUtils.factories.enrollment(
+        NimbusTestUtils.factories.recipe.withFeatureConfig(
+          "expired-but-active",
+          { featureId: "no-feature-firefox-desktop" }
+        ),
+        { extra: { source: NimbusTelemetry.EnrollmentSource.RS_LOADER } }
       )
     );
-
     store.set(
       "experiment-1",
-      NimbusTestUtils.factories.experiment.withFeatureConfig(
-        "experiment-1",
-        {
-          branchSlug: "experiment-1",
-          featureId: "no-feature-firefox-desktop",
-        },
-        {
-          source: NimbusTelemetry.EnrollmentSource.RS_LOADER,
-          userFacingName: "experiment-1",
-          userFacingDescription: "experiment-1 description",
-        }
-      )
+      NimbusTestUtils.factories.enrollment(recipesBySlug["experiment-1"])
     );
     store.set(
       "rollout-1",
-      NimbusTestUtils.factories.experiment.withFeatureConfig(
-        "rollout-1",
-        { featureId: "no-feature-firefox-desktop" },
-        {
-          isRollout: true,
-          source: NimbusTelemetry.EnrollmentSource.RS_LOADER,
-          isFirefoxLabsOptIn: true,
-          firefoxLabsTitle: "title",
-          firefoxLabsDescription: "description",
-          firefoxLabsDescriptionLinks: {
-            foo: "https://example.com",
-          },
-          firefoxLabsGroup: "group",
-          requiresRestart: true,
-          userFacingName: "rollout-1",
-          userFacingDescription: "rollout-1 description",
-        }
-      )
+      NimbusTestUtils.factories.enrollment(recipesBySlug["rollout-1"])
     );
     store.set(
       "prefFlips-experiment",
-      NimbusTestUtils.factories.experiment.withFeatureConfig(
-        "prefFlips-experiment",
+      NimbusTestUtils.factories.enrollment(
+        recipesBySlug["prefFlips-experiment"],
         {
-          featureId: "prefFlips",
-          value: PREFFLIPS_EXPERIMENT_VALUE,
-        },
-        {
-          source: NimbusTelemetry.EnrollmentSource.RS_LOADER,
-          prefFlips: {
-            originalValues: {
-              "foo.bar.baz": "original-value",
+          extra: {
+            prefFlips: {
+              originalValues: {
+                "foo.bar.baz": "original-value",
+              },
             },
           },
-          userFacingName: "prefFlips-experiment",
-          userFacingDescription: "prefFlips-experiment description",
         }
       )
     );
     store.set(
       "setPref-experiment",
-      NimbusTestUtils.factories.experiment.withFeatureConfig(
-        "setPref-experiment",
+      NimbusTestUtils.factories.enrollment(
+        recipesBySlug["setPref-experiment"],
         {
-          featureId: "nimbus-qa-1",
-          value: { value: "qa-1" },
-        },
-        {
-          source: NimbusTelemetry.EnrollmentSource.RS_LOADER,
-          prefs: [
-            {
-              name: "nimbus.qa.pref-1",
-              branch: "default",
-              featureId: "nimbus-qa-1",
-              variable: "value",
-              originalValue: "original-value",
-            },
-          ],
-          userFacingName: "setPref-experiment",
-          userFacingDescription: "setPref-experiment description",
+          extra: {
+            prefs: [
+              {
+                name: "nimbus.qa.pref-1",
+                branch: "default",
+                featureId: "nimbus-qa-1",
+                variable: "value",
+                originalValue: "original-value",
+              },
+            ],
+          },
         }
       )
     );
     store.set(
       "devtools",
-      NimbusTestUtils.factories.experiment.withFeatureConfig(
-        "devtools",
-        {
-          branchSlug: "devtools",
-          featureId: "no-feature-firefox-desktop",
-        },
-        {
-          source: "nimbus-devtools",
-          userFacingName: "devtools",
-          userFacingDescription: "devtools-description",
-        }
+      NimbusTestUtils.factories.enrollment(
+        NimbusTestUtils.factories.recipe.withFeatureConfig(
+          "devtools",
+          {
+            branchSlug: "devtools",
+            featureId: "no-feature-firefox-desktop",
+          },
+          {
+            userFacingName: "devtools",
+            userFacingDescription: "devtools-description",
+          }
+        ),
+        { extra: { source: "nimbus-devtools" } }
       )
     );
     store.set(
       "optin",
-      NimbusTestUtils.factories.experiment.withFeatureConfig(
-        "optin",
-        {
-          branchSlug: "force-enroll",
-          featureId: "no-feature-firefox-desktop",
-        },
-        {
-          source: NimbusTelemetry.EnrollmentSource.FORCE_ENROLLMENT,
-          localizations: {
-            "en-US": {
-              foo: "foo",
-            },
+      NimbusTestUtils.factories.enrollment(
+        NimbusTestUtils.factories.recipe.withFeatureConfig(
+          "optin",
+          {
+            branchSlug: "force-enroll",
+            featureId: "no-feature-firefox-desktop",
           },
-          userFacingName: "optin",
-          userFacingDescription: "optin-description",
+          {
+            localizations: {
+              "en-US": {
+                foo: "foo",
+              },
+            },
+            userFacingName: "optin",
+            userFacingDescription: "optin-description",
+          }
+        ),
+        {
+          extra: {
+            source: NimbusTelemetry.EnrollmentSource.FORCE_ENROLLMENT,
+          },
         }
       )
     );
@@ -1710,6 +1693,11 @@ add_task(async function testGraduateFirefoxLabsAutoPip() {
       is_first_startup: "false",
     },
     {
+      migration_id: "remove-normandy-databases",
+      success: "true",
+      is_first_startup: "false",
+    },
+    {
       migration_id: "graduate-firefox-labs-auto-pip",
       success: "true",
       is_first_startup: "false",
@@ -1723,6 +1711,11 @@ add_task(async function testGraduateFirefoxLabsAutoPip() {
       migration_id: "bug-2054546-mitigation",
       is_first_startup: "false",
       success: "true",
+    },
+    {
+      migration_id: "graduate-firefox-labs-jpeg-xl-all-channels",
+      success: "true",
+      is_first_startup: "false",
     },
   ]);
 
@@ -1777,6 +1770,11 @@ add_task(async function testSeparateRolloutOptOut() {
           is_first_startup: "false",
         },
         {
+          migration_id: "remove-normandy-databases",
+          success: "true",
+          is_first_startup: "false",
+        },
+        {
           migration_id: "graduate-firefox-labs-jpeg-xl",
           success: "true",
           is_first_startup: "false",
@@ -1785,6 +1783,11 @@ add_task(async function testSeparateRolloutOptOut() {
           migration_id: "bug-2054546-mitigation",
           is_first_startup: "false",
           success: "true",
+        },
+        {
+          migration_id: "graduate-firefox-labs-jpeg-xl-all-channels",
+          success: "true",
+          is_first_startup: "false",
         },
       ]);
 
@@ -1903,6 +1906,11 @@ add_task(async function testGraduateFirefoxLabsJPEGXL() {
 
   Assert.deepEqual(getMigrationEvents(), [
     {
+      migration_id: "remove-normandy-databases",
+      success: "true",
+      is_first_startup: "false",
+    },
+    {
       migration_id: "graduate-firefox-labs-jpeg-xl",
       success: "true",
       is_first_startup: "false",
@@ -1911,6 +1919,11 @@ add_task(async function testGraduateFirefoxLabsJPEGXL() {
       migration_id: "bug-2054546-mitigation",
       is_first_startup: "false",
       success: "true",
+    },
+    {
+      migration_id: "graduate-firefox-labs-jpeg-xl-all-channels",
+      success: "true",
+      is_first_startup: "false",
     },
   ]);
   Assert.deepEqual(
@@ -1927,8 +1940,116 @@ add_task(async function testGraduateFirefoxLabsJPEGXL() {
     ]
   );
 
-  Services.prefs.setBoolPref(ENABLED_PREF, false);
   await cleanup();
+
+  Services.prefs.clearUserPref(ENABLED_PREF);
+});
+
+add_task(async function testGraduateFirefoxLabsAllChannelsJPEGXL() {
+  const slugs = [
+    "firefox-labs-jpeg-xl-beta",
+    "firefox-labs-jpeg-xl-deved",
+    "firefox-labs-jpeg-xl-release",
+  ];
+
+  const ENABLED_PREF = getEnabledPrefForFeature("jpeg-xl");
+  Services.prefs.setBoolPref(ENABLED_PREF, true);
+
+  for (const slug of slugs) {
+    const recipe = NimbusTestUtils.factories.recipe.withFeatureConfig(
+      slug,
+      {
+        featureId: "jpeg-xl",
+        value: { enabled: true },
+      },
+      {
+        isFirefoxLabsOptIn: true,
+        isRollout: true,
+      }
+    );
+    const { cleanup, manager } = await NimbusTestUtils.setupTest({
+      clearTelemetry: true,
+      init: false,
+      storePath: await NimbusTestUtils.createStoreWith(store => {
+        NimbusTestUtils.addEnrollmentForRecipe(recipe, {
+          store,
+          extra: {
+            prefs: [
+              {
+                name: ENABLED_PREF,
+                featureId: "jpeg-xl",
+                variable: "enabled",
+                branch: "user",
+                originalValue: false,
+              },
+            ],
+          },
+        });
+      }),
+      migrationState: NimbusTestUtils.migrationState.PREFFLIPS_RESTORED,
+    });
+
+    await GleanPings.nimbusTargetingContext.testSubmission(
+      () => {
+        Assert.deepEqual(
+          Glean.nimbusEvents.enrollmentStatus
+            .testGetValue("nimbus-targeting-context")
+            .map(event => event.extra),
+          [
+            {
+              slug,
+              branch: "control",
+              status: "WasEnrolled",
+              reason: "Migration",
+              migration: "graduate-firefox-labs-jpeg-xl-all-channels",
+            },
+          ]
+        );
+      },
+      () => ExperimentAPI.init()
+    );
+    const enrollment = manager.store.get(slug);
+
+    Assert.ok(!enrollment.active, "Enrollment is not active");
+    Assert.deepEqual(enrollment.featureIds, ["jpeg-xl"]);
+    Assert.equal(enrollment.unenrollReason, "migration");
+
+    Assert.equal(
+      Services.prefs.getBoolPref(ENABLED_PREF),
+      true,
+      "Pref is still set"
+    );
+
+    Assert.deepEqual(getMigrationEvents(), [
+      {
+        migration_id: "remove-normandy-databases",
+        success: "true",
+        is_first_startup: "false",
+      },
+      {
+        migration_id: "graduate-firefox-labs-jpeg-xl-all-channels",
+        success: "true",
+        is_first_startup: "false",
+      },
+    ]);
+    Assert.deepEqual(
+      Glean.nimbusEvents.unenrollment
+        .testGetValue("events")
+        .map(event => event.extra),
+      [
+        {
+          experiment: slug,
+          branch: "control",
+          reason: "migration",
+          migration: "graduate-firefox-labs-jpeg-xl-all-channels",
+        },
+      ]
+    );
+
+    await cleanup();
+  }
+
+  Services.prefs.clearUserPref(ENABLED_PREF);
 });
 
 add_task(async function testFirstStartup() {
@@ -1971,4 +2092,146 @@ add_task(async function testFirstStartup() {
   await cleanup();
 
   FirstStartup.resetForTesting();
+});
+
+const NORMANDY_DATABASES = [
+  "shield",
+  "normandy-addon-rollout",
+  "normandy-preference-rollout",
+];
+const NORMANDY_STARTUP_PREF =
+  "app.normandy.startupRolloutPrefs.test.rollout-pref";
+const NORMANDY_EXPERIMENT_STARTUP_PREF =
+  "app.normandy.startupExperimentPrefs.test.experiment-pref";
+const NORMANDY_FILES = [
+  "shield-preference-experiments.json",
+  "shield-recipe-client.json",
+];
+
+async function normandyDatabaseNames() {
+  const names = (await indexedDB.databases()).map(db => db.name);
+  return NORMANDY_DATABASES.filter(name => names.includes(name));
+}
+
+add_task(async function testRemoveNormandyDatabases() {
+  for (const name of NORMANDY_DATABASES) {
+    const db = await IndexedDB.open(name, 1, database =>
+      database.createObjectStore("test-store", { keyPath: "slug" })
+    );
+    await db
+      .objectStore("test-store", "readwrite")
+      .add({ slug: "test-rollout" });
+    db.close();
+  }
+
+  for (const name of NORMANDY_FILES) {
+    await IOUtils.writeJSON(PathUtils.join(PathUtils.profileDir, name), {});
+  }
+
+  Services.prefs.setBoolPref(NORMANDY_STARTUP_PREF, true);
+  Services.prefs.setBoolPref(NORMANDY_EXPERIMENT_STARTUP_PREF, true);
+
+  Assert.deepEqual(
+    await normandyDatabaseNames(),
+    NORMANDY_DATABASES,
+    "The Normandy databases exist before the migration runs"
+  );
+
+  const { cleanup } = await NimbusTestUtils.setupTest({
+    clearTelemetry: true,
+    migrationState:
+      NimbusTestUtils.migrationState
+        .GRADUATED_FIREFOX_LABS_JPEG_XL_ALL_CHANNELS,
+  });
+
+  Assert.deepEqual(getMigrationEvents(), [
+    {
+      migration_id: "remove-normandy-databases",
+      success: "true",
+      is_first_startup: "false",
+    },
+  ]);
+
+  Assert.deepEqual(
+    await normandyDatabaseNames(),
+    [],
+    "The migration deleted the Normandy databases"
+  );
+  Assert.ok(
+    !Services.prefs.prefHasUserValue(NORMANDY_STARTUP_PREF),
+    "The migration cleared the preference rollout startup prefs"
+  );
+  Assert.ok(
+    !Services.prefs.prefHasUserValue(NORMANDY_EXPERIMENT_STARTUP_PREF),
+    "The migration cleared the preference experiment startup prefs"
+  );
+  for (const name of NORMANDY_FILES) {
+    Assert.ok(
+      !(await IOUtils.exists(PathUtils.join(PathUtils.profileDir, name))),
+      `The migration deleted ${name}`
+    );
+  }
+
+  await cleanup();
+});
+
+add_task(async function testRemoveNormandyDatabasesNoDatabases() {
+  Assert.deepEqual(
+    await normandyDatabaseNames(),
+    [],
+    "The Normandy databases do not exist"
+  );
+
+  const { cleanup } = await NimbusTestUtils.setupTest({
+    clearTelemetry: true,
+    migrationState:
+      NimbusTestUtils.migrationState
+        .GRADUATED_FIREFOX_LABS_JPEG_XL_ALL_CHANNELS,
+  });
+
+  Assert.deepEqual(getMigrationEvents(), [
+    {
+      migration_id: "remove-normandy-databases",
+      success: "true",
+      is_first_startup: "false",
+    },
+  ]);
+
+  await cleanup();
+});
+
+add_task(async function testRemoveNormandyDatabasesBlocked() {
+  for (const name of NORMANDY_DATABASES) {
+    const db = await IndexedDB.open(name, 1, database =>
+      database.createObjectStore("test-store")
+    );
+    db.close();
+  }
+
+  const shield = await IndexedDB.open("shield", 1);
+
+  const { cleanup } = await NimbusTestUtils.setupTest({
+    clearTelemetry: true,
+    migrationState:
+      NimbusTestUtils.migrationState
+        .GRADUATED_FIREFOX_LABS_JPEG_XL_ALL_CHANNELS,
+  });
+
+  Assert.deepEqual(getMigrationEvents(), [
+    {
+      migration_id: "remove-normandy-databases",
+      success: "true",
+      is_first_startup: "false",
+    },
+  ]);
+
+  Assert.deepEqual(
+    await normandyDatabaseNames(),
+    ["shield"],
+    "The migration deleted the Normandy databases that were not blocked"
+  );
+
+  shield.close();
+
+  await cleanup();
 });

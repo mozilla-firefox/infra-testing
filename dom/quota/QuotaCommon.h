@@ -1538,13 +1538,13 @@ auto HandleCustomRetVal(const char (&aFunc)[NFunc], const char (&aExpr)[NExpr],
   using CustomRetVal = CustomRetVal_;
   CustomRetVal& aCustomRetVal = aCustomRetVal_;
 #endif
-  if constexpr (std::is_invocable<CustomRetVal, const char[NFunc],
-                                  const char[NExpr]>::value) {
+  if constexpr (std::is_invocable_v<CustomRetVal, const char[NFunc],
+                                    const char[NExpr]>) {
     return std::forward<CustomRetVal>(aCustomRetVal)(aFunc, aExpr);
-  } else if constexpr (std::is_invocable<CustomRetVal, const char[NFunc],
-                                         const T&>::value) {
+  } else if constexpr (std::is_invocable_v<CustomRetVal, const char[NFunc],
+                                           const T&>) {
     return aCustomRetVal(aFunc, aRv);
-  } else if constexpr (std::is_invocable<CustomRetVal, const T&>::value) {
+  } else if constexpr (std::is_invocable_v<CustomRetVal, const T&>) {
     return aCustomRetVal(aRv);
   } else {
     return std::forward<CustomRetVal>(aCustomRetVal);
@@ -1657,8 +1657,19 @@ auto ReduceEachFileAtomicCancelable(nsIFile& aDirectory,
 }
 
 constexpr bool IsDatabaseCorruptionError(const nsresult aRv) {
-  return aRv == NS_ERROR_FILE_CORRUPTED || aRv == NS_ERROR_STORAGE_IOERR;
+  return aRv == NS_ERROR_FILE_CORRUPTED || aRv == NS_ERROR_STORAGE_IOERR ||
+         aRv == NS_ERROR_MALFORMED_URI;
 }
+
+enum class IntegrityCheckMode { Quick, Full };
+
+// Run PRAGMA quick_check(1) or PRAGMA integrity_check(1) on the given
+// connection and return whether the database is structurally sound.
+// Quick mode validates B-tree structure and freelist consistency; Full mode
+// additionally cross-validates index entries against their parent tables.
+Result<bool, nsresult> DatabasePassesIntegrityCheck(
+    mozIStorageConnection& aConnection,
+    IntegrityCheckMode aMode = IntegrityCheckMode::Quick);
 
 template <typename Func>
 auto CallWithDelayedRetriesIfAccessDenied(Func&& aFunc, uint32_t aMaxRetries,

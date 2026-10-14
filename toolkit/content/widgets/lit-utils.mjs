@@ -10,6 +10,8 @@ import {
   classMap,
 } from "chrome://global/content/vendor/lit.all.mjs";
 
+/** @import { TemplateResult } from "chrome://global/content/vendor/lit.all.mjs" */
+
 /**
  * Helper for our replacement of @query. Used with `static queries` property.
  *
@@ -26,6 +28,18 @@ function query(el, selector) {
  */
 function queryAll(el, selector) {
   return () => el.renderRoot.querySelectorAll(selector);
+}
+
+/**
+ * Checks whether a modifier key is held during a keyboard event. Arrow key
+ * navigation ignores these, since modified arrows belong to browser, OS, and
+ * assistive technology shortcuts, e.g. Alt+Left or Cmd+Option+Left.
+ *
+ * @param {KeyboardEvent} event
+ * @returns {boolean}
+ */
+export function hasModifierKey(event) {
+  return event.altKey || event.ctrlKey || event.metaKey || event.shiftKey;
 }
 
 /**
@@ -219,6 +233,19 @@ export class MozLitElement extends LitElement {
     return this.#l10nObj;
   }
 
+  /**
+   * Whether the app locale is RTL. Falls back to the document direction where
+   * Services is unavailable.
+   *
+   * @returns {boolean}
+   */
+  get isDocumentRTL() {
+    if (typeof Services !== "undefined") {
+      return Services.locale.isAppLocaleRTL;
+    }
+    return document.dir === "rtl";
+  }
+
   async dispatchOnUpdateComplete(event) {
     await this.updateComplete;
     this.dispatchEvent(event);
@@ -251,6 +278,7 @@ export class MozLitElement extends LitElement {
  *     element can be disabled.
  * @property {string} ariaLabel - The aria-label text when there is no visible label.
  * @property {string} ariaDescription - The aria-description text when there is no visible description.
+ * @property {string} title - The title attribute, mapped onto the inner focusable control.
  */
 export class MozBaseInputElement extends MozLitElement {
   static formAssociated = true;
@@ -269,6 +297,7 @@ export class MozBaseInputElement extends MozLitElement {
     parentDisabled: { type: Boolean, state: true },
     ariaLabel: { type: String, mapped: true },
     ariaDescription: { type: String, mapped: true },
+    title: { type: String, mapped: true },
     inputLayout: { type: String, reflect: true, attribute: "inputlayout" },
   };
   /** @type {"inline" | "block" | "inline-end"} */
@@ -440,6 +469,16 @@ export class MozBaseInputElement extends MozLitElement {
     return nothing;
   }
 
+  /**
+   * Template for optional required indicator, rendered next to label.
+   * Subclasses that support required state should override this.
+   *
+   * @returns {TemplateResult | string}
+   */
+  requiredIndicatorTemplate() {
+    return "";
+  }
+
   render() {
     return html`
       <link
@@ -485,7 +524,7 @@ export class MozBaseInputElement extends MozLitElement {
       labelEl = html`<span class="text" .textContent=${this.label}></span>`;
     }
     return html`<span class="text-container"
-      >${this.iconTemplate()}${labelEl}</span
+      >${this.iconTemplate()}${labelEl}${this.requiredIndicatorTemplate()}</span
     >`;
   }
 

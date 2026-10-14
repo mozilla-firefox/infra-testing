@@ -8,12 +8,13 @@
 use std::ffi::CString;
 use std::os::raw::c_char;
 
-// NOTE if you add or remove crates below here, please make a corresponding change in ../fenix-dylib/megazord_stub.c
 pub use ads_client;
 pub use autofill;
 pub use crashtest;
+pub use db_crypto;
 pub use error_support;
 pub use fxa_client;
+pub use fxcontainers;
 pub use init_rust_components;
 pub use logins;
 pub use merino;
@@ -29,7 +30,6 @@ pub use sync_manager;
 pub use tabs;
 pub use tracing_support;
 pub use viaduct;
-// NOTE if you add or remove crates above here, please make a corresponding change in ../fenix-dylib/megazord_stub.c
 
 // TODO: Uncomment this code when webext-storage component is integrated in android
 // pub use webext_storage;
@@ -74,3 +74,21 @@ lazy_static::lazy_static! {
 struct StaticCStringPtr(*const c_char);
 unsafe impl Send for StaticCStringPtr {}
 unsafe impl Sync for StaticCStringPtr {}
+
+// The namespace glean-sym FFI items are placed in.
+// These are not defined when we don't set the `active` feature
+// Add this hack to prevent uniffi_bindgen failures
+
+#[cfg(not(target_os = "android"))]
+#[allow(clippy::large_const_arrays)]
+const UNIFFI_META_CONST_NAMESPACE_GLEAN_SYM: ::uniffi::MetadataBuffer =
+    ::uniffi::MetadataBuffer::from_code(::uniffi::metadata::codes::NAMESPACE)
+        .concat_str("glean_sym")
+        .concat_str("glean_sym");
+
+#[cfg(not(target_os = "android"))]
+#[doc(hidden)]
+#[unsafe(no_mangle)]
+pub static UNIFFI_META_NAMESPACE_GLEAN_SYM: [::std::primitive::u8;
+    UNIFFI_META_CONST_NAMESPACE_GLEAN_SYM.size] =
+    UNIFFI_META_CONST_NAMESPACE_GLEAN_SYM.into_array();

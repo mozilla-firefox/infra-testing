@@ -1,4 +1,4 @@
-requires-python:>=3.9
+requires-python:>=3.10
 pypi:Sphinx==7.1.2
 pypi:alabaster==0.7.13
 pypi:codespell==2.4.3
@@ -13,7 +13,7 @@ pypi:psutil==5.9.4
 pypi:py==1.11.0
 pypi:pytz==2022.7.1
 pypi:ruff==0.16.3
-pypi:rumdl==0.1.91
+pypi:rumdl==0.1.96
 pypi:snowballstemmer==2.2.0
 pypi:sphinxcontrib-applehelp==1.0.4
 pypi:sphinxcontrib-htmlhelp==2.0.1
@@ -24,6 +24,7 @@ requirements-txt:taskcluster/requirements.txt
 vendored:third_party/python/aiohappyeyeballs
 vendored:third_party/python/aiohttp
 vendored:third_party/python/aiosignal
+vendored:third_party/python/boolean_py
 vendored:third_party/python/compare_locales
 vendored:third_party/python/diskarzhan
 vendored:third_party/python/esprima
@@ -31,6 +32,7 @@ vendored:third_party/python/fluent.syntax
 vendored:third_party/python/frozenlist
 vendored:third_party/python/giturlparse
 vendored:third_party/python/json_e
+vendored:third_party/python/license_expression
 vendored:third_party/python/mohawk
 vendored:third_party/python/mozilla_repo_urls
 vendored:third_party/python/multidict

@@ -302,11 +302,24 @@ class nsAccUtils {
   static bool IsEditableARIACombobox(const LocalAccessible* aAccessible);
 
   /**
+   * Return true if aAccessible should fire EVENT_TEXT_VALUE_CHANGE when the
+   * text of one of its descendants changes.
+   */
+  static bool ShouldFireValueChangeForDescendantChanges(
+      const LocalAccessible* aAccessible);
+
+  /**
    * Return true if the CSS positioned target of an anchor is a valid details
    * related accessible.
    */
   static bool IsValidDetailsTargetForAnchor(const Accessible* aDetails,
                                             const Accessible* aTarget);
+
+  static bool IsARIARoleAllowedOnContentDoc(role aRole) {
+    // We don't need to allow document because the native role for a document is
+    // already document, so ARIA role="document" is redundant.
+    return aRole == roles::APPLICATION || aRole == roles::DIALOG;
+  }
 };
 
 }  // namespace a11y

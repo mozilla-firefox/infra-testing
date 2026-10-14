@@ -191,7 +191,6 @@ const PRIVILEGED_PERMS = new Set([
   "activityLog",
   "mozillaAddons",
   "networkStatus",
-  "normandyAddonStudy",
   "telemetry",
 ]);
 
@@ -201,20 +200,9 @@ const PRIVILEGED_PERMS_ANDROID_ONLY = new Set([
   "nativeMessaging",
 ]);
 
-const PRIVILEGED_PERMS_DESKTOP_ONLY = new Set(["normandyAddonStudy"]);
-
 if (AppConstants.platform == "android") {
   for (const perm of PRIVILEGED_PERMS_ANDROID_ONLY) {
     PRIVILEGED_PERMS.add(perm);
-  }
-}
-
-if (
-  AppConstants.MOZ_APP_NAME != "firefox" ||
-  AppConstants.platform == "android"
-) {
-  for (const perm of PRIVILEGED_PERMS_DESKTOP_ONLY) {
-    PRIVILEGED_PERMS.delete(perm);
   }
 }
 
@@ -911,7 +899,11 @@ export class ExtensionData {
    * Note: These fields are only available and meant to be used on Extension
    * instances, declared here because methods from this class reference them.
    */
-  /** @type {object} TODO: move to the Extension class, bug 1871094. */
+  /**
+   * TODO: move to the Extension class, bug 1871094.
+   *
+   * @type {object}
+   */
   addonData;
   /** @type {nsIURI} */
   baseURI;

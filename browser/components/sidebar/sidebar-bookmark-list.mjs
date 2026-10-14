@@ -27,6 +27,23 @@ const DRAG_HOVER_EXPAND_DELAY_MS = 1000;
 
 let activeDropList = null;
 
+/**
+ * A row in the sidebar bookmarks tree.
+ *
+ * @typedef {object} SidebarBookmarkItem
+ *
+ * @property {string} guid
+ * @property {string} title
+ * @property {string} [uri]
+ * @property {string} [url]
+ * @property {string} [icon]
+ * @property {number} type
+ * @property {SidebarBookmarkItem[]} [children]
+ * @property {boolean} [isPlaceContainer]
+ * @property {boolean} [isTagContainer]
+ * @property {boolean} [isTagsRoot]
+ */
+
 export class SidebarBookmarkList extends SidebarTabList {
   static properties = {
     ...SidebarTabList.properties,
@@ -100,6 +117,45 @@ export class SidebarBookmarkList extends SidebarTabList {
     return folder?.parentElement?.querySelector("sidebar-bookmark-list");
   }
 
+  /**
+   * Force the virtual-list chunk holding an item to render, so the item's row
+   * exists in the DOM even while it is scrolled out of view. Sublists are
+   * otherwise only rendered once they intersect the viewport, which leaves
+   * items in a long list unreachable until the user scrolls to them.
+   *
+   * @param {string} guid
+   * @returns {Promise<boolean>} False if this list has no item with that guid.
+   *   The lists render from a snapshot of the bookmarks tree, so a folder that
+   *   Places reports in a path can be absent from them; a caller walking that
+   *   path uses this to learn it can't descend any further.
+   */
+  async renderItemForGuid(guid) {
+    const index = this.tabItems?.findIndex(item => item.guid === guid) ?? -1;
+    if (index < 0) {
+      return false;
+    }
+    // A nested list is created by its parent list's render, so on the first
+    // call it hasn't rendered its own shadow root yet and the <virtual-list>
+    // queried below is still missing. That's also why the null check on it
+    // can't move any higher.
+    await this.updateComplete;
+    const virtualList = this.rootVirtualListEl;
+    if (!virtualList) {
+      return false;
+    }
+    // A list that has never intersected the viewport renders no chunks at all,
+    // so make it render them before asking for the one holding the item.
+    virtualList.isVisible = true;
+    await virtualList.updateComplete;
+    const subList = virtualList.getSubListForItem(index);
+    if (!subList) {
+      return false;
+    }
+    subList.isVisible = true;
+    await subList.updateComplete;
+    return true;
+  }
+
   willUpdate(changes) {
     super.willUpdate(changes);
     if (changes.has("expandedFolderGuids")) {
@@ -109,6 +165,13 @@ export class SidebarBookmarkList extends SidebarTabList {
     }
   }
 
+  /**
+   * Calculates a bookmark item's height, including visible descendants.
+   *
+   * @param {SidebarBookmarkItem} item
+   * @param {number} defaultHeight
+   * @returns {number}
+   */
   #itemHeightGetter = (item, defaultHeight) => {
     if (!item.children || !this.expandedFolderGuids.has(item.guid)) {
       return defaultHeight;
@@ -126,6 +189,17 @@ export class SidebarBookmarkList extends SidebarTabList {
     folderLabelEl: ".bookmark-folder-label",
   };
 
+  /**
+   * Renders a bookmark item as a row, folder, or separator.
+   *
+   * Folders deliberately have no explicit aria-expanded: the summary's expanded
+   * state comes from its details element, and an attribute updated by a later
+   * render would briefly contradict it when a folder collapses.
+   *
+   * @param {SidebarBookmarkItem} tabItem
+   * @param {number} i
+   * @returns {TemplateResult}
+   */
   itemTemplate = (tabItem, i) => {
     const tabIndex = this.treeView?.isActiveNode(this, tabItem.guid) ? 0 : -1;
     if (!tabItem.url && !tabItem.children) {
@@ -138,6 +212,7 @@ export class SidebarBookmarkList extends SidebarTabList {
         .guid=${tabItem.guid}
       ></div>`;
     }
+    const title = this.#getBestTitleForItem(tabItem);
     if (tabItem.children !== undefined) {
       let folderKind = null;
       if (tabItem.isTagsRoot) {
@@ -150,17 +225,25 @@ export class SidebarBookmarkList extends SidebarTabList {
       if (!tabItem.children.length) {
         return html`<div
           class="bookmark-folder-label"
-          role="listitem"
-          aria-label=${tabItem.title}
+          role="treeitem"
+          aria-label=${title}
+          aria-level=${this.level}
+          aria-posinset=${i + 1}
+          aria-setsize=${this.tabItems.length}
           data-folder-kind=${ifDefined(folderKind)}
           tabindex=${tabIndex}
           draggable="true"
           data-guid=${tabItem.guid}
           @auxclick=${e => this.#onFolderAuxClick(e, tabItem.guid)}
-          @mouseenter=${e => this.#updateFolderTooltip(e, tabItem.title)}
+          @mouseenter=${e => this.#updateFolderTooltip(e, title)}
           .guid=${tabItem.guid}
         >
-          ${tabItem.title}
+          <span
+            class="bookmark-folder-title text-truncated-ellipsis"
+            dir="auto"
+          >
+            ${title}
+          </span>
         </div>`;
       }
       return html`
@@ -173,15 +256,25 @@ export class SidebarBookmarkList extends SidebarTabList {
           <summary
             draggable="true"
             part="summary"
+            role="treeitem"
+            aria-level=${this.level}
+            aria-posinset=${i + 1}
+            aria-setsize=${this.tabItems.length}
             tabindex=${tabIndex}
             data-guid=${tabItem.guid}
             @auxclick=${e => this.#onFolderAuxClick(e, tabItem.guid)}
-            @mouseenter=${e => this.#updateFolderTooltip(e, tabItem.title)}
+            @mouseenter=${e => this.#updateFolderTooltip(e, title)}
           >
-            ${tabItem.title}
+            <span
+              class="bookmark-folder-title text-truncated-ellipsis"
+              dir="auto"
+            >
+              ${title}
+            </span>
           </summary>
           <div id="content">
             <sidebar-bookmark-list
+              .level=${this.level + 1}
               maxTabsLength="-1"
               secondaryActionClass="delete-button"
               .tabItems=${tabItem.children}
@@ -210,7 +303,10 @@ export class SidebarBookmarkList extends SidebarTabList {
         .indicators=${tabItem.indicators}
         .primaryL10nArgs=${ifDefined(tabItem.primaryL10nArgs)}
         .primaryL10nId=${tabItem.primaryL10nId}
-        role="listitem"
+        role="treeitem"
+        aria-level=${this.level}
+        aria-posinset=${i + 1}
+        aria-setsize=${this.tabItems.length}
         .searchQuery=${ifDefined(this.searchQuery)}
         .secondaryActionClass=${ifDefined(
           this.secondaryActionClass ?? tabItem.secondaryActionClass
@@ -220,12 +316,26 @@ export class SidebarBookmarkList extends SidebarTabList {
         .selected=${this.isTabItemSelected(tabItem)}
         .tabElement=${ifDefined(tabItem.tabElement)}
         tabindex=${tabIndex}
-        .title=${tabItem.title}
+        .title=${title}
         .url=${tabItem.url}
         @keydown=${e => e.currentTarget.primaryActionHandler(e)}
       ></sidebar-bookmark-row>
     `;
   };
+
+  /**
+   * Gets a display title for a bookmark item.
+   *
+   * @param {SidebarBookmarkItem} tabItem
+   * @returns {string}
+   */
+  #getBestTitleForItem(tabItem) {
+    return (
+      tabItem.title ||
+      lazy.PlacesUIUtils.getBestTitleForUri(tabItem.uri, true) ||
+      lazy.PlacesUIUtils.promptLocalization.formatValueSync("places-no-title")
+    );
+  }
 
   stylesheets() {
     return [
@@ -246,7 +356,7 @@ export class SidebarBookmarkList extends SidebarTabList {
       <div
         id="fxview-tab-list"
         class="fxview-tab-list"
-        role="list"
+        role=${this.level > 1 ? "group" : "tree"}
         @keydown=${this.handleFocusElementInRow}
         @dragstart=${this.#onDragStart}
         @dragover=${this.#onDragOver}

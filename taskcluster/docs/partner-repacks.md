@@ -16,7 +16,7 @@ We produce partner repacks for some beta builds, and for release builds, as part
 automation. We don't produce any files to update these builds as they are handled automatically
 (see [updates]).
 
-We also produce {ref}`partner attribution` builds, which are Firefox Windows installers with a cohort identifier
+We also produce {doc}`partner-attribution` builds, which are Firefox Windows installers with a cohort identifier
 added.
 
 ## Parameters & Scheduling
@@ -37,8 +37,17 @@ release. They're both true for Firefox betas >= b8 and releases, but otherwise d
 
 `release_partner_config` is a dictionary of configuration data which drives the task generation
 logic. It's usually looked up during the release promotion action task, using the Github
-GraphQL API in the [get_partner_config_by_url()](python/taskgraph.util.html#taskgraph.util.partners.get_partner_config_by_url) function, with the
+GraphQL API in the `gecko_taskgraph.util.partners.get_partner_config_by_url()` function, with the
 url defined in [taskcluster/config.yml](https://searchfox.org/mozilla-release/search?q=regexp%3A^partner+path%3Aconfig.yml&redirect=true).
+
+That lookup happens only once per release, in the first promotion action that needs it —
+normally `promote`. Later phases inherit the resolved config from the most recent previous
+graph's `parameters.yml`, so that every phase repacks and publishes the same set of partners.
+A partner added to a `default.xml` manifest partway through a release is therefore not picked
+up by that release's `push` and `ship` phases; without this, they would create repack tasks
+depending on cached tasks whose artifacts predate the new partner (bug 2071912). Use the next
+release, or an off-cycle `promote_firefox_partner_repack` run — those flavors deliberately look
+the config up again — to build a newly added partner.
 
 `release_partner_build_number` is an integer used to create unique upload paths in the firefox
 candidates directory, while `release_partners` is a list of partners that should be
@@ -138,7 +147,7 @@ Some key divergences are:
 - platforms: Typically all (but depends on what's enabled by partner configuration)
 - upstreams: `build-signing` `l10n-signing`
 
-There is one task per platform in this step, calling out to [scripts/desktop_partner_repacks.py](https://hg.mozilla.org/mozilla-central/file/default/testing/mozharness/scripts/desktop_partner_repacks.py) in mozharness to prepare an environment and then perform the repacks.
+There is one task per platform in this step, running [taskcluster/scripts/release/partner-repack.sh](https://hg.mozilla.org/mozilla-central/file/default/taskcluster/scripts/release/partner-repack.sh) to fetch the repack manifests and then perform the repacks.
 The actual repacking is done by [python/mozrelease/mozrelease/partner_repack.py](https://hg.mozilla.org/mozilla-central/file/default/python/mozrelease/mozrelease/partner_repack.py).
 
 It takes as input the build-signing and l10n-signing artifacts, which are all zip/tar.gz/tar.xz

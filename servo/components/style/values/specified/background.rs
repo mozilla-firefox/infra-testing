@@ -11,7 +11,7 @@ use crate::values::generics::background::BackgroundSize as GenericBackgroundSize
 use crate::values::specified::length::{
     NonNegativeLengthPercentage, NonNegativeLengthPercentageOrAuto,
 };
-use cssparser::{match_ignore_ascii_case, Parser};
+use cssparser::{Parser, match_ignore_ascii_case};
 use selectors::parser::SelectorParseErrorKind;
 use std::fmt::{self, Write};
 use style_traits::{CssString, CssWriter, ParseError, StyleParseErrorKind, ToCss};
@@ -21,10 +21,7 @@ use thin_vec::ThinVec;
 pub type BackgroundSize = GenericBackgroundSize<NonNegativeLengthPercentage>;
 
 impl Parse for BackgroundSize {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         if let Ok(width) = input.try_parse(|i| NonNegativeLengthPercentageOrAuto::parse(context, i))
         {
             let height = input
@@ -139,10 +136,7 @@ impl ToTyped for BackgroundRepeat {
 }
 
 impl Parse for BackgroundRepeat {
-    fn parse<'i, 't>(
-        _context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(_context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         let ident = input.expect_ident_cloned()?;
 
         match_ignore_ascii_case! { &ident,
@@ -158,9 +152,7 @@ impl Parse for BackgroundRepeat {
         let horizontal = match BackgroundRepeatKeyword::from_ident(&ident) {
             Ok(h) => h,
             Err(()) => {
-                return Err(
-                    input.new_custom_error(SelectorParseErrorKind::UnexpectedIdent(ident.clone()))
-                );
+                return Err(ParseError::custom(SelectorParseErrorKind::UnexpectedIdent));
             },
         };
 
@@ -170,8 +162,7 @@ impl Parse for BackgroundRepeat {
 }
 
 fn background_clip_border_area_enabled(context: &ParserContext) -> bool {
-    context.chrome_rules_enabled()
-        || static_prefs::pref!("layout.css.background-clip.border-area.enabled")
+    context.chrome_rules_enabled() || crate::pref!("layout.css.background-clip.border-area.enabled")
 }
 
 /// The specified value of the `background-clip` and `mask-clip` properties.
@@ -256,26 +247,124 @@ impl BackgroundClip {
     }
 
     /// Parse the value of the `background-clip` property.
-    pub fn parse_for_background<'i>(
+    pub fn parse_for_background(
         context: &ParserContext,
-        input: &mut Parser<'i, '_>,
-    ) -> Result<Self, ParseError<'i>> {
+        input: &mut Parser,
+    ) -> Result<Self, ParseError> {
         let clip = Self::parse(context, input)?;
         if !clip.validity().intersects(ClipValidity::BACKGROUND) {
-            return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+            return Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError));
         }
         Ok(clip)
     }
 
     /// Parse the value of the `mask-clip` property.
-    pub fn parse_for_mask<'i>(
-        context: &ParserContext,
-        input: &mut Parser<'i, '_>,
-    ) -> Result<Self, ParseError<'i>> {
+    pub fn parse_for_mask(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         let clip = Self::parse(context, input)?;
         if !clip.validity().intersects(ClipValidity::MASK) {
-            return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+            return Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError));
         }
         Ok(clip)
     }
+}
+
+/// https://drafts.csswg.org/css-backgrounds/#the-background-origin
+///
+/// Also used by mask-origin, which additionally accepts the SVG boxes.
+#[allow(missing_docs)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Deserialize,
+    Eq,
+    FromPrimitive,
+    Hash,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    Serialize,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+    ToTyped,
+)]
+#[repr(u8)]
+pub enum BackgroundOrigin {
+    BorderBox,
+    PaddingBox,
+    ContentBox,
+    // TODO(emilio): Same caveat as BackgroundClip regarding SpecifiedValueInfo.
+    #[cfg(feature = "gecko")]
+    #[value_info(skip)]
+    FillBox,
+    #[cfg(feature = "gecko")]
+    #[value_info(skip)]
+    StrokeBox,
+    #[cfg(feature = "gecko")]
+    #[value_info(skip)]
+    ViewBox,
+}
+
+impl BackgroundOrigin {
+    /// Parse the value of the `background-origin` property, which doesn't
+    /// accept the SVG boxes that `mask-origin` does.
+    pub fn parse_for_background(
+        _context: &ParserContext,
+        input: &mut Parser,
+    ) -> Result<Self, ParseError> {
+        let origin = Self::parse(input)?;
+        #[cfg(feature = "gecko")]
+        if matches!(origin, Self::FillBox | Self::StrokeBox | Self::ViewBox) {
+            return Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError));
+        }
+        Ok(origin)
+    }
+}
+
+impl From<BackgroundOrigin> for BackgroundClip {
+    fn from(origin: BackgroundOrigin) -> Self {
+        match origin {
+            BackgroundOrigin::BorderBox => Self::BorderBox,
+            BackgroundOrigin::PaddingBox => Self::PaddingBox,
+            BackgroundOrigin::ContentBox => Self::ContentBox,
+            #[cfg(feature = "gecko")]
+            BackgroundOrigin::FillBox => Self::FillBox,
+            #[cfg(feature = "gecko")]
+            BackgroundOrigin::StrokeBox => Self::StrokeBox,
+            #[cfg(feature = "gecko")]
+            BackgroundOrigin::ViewBox => Self::ViewBox,
+        }
+    }
+}
+
+/// https://drafts.csswg.org/css-backgrounds/#the-background-attachment
+#[allow(missing_docs)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Deserialize,
+    Eq,
+    FromPrimitive,
+    Hash,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    Serialize,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+    ToTyped,
+)]
+#[repr(u8)]
+pub enum ImageLayerAttachment {
+    Scroll,
+    Fixed,
+    #[cfg(feature = "gecko")]
+    Local,
 }

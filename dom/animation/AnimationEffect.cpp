@@ -190,6 +190,9 @@ ComputedTiming AnimationEffect::GetComputedTimingAt(
     // Note: For progress-based timeline, it's possible to have a zero active
     // duration with active phase.
     result.mPhase = ComputedTiming::AnimationPhase::Active;
+    // FIXME: Bug 2075002. An overflow may happen if delay is -inf. This causes
+    // an unexpected |mActiveTime| and incorrect AnimationEvent::elapsedTime for
+    // the animation cancel event.
     result.mActiveTime = localTime - aTiming.Delay();
   }
 
@@ -295,7 +298,7 @@ ComputedTiming AnimationEffect::GetComputedTiming(
   const double playbackRate =
       mAnimation ? mAnimation->PlaybackRateInternal() : 1;
   const auto progressTimelinePosition =
-      mAnimation ? mAnimation->AtProgressTimelineBoundary()
+      mAnimation ? mAnimation->AtTimelineBoundary()
                  : Animation::ProgressTimelinePosition::NotBoundary;
   return GetComputedTimingAt(
       GetLocalTime(), aTiming ? *aTiming : NormalizedTiming(), playbackRate,
@@ -337,7 +340,7 @@ void AnimationEffect::GetComputedTimingAsDict(
   double playbackRate = mAnimation ? mAnimation->PlaybackRateInternal() : 1;
   const Nullable<TimeDuration> currentTime = GetLocalTime();
   const auto progressTimelinePosition =
-      mAnimation ? mAnimation->AtProgressTimelineBoundary()
+      mAnimation ? mAnimation->AtTimelineBoundary()
                  : Animation::ProgressTimelinePosition::NotBoundary;
   ComputedTiming computedTiming = GetComputedTimingAt(
       currentTime, NormalizedTiming(), playbackRate, progressTimelinePosition);

@@ -612,7 +612,14 @@ export var AddonTestUtils = {
     }
   },
 
+  _calledOverrideCertDB: false,
+
   overrideCertDB() {
+    if (this._calledOverrideCertDB) {
+      throw new Error("Don't call overrideCertDB more than once.");
+    }
+    this._calledOverrideCertDB = true;
+
     let verifyCert = async (file, result, signatureInfos, callback) => {
       if (
         result == Cr.NS_ERROR_SIGNED_JAR_NOT_SIGNED &&
@@ -680,6 +687,8 @@ export var AddonTestUtils = {
     };
 
     let FakeCertDB = {
+      _genuine: Cc[CERTDB_CONTRACTID].createInstance(Ci.nsIX509CertDB),
+
       init() {
         for (let property of Object.keys(
           this._genuine.QueryInterface(Ci.nsIX509CertDB)

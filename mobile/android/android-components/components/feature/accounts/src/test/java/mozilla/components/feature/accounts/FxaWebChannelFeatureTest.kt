@@ -22,6 +22,7 @@ import mozilla.components.concept.sync.OAuthAccount
 import mozilla.components.concept.sync.Profile
 import mozilla.components.concept.sync.SyncEngine
 import mozilla.components.service.fxa.FxaAuthData
+import mozilla.components.service.fxa.FxaService
 import mozilla.components.service.fxa.ServerConfig
 import mozilla.components.service.fxa.manager.FxaAccountManager
 import mozilla.components.support.test.any
@@ -231,7 +232,7 @@ class FxaWebChannelFeatureTest {
                 port,
                 engineSession,
                 expectedEngines,
-                setOf(FxaCapability.CHOOSE_WHAT_TO_SYNC),
+                setOf(FxaCapability.ChooseWhatToSync),
             )
         webchannelFeature.start()
         shadowOf(getMainLooper()).idle()
@@ -642,7 +643,7 @@ class FxaWebChannelFeatureTest {
                 ext = mock(),
                 port = port,
                 engineSession = mock(),
-                fxaCapabilities = setOf(FxaCapability.PAIRING_V2),
+                fxaCapabilities = setOf(FxaCapability.PairingV2),
                 accountManager = mock(),
             )
 
@@ -662,7 +663,7 @@ class FxaWebChannelFeatureTest {
                 ext = mock(),
                 port = port,
                 engineSession = mock(),
-                fxaCapabilities = setOf(FxaCapability.CHOOSE_WHAT_TO_SYNC),
+                fxaCapabilities = setOf(FxaCapability.ChooseWhatToSync),
                 accountManager = mock(),
             )
 
@@ -670,6 +671,124 @@ class FxaWebChannelFeatureTest {
         verify(port).postMessage(responseToTheWebChannel.capture())
 
         assertNull(responseToTheWebChannel.value.getPairingVersion())
+    }
+
+    @Test
+    fun `COMMAND_STATUS includes keys_optional=true in the response when KEYS_OPTIONAL capability is configured`() {
+        val port: Port = mock()
+        val responseToTheWebChannel = argumentCaptor<JSONObject>()
+
+        val messageHandler =
+            startedMessageHandler(
+                ext = mock(),
+                port = port,
+                engineSession = mock(),
+                fxaCapabilities = setOf(FxaCapability.ChooseWhatToSync, FxaCapability.KeysOptional),
+                accountManager = mock(),
+            )
+
+        messageHandler.onPortMessage(jsonFxaStatus(), port)
+        verify(port).postMessage(responseToTheWebChannel.capture())
+
+        assertEquals(true, responseToTheWebChannel.value.getKeysOptional())
+    }
+
+    @Test
+    fun `COMMAND_STATUS includes services object in the response when Service capability is configured`() {
+        val port: Port = mock()
+        val responseToTheWebChannel = argumentCaptor<JSONObject>()
+
+        val messageHandler =
+            startedMessageHandler(
+                ext = mock(),
+                port = port,
+                engineSession = mock(),
+                fxaCapabilities = setOf(FxaCapability.Services(values = listOf(FxaService.Sync, FxaService.Relay))),
+                accountManager = mock(),
+            )
+
+        messageHandler.onPortMessage(jsonFxaStatus(), port)
+        verify(port).postMessage(responseToTheWebChannel.capture())
+
+        val expectedServicesObject =
+            JSONObject(
+                """
+                {
+                  "sync" : {
+                    "scope" : [ "https://identity.mozilla.com/apps/oldsync", "profile" ]
+                  },
+                  "relay" : {
+                    "scope" : [ "https://identity.mozilla.com/apps/relay", "profile" ]
+                  }
+                }
+                """
+                    .trimIndent()
+            )
+
+        assertEquals(expectedServicesObject.toString(), responseToTheWebChannel.value.serviceCapability().toString())
+    }
+
+    @Test
+    fun `COMMAND_STATUS does not include services object in the response when the values in the Service capability is is empty`() {
+        val port: Port = mock()
+        val responseToTheWebChannel = argumentCaptor<JSONObject>()
+
+        val messageHandler =
+            startedMessageHandler(
+                ext = mock(),
+                port = port,
+                engineSession = mock(),
+                fxaCapabilities = setOf(FxaCapability.Services(values = emptyList())),
+                accountManager = mock(),
+            )
+
+        messageHandler.onPortMessage(jsonFxaStatus(), port)
+        verify(port).postMessage(responseToTheWebChannel.capture())
+
+        assertNull(responseToTheWebChannel.value.serviceCapability())
+    }
+
+    @Test
+    fun `COMMAND_STATUS does not include services object in the response when Service capability is not configured`() {
+        val port: Port = mock()
+        val responseToTheWebChannel = argumentCaptor<JSONObject>()
+
+        val messageHandler =
+            startedMessageHandler(
+                ext = mock(),
+                port = port,
+                engineSession = mock(),
+                fxaCapabilities = setOf(FxaCapability.KeysOptional),
+                accountManager = mock(),
+            )
+
+        messageHandler.onPortMessage(jsonFxaStatus(), port)
+        verify(port).postMessage(responseToTheWebChannel.capture())
+
+        assertNull(responseToTheWebChannel.value.serviceCapability())
+    }
+
+    @Test
+    fun `COMMAND_STATUS does not include keys_optional in the response when there is no KEYS_OPTIONAL capability`() {
+        val port: Port = mock()
+        val responseToTheWebChannel = argumentCaptor<JSONObject>()
+
+        val messageHandler =
+            startedMessageHandler(
+                ext = mock(),
+                port = port,
+                engineSession = mock(),
+                fxaCapabilities = setOf(FxaCapability.ChooseWhatToSync),
+                accountManager = mock(),
+            )
+
+        messageHandler.onPortMessage(jsonFxaStatus(), port)
+        verify(port).postMessage(responseToTheWebChannel.capture())
+
+        assertNull(
+            "Expected keys_optional to be absent from the response",
+            responseToTheWebChannel.value.getKeysOptional(),
+        )
     }
 
     @Test
@@ -685,7 +804,7 @@ class FxaWebChannelFeatureTest {
                 ext = mock(),
                 port = port,
                 engineSession = mock(),
-                fxaCapabilities = setOf(FxaCapability.PAIRING_V2),
+                fxaCapabilities = setOf(FxaCapability.PairingV2),
                 accountManager = accountManager,
             )
 
@@ -721,7 +840,7 @@ class FxaWebChannelFeatureTest {
                 ext = mock(),
                 port = port,
                 engineSession = mock(),
-                fxaCapabilities = setOf(FxaCapability.PAIRING_V2),
+                fxaCapabilities = setOf(FxaCapability.PairingV2),
                 accountManager = accountManager,
             )
 
@@ -759,7 +878,7 @@ class FxaWebChannelFeatureTest {
                 ext = mock(),
                 port = port,
                 engineSession = mock(),
-                fxaCapabilities = setOf(FxaCapability.PAIRING_V2),
+                fxaCapabilities = setOf(FxaCapability.PairingV2),
                 accountManager = accountManager,
             )
 
@@ -787,7 +906,7 @@ class FxaWebChannelFeatureTest {
                 ext = mock(),
                 port = port,
                 engineSession = mock(),
-                fxaCapabilities = setOf(FxaCapability.PAIRING_V2),
+                fxaCapabilities = setOf(FxaCapability.PairingV2),
                 accountManager = accountManager,
             )
 
@@ -841,7 +960,7 @@ class FxaWebChannelFeatureTest {
                 ext = mock(),
                 port = port,
                 engineSession = mock(),
-                fxaCapabilities = setOf(FxaCapability.PAIRING_V2),
+                fxaCapabilities = setOf(FxaCapability.PairingV2),
                 accountManager = accountManager,
             )
 
@@ -1135,7 +1254,7 @@ class FxaWebChannelFeatureTest {
                 ext = ext,
                 port = port,
                 engineSession = engineSession,
-                fxaCapabilities = setOf(FxaCapability.CHOOSE_WHAT_TO_SYNC),
+                fxaCapabilities = setOf(FxaCapability.ChooseWhatToSync),
                 accountManager = accountManager,
             )
         webchannelFeature.start()
@@ -1183,7 +1302,7 @@ class FxaWebChannelFeatureTest {
                 port,
                 engineSession,
                 expectedEngines,
-                setOf(FxaCapability.CHOOSE_WHAT_TO_SYNC),
+                setOf(FxaCapability.ChooseWhatToSync),
                 accountManager,
             )
         webchannelFeature.start()
@@ -1277,7 +1396,7 @@ class FxaWebChannelFeatureTest {
                 ext = ext,
                 port = port,
                 engineSession = engineSession,
-                fxaCapabilities = setOf(FxaCapability.CHOOSE_WHAT_TO_SYNC),
+                fxaCapabilities = setOf(FxaCapability.ChooseWhatToSync),
                 accountManager = accountManager,
             )
         webchannelFeature.start()
@@ -1341,12 +1460,31 @@ class FxaWebChannelFeatureTest {
         }
     }
 
+    private fun JSONObject.getKeysOptional(): Boolean? {
+        return try {
+            this.getJSONObject("message")
+                .getJSONObject("data")
+                .getJSONObject("capabilities")
+                .getBoolean("keys_optional")
+        } catch (_: JSONException) {
+            null
+        }
+    }
+
     private fun JSONObject.getErrorMessage(): String {
         return this.getJSONObject("message").getJSONObject("data").getJSONObject("error").getString("message")
     }
 
     private fun JSONObject.messageData(): JSONObject {
         return this.getJSONObject("message").getJSONObject("data")
+    }
+
+    private fun JSONObject.serviceCapability(): JSONObject? {
+        return try {
+            this.getJSONObject("message").getJSONObject("data").getJSONObject("capabilities").getJSONObject("services")
+        } catch (_: JSONException) {
+            null
+        }
     }
 
     data class SignedInUser(val email: String?, val uid: String?, val sessionToken: String, val verified: Boolean)

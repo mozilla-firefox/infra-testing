@@ -73,11 +73,13 @@ class ADB {
   }
 
   static async listenAndForwardPort(server, port) {
+    const { once } = require("events");
     let retryCount = 0;
     const maxRetries = 10;
 
     while (retryCount < maxRetries) {
-      await server.listen(port);
+      server.listen(port); // Not awaitable; once() rejects on `error`.
+      await once(server, "listening");
       let serverPort = server.address().port;
       let res = await ADB.forwardPort(serverPort);
 
@@ -312,6 +314,22 @@ class CertGenCode {
   }
 }
 
+// UDP socket that never answers, to reserve a port number for UDP as well as TCP.
+class NodeNoResponseUdpCode {
+  static async bind(port) {
+    const dgram = require("dgram");
+    const { once } = require("events");
+    // Dual-stack, to reserve the port for IPv4 and IPv6 alike.
+    global.noResponseUdp = dgram.createSocket({
+      type: "udp6",
+      ipv6Only: false,
+    });
+    global.noResponseUdp.bind(port);
+    await once(global.noResponseUdp, "listening");
+    global.noResponseUdp.on("error", err => console.log(`udp error: ${err}`));
+  }
+}
+
 export class BaseNodeServer {
   protocol() {
     return this._protocol;
@@ -476,6 +494,22 @@ export class BaseNodeServer {
       `global.tlsKey = ${JSON.stringify(this._keyPem)};
        global.tlsCert = ${JSON.stringify(this._certPem)};`
     );
+  }
+
+  /// Starts the server on a port free for TCP and UDP alike, holding the UDP
+  /// side bound but never answering, so that nothing else can claim it.
+  async startWithNoResponseUdpPort(maxRetries = 10) {
+    for (let retry = 0; retry < maxRetries; retry++) {
+      await this.start();
+      try {
+        await this.execute(NodeNoResponseUdpCode);
+        return await this.execute(`NodeNoResponseUdpCode.bind(${this.port()})`);
+      } catch (e) {
+        console.log(`UDP port ${this.port()} is taken (${e}), retrying`);
+        await this.stop();
+      }
+    }
+    throw new Error("No port was free for both TCP and UDP");
   }
 
   /// Stops the server
@@ -897,13 +931,20 @@ class BaseProxyCode {
       return;
     }
     const net = require("net");
-    // Connect to an origin server
+    // Connect to an origin server. The test-only hostnames below have no DNS
+    // entry: Gecko resolves them via network.dns.native-is-localhost, but this
+    // process uses the OS resolver and would fail with ENOTFOUND.
     const { port, hostname } = new URL(`https://${req.url}`);
+    const localhostNames = [
+      "foo.example.com",
+      "alt1.example.com",
+      "alt2.example.com",
+    ];
     const serverSocket = net
       .connect(
         {
           port: port || 443,
-          host: hostname,
+          host: localhostNames.includes(hostname) ? "127.0.0.1" : hostname,
           family: 4, // Specifies to use IPv4
         },
         () => {

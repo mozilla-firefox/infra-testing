@@ -5,15 +5,12 @@
 #ifndef mozilla_layers_ContentProcessController_h
 #define mozilla_layers_ContentProcessController_h
 
+#include "mozilla/dom/BrowserChild.h"
 #include "mozilla/layers/GeckoContentController.h"
 
 class nsIObserver;
 
 namespace mozilla {
-
-namespace dom {
-class BrowserChild;
-}  // namespace dom
 
 namespace layers {
 
@@ -59,8 +56,9 @@ class ContentProcessController final : public GeckoContentController {
                             APZStateChange aChange, int aArg,
                             Maybe<uint64_t> aInputBlockId) override;
 
-  void NotifyMozMouseScrollEvent(const ScrollableLayerGuid::ViewID& aScrollId,
-                                 const nsString& aEvent) override;
+  MOZ_CAN_RUN_SCRIPT void NotifyMozMouseScrollEvent(
+      const ScrollableLayerGuid::ViewID& aScrollId,
+      const nsString& aEvent) override;
 
   void NotifyFlushComplete() override;
 

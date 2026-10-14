@@ -45,6 +45,10 @@ class SaturateOp {
     static_assert(std::is_integral_v<T>,
                   "Integral type required in instantiation");
   }
+  SaturateOp(const SaturateOp<T>&) = delete;
+  SaturateOp(SaturateOp<T>&&) = delete;
+  SaturateOp& operator=(const SaturateOp<T>&) = delete;
+  SaturateOp& operator=(SaturateOp<T>&&) = delete;
 
   // Add and subtract operators
 
@@ -98,11 +102,6 @@ class SaturateOp {
   }
 
  private:
-  SaturateOp(const SaturateOp<T>&) = delete;
-  SaturateOp(SaturateOp<T>&&) = delete;
-  SaturateOp& operator=(const SaturateOp<T>&) = delete;
-  SaturateOp& operator=(SaturateOp<T>&&) = delete;
-
   T& mValue;
 };
 
@@ -127,7 +126,6 @@ class Saturate {
   // Compare operators
 
   bool operator==(const Saturate& aRhs) const = default;
-  bool operator!=(const Saturate& aRhs) const = default;
 
   bool operator==(const T& aRhs) const { return mValue == aRhs; }
   bool operator!=(const T& aRhs) const { return !operator==(aRhs); }

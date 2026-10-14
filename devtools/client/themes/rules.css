@@ -78,7 +78,6 @@
 .ruleview-reveal-panel {
   border-bottom: 1px solid var(--theme-splitter-color);
   display: flex;
-  margin: 2px;
 }
 
 .ruleview-reveal-panel[hidden] {
@@ -88,6 +87,15 @@
 .ruleview-reveal-panel .add-class {
   height: var(--theme-toolbar-height);
   line-height: normal;
+
+  &:focus-visible {
+    /* We need the outline-offset to avoid the outline to be clipped */
+    outline-offset: -2px;
+    /* remove 1px on the right so the outline isn't behind the third-pane splitter */
+    width: calc(100% - 1px);
+    /* Remove the second (white) "outline" that is set on :focus-visible in common.css */
+    box-shadow: none;
+  }
 }
 
 .ruleview-reveal-panel label {
@@ -412,11 +420,6 @@
   cursor: default;
 }
 
-.ruleview-rule[uneditable="true"] .ruleview-namecontainer > .ruleview-propertyname,
-.ruleview-rule[uneditable="true"] .ruleview-propertyvaluecontainer > .ruleview-propertyvalue {
-  text-decoration: none;
-}
-
 /* Display a lock before the selector for uneditable rules */
 .ruleview-rule[uneditable="true"] .ruleview-selectors-container::before {
   content: url(images/lock.svg) / "read only";
@@ -521,7 +524,7 @@
     background: url("chrome://devtools/skin/images/checkbox.svg") center no-repeat content-box;
     /* Using fill to paint the border, and stroke for the tick */
     -moz-context-properties: fill, stroke;
-    fill: rgba(0, 0, 0, 0.3);
+    fill: rgb(0 0 0 / 0.3);
     stroke: transparent;
   }
 
@@ -533,17 +536,17 @@
 
 :root[platform="win"].theme-dark .ruleview-enableproperty,
 :root[platform="linux"].theme-dark .ruleview-enableproperty {
-  fill: rgba(255, 255, 255, 0.4);
+  fill: rgb(255 255 255 / 0.4);
 }
 
 :root[platform="win"] .ruleview-enableproperty:checked,
 :root[platform="linux"] .ruleview-enableproperty:checked {
-  stroke: rgba(0, 0, 0, 0.6);
+  stroke: rgb(0 0 0 / 0.6);
 }
 
 :root[platform="win"].theme-dark .ruleview-enableproperty:checked,
 :root[platform="linux"].theme-dark .ruleview-enableproperty:checked {
-  stroke: rgba(255, 255, 255, 0.8);
+  stroke: rgb(255 255 255 / 0.8);
 }
 
 .ruleview-warning,
@@ -784,9 +787,8 @@
   }
 }
 
-.ruleview-namecontainer:hover > .ruleview-propertyname,
-.ruleview-propertyvaluecontainer:hover > .ruleview-propertyvalue {
-  text-decoration: 1px underline dashed hsl(0, 0%, 50%);
+.ruleview-propertycontainer:hover {
+  background-color: var(--theme-selection-background-hover);
 }
 
 /* ancestor rules info element (parent at-rules, parent of nested rules, …) */
@@ -1097,12 +1099,13 @@
   );
 }
 
-[data-function-expression] .css-explainers-function-name {
+[data-function-expression] .css-explainers-function-name,
+[data-length-expression] {
   text-decoration: 1px solid underline;
   text-underline-offset: 2px;
 }
 
-[data-function-expression].tooltip-anchor {
+:is([data-function-expression], [data-length-expression]).tooltip-anchor {
   text-decoration: underline;
   text-decoration-color: var(--theme-highlight-blue);
   text-decoration-style: dotted;

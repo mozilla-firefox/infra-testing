@@ -132,6 +132,7 @@ def split_apps(config, tests):
     }
 
     for test in tests:
+        resolve_keyed_by(test, "raptor.apps", item_name=test["test-name"])
         apps = test["raptor"].pop("apps", None)
         if not apps:
             yield test
@@ -190,7 +191,8 @@ def split_raptor_subtests(config, tests):
         subtests = test["raptor"].pop("subtests", None)
         if not subtests:
             if all(
-                p not in test["test-platform"] for p in ("macosx1400", "macosx1500")
+                p not in test["test-platform"]
+                for p in ("macosx1400", "macosx1500", "macosx2700")
             ):
                 yield test
             continue
@@ -449,7 +451,7 @@ def modify_mozharness_configs(config, tests):
         if "mac" in test_platform:
             mozharness["config"] = ["raptor/mac_external_browser_config.py"]
         elif "windows" in test_platform:
-            mozharness["config"] = ["raptor/windows_external_browser_config.py"]
+            mozharness["config"] = ["raptor/windows_config.py"]
         elif "linux" in test_platform:
             mozharness["config"] = ["raptor/linux_external_browser_config.py"]
         elif "android" in test_platform:
@@ -477,7 +479,7 @@ def apply_raptor_device_optimization(config, tests):
     # For now, only change the back stop optimization strategy for A55 devices
     for test in tests:
         if test["test-platform"].startswith("android-hw-a55"):
-            test["optimization"] = {"skip-unless-backstop": None}
+            test["optimization"] = {"perf-cadence-backstop": None}
         yield test
 
 
@@ -523,6 +525,15 @@ def setup_autoland_retriggers(config, tasks):
 
 
 @task_transforms.add
+def set_task_label_env(config, tasks):
+    """Tell the harness which task it is running as."""
+    for task in tasks:
+        env = task.setdefault("worker", {}).setdefault("env", {})
+        env["RAPTOR_TASK_LABEL"] = task["label"]
+        yield task
+
+
+@task_transforms.add
 def setup_internal_artifacts(config, tasks):
     for task in tasks:
         if (
@@ -552,7 +563,7 @@ def select_tasks_to_lambda(config, tasks):
     all youtube-playback tests (including power)
     all vpl (video-playback-latency) tests
     all pageload tests (ideally fenix/CaR/ChR)
-    jetstream2/jetstream3 benchmarks
+    jetstream3 benchmarks
     background/foreground resource tests (browsertime-power idle/idle-bg)
     trr-* performance tests
 
@@ -570,7 +581,6 @@ def select_tasks_to_lambda(config, tasks):
         "youtube-playback-h264-720p60",
         "youtube-playback-vp9-720p60",
         "tp6m",
-        "jetstream2",
         "jetstream3",
         "browsertime-power",
         "browsertime-trr-performance",
@@ -581,7 +591,6 @@ def select_tasks_to_lambda(config, tasks):
         "youtube-playback-h264-sfr",
         "youtube-playback-h264-720p60",
         "youtube-playback-vp9-720p60",
-        "jetstream2",
         "jetstream3",
         "browsertime-power",
         "browsertime-trr-performance",

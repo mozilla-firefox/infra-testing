@@ -7,7 +7,7 @@ include GraphicsMessages;
 include MemoryReportTypes;
 include HangTypes;
 include PrefsTypes;
-include protocol PAPZInputBridge;
+include protocol PAPZBridge;
 include protocol PCompositorManager;
 include protocol PImageBridge;
 include protocol PProfiler;
@@ -27,7 +27,6 @@ include "mozilla/layers/LayersMessageUtils.h";
 
 using base::ProcessId from "base/process.h";
 using mozilla::dom::ContentParentId from "mozilla/dom/ipc/IdType.h";
-using mozilla::dom::NativeThreadId from "mozilla/dom/NativeThreadId.h";
 using mozilla::Telemetry::HistogramAccumulation from "mozilla/TelemetryComms.h";
 using mozilla::Telemetry::KeyedHistogramAccumulation from "mozilla/TelemetryComms.h";
 using mozilla::Telemetry::ScalarAction from "mozilla/TelemetryComms.h";
@@ -74,8 +73,8 @@ parent:
   async InitVideoBridge(Endpoint<PVideoBridgeParent> endpoint, VideoBridgeSource aSource);
   async InitVRManager(Endpoint<PVRManagerParent> endpoint, uint32_t aNamespace);
   async InitUiCompositorController(LayersId rootLayerTreeId, Endpoint<PUiCompositorControllerParent> endpoint);
-  async InitAPZInputBridge(LayersId layersId,
-                           Endpoint<PAPZInputBridgeParent> endpoint);
+  async InitAPZBridge(LayersId layersId,
+                      Endpoint<PAPZBridgeParent> endpoint);
   async InitProfiler(Endpoint<PProfilerChild> endpoint);
   // Forward GPU process its endpoints to the VR process.
   async InitVR(Endpoint<PVRGPUChild> endpoint);

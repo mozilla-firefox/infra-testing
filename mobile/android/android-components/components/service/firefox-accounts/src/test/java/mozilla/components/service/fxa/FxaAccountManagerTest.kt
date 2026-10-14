@@ -8,6 +8,8 @@ import android.content.Context
 import androidx.lifecycle.LifecycleOwner
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlin.coroutines.CoroutineContext
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlinx.coroutines.test.runTest
 import mozilla.appservices.fxaclient.FxaConfig
 import mozilla.appservices.fxaclient.FxaEvent
@@ -26,6 +28,7 @@ import mozilla.components.concept.sync.DeviceType
 import mozilla.components.concept.sync.FxAEntryPoint
 import mozilla.components.concept.sync.StatePersistenceCallback
 import mozilla.components.concept.sync.SyncConfig
+import mozilla.components.concept.sync.SyncEngine
 import mozilla.components.service.fxa.manager.FxaAccountManager
 import mozilla.components.service.fxa.manager.SCOPE_SYNC
 import mozilla.components.service.fxa.manager.SyncEnginesStorage
@@ -265,6 +268,87 @@ class FxaAccountManagerTest {
 
         verify(accountObserver, times(1)).onAuthenticated(any(), eq(AuthType.Signin))
     }
+
+    @Test
+    fun `OAuth email login in sync decoupled mode does not send scopes through to BeginEmailFlow fxa client event`() =
+        runTest {
+            val fxaManager =
+                TestableFxaAccountManager(
+                    context = testContext,
+                    config = FxaConfig(FxaServer.Release, "dummyId", "http://auth-url/redirect"),
+                    storage = mock(),
+                    capabilities = setOf(DeviceCapability.SEND_TAB),
+                    syncConfig =
+                        SyncConfig(
+                            supportedEngines = setOf(SyncEngine.Tabs),
+                            syncDecouplingEnabled = true,
+                            periodicSyncConfig = null,
+                        ),
+                    coroutineContext = this.coroutineContext,
+                )
+            val account = fxaManager.testableStorageWrapper.account
+            val accountObserver: AccountObserver = mock()
+            fxaManager.register(accountObserver)
+
+            whenever(account.processEvent(any())).thenReturn(FxaState.Disconnected)
+            fxaManager.start()
+
+            val eventCaptor = argumentCaptor<FxaEvent>()
+            whenever(account.processEvent(eventCaptor.capture()))
+                .thenReturn(FxaState.Authenticating("https://test-oauth.example.com/", FxaRustAuthState.CONNECTED))
+
+            // when we call begin auth with scopes and service defined
+            fxaManager.beginAuthentication(
+                service = FxaService.Sync.identifier,
+                entrypoint = entryPoint,
+                authScopes = FxaService.Sync.requiredScopes.map { it.value }.toSet(),
+            )
+
+            val fxaEvent = eventCaptor.value
+            assertIs<FxaEvent.BeginOAuthFlow>(fxaEvent)
+            assertEquals(emptyList(), fxaEvent.scopes)
+        }
+
+    @Test
+    fun `OAuth email login in non-sync-decoupled mode passes requested scopes through to BeginEmailFlow fxa client event`() =
+        runTest {
+            val fxaManager =
+                TestableFxaAccountManager(
+                    context = testContext,
+                    config = FxaConfig(FxaServer.Release, "dummyId", "http://auth-url/redirect"),
+                    storage = mock(),
+                    capabilities = setOf(DeviceCapability.SEND_TAB),
+                    syncConfig =
+                        SyncConfig(
+                            supportedEngines = setOf(SyncEngine.Tabs),
+                            syncDecouplingEnabled = false,
+                            periodicSyncConfig = null,
+                        ),
+                    coroutineContext = this.coroutineContext,
+                )
+            val account = fxaManager.testableStorageWrapper.account
+            val accountObserver: AccountObserver = mock()
+            fxaManager.register(accountObserver)
+
+            whenever(account.processEvent(any())).thenReturn(FxaState.Disconnected)
+            fxaManager.start()
+
+            val eventCaptor = argumentCaptor<FxaEvent>()
+            whenever(account.processEvent(eventCaptor.capture()))
+                .thenReturn(FxaState.Authenticating("https://test-oauth.example.com/", FxaRustAuthState.CONNECTED))
+
+            // when we call begin auth with scopes and service defined
+            val syncScopes = FxaService.Sync.requiredScopes.map { it.value }
+            fxaManager.beginAuthentication(
+                service = FxaService.Sync.identifier,
+                entrypoint = entryPoint,
+                authScopes = syncScopes.toSet(),
+            )
+
+            val fxaEvent = eventCaptor.value
+            assertIs<FxaEvent.BeginOAuthFlow>(fxaEvent)
+            assertEquals(syncScopes, fxaEvent.scopes)
+        }
 
     @Test
     fun `OAuth pairing login`() = runTest {

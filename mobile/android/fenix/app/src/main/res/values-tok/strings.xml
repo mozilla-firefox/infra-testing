@@ -65,8 +65,6 @@
   <string name="open_in_app_cfr_positive_button_text">o lukin e lipu wile</string>
   <!-- Text for the negative action button -->
   <string name="open_in_app_cfr_negative_button_text">o weka</string>
-  <!-- Private browsing erase action "contextual feature recommendation" (CFR) -->
-
   <!-- Text for the positive action button to go to Android Settings to grant permissions. -->
   <string name="camera_permissions_needed_positive_button_text">o lukin e lipu wile</string>
   <!-- Text for the negative action button to dismiss the dialog. -->
@@ -98,16 +96,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">poki sin pi nasin len</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">nimi open</string>
-  <!--
-    Recent Tabs
-
-    Header text for jumping back into the recent tab in the home screen
-  -->
-  <string name="recent_tabs_header">o lukin sin e lipu poka</string>
   <!-- Button text for showing all the tabs in the tabs tray -->
   <string name="recent_tabs_show_all">o lukin e poki ale</string>
-  <!-- Content description for the button which navigates the user to show all recent tabs in the tabs tray. -->
-  <string name="recent_tabs_show_all_content_description_2">o lukin e poki poka ale</string>
   <!-- Text for button in synced tab card that opens synced tabs tray -->
   <string name="recent_tabs_see_all_synced_tabs_button_text">o lukin e poki sama ale</string>
   <!-- Accessibility description for device icon used for recent synced tab -->
@@ -305,10 +295,6 @@
   <string name="onboarding_term_of_service_line_two_2" tools:ignore="BrandUsage">ilo Firefox li wile awen e len sina. o lukin e %1$s</string>
   <!-- Used as text for the link in onboarding_term_of_service_line_two. -->
   <string name="onboarding_term_of_service_line_two_link_text">toki lawa pi len sona</string>
-  <!-- ==== Project "Nova" onboarding strings ==== -->
-
-  <!-- ==== End of Project "Nova" onboarding strings ==== -->
-
   <!--
     Search Widget
 
@@ -444,8 +430,6 @@
   <string name="customize_addon_collection_hint">nimi kulupu</string>
   <!-- Hint displayed on input field for custom collection user ID -->
   <string name="customize_addon_collection_user_hint">mama kulupu (nanpa)</string>
-  <!-- Header text for jumping back into the recent tab in customize the home screen -->
-  <string name="customize_toggle_jump_back_in">o lukin e poki poka</string>
   <!-- Title for the customize home screen section with bookmarks. -->
   <string name="customize_toggle_bookmarks">lipu awen</string>
   <!--
@@ -645,8 +629,6 @@
     Title of preference for tabs management
   -->
   <string name="preferences_tabs">poki</string>
-  <!-- Title of preference that allows a user to specify the tab view -->
-  <string name="preferences_tab_view">lukin poki</string>
   <!-- Option for a list tab view -->
   <string name="tab_view_list">sama linja</string>
   <!-- Option for a grid tab view -->
@@ -733,16 +715,6 @@
   <string name="history_delete_single_item_snackbar">mi weka e lipu %1$s</string>
   <!-- Context description text for the button to delete a single history item -->
   <string name="history_delete_item">o weka</string>
-  <!-- Text for the header that groups the history for today -->
-  <string name="history_today">sike suno ni</string>
-  <!-- Text for the header that groups the history for yesterday -->
-  <string name="history_yesterday">sike suno pini 1</string>
-  <!-- Text for the header that groups the history the past 7 days -->
-  <string name="history_7_days">sike suno pini 7</string>
-  <!-- Text for the header that groups the history the past 30 days -->
-  <string name="history_30_days">sike suno pini 30</string>
-  <!-- Text for the header that groups the history older than the last month -->
-  <string name="history_older">sike weka</string>
   <!-- Text shown when no history exists -->
   <string name="history_empty_message">sina lukin ala e lipu</string>
   <!-- Text for the snackbar to confirm that a single download item has been removed. %1$s is the name of the download item. -->
@@ -1188,8 +1160,6 @@
   <string name="add_to_homescreen_cancel">o weka</string>
   <!-- Add button text for the Add to Homescreen dialog -->
   <string name="add_to_homescreen_add">o pana</string>
-  <!-- Continue to website button text for the first-time Add to Homescreen dialog -->
-  <string name="add_to_homescreen_continue">o lukin e lipu</string>
   <!-- Preference for managing the settings for logins and passwords in Fenix -->
   <string name="preferences_passwords_logins_and_passwords_2">nimi open</string>
   <!-- Preference for managing the saving of logins and passwords in Fenix -->
@@ -1360,8 +1330,6 @@
   <string name="pocket_stories_sponsor_indication">jan li pana e mani tawa lipu ni</string>
   <!-- Snackbar button text to navigate to telemetry settings. -->
   <string name="experiments_snackbar_button">o lukin e nasin ilo</string>
-  <!-- Translations feature -->
-
   <!--
     Translation request dialog
 
@@ -1378,17 +1346,10 @@
   <string name="translations_bottom_sheet_translate_from">toki tan</string>
   <!-- Description text for the protection panel banner when the site is not secure. -->
   <string name="protection_panel_banner_not_secure_description">linja toki li len ala.</string>
-  <!-- TextField Design System Component -->
-
   <!--
     ===== Setup checklist feature: Task titles =====
 
     The title of the default browser task for the setup checklist
   -->
   <string name="setup_checklist_task_default_browser">o open e lipu ale kepeken ilo alasa ni</string>
-  <!-- ==== Terms of use pop up prompt ==== -->
-
-  <!-- ==== Experiment strings. ==== -->
-
-  <!-- ==== End of Terms of use popup prompt. ==== -->
 </resources>

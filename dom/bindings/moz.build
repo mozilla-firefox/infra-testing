@@ -222,3 +222,7 @@ if CONFIG["COMPILE_ENVIRONMENT"]:
 # Old versions of GCC issue false-positive warnings about buffer overflow.
 if CONFIG["CC_TYPE"] == "gcc" and 10 <= int(CONFIG["CC_VERSION"].split(".")[0]) < 12:
     CXXFLAGS += ["-Wno-stringop-overflow"]
+
+SOURCE_HEADERS += [
+    "nsScriptError.h",
+]

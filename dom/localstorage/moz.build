@@ -72,3 +72,12 @@ FINAL_LIBRARY = "xul"
 LOCAL_INCLUDES += [
     "/dom/file/ipc",
 ]
+
+SOURCE_HEADERS += [
+    "ActorsChild.h",
+    "LSCipherKeyManager.h",
+    "LSDatabase.h",
+    "LSInitializationTypes.h",
+    "NotifyUtils.h",
+    "ReportInternalError.h",
+]

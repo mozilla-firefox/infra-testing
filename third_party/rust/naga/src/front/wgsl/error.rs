@@ -9,7 +9,7 @@ use crate::common::wgsl::TryToWgsl;
 use crate::diagnostic_filter::ConflictingDiagnosticRuleError;
 use crate::error::replace_control_chars;
 use crate::proc::{Alignment, ConstantEvaluatorError, ResolveError};
-use crate::{Scalar, SourceLocation, Span};
+use crate::{Scalar, SourceLocation, Span, UnaryOperator};
 
 use super::parse::directive::enable_extension::{EnableExtension, UnimplementedEnableExtension};
 use super::parse::directive::language_extension::{
@@ -232,6 +232,7 @@ impl core::fmt::Display for ExpectedToken<'_> {
                 Token::Attribute => Kind::Str("@"),
                 Token::Number(_) => Kind::Str("number"),
                 Token::Word(s) => Kind::Str(s),
+                Token::String(_) => Kind::Str("string literal"),
                 Token::Operation(c) => Kind::FormatChar("operation (`", c, "`)"),
                 Token::LogicalOperation(c) => Kind::FormatChar("logical operation (`", c, "`)"),
                 Token::ShiftOperation(c) => {
@@ -385,6 +386,12 @@ pub(crate) enum Error<'a> {
     },
     DeclMissingTypeAndInit(Span),
     MissingAttribute(&'static str, Span),
+    InvalidUnaryOperandType {
+        span: Span,
+        op: UnaryOperator,
+        operand_type: String,
+    },
+
     InvalidAddrOfOperand(Span),
     InvalidAtomicPointer(Span),
     InvalidAtomicOperandType(Span),
@@ -517,12 +524,21 @@ pub(crate) enum Error<'a> {
     FunctionMustUseReturnsVoid(Span, Span),
     FunctionMustUseOnNonFunction(Span),
     InvalidWorkGroupUniformLoad(Span),
+    InvalidStringLiteral {
+        span: Span,
+        description: &'static str,
+    },
+    ExpectedStringLiteral {
+        span: Span,
+        description: &'static str,
+    },
     Internal(&'static str),
     ExpectedConstExprConcreteIntegerScalar(Span),
     ExpectedNonNegative(Span),
     ExpectedPositiveArrayLength(Span),
     MissingWorkgroupSize(Span),
     ConstantEvaluatorError(Box<ConstantEvaluatorError>, Span),
+    TypeMismatch(Box<TypeMismatchError>),
     AutoConversion(Box<AutoConversionError>),
     AutoConversionLeafScalar(Box<AutoConversionLeafScalarError>),
     ConcretizationFailed(Box<ConcretizationFailedError>),
@@ -597,6 +613,7 @@ pub(crate) enum Error<'a> {
     UnexpectedExprForTypeExpression(Span),
     MissingIncomingPayload(Span),
     UnterminatedBlockComment(Span),
+    RayQueryWithInitializer(Span),
 }
 
 impl From<ConflictingDiagnosticRuleError> for Error<'_> {
@@ -616,6 +633,17 @@ impl From<&'static str> for DiagnosticAttributeNotSupportedPosition {
     fn from(display_plural: &'static str) -> Self {
         Self::Other { display_plural }
     }
+}
+
+/// A value's concrete type differs from the type required by its context.
+#[derive(Clone, Debug)]
+pub(crate) struct TypeMismatchError {
+    /// Where the required type comes from.
+    pub dest_span: Span,
+    pub dest_type: String,
+    /// The value whose type is wrong.
+    pub source_span: Span,
+    pub source_type: String,
 }
 
 #[derive(Clone, Debug)]
@@ -964,6 +992,7 @@ impl<'a> Error<'a> {
                 | Error::WrongArgumentCount { span, .. }
                 | Error::ConstantEvaluatorError(_, span)
                 | Error::EnableExtensionNotSupported { span, .. }
+                | Error::InvalidUnaryOperandType { span, .. }
                 | Error::MissingTemplateArg { span, .. } => {
                 let (message, label) = match self {
                     Error::BadMatrixScalarKind(_, scalar) => (
@@ -1023,6 +1052,20 @@ impl<'a> Error<'a> {
                         ),
                         "is missing a template argument"
                     ),
+                    Error::InvalidUnaryOperandType { op, operand_type, .. } => {
+                        let operator = match op {
+                            UnaryOperator::Negate => "-",
+                            UnaryOperator::LogicalNot => "!",
+                            UnaryOperator::BitwiseNot => "~",
+                        };
+                        (
+                            format!(
+                                "unary operator `{operator}` is not defined for operand type `{}`",
+                                operand_type
+                            ),
+                            "invalid operand type for this operator"
+                        )
+                    },
                     _ => unreachable!()
                 };
 
@@ -1327,11 +1370,44 @@ impl<'a> Error<'a> {
                 notes: vec!["passed type must be a workgroup pointer".into()],
                 message: "incorrect type passed to workgroupUniformLoad".into(),
             },
+            Error::InvalidStringLiteral { span, description } => ParseError {
+                message: description.to_string().into(),
+                labels: vec![(*span, "invalid string literal".into())],
+                notes: vec![],
+            },
+            Error::ExpectedStringLiteral { span, description } => ParseError {
+                message: description.to_string().into(),
+                labels: vec![(*span, "expected a string literal".into())],
+                notes: vec![],
+            },
             Error::Internal(message) => ParseError {
                 notes: vec![(*message).into()],
                 message: "internal WGSL front end error".into(),
                 labels: vec![],
             },
+            Error::TypeMismatch(ref error) => {
+                let TypeMismatchError {
+                    dest_span,
+                    ref dest_type,
+                    source_span,
+                    ref source_type,
+                } = **error;
+                let mut labels = vec![(
+                    source_span,
+                    format!("this expression has type `{source_type}`").into(),
+                )];
+                if dest_span != source_span {
+                    labels.push((
+                        dest_span,
+                        format!("a value of type `{dest_type}` is required here").into(),
+                    ));
+                }
+                ParseError {
+                    message: format!("expected `{dest_type}`, found `{source_type}`").into(),
+                    labels,
+                    notes: vec![],
+                }
+            }
             Error::AutoConversion(ref error) => {
                 // destructuring ensures all fields are handled
                 let AutoConversionError {
@@ -1660,7 +1736,15 @@ impl<'a> Error<'a> {
                 )],
                 message: "unterminated block comment".into(),
                 notes: vec![],
-            }
+            },
+            Error::RayQueryWithInitializer(span) => ParseError {
+                message: "Ray query with initialize".into(),
+                labels: vec![(
+                    *span,
+                    "variables with type `ray_query` are special and so cannot have initializers".into(),
+                )],
+                notes: vec![],
+            },
         }
     }
 }

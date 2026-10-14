@@ -46,6 +46,7 @@
 #include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/ipc/SharedMemoryHandle.h"
 #include "nsAppDirectoryServiceDefs.h"
+#include "nsCharSeparatedTokenizer.h"
 #include "nsComponentManagerUtils.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsIFile.h"
@@ -64,6 +65,8 @@
 #ifdef ANDROID
 #  include "cutils/properties.h"
 #endif
+
+#include <memory>
 
 namespace mozilla {
 
@@ -333,6 +336,8 @@ static void AddMemoryReporting(SandboxBroker::Policy* aPolicy, pid_t aPid) {
   // Bug 1647957: memory reporting.
   aPolicy->AddPath(rdonly, nsPrintfCString("/proc/%d/statm", aPid).get());
   aPolicy->AddPath(rdonly, nsPrintfCString("/proc/%d/smaps", aPid).get());
+  aPolicy->AddPath(rdonly,
+                   nsPrintfCString("/proc/%d/smaps_rollup", aPid).get());
 }
 
 static void AddDynamicPathList(SandboxBroker::Policy* policy,
@@ -794,24 +799,17 @@ void SandboxBrokerPolicyFactory::InitContentPolicy() {
     policy->AddTree(rdwrcr, "/dev/shm");
   }
 
+  if (allowPulse) {
 #ifdef MOZ_WIDGET_GTK
-  if (const auto userDir = g_get_user_runtime_dir()) {
-    // Bug 1321134: DConf's single bit of shared memory
-    // The leaf filename is "user" by default, but is configurable.
-    nsPrintfCString shmPath("%s/dconf/", userDir);
-    policy->AddFutureDir(rdwrcr, shmPath.get());
-    policy->AddAncestors(shmPath.get());
-    if (allowPulse) {
+    if (const auto userDir = g_get_user_runtime_dir()) {
       // PulseAudio, if it can't get server info from X11, will break
       // unless it can open this directory (or create it, but in our use
       // case we know it already exists).  See bug 1335329.
       nsPrintfCString pulsePath("%s/pulse", userDir);
       policy->AddPath(rdonly, pulsePath.get());
     }
-  }
 #endif  // MOZ_WIDGET_GTK
 
-  if (allowPulse) {
     // PulseAudio also needs access to read the $XAUTHORITY file (see
     // bug 1384986 comment #1), but that's already allowed for hybrid
     // GPU drivers (see above).
@@ -849,8 +847,8 @@ UniquePtr<SandboxBroker::Policy> SandboxBrokerPolicyFactory::GetContentPolicy(
 
   std::call_once(mContentInited, [this] { InitContentPolicy(); });
   MOZ_ASSERT(mCommonContentPolicy);
-  UniquePtr<SandboxBroker::Policy> policy(
-      new SandboxBroker::Policy(*mCommonContentPolicy));
+  UniquePtr<SandboxBroker::Policy> policy =
+      std::make_unique<SandboxBroker::Policy>(*mCommonContentPolicy);
 
   // No read blocking at level 2 and below.
   // file:// processes also get global read permissions
@@ -941,7 +939,7 @@ static void AddV4l2Dependencies(SandboxBroker::Policy* policy) {
 
 #ifdef MOZ_ENABLE_VULKAN_VIDEO
 
-static void AddVulkanDependencies(SandboxBroker::Policy* policy) {
+static void AddVulkanDependencies(SandboxBroker::Policy* policy, int aPid) {
   // RDD Vulkan Video decode: ICD manifests (paths beyond AddGLDependencies).
   policy->AddTree(rdonly, "/usr/share/vulkan/icd.d");
   policy->AddTree(rdonly, "/usr/local/share/vulkan/icd.d");
@@ -979,7 +977,13 @@ static void AddVulkanDependencies(SandboxBroker::Policy* policy) {
 
   policy->AddPath(rdwr, "/dev/nvidiactl", SandboxBroker::Policy::AddAlways);
   policy->AddPath(rdwr, "/dev/nvidia-uvm", SandboxBroker::Policy::AddAlways);
+  // NVIDIA 570+ opens this during UVM init (alongside /dev/nvidia-uvm).
+  policy->AddPath(rdwr, "/dev/nvidia-uvm-tools",
+                  SandboxBroker::Policy::AddAlways);
   policy->AddPath(rdwr, "/dev/nvidia-modeset",
+                  SandboxBroker::Policy::AddAlways);
+  // Read by InitVulkanDecoder to skip Vulkan when nvidia_drm modeset is off.
+  policy->AddPath(rdonly, "/sys/module/nvidia_drm/parameters/modeset",
                   SandboxBroker::Policy::AddAlways);
   policy->AddTree(rdonly, "/dev/nvidia-caps");
   for (int i = 0; i < 8; i++) {
@@ -990,6 +994,9 @@ static void AddVulkanDependencies(SandboxBroker::Policy* policy) {
   // AddAlways because the udmabuf misc device only exists while its module is
   // loaded, which may happen after this policy is built.
   policy->AddPath(rdwr, "/dev/udmabuf", SandboxBroker::Policy::AddAlways);
+
+  // NVIDIA CUDA (pulled in by VK_NV_optical_flow during vkCreateDevice).
+  policy->AddPath(rdonly, nsPrintfCString("/proc/%d/maps", aPid).get());
 }
 #endif  // MOZ_ENABLE_VULKAN_VIDEO
 
@@ -1060,7 +1067,7 @@ SandboxBrokerPolicyFactory::GetRDDPolicy(int aPid) {
   // enabled and supported on this GPU, to avoid granting display-server
   // access when the feature is blocked or disabled.
   if (gfx::gfxVars::CanUseVulkanHardwareVideoDecoding()) {
-    AddVulkanDependencies(policy.get());
+    AddVulkanDependencies(policy.get(), aPid);
 #  if defined(MOZ_WIDGET_GTK)
     // EGL needs display server sockets for EGL_MESA_image_dma_buf_export
     // (bug 2021722).

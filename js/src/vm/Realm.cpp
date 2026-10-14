@@ -29,6 +29,7 @@
 #include "wasm/WasmInstance.h"
 
 #include "gc/Marking-inl.h"
+#include "gc/StableCellHasher-inl.h"
 #include "gc/WeakMap-inl.h"
 #include "vm/JSObject-inl.h"
 #include "vm/Realm-inl.h"
@@ -304,7 +305,7 @@ void Realm::traceRoots(JSTracer* trc,
   }
 
   objects_.trace(trc);
-  baselineCompileQueue_.trace(trc);
+  jitRealm_.trace(trc);
 }
 
 void ObjectRealm::finishRoots() {
@@ -338,6 +339,19 @@ void Realm::sweepAfterMinorGC(JSTracer* trc) {
   objects_.sweepAfterMinorGC(trc);
 }
 
+#ifdef JSGC_HASH_TABLE_CHECKS
+void Realm::checkModuleScriptSourcesAfterMovingGC() {
+  objects_.checkModuleScriptSourcesAfterMovingGC(zone_);
+}
+
+void ObjectRealm::checkModuleScriptSourcesAfterMovingGC(JS::Zone* zone) {
+  gc::CheckTableAfterMovingGC(moduleScriptSources, [zone](const auto& entry) {
+    gc::CheckGCThingAfterMovingGC(entry, zone);
+    return entry.unbarrieredGet();
+  });
+}
+#endif
+
 void Realm::traceWeakSavedStacks(JSTracer* trc) { savedStacks_.traceWeak(trc); }
 
 void Realm::traceWeakGlobalEdge(JSTracer* trc) {
@@ -365,11 +379,8 @@ void Realm::purge() {
   newProxyCache.purge();
   newPlainObjectWithPropsCache.purge();
   plainObjectAssignCache.purge();
+  plainObjectSpreadCache.purge();
   objects_.iteratorCache.clearAndCompact();
-}
-
-void Realm::removeFromCompileQueue(JSScript* script) {
-  baselineCompileQueue_.remove(script);
 }
 
 // Check to see if this individual realm is recording allocations. Debuggers or
@@ -629,7 +640,8 @@ void Realm::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
                                    size_t* innerViewsArg,
                                    size_t* objectMetadataTablesArg,
                                    size_t* savedStacksSet,
-                                   size_t* nonSyntacticLexicalEnvironmentsArg) {
+                                   size_t* nonSyntacticLexicalEnvironmentsArg,
+                                   size_t* cacheIRStubs) {
   *realmObject += mallocSizeOf(this);
   wasm.addSizeOfExcludingThis(mallocSizeOf, realmTables);
 
@@ -638,6 +650,8 @@ void Realm::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
                                   nonSyntacticLexicalEnvironmentsArg);
 
   *savedStacksSet += savedStacks_.sizeOfExcludingThis(mallocSizeOf);
+
+  jitRealm_.addSizeOfExcludingThis(mallocSizeOf, cacheIRStubs);
 }
 
 bool Realm::shouldCaptureStackForThrow() {

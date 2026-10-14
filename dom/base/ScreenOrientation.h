@@ -36,9 +36,9 @@ class ScreenOrientation final : public DOMEventTargetHelper {
 
   // Called when we might need to dispatch orientation change events
   // in case of orientation override being set, updated or removed.
-  void MaybeDispatchEventsForOverride(BrowsingContext* aBrowsingContext,
-                                      bool aOldHasOrientationOverride,
-                                      bool aOverrideIsDifferentThanDevice);
+  MOZ_CAN_RUN_SCRIPT void MaybeDispatchEventsForOverride(
+      BrowsingContext* aBrowsingContext, bool aOldHasOrientationOverride,
+      bool aOverrideIsDifferentThanDevice);
 
  private:
   ScreenOrientation(nsPIDOMWindowInner* aWindow, nsScreen* aScreen);
@@ -63,6 +63,10 @@ class ScreenOrientation final : public DOMEventTargetHelper {
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
+
+  // Releases the lock aDocument's ScreenOrientation holds, once the document is
+  // hidden or, for a lock taken while fullscreen, leaves fullscreen.
+  static void ReleaseLock(Document* aDocument);
 
   static void UpdateActiveOrientationLock(hal::ScreenOrientation aOrientation);
   static void AbortInProcessOrientationPromises(
@@ -96,6 +100,7 @@ class ScreenOrientation final : public DOMEventTargetHelper {
   // full screen change listener.
   void UnlockDeviceOrientation();
   void CleanupFullscreenListener();
+  void ReleaseOwnLock();
 
   // This method performs the same function as |Lock| except it takes
   // a hal::ScreenOrientation argument instead of an OrientationType.
@@ -121,12 +126,10 @@ class ScreenOrientation final : public DOMEventTargetHelper {
   RefPtr<VisibleEventListener> mVisibleListener;
   OrientationType mType{};
   uint16_t mAngle{};
-  // Whether we've tried to call into hal to lock the device orientation. This
-  // is needed because you don't want calling UnlockDeviceOrientation() during
-  // shutdown to initialize PHal if it hasn't been initialized earlier. Also,
-  // makes sense (there's no reason destroying a ScreenOrientation object from a
-  // different window should remove the orientation lock).
-  bool mTriedToLockDeviceOrientation = false;
+  // Whether this object asked hal for a lock it has not released yet. It stays
+  // set if hal rejects the request, because the top browsing context still
+  // records the lock and ReleaseOwnLock has to clear it.
+  bool mLocked = false;
 };
 
 }  // namespace mozilla::dom

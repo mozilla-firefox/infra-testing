@@ -5,14 +5,14 @@
 #ifndef mozilla_layers_APZCTreeManagerChild_h
 #define mozilla_layers_APZCTreeManagerChild_h
 
-#include "mozilla/layers/APZInputBridge.h"
+#include "mozilla/layers/APZBridge.h"
 #include "mozilla/layers/IAPZCTreeManager.h"
 #include "mozilla/layers/PAPZCTreeManagerChild.h"
 
 namespace mozilla {
 namespace layers {
 
-class APZInputBridgeChild;
+class APZBridgeChild;
 class RemoteCompositorSession;
 
 class APZCTreeManagerChild final : public IAPZCTreeManager,
@@ -26,10 +26,8 @@ class APZCTreeManagerChild final : public IAPZCTreeManager,
   APZCTreeManagerChild();
 
   void SetCompositorSession(RemoteCompositorSession* aSession);
-  void SetInputBridge(RefPtr<APZInputBridgeChild>&& aInputBridge);
+  void SetBridge(RefPtr<APZBridgeChild>&& aBridge);
   void Destroy();
-
-  void SetKeyboardMap(const KeyboardMap& aKeyboardMap) override;
 
   void ZoomToRect(const ScrollableLayerGuid& aGuid,
                   const ZoomTarget& aZoomTarget,
@@ -45,46 +43,23 @@ class APZCTreeManagerChild final : public IAPZCTreeManager,
       const ScrollableLayerGuid& aGuid,
       const Maybe<ZoomConstraints>& aConstraints) override;
 
-  void SetDPI(float aDpiValue) override;
-
   void SetAllowedTouchBehavior(
       uint64_t aInputBlockId,
       const nsTArray<TouchBehaviorFlags>& aValues) override;
 
-  void SetBrowserGestureResponse(uint64_t aInputBlockId,
-                                 BrowserGestureResponse aResponse) override;
-
   void StartScrollbarDrag(const ScrollableLayerGuid& aGuid,
                           const AsyncDragMetrics& aDragMetrics) override;
 
-  bool StartAutoscroll(const ScrollableLayerGuid& aGuid,
-                       const ScreenPoint& aAnchorLocation) override;
-
-  void StopAutoscroll(const ScrollableLayerGuid& aGuid) override;
-
-  void SetLongTapEnabled(bool aTapGestureEnabled) override;
-
   void NotifyApzAwareListenerAdded(const ScrollableLayerGuid& aGuid) override;
 
-  APZInputBridge* InputBridge() override;
+  APZBridge* Bridge() override;
 
  protected:
-  mozilla::ipc::IPCResult RecvNotifyPinchGesture(
-      const PinchGestureType& aType, const ScrollableLayerGuid& aGuid,
-      const LayoutDevicePoint& aFocusPoint,
-      const LayoutDeviceCoord& aSpanChange, const Modifiers& aModifiers);
-
-  mozilla::ipc::IPCResult RecvCancelAutoscroll(
-      const ScrollableLayerGuid::ViewID& aScrollId);
-
-  mozilla::ipc::IPCResult RecvNotifyScaleGestureComplete(
-      const ScrollableLayerGuid::ViewID& aScrollId, float aScale);
-
   virtual ~APZCTreeManagerChild();
 
  private:
   MOZ_NON_OWNING_REF RemoteCompositorSession* mCompositorSession;
-  RefPtr<APZInputBridgeChild> mInputBridge;
+  RefPtr<APZBridgeChild> mBridge;
 };
 
 }  // namespace layers

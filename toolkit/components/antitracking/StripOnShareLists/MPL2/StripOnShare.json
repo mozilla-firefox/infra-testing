@@ -4,7 +4,6 @@
     "queryParams": [
       "_gl",
       "li_fat_id",
-      "lid",
       "utm_ad",
       "utm_affiliate",
       "utm_brand",
@@ -54,16 +53,146 @@
       "hsa_ol",
       "hsa_net",
       "hsa_mt",
-      "wt_mc"
+      "wt_mc",
+      "__hsfp",
+      "__hssc",
+      "__hstc",
+      "_branch_match_id",
+      "_bta_c",
+      "_bta_tid",
+      "_ga",
+      "_hsenc",
+      "_hsmi",
+      "_ke",
+      "_kx",
+      "adgroupid",
+      "adid",
+      "adtype",
+      "bg_aid_k",
+      "bg_aid_v",
+      "bg_campaign",
+      "bg_kw",
+      "bg_source",
+      "bg_source_id",
+      "channable",
+      "cto_pld",
+      "dm_i",
+      "ef_id",
+      "epik",
+      "fbadid",
+      "fbc_id",
+      "fbclid",
+      "h_ad_id",
+      "hsCtaTracking",
+      "im_ref",
+      "klar_adid",
+      "klar_cpid",
+      "klar_source",
+      "matomo_campaign",
+      "matomo_cid",
+      "matomo_content",
+      "matomo_group",
+      "matomo_keyword",
+      "matomo_medium",
+      "matomo_placement",
+      "matomo_source",
+      "mc_cid",
+      "mc_eid",
+      "meta_placement",
+      "meta_site_source",
+      "mkwid",
+      "msclkid",
+      "mtm_campaign",
+      "mtm_cid",
+      "mtm_content",
+      "mtm_group",
+      "mtm_keyword",
+      "mtm_medium",
+      "mtm_placement",
+      "mtm_source",
+      "nb_adtype",
+      "nb_ap",
+      "nb_expid_meta",
+      "nb_fii",
+      "nb_klid",
+      "nb_kwd",
+      "nb_li_ms",
+      "nb_lp_ms",
+      "nb_mi",
+      "nb_mt",
+      "nb_pc",
+      "nb_pi",
+      "nb_placement",
+      "nb_ppi",
+      "nb_ti",
+      "nbt",
+      "ndclid",
+      "padid",
+      "pcrid",
+      "piwik_campaign",
+      "piwik_keyword",
+      "piwik_kwd",
+      "pk_campaign",
+      "pk_cid",
+      "pk_content",
+      "pk_keyword",
+      "pk_kwd",
+      "pk_medium",
+      "pk_source",
+      "pl_gc",
+      "redirect_log_mongo_id",
+      "redirect_mongo_id",
+      "rtbhc",
+      "rtid",
+      "s_kwcid",
+      "sb_referer_host",
+      "scadid",
+      "ScCid",
+      "srsltid",
+      "trk_contact",
+      "trk_module",
+      "trk_msg",
+      "trk_sid",
+      "ttadid",
+      "ttclid",
+      "tw_adid",
+      "tw_campaign",
+      "tw_content",
+      "tw_kwdid",
+      "tw_source",
+      "tw_term",
+      "twclid",
+      "utm_creative_format",
+      "utm_klaviyo_id",
+      "utm_marketing_tactic",
+      "utm_source_platform",
+      "yclid",
+      "gclsrc",
+      "gPromoCode",
+      "gQT",
+      "gad_campaignid",
+      "gad_source",
+      "gbraid",
+      "wbraid",
+      "gadid",
+      "gclid",
+      "cq_cmp",
+      "cq_con",
+      "cq_med",
+      "cq_net",
+      "cq_plac",
+      "cq_plt",
+      "cq_src",
+      "cq_term"
     ]
   },
   "twitter": {
     "queryParams": ["ref_src", "ref_url"],
-    "origins": ["www.twitter.com", "twitter.com", "x.com"]
+    "hosts": ["www.twitter.com", "twitter.com", "x.com"]
   },
   "instagram": {
     "queryParams": ["igshid", "ig_rid"],
-    "origins": ["www.instagram.com"]
+    "hosts": ["www.instagram.com"]
   },
   "amazon": {
     "queryParams": [
@@ -106,7 +235,7 @@
       "sr",
       "store_ref"
     ],
-    "origins": [
+    "hosts": [
       "www.amazon.com",
       "www.amazon.de",
       "www.amazon.nl",
@@ -147,11 +276,11 @@
   },
   "handelsblatt": {
     "queryParams": ["share"],
-    "origins": ["www.handelsblatt.com"]
+    "hosts": ["www.handelsblatt.com"]
   },
   "shopee": {
     "queryParams": ["sp_atk", "xptdk"],
-    "origins": [
+    "hosts": [
       "shopee.co.id",
       "shopee.tw",
       "shopee.vn",
@@ -167,23 +296,23 @@
   },
   "tokopedia": {
     "queryParams": ["extParam"],
-    "origins": ["www.tokopedia.com"]
+    "hosts": ["www.tokopedia.com"]
   },
   "spotify": {
     "queryParams": ["si"],
-    "origins": ["open.spotify.com"]
+    "hosts": ["open.spotify.com"]
   },
   "meetup": {
     "queryParams": ["eventOrigin", "recId", "recSource", "searchId"],
-    "origins": ["www.meetup.com"]
+    "hosts": ["www.meetup.com"]
   },
   "facebook": {
     "queryParams": ["__cft__[0]", "__cft__%5B0%5D", "__tn__"],
-    "origins": ["www.facebook.com"]
+    "hosts": ["www.facebook.com"]
   },
   "wikimedia": {
     "queryParams": ["wprov"],
-    "origins": [
+    "hosts": [
       "w.wiki",
       "www.wikidata.org",
       "test.wikidata.org",
@@ -198,14 +327,42 @@
       "is_room_feed",
       "live_from"
     ],
-    "origins": ["www.bilibili.com", "space.bilibili.com", "live.bilibili.com"]
+    "hosts": ["www.bilibili.com", "space.bilibili.com", "live.bilibili.com"]
   },
   "humblebundle": {
     "queryParams": ["hmb_source", "hmb_medium", "hmb_campaign"],
-    "origins": ["www.humblebundle.com"]
+    "hosts": ["www.humblebundle.com"]
   },
   "linkedin": {
     "queryParams": ["rcm"],
-    "origins": ["www.linkedin.com"]
+    "hosts": ["www.linkedin.com"]
+  },
+  "ebay": {
+    "queryParams": ["customid", "toolid"],
+    "schemelessSites": [
+      "ebay.at",
+      "ebay.ba",
+      "ebay.com",
+      "ebay.com.au",
+      "ebay.com.hk",
+      "ebay.com.my",
+      "ebay.com.ph",
+      "ebay.com.sg",
+      "ebay.com.tw",
+      "ebay.co.uk",
+      "ebay.co.jp",
+      "ebay.co.kr",
+      "ebay.de",
+      "ebay.fr",
+      "ebay.it",
+      "ebay.es",
+      "ebay.ca",
+      "ebay.nl",
+      "ebay.be",
+      "ebay.ch",
+      "ebay.cn",
+      "ebay.ie",
+      "ebay.pl"
+    ]
   }
 }

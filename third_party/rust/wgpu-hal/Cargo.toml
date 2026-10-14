@@ -56,15 +56,13 @@ dx12 = [
     "dep:bytemuck",
     "dep:gpu-allocator",
     "dep:libloading",
-    "dep:once_cell",
     "dep:ordered-float",
-    "dep:parking_lot",
     "dep:profiling",
     "dep:range-alloc",
     "dep:windows-core",
     "gpu-allocator/d3d12",
     "naga/hlsl-out",
-    "once_cell/std",
+    "wgpu-sync/std",
     "windows/Win32_Devices_DeviceAndDriverInstallation",
     "windows/Win32_Devices_Display",
     "windows/Win32_Graphics_Direct3D_Dxc",
@@ -92,13 +90,13 @@ gles = [
     "dep:libloading",
     "dep:ndk-sys",
     "dep:objc2",
-    "dep:parking_lot",
     "dep:profiling",
     "dep:wasm-bindgen",
     "dep:wayland-sys",
     "dep:web-sys",
     "dep:windows-result",
     "naga/glsl-out",
+    "wgpu-sync/std",
     "wgpu-types/web",
     "windows-result/std",
     "windows/Win32_Graphics_Gdi",
@@ -109,6 +107,7 @@ gles = [
 internal_error_panic = []
 metal = [
     "naga/msl-out",
+    "wgpu-sync/std",
     "dep:arrayvec",
     "dep:block2",
     "dep:bytemuck",
@@ -119,23 +118,20 @@ metal = [
     "dep:objc2-foundation",
     "dep:objc2-metal",
     "dep:objc2-quartz-core",
-    "dep:parking_lot",
     "dep:profiling",
     "dep:smallvec",
     "dep:raw-window-metal",
 ]
-portable-atomic = [
-    "dep:portable-atomic",
-    "dep:portable-atomic-util",
-]
+portable-atomic = ["wgpu-sync/portable-atomic"]
 renderdoc = [
     "dep:libloading",
     "dep:renderdoc-sys",
 ]
 static-dxc = ["dep:mach-dxcompiler-rs"]
-validation_canary = ["dep:parking_lot"]
+validation_canary = ["wgpu-sync/std"]
 vulkan = [
     "naga/spv-out",
+    "wgpu-sync/std",
     "dep:android_system_properties",
     "dep:arrayvec",
     "dep:ash",
@@ -143,7 +139,6 @@ vulkan = [
     "dep:libc",
     "dep:libloading",
     "dep:ordered-float",
-    "dep:parking_lot",
     "dep:profiling",
     "dep:raw-window-metal",
     "dep:smallvec",
@@ -223,10 +218,6 @@ version = ">=3, <6.0"
 optional = true
 default-features = false
 
-[dependencies.parking_lot]
-version = "0.12.3"
-optional = true
-
 [dependencies.profiling]
 version = "1.0.1"
 optional = true
@@ -247,6 +238,11 @@ default-features = false
 version = "30.0.0"
 path = "../wgpu-naga-bridge"
 
+[dependencies.wgpu-sync]
+version = "30.0.0"
+path = "../wgpu-sync"
+default-features = false
+
 [dependencies.wgpu-types]
 version = "30.0.0"
 path = "../wgpu-types"
@@ -254,10 +250,11 @@ default-features = false
 
 [dev-dependencies.env_logger]
 version = "0.11"
+features = ["humantime"]
 default-features = false
 
 [dev-dependencies.glam]
-version = "0.33.0"
+version = "0.33.9"
 
 [dev-dependencies.naga]
 version = "30.0.0"
@@ -275,17 +272,17 @@ features = ["android-native-activity"]
 version = "0.2.2"
 
 [target.'cfg(all(target_family = "wasm", not(target_os = "emscripten")))'.dependencies.js-sys]
-version = "0.3.100"
+version = "0.3.104"
 optional = true
 default-features = true
 
 [target.'cfg(all(target_family = "wasm", not(target_os = "emscripten")))'.dependencies.wasm-bindgen]
-version = "0.2.123"
+version = "0.2.127"
 optional = true
 default-features = false
 
 [target.'cfg(all(target_family = "wasm", not(target_os = "emscripten")))'.dependencies.web-sys]
-version = "0.3.100"
+version = "0.3.104"
 features = [
     "default",
     "Window",
@@ -302,13 +299,9 @@ version = "0.15"
 optional = true
 
 [target.'cfg(all(windows, not(target_arch = "aarch64"), target_env = "msvc"))'.dependencies.mach-dxcompiler-rs]
-version = "0.1.4"
+version = ">=0.1.0,<=0.1.4"
 optional = true
 default-features = false
-
-[target.'cfg(any(not(target_has_atomic = "64"), not(target_has_atomic = "ptr")))'.dependencies.portable-atomic]
-version = "1.10"
-optional = true
 
 [target.'cfg(not(any(target_family = "wasm", target_os = "ios", target_os = "visionos", target_env = "ohos")))'.dev-dependencies.glutin]
 version = "0.32"
@@ -356,11 +349,6 @@ optional = true
 [target.'cfg(not(target_family = "wasm"))'.dependencies.smallvec]
 version = "1.14"
 features = ["union"]
-optional = true
-
-[target.'cfg(not(target_has_atomic = "ptr"))'.dependencies.portable-atomic-util]
-version = "0.2.4"
-features = ["alloc"]
 optional = true
 
 [target.'cfg(target_os = "android")'.dependencies.android_system_properties]
@@ -467,6 +455,7 @@ features = [
     "MTLAccelerationStructureTypes",
     "MTLAccelerationStructureCommandEncoder",
     "MTLResidencySet",
+    "MTLLogState",
 ]
 optional = true
 default-features = false
@@ -510,11 +499,6 @@ default-features = false
 [target."cfg(windows)".dependencies.glutin_wgl_sys]
 version = "0.6"
 optional = true
-
-[target."cfg(windows)".dependencies.once_cell]
-version = "1.21"
-optional = true
-default-features = false
 
 [target."cfg(windows)".dependencies.range-alloc]
 version = "0.1"

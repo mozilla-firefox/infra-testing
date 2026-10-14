@@ -12,10 +12,13 @@
 #include "CacheLog.h"
 #include "CacheObserver.h"
 #include "CacheStorage.h"
+#include "Dictionary.h"
 #include "ErrorList.h"
+#include "LoadContextInfo.h"
 #include "mozilla/AtomicBitfields.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/OriginAttributes.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StoragePrincipalHelper.h"
@@ -1703,6 +1706,15 @@ nsresult CacheStorageService::AddStorageEntry(
               continue;
             }
 
+            // A candidate is stored under a different URL than the one being
+            // opened, so it can only ever be reused as it is.  Taking one that
+            // would have to be replaced below would doom another URL's
+            // representation and remove entryKey - which is ours, not the
+            // candidate's - from the table, leaving the doomed entry behind.
+            if (MOZ_UNLIKELY(!aWriteToDisk) && candidate->IsUsingDisk()) {
+              continue;
+            }
+
             nsAutoCString nvsVal;
             candidate->GetMetaDataElement("no-vary-search",
                                           getter_Copies(nvsVal));
@@ -1746,6 +1758,10 @@ nsresult CacheStorageService::AddStorageEntry(
 
     // If truncate is demanded, delete and doom the current entry
     if (entryExists && replace) {
+      // Everything below keys off entryKey, so it must be the key entry is
+      // actually stored under.  The No-Vary-Search lookup never hands out an
+      // entry that can reach this point.
+      MOZ_ASSERT(!nvsMatched, "replacing a No-Vary-Search candidate");
       entries->Remove(entryKey);
 
       LOG(("  dooming entry %p for %s because of OPEN_TRUNCATE", entry.get(),
@@ -2619,23 +2635,37 @@ CacheStorageService::ClearDictionaryCacheMemory() {
 }
 
 NS_IMETHODIMP
-CacheStorageService::CorruptDictionaryHash(const nsACString& aURI) {
+CacheStorageService::CorruptDictionaryHash(
+    const nsACString& aURI, JS::Handle<JS::Value> aOriginAttributes,
+    JSContext* aCx) {
   LOG(("CacheStorageService::CorruptDictionaryHash [uri=%s]",
        PromiseFlatCString(aURI).get()));
+  OriginAttributes attrs;
+  if (!attrs.Init(aCx, aOriginAttributes)) {
+    return NS_ERROR_INVALID_ARG;
+  }
   RefPtr<DictionaryCache> cache = DictionaryCache::GetInstance();
   if (cache) {
-    cache->CorruptHashForTesting(aURI);
+    RefPtr<LoadContextInfo> lci = GetLoadContextInfo(false, attrs);
+    cache->CorruptHashForTesting(aURI, lci);
   }
   return NS_OK;
 }
 
 NS_IMETHODIMP
-CacheStorageService::ClearDictionaryDataForTesting(const nsACString& aURI) {
+CacheStorageService::ClearDictionaryDataForTesting(
+    const nsACString& aURI, JS::Handle<JS::Value> aOriginAttributes,
+    JSContext* aCx) {
   LOG(("CacheStorageService::ClearDictionaryDataForTesting [uri=%s]",
        PromiseFlatCString(aURI).get()));
+  OriginAttributes attrs;
+  if (!attrs.Init(aCx, aOriginAttributes)) {
+    return NS_ERROR_INVALID_ARG;
+  }
   RefPtr<DictionaryCache> cache = DictionaryCache::GetInstance();
   if (cache) {
-    cache->ClearDictionaryDataForTesting(aURI);
+    RefPtr<LoadContextInfo> lci = GetLoadContextInfo(false, attrs);
+    cache->ClearDictionaryDataForTesting(aURI, lci);
   }
   return NS_OK;
 }

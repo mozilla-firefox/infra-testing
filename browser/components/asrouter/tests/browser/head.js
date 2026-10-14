@@ -27,6 +27,12 @@ const { sinon } = ChromeUtils.importESModule(
 const BROWSER_GLUE =
   Cc["@mozilla.org/browser/browserglue;1"].getService().wrappedJSObject;
 
+ChromeUtils.defineLazyGetter(this, "PlacesFrecencyRecalculator", () => {
+  return Cc["@mozilla.org/places/frecency-recalculator;1"].getService(
+    Ci.nsIObserver
+  ).wrappedJSObject;
+});
+
 // Feature callout constants
 const calloutId = "feature-callout";
 const calloutSelector = `#${calloutId}.featureCallout`;
@@ -56,21 +62,6 @@ async function waitForUrlLoad(url) {
   let browser = gBrowser.selectedBrowser;
   BrowserTestUtils.startLoadingURIString(browser, url);
   await BrowserTestUtils.browserLoaded(browser, false, url);
-}
-
-/**
- * Waits for the CFR doorhanger opened by a routed message, and takes it down.
- * Showing the doorhanger is asynchronous, so waitForPopupEvent is used rather
- * than waitForEvent to also cover the case where the panel is already open.
- */
-async function hideCFRDoorhanger() {
-  await BrowserTestUtils.waitForPopupEvent(PopupNotifications.panel, "shown");
-  Assert.ok(
-    PopupNotifications.getNotification("contextual-feature-recommendation"),
-    "The CFR doorhanger is shown"
-  );
-  CFRPageActions.clearRecommendations();
-  await BrowserTestUtils.waitForPopupEvent(PopupNotifications.panel, "hidden");
 }
 
 async function waitForCalloutScreen(target, screenId) {

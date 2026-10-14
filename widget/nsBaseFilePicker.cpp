@@ -5,9 +5,11 @@
 
 #include "nsBaseFilePicker.h"
 
+#include "ContentAnalysis.h"
 #include "WidgetUtils.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/Components.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_security.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/dom/BrowsingContext.h"
@@ -30,6 +32,9 @@
 #include "nsSimpleEnumerator.h"
 #include "nsString.h"
 #include "nsThreadUtils.h"
+#ifdef MOZ_WIDGET_GTK
+#  include "mozilla/WidgetUtilsGtk.h"
+#endif
 
 using namespace mozilla::widget;
 using namespace mozilla::dom;
@@ -292,6 +297,11 @@ NS_IMETHODIMP nsBaseFilePicker::SetDisplayDirectory(nsIFile* aDirectory) {
     mDisplayDirectory = nullptr;
     return NS_OK;
   }
+
+  if (NS_WARN_IF(!IsPotentiallyReadableDirectory(*aDirectory))) {
+    return NS_OK;
+  }
+
   nsCOMPtr<nsIFile> directory;
   nsresult rv = aDirectory->Clone(getter_AddRefs(directory));
   if (NS_FAILED(rv)) {
@@ -360,8 +370,8 @@ bool nsBaseFilePicker::MaybeBlockFilePicker(
     if (topFrameElement) {
       // Dispatch an event that the frontend may use.
       nsContentUtils::DispatchEventOnlyToChrome(
-          topFrameElement->OwnerDoc(), topFrameElement, u"FilePickerBlocked"_ns,
-          mozilla::CanBubble::eYes, mozilla::Cancelable::eNo);
+          topFrameElement, u"FilePickerBlocked"_ns, mozilla::CanBubble::eYes,
+          mozilla::Cancelable::eNo);
     }
 
     return true;
@@ -403,6 +413,32 @@ bool nsBaseFilePicker::IsWithinInputProtectionTimeRange(
   return (aNow - aShowTime).ToMilliseconds() < double(aProtectionMs);
 }
 
+// static
+bool nsBaseFilePicker::IsPotentiallyReadableDirectory(nsIFile& aDirectory) {
+  if (XRE_IsContentProcess()) {
+    // The content process sandbox may block access to directories that the
+    // file picker, which runs in the parent process, can read.
+    return true;
+  }
+
+#ifdef XP_MACOSX
+  // On macOS, the file picker can read directories that our own process can't.
+  return true;
+#else
+#  ifdef MOZ_WIDGET_GTK
+  if (mozilla::widget::IsRunningUnderFlatpakOrSnap()) {
+    // On Flatpak / snap, the file picker can read directories that our own
+    // process can't.
+    return true;
+  }
+#  endif
+  bool isDirectory = false;
+  bool isReadable = false;
+  return NS_SUCCEEDED(aDirectory.IsDirectory(&isDirectory)) && isDirectory &&
+         NS_SUCCEEDED(aDirectory.IsReadable(&isReadable)) && isReadable;
+#endif
+}
+
 bool nsBaseFilePicker::IsContentInitiated() const {
   if (!mBrowsingContext || !mBrowsingContext->IsContent()) {
     return false;
@@ -424,6 +460,41 @@ bool nsBaseFilePicker::IsPickerInputProtected() const {
          IsWithinInputProtectionTimeRange(
              mShowTime, mozilla::TimeStamp::Now(),
              mozilla::StaticPrefs::security_notification_enable_delay());
+}
+
+bool nsBaseFilePicker::ShouldRunContentAnalysis() const {
+  if (mMode == nsIFilePicker::modeSave || !mBrowsingContext ||
+      mBrowsingContext->IsChrome() ||
+      !mozilla::StaticPrefs::
+          browser_contentanalysis_interception_point_file_upload_enabled()) {
+    return false;
+  }
+  nsCOMPtr<nsIContentAnalysis> contentAnalysis =
+      mozilla::components::nsIContentAnalysis::Service();
+  if (!contentAnalysis) {
+    return false;
+  }
+  // GetIsActive() can report active and still fail if the backend isn't ready.
+  // Ignore the failure so that the check still runs and fails closed.
+  bool isActive = false;
+  (void)contentAnalysis->GetIsActive(&isActive);
+  return isActive;
+}
+
+RefPtr<nsBaseFilePicker::ContentAnalysisPromise>
+nsBaseFilePicker::CheckContentAnalysis(nsCOMArray<nsIFile>&& aFiles) {
+  if (NS_WARN_IF(aFiles.IsEmpty()) || NS_WARN_IF(!mBrowsingContext)) {
+    return ContentAnalysisPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
+  }
+  auto* windowGlobal = mBrowsingContext->Canonical()->GetCurrentWindowGlobal();
+  if (NS_WARN_IF(!windowGlobal)) {
+    return ContentAnalysisPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
+  }
+  // This will check all of the files even if BLOCK responses are received for
+  // some of them, and the promise will resolve with the files that are ALLOWed.
+  return mozilla::contentanalysis::ContentAnalysis::CheckUploadsInBatchMode(
+      std::move(aFiles), /* aAutoAcknowledge */ true, windowGlobal,
+      nsIContentAnalysisRequest::Reason::eFilePickerDialog);
 }
 
 nsresult nsBaseFilePicker::ResolveSpecialDirectory(

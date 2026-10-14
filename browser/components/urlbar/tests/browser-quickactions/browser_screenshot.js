@@ -10,7 +10,7 @@
 requestLongerTimeout(3);
 
 const DUMMY_PAGE =
-  "https://example.com/browser/browser/base/content/test/general/dummy_page.html";
+  "https://example.com/browser/browser/base/content/test/browser-general/dummy_page.html";
 
 async function isScreenshotInitialized() {
   return SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
@@ -90,33 +90,4 @@ add_task(async function test_screenshot() {
   await UrlbarTestUtils.promisePopupClose(window, () => {
     EventUtils.synthesizeKey("KEY_Escape");
   });
-});
-
-add_task(async function search_mode_on_webpage() {
-  const tab = await BrowserTestUtils.openNewForegroundTab(
-    gBrowser,
-    "https://example.com"
-  );
-
-  info("Show result by click");
-  await UrlbarTestUtils.promisePopupOpen(window, () => {
-    EventUtils.synthesizeMouseAtCenter(gURLBar.inputField, {}, window);
-  });
-  await UrlbarTestUtils.promiseSearchComplete(window);
-
-  info("Check the urlbar state");
-  Assert.equal(gURLBar.value, UrlbarTestUtils.trimURL("https://example.com"));
-  Assert.equal(gURLBar.getAttribute("pageproxystate"), "valid");
-
-  info("Show result again");
-  await UrlbarTestUtils.promisePopupOpen(window, () => {
-    EventUtils.synthesizeMouseAtCenter(gURLBar.inputField, {}, window);
-  });
-  await UrlbarTestUtils.promiseSearchComplete(window);
-
-  info("Clean up");
-  await UrlbarTestUtils.promisePopupClose(window);
-  EventUtils.synthesizeKey("KEY_Escape");
-  BrowserTestUtils.removeTab(tab);
-  await PlacesUtils.history.clear();
 });

@@ -5,6 +5,7 @@
 #include "keyhi.h"
 #include "pkcs11t.h"
 #include "secoid.h"
+#include "eccutil.h"
 #include "secitem.h"
 #include "secder.h"
 #include "base64.h"
@@ -492,11 +493,16 @@ seckey_DSADecodePQG(PLArenaPool *arena, SECKEYPublicKey *pubk,
     SECStatus rv;
     SECItem newparams;
 
-    if (params == NULL)
+    if (params == NULL) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
         return SECFailure;
+    }
 
-    if (params->data == NULL)
+    /* Absent parameters, e.g. inherited from the issuer (RFC 3279). */
+    if (params->data == NULL) {
+        PORT_SetError(SEC_ERROR_INPUT_LEN);
         return SECFailure;
+    }
 
     PORT_Assert(arena);
 
@@ -760,12 +766,9 @@ KyberParams
 seckey_GetKyberParamsByPkcs11ParamSet(CK_ML_KEM_PARAMETER_SET_TYPE paramSet)
 {
     switch (paramSet) {
-#ifndef NSS_DISABLE_KYBER
-        case CKP_NSS_KYBER_768_ROUND3:
-            return params_kyber768_round3;
-#endif
         case CKP_ML_KEM_512:
             return params_ml_kem512;
+        case CKP_NSS_ML_KEM_768:
         case CKP_ML_KEM_768:
             return params_ml_kem768;
         case CKP_ML_KEM_1024:
@@ -779,12 +782,8 @@ CK_ML_KEM_PARAMETER_SET_TYPE
 seckey_GetMLKEMPkcs11ParamsByKyberParams(KyberParams kyberParams)
 {
     switch (kyberParams) {
-#ifndef NSS_DISABLE_KYBER
-        case params_kyber768_round3:
-        case params_kyber768_round3_test_mode:
-            return CKP_NSS_KYBER_768_ROUND3;
-#endif
         case params_ml_kem512:
+        case params_ml_kem512_test_mode:
             return CKP_ML_KEM_512;
         case params_ml_kem768:
         case params_ml_kem768_test_mode:
@@ -803,6 +802,7 @@ seckey_GetMLKEMOidTagByPkcs11ParamSet(CK_ML_KEM_PARAMETER_SET_TYPE paramSet)
     switch (paramSet) {
         case CKP_ML_KEM_512:
             return SEC_OID_ML_KEM_512;
+        case CKP_NSS_ML_KEM_768:
         case CKP_ML_KEM_768:
             return SEC_OID_ML_KEM_768;
         case CKP_ML_KEM_1024:
@@ -819,6 +819,7 @@ seckey_KyberParamsToLen(KyberParams kyberParams, SECKEYSizeType type)
         case SECKEYPubKeyType:
             switch (kyberParams) {
                 case params_ml_kem512:
+                case params_ml_kem512_test_mode:
                     return MLKEM512_PUBLIC_KEY_BYTES;
                 case params_ml_kem768:
                 case params_ml_kem768_test_mode:
@@ -833,6 +834,7 @@ seckey_KyberParamsToLen(KyberParams kyberParams, SECKEYSizeType type)
         case SECKEYPrivKeyType:
             switch (kyberParams) {
                 case params_ml_kem512:
+                case params_ml_kem512_test_mode:
                     return MLKEM512_PRIVATE_KEY_BYTES;
                 case params_ml_kem768:
                 case params_ml_kem768_test_mode:
@@ -1117,22 +1119,7 @@ int
 SECKEY_ECParamsToKeySize(const SECItem *encodedParams)
 {
     SECOidTag tag;
-    SECItem oid = { siBuffer, NULL, 0 };
-
-    /* The encodedParams data contains 0x06 (SEC_ASN1_OBJECT_ID),
-     * followed by the length of the curve oid and the curve oid.
-     */
-    if (!encodedParams || !encodedParams->data ||
-        encodedParams->len < 2 ||
-        encodedParams->data[0] != SEC_ASN1_OBJECT_ID ||
-        (unsigned)encodedParams->data[1] > encodedParams->len - 2) {
-        PORT_SetError(SEC_ERROR_BAD_DER);
-        return 0;
-    }
-    oid.len = encodedParams->data[1];
-    oid.data = encodedParams->data + 2;
-    if ((tag = SECOID_FindOIDTag(&oid)) == SEC_OID_UNKNOWN)
-        return 0;
+    tag = SECKEY_GetECCOid(encodedParams);
 
     switch (tag) {
         case SEC_OID_SECG_EC_SECP112R1:
@@ -1257,24 +1244,10 @@ SECKEY_ECParamsToKeySize(const SECItem *encodedParams)
 int
 SECKEY_ECParamsToBasePointOrderLen(const SECItem *encodedParams)
 {
-    SECOidTag tag;
-    SECItem oid = { siBuffer, NULL, 0 };
-
-    /* The encodedParams data contains 0x06 (SEC_ASN1_OBJECT_ID),
-     * followed by the length of the curve oid and the curve oid.
-     */
-    if (!encodedParams || !encodedParams->data ||
-        encodedParams->len < 2 ||
-        encodedParams->data[0] != SEC_ASN1_OBJECT_ID ||
-        (unsigned)encodedParams->data[1] > encodedParams->len - 2) {
-        PORT_SetError(SEC_ERROR_BAD_DER);
-        return 0;
+    SECOidTag tag = SECKEY_GetECCOid(encodedParams);
+    if (tag == SEC_OID_UNKNOWN) {
+        return 0; /* error set by SECKEY_GetECCOid */
     }
-    oid.len = encodedParams->data[1];
-    oid.data = encodedParams->data + 2;
-    if ((tag = SECOID_FindOIDTag(&oid)) == SEC_OID_UNKNOWN)
-        return 0;
-
     switch (tag) {
         case SEC_OID_SECG_EC_SECP112R1:
             return 112;
@@ -1546,6 +1519,8 @@ SECKEY_PrivateKeyStrengthInBits(const SECKEYPrivateKey *privk)
             PORT_Free(params.data);
             return bitSize;
         case ecKey:
+        case edKey:
+        case ecMontKey:
             rv = PK11_ReadAttribute(privk->pkcs11Slot, privk->pkcs11ID,
                                     CKA_EC_PARAMS, NULL, &params);
             if ((rv != SECSuccess) || (params.data == NULL)) {
@@ -1800,9 +1775,10 @@ SECKEY_EnforceKeySize(KeyType keyType, unsigned keyLength, SECErrorCodes error)
         case ecKey:
             opt = NSS_ECC_MIN_KEY_SIZE;
             break;
+        case edKey:
         case mldsaKey:
         case kyberKey:
-            return SECSuccess; /* mldsa and kyber handles key size policy
+            return SECSuccess; /* mldsa, ed, and mlkem handles key size policy
                                 * by having separate controls on
                                 * key params */
         case nullKey:
@@ -1861,7 +1837,9 @@ SECKEY_ConvertToPublicKey(SECKEYPrivateKey *privk)
     CERTCertificate *cert;
     SECStatus rv;
     CK_OBJECT_HANDLE pubKeyHandle;
-    SECItem decodedPoint;
+    SECItem decodedPoint = { siBuffer, NULL, 0 };
+    SECItem *point;
+    unsigned int fieldLen;
 
     /*
      * First try to look up the cert.
@@ -1960,15 +1938,22 @@ SECKEY_ConvertToPublicKey(SECKEYPrivateKey *privk)
                 if (rv != SECSuccess)
                     break;
             }
-            /* ec.publicValue should be decoded, PKCS #11 defines CKA_EC_POINT
-             * as encoded, but it's not always. try do decoded it and if it
-             * succeeds store the decoded value */
-            rv = SEC_QuickDERDecodeItem(arena, &decodedPoint,
-                                        SEC_ASN1_GET(SEC_OctetStringTemplate), &pubk->u.ec.publicValue);
-            if (rv == SECSuccess) {
-                /* both values are in the public key arena, so it's safe to
-                 * overwrite  the old value */
-                pubk->u.ec.publicValue = decodedPoint;
+            /* ec.publicValue should be a bare SEC#1 encoding. PKCS #11 defines
+             * CKA_EC_POINT with a DER octet string wrapper. Some earlier NSS
+             * versions stored bare points, so we need to handle both cases. */
+            fieldLen = (SECKEY_ECParamsToKeySize(&pubk->u.ec.DEREncodedParams) +
+                        7) /
+                       8;
+            point = &pubk->u.ec.publicValue;
+            if (!ECPoint_IsBare(point, fieldLen) && point->len != 0 &&
+                point->data[0] == SEC_ASN1_OCTET_STRING) {
+                rv = SEC_QuickDERDecodeItem(arena, &decodedPoint,
+                                            SEC_ASN1_GET(SEC_OctetStringTemplate), point);
+                if (rv == SECSuccess) {
+                    /* both values are in the public key arena, so it's safe to
+                     * overwrite  the old value */
+                    *point = decodedPoint;
+                }
             }
 
             pubk->u.ec.encoding = ECPoint_Undefined;
@@ -2037,6 +2022,42 @@ SECKEY_ConvertToPublicKey(SECKEYPrivateKey *privk)
      * PKCS #11 objects which need to be freed */
     SECKEY_DestroyPublicKey(pubk);
     return NULL;
+}
+
+/* Return the AlgorithmIdentifier OID to use in a SubjectPublicKeyInfo for an
+ * edKey or ecMontKey public key.
+ *
+ * RFC 8410 identifies these keys by the algorithm OID alone (id-X25519 =
+ * 1.3.101.110, id-Ed25519 = 1.3.101.112); the curve is not named separately.
+ * NSS additionally recognizes the pre-RFC 8410 curve25519 OID
+ * (1.3.6.1.4.1.11591.15.1, from the expired draft-josefsson-pkix-newcurves)
+ * as a named curve, and CKM_EC_MONTGOMERY_KEY_PAIR_GEN will generate a key
+ * whose CKA_EC_PARAMS carries it. That OID has no SubjectPublicKeyInfo
+ * encoding of its own, so map it to id-X25519 rather than emitting an SPKI
+ * that no parser -- including seckey_ExtractPublicKey -- will accept.
+ */
+static SECOidTag
+seckey_GetRFC8410AlgTag(const SECKEYPublicKey *pubk)
+{
+    SECOidTag curve = SECKEY_GetECCOid(&pubk->u.ec.DEREncodedParams);
+
+    switch (pubk->keyType) {
+        case ecMontKey:
+            if (curve == SEC_OID_X25519 || curve == SEC_OID_CURVE25519) {
+                return SEC_OID_X25519;
+            }
+            break;
+        case edKey:
+            if (curve == SEC_OID_ED25519) {
+                return SEC_OID_ED25519_PUBLIC_KEY;
+            }
+            break;
+        default:
+            break;
+    }
+
+    PORT_SetError(SEC_ERROR_UNSUPPORTED_KEYALG);
+    return SEC_OID_UNKNOWN;
 }
 
 static CERTSubjectPublicKeyInfo *
@@ -2147,7 +2168,10 @@ seckey_CreateSubjectPublicKeyInfo_helper(SECKEYPublicKey *pubk)
                 break;
             case edKey:
             case ecMontKey:
-                tag = SECKEY_GetECCOid(&pubk->u.ec.DEREncodedParams);
+                tag = seckey_GetRFC8410AlgTag(pubk);
+                if (tag == SEC_OID_UNKNOWN) {
+                    break;
+                }
                 rv = SECOID_SetAlgorithmID(arena, &spki->algorithm,
                                            tag,
                                            &params);
@@ -2824,8 +2848,12 @@ SECKEY_GetECCOid(const SECKEYECParams *params)
      * before the actual OID and use the OID to look up a named curve.
      */
     if (!params || !params->data || params->len < 2 ||
-        params->data[0] != SEC_ASN1_OBJECT_ID)
+        params->data[0] != SEC_ASN1_OBJECT_ID ||
+        (params->data[1] & 0x80) != 0 ||
+        params->data[1] != (params->len - 2)) {
+        PORT_SetError(SEC_ERROR_BAD_DER);
         return 0;
+    }
     oid.len = params->len - 2;
     oid.data = params->data + 2;
     if ((oidData = SECOID_FindOID(&oid)) == NULL)

@@ -9,7 +9,7 @@
 pub mod agent;
 mod agentio;
 mod auth;
-mod cert;
+pub mod cert;
 pub mod constants;
 mod ech;
 #[macro_use]
@@ -43,10 +43,10 @@ use std::{
     ffi::CString,
     path::{Path, PathBuf},
     ptr::null,
+    sync::OnceLock,
 };
 
 use log::error;
-use once_cell::sync::OnceCell;
 
 #[cfg(windows)]
 #[expect(unused_imports, reason = "Force Advapi32 linkage")]
@@ -76,8 +76,7 @@ pub use self::{
     util::*,
 };
 
-mod min_version;
-use min_version::MINIMUM_NSS_VERSION;
+const MINIMUM_NSS_VERSION: &str = env!("NSS_MIN_VERSION");
 
 pub mod nss_prelude {
     #![allow(
@@ -115,7 +114,7 @@ impl Drop for NssLoaded {
     }
 }
 
-static INITIALIZED: OnceCell<Res<NssLoaded>> = OnceCell::new();
+static INITIALIZED: OnceLock<Res<NssLoaded>> = OnceLock::new();
 
 fn version_check() -> Res<()> {
     let min_ver = CString::new(MINIMUM_NSS_VERSION)?;

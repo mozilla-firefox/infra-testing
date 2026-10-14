@@ -23,10 +23,6 @@ class nsHttpNTLMAuth : public nsIHttpAuthenticator {
  private:
   virtual ~nsHttpNTLMAuth() = default;
 
-  // This flag indicates whether we are using the native NTLM implementation
-  // or the internal one.
-  bool mUseNative{false};
-
   static StaticRefPtr<nsHttpNTLMAuth> gSingleton;
 };
 

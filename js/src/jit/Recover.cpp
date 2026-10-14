@@ -22,6 +22,7 @@
 #include "js/ScalarType.h"
 #include "util/DifferentialTesting.h"
 #include "vm/BigIntType.h"
+#include "vm/BoundFunctionObject.h"
 #include "vm/EqualityOperations.h"
 #include "vm/Interpreter.h"
 #include "vm/Iteration.h"
@@ -278,6 +279,35 @@ bool RUrsh::recover(JSContext* cx, SnapshotIterator& iter) const {
   }
 
   iter.storeInstructionResult(result);
+  return true;
+}
+
+bool MRotate::writeRecoverData(CompactBufferWriter& writer) const {
+  MOZ_ASSERT(canRecoverOnBailout());
+  writer.writeUnsigned(uint32_t(RInstruction::Recover_Rotate));
+  writer.writeByte(isLeftRotate_);
+  return true;
+}
+
+RRotate::RRotate(CompactBufferReader& reader) {
+  isLeftRotate_ = reader.readByte();
+}
+
+bool RRotate::recover(JSContext* cx, SnapshotIterator& iter) const {
+  RootedValue operand(cx, iter.read());
+
+  // Our Int32 operand may have overflowed to double. This instruction
+  // is generated from bit shifts that convert their operands to int32,
+  // so we should do the same conversion here.
+  int32_t inputInt32;
+  MOZ_ALWAYS_TRUE(JS::ToInt32(cx, operand, &inputInt32));
+  uint32_t input = uint32_t(inputInt32);
+  int32_t c = iter.read().toInt32();
+  MOZ_ASSERT(c >= 1 && c <= 31);
+
+  uint32_t result = isLeftRotate_ ? ((input << c) | (input >> (32 - c)))
+                                  : ((input >> c) | (input << (32 - c)));
+  iter.storeInstructionResult(Int32Value(int32_t(result)));
   return true;
 }
 
@@ -1959,6 +1989,21 @@ bool RToFloat16::recover(JSContext* cx, SnapshotIterator& iter) const {
   return true;
 }
 
+bool MUnsignedToDouble::writeRecoverData(CompactBufferWriter& writer) const {
+  MOZ_ASSERT(canRecoverOnBailout());
+  writer.writeUnsigned(uint32_t(RInstruction::Recover_UnsignedToDouble));
+  return true;
+}
+
+RUnsignedToDouble::RUnsignedToDouble(CompactBufferReader& reader) {}
+
+bool RUnsignedToDouble::recover(JSContext* cx, SnapshotIterator& iter) const {
+  double num = iter.readNumber();
+
+  iter.storeInstructionResult(NumberValue(JS::ToUint32(num)));
+  return true;
+}
+
 bool MTruncateToInt32::writeRecoverData(CompactBufferWriter& writer) const {
   MOZ_ASSERT(canRecoverOnBailout());
   writer.writeUnsigned(uint32_t(RInstruction::Recover_TruncateToInt32));
@@ -2185,6 +2230,28 @@ bool RNewDateObject::recover(JSContext* cx, SnapshotIterator& iter) const {
   MOZ_ASSERT(utcTime.isNumber());
 
   auto* resultObject = jit::NewDateObject(cx, utcTime.toNumber());
+  if (!resultObject) {
+    return false;
+  }
+
+  iter.storeInstructionResult(ObjectValue(*resultObject));
+  return true;
+}
+
+bool MNewBoundFunction::writeRecoverData(CompactBufferWriter& writer) const {
+  MOZ_ASSERT(canRecoverOnBailout());
+  writer.writeUnsigned(uint32_t(RInstruction::Recover_NewBoundFunction));
+  return true;
+}
+
+RNewBoundFunction::RNewBoundFunction(CompactBufferReader& reader) {}
+
+bool RNewBoundFunction::recover(JSContext* cx, SnapshotIterator& iter) const {
+  Rooted<BoundFunctionObject*> templateObj(
+      cx, &iter.readObject()->as<BoundFunctionObject>());
+
+  JSObject* resultObject =
+      BoundFunctionObject::createWithTemplate(cx, templateObj);
   if (!resultObject) {
     return false;
   }

@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this,
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import annotations
+
 import contextlib
 import os
 from pathlib import Path
@@ -187,5 +189,10 @@ class SrcRepository(Repository):
         """Return last modified in VCS time for the specified file."""
         raise MissingVCSTool
 
-    def configure(self, state_dir: Path, update_only: bool = False):
+    def configure(
+        self,
+        state_dir: Path,
+        update_only: bool = False,
+        no_system_changes: bool = False,
+    ):
         pass

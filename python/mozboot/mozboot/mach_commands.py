@@ -64,7 +64,12 @@ def bootstrap(
     choices=("hg", "git", "jj"),
     help="Force a specific VCS backend instead of auto-detecting.",
 )
-def vcs_setup(command_context, update_only=False, vcs=None):
+@CommandArgument(
+    "--no-system-changes",
+    action="store_true",
+    help="Skip Watchman configuration.",
+)
+def vcs_setup(command_context, update_only=False, vcs=None, no_system_changes=False):
     """Ensure a Version Control System (Mercurial, Git, or
     Git + Jujutsu) is optimally configured.
 
@@ -101,4 +106,6 @@ def vcs_setup(command_context, update_only=False, vcs=None):
         repo = get_repository_object(topsrcdir)
         print(f"Automatically detected a {repo.name} repository.")
 
-    repo.configure(state_dir, update_only=update_only)
+    repo.configure(
+        state_dir, update_only=update_only, no_system_changes=no_system_changes
+    )

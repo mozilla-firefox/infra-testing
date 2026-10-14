@@ -901,19 +901,24 @@ internal class GeckoPromptDelegate(private val geckoEngineSession: GeckoEngineSe
         }
         val onDismiss = { prompt.dismissSafely(geckoResult) }
 
-        geckoEngineSession.notifyObservers {
-            onPromptRequest(
-                PromptRequest.Share(
-                    ShareData(
-                        title = prompt.title,
-                        text = prompt.text,
-                        url = prompt.uri,
-                    ),
-                    onSuccess,
-                    onFailure,
-                    onDismiss,
+        geckoEngineSession.run {
+            val privateMode = geckoSession.settings.usePrivateMode
+
+            notifyObservers {
+                onPromptRequest(
+                    PromptRequest.Share(
+                        ShareData(
+                            title = prompt.title,
+                            text = prompt.text,
+                            url = prompt.uri,
+                            private = privateMode,
+                        ),
+                        onSuccess,
+                        onFailure,
+                        onDismiss,
+                    )
                 )
-            )
+            }
         }
         return geckoResult
     }

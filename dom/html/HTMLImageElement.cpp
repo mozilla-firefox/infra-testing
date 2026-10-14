@@ -84,8 +84,16 @@ HTMLImageElement::~HTMLImageElement() {
   }
 }
 
-NS_IMPL_CYCLE_COLLECTION_INHERITED(HTMLImageElement, nsGenericHTMLElement,
-                                   mResponsiveSelector)
+NS_IMPL_CYCLE_COLLECTION_CLASS(HTMLImageElement)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(HTMLImageElement,
+                                                nsGenericHTMLElement)
+  tmp->ClearForm(true);
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mResponsiveSelector)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(HTMLImageElement,
+                                                  nsGenericHTMLElement)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mForm, mResponsiveSelector)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(HTMLImageElement,
                                              nsGenericHTMLElement,
@@ -228,8 +236,7 @@ nsChangeHint HTMLImageElement::GetAttributeChangeHint(
   return retval;
 }
 
-NS_IMETHODIMP_(bool)
-HTMLImageElement::IsAttributeMapped(const nsAtom* aAttribute) const {
+bool HTMLImageElement::IsNoNamespaceAttrMapped(const nsAtom* aAttribute) const {
   static const MappedAttributeEntry* const map[] = {
       sCommonAttributeMap, sImageMarginSizeAttributeMap,
       sImageBorderAttributeMap, sImageAlignAttributeMap};
@@ -482,7 +489,12 @@ void HTMLImageElement::UnbindFromTree(UnbindContext& aContext) {
   nsImageLoadingContent::UnbindFromTree();
   nsGenericHTMLElement::UnbindFromTree(aContext);
 
-  UpdateAutoSizeObserver();
+  if (!aContext.IsMove()) {
+    // https://html.spec.whatwg.org/#the-img-element:html-element-removing-steps
+    // 2. Set removedNode's last auto-sizes width to null.
+    // (We also stop observing it for resizes at this point.)
+    UpdateAutoSizeObserver();
+  }
 
   if (wasInPicture != IsInPicture()) {
     MOZ_ASSERT(wasInPicture);
@@ -619,9 +631,6 @@ void HTMLImageElement::SetForm(HTMLFormElement* aForm) {
 }
 
 void HTMLImageElement::ClearForm(bool aRemoveFromForm) {
-  NS_ASSERTION((mForm != nullptr) == HasFlag(ADDED_TO_FORM),
-               "Form control should have had flag set correctly");
-
   if (!mForm) {
     return;
   }

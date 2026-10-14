@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.share
 
+import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipDescription
@@ -25,9 +26,7 @@ import androidx.navigation.NavController
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import mozilla.components.concept.engine.prompt.ShareData
 import mozilla.components.concept.sync.Device
@@ -88,7 +87,6 @@ interface ShareController {
  * @param appStore Instance of [AppStore] for interacting with application wide state.
  * @param shareSubject Desired message subject used when sharing through 3rd party apps, like email clients.
  * @param shareData The list of [ShareData]s that can be shared.
- * @param isPrivate Whether the tab(s) being shared are from private browsing mode.
  * @param sendTabUseCases Instance of [SendTabUseCases] which allows sending tabs to account devices.
  * @param saveToPdfUseCase Instance of [SessionUseCases.SaveToPdfUseCase] to generate a PDF of a given tab.
  * @param printUseCase Instance of [SessionUseCases.PrintContentUseCase] to print content of a given tab.
@@ -96,7 +94,8 @@ interface ShareController {
  * @param navController [NavController] used for navigation.
  * @param recentAppsStorage Instance of [RecentAppsStorage] for storing and retrieving the most recent apps.
  * @param viewLifecycleScope [CoroutineScope] used for retrieving the most recent apps in the background.
- * @param mainDispatcher Dispatcher for executing tasks on the Main thread.
+ * @param applicationScope [CoroutineScope] tied to the application lifetime, used for operations that must outlive the
+ *   share fragment (e.g. sending tabs to devices after the fragment is dismissed).
  * @param ioDispatcher Dispatcher for executing I/O-bound tasks, like updating local storage.
  * @param fxaEntrypoint The entrypoint if we need to authenticate, it will be reported in telemetry.
  * @param dismiss Callback signalling sharing can be closed.
@@ -107,7 +106,6 @@ class DefaultShareController(
     private val appStore: AppStore,
     private val shareSubject: String?,
     private val shareData: List<ShareData>,
-    private val isPrivate: Boolean,
     private val sendTabUseCases: SendTabUseCases,
     private val saveToPdfUseCase: SessionUseCases.SaveToPdfUseCase,
     private val printUseCase: SessionUseCases.PrintContentUseCase,
@@ -115,7 +113,7 @@ class DefaultShareController(
     private val navController: NavController,
     private val recentAppsStorage: RecentAppsStorage,
     private val viewLifecycleScope: CoroutineScope,
-    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
+    private val applicationScope: CoroutineScope,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val fxaEntrypoint: FxAEntryPoint = FenixFxAEntryPoint.ShareMenu,
     private val dismiss: (ShareController.Result) -> Unit,
@@ -225,13 +223,11 @@ class DefaultShareController(
      * @param destination List of device IDs to share tabs with.
      * @param shareOperation Operation to be executed for actually sharing tabs.
      */
-    @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
     private fun shareToDevicesWithRetry(
         destination: List<String>,
         shareOperation: () -> Deferred<Boolean>,
     ) {
-        // Use GlobalScope to allow the continuation of this method even if the share fragment is closed.
-        GlobalScope.launch(mainDispatcher) {
+        applicationScope.launch {
             val result =
                 if (shareOperation.invoke().await()) {
                     showSuccess(destination)
@@ -292,24 +288,12 @@ class DefaultShareController(
     internal fun getShareSubject() =
         shareSubject ?: shareData.filterNot { it.title.isNullOrEmpty() }.joinToString(", ") { it.title.toString() }
 
-    // Navigation between app fragments uses ShareTab as arguments. SendTabUseCases uses TabData.
-    @VisibleForTesting
-    internal fun List<ShareData>.toTabData() = map { data ->
-        TabData(
-            title = data.title.orEmpty(),
-            url = data.url ?: data.text?.toDataUri().orEmpty(),
-            privacy = if (isPrivate) TabPrivacy.Private else TabPrivacy.Normal,
-        )
-    }
-
-    private fun String.toDataUri(): String {
-        return "data:,${Uri.encode(this)}"
-    }
-
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    @SuppressLint("InlinedApi")
     private fun copyClipboard() {
         val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clipData = ClipData.newPlainText(getShareSubject(), getShareText())
+
+        val isPrivate = shareData.any { it.private }
 
         if (isPrivate) {
             clipData.description.extras =
@@ -324,4 +308,18 @@ class DefaultShareController(
     companion object {
         const val ACTION_COPY_LINK_TO_CLIPBOARD = "org.mozilla.fenix.COPY_LINK_TO_CLIPBOARD"
     }
+}
+
+// Navigation between app fragments uses ShareTab as arguments. SendTabUseCases uses TabData.
+@VisibleForTesting
+internal fun List<ShareData>.toTabData() = map { data ->
+    fun String.toDataUri(): String {
+        return "data:,${Uri.encode(this)}"
+    }
+
+    TabData(
+        title = data.title.orEmpty(),
+        url = data.url ?: data.text?.toDataUri().orEmpty(),
+        privacy = if (data.private) TabPrivacy.Private else TabPrivacy.Normal,
+    )
 }

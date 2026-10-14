@@ -4,7 +4,6 @@
 
 package org.mozilla.fenix.home.collections
 
-import androidx.compose.runtime.Composable
 import mozilla.components.browser.state.selector.normalTabs
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.feature.tab.collections.TabCollection
@@ -27,24 +26,33 @@ sealed class CollectionsState {
         val showSaveTabsToCollection: Boolean,
     ) : CollectionsState()
 
+    /** State in which the Collections to Tab Groups migration card should be displayed in place of the collections. */
+    data object MigrationCard : CollectionsState()
+
     /** State in which no collections section should be displayed. */
     data object Gone : CollectionsState()
 
     companion object {
-        @Composable
         internal fun build(
             appState: AppState,
             browserState: BrowserState,
+            showCollections: Boolean,
+            shouldShowCollectionsMigrationCard: Boolean,
         ): CollectionsState =
             with(appState) {
-                if (collections.isNotEmpty()) {
-                    Content(
-                        collections = collections,
-                        expandedCollections = expandedCollections,
-                        showSaveTabsToCollection = browserState.normalTabs.isNotEmpty(),
-                    )
-                } else {
-                    Gone
+                val collections = if (showCollections) this.collections else emptyList()
+
+                when {
+                    shouldShowCollectionsMigrationCard -> MigrationCard
+
+                    collections.isNotEmpty() ->
+                        Content(
+                            collections = collections,
+                            expandedCollections = expandedCollections,
+                            showSaveTabsToCollection = browserState.normalTabs.isNotEmpty(),
+                        )
+
+                    else -> Gone
                 }
             }
     }

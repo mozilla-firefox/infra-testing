@@ -21,6 +21,7 @@ static const char* const kTestFileExtensions[] = {
     ".air",     // Adobe Air (ignored for app rep)
     ".apk",     // Android package
     ".app",     // Executable application
+    ".appcontent-ms",
     ".applescript",
     ".application",  // MS ClickOnce
     ".appref-ms",    // MS ClickOnce
@@ -213,6 +214,7 @@ static const char* const kTestFileExtensions[] = {
     ".scr",                // Windows
     ".sct",                // Windows shell
     ".search-ms",          // Windows Saved Search
+    ".searchConnector-ms", // Windows Search Connector
     ".seplugin",           // AppleScript
     ".service",            // Systemd service unit file
     ".settingcontent-ms",  // Windows settings

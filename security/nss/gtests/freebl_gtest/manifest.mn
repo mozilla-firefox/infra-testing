@@ -11,10 +11,12 @@ MODULE = nss
 #     mpi_unittest.cc
 #     ghash_unittest.cc
 CPPSRCS = \
+        aes_ctr_unittest.cc \
         ecl_unittest.cc \
         rsa_unittest.cc \
         cmac_unittests.cc \
         kyber_unittest.cc \
+        mldsa_unittest.cc \
       $(NULL)
 
 DEFINES += -DDLL_PREFIX=\"$(DLL_PREFIX)\" -DDLL_SUFFIX=\"$(DLL_SUFFIX)\"

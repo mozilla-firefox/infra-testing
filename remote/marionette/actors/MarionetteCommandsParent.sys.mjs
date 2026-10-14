@@ -9,17 +9,20 @@ ChromeUtils.defineESModuleGetters(lazy, {
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
   getSeenNodesForBrowsingContext:
     "chrome://remote/content/shared/webdriver/Session.sys.mjs",
+  isPrivilegedContext:
+    "chrome://remote/content/shared/BrowsingContextUtils.sys.mjs",
   json: "chrome://remote/content/marionette/json.sys.mjs",
   Log: "chrome://remote/content/shared/Log.sys.mjs",
+  RemoteAgent: "chrome://remote/content/components/RemoteAgent.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "logger", () =>
   lazy.Log.get(lazy.Log.TYPES.MARIONETTE)
 );
 
-// Because Marionette supports a single session only we store its id
-// globally so that the parent actor can access it.
-let webDriverSessionId = null;
+// Because Marionette supports a single session only we store it globally
+// so that the parent actor can access it.
+let webDriverSession = null;
 
 export class MarionetteCommandsParent extends JSWindowActorParent {
   #deferredDialogOpened;
@@ -73,7 +76,7 @@ export class MarionetteCommandsParent extends JSWindowActorParent {
 
   async sendQuery(name, serializedValue) {
     const seenNodes = lazy.getSeenNodesForBrowsingContext(
-      webDriverSessionId,
+      webDriverSession,
       this.manager.browsingContext
     );
 
@@ -346,6 +349,12 @@ export class MarionetteCommandsParent extends JSWindowActorParent {
       }
     );
 
+    if (rect.width === 0 || rect.height === 0) {
+      throw new lazy.error.UnableToCaptureScreen(
+        `The dimensions of requested screenshot are incorrect, got width: ${rect.width} and height: ${rect.height}.`
+      );
+    }
+
     // If no element has been specified use the top-level browsing context.
     // Otherwise use the browsing context from the currently selected frame.
     const browsingContext = webEl
@@ -382,8 +391,25 @@ export class MarionetteCommandsParent extends JSWindowActorParent {
  * @param {function(): BrowsingContext} browsingContextFn
  *     A function that returns the reference to the browsing context for which
  *     the query should run.
+ * @param {object=} options
+ * @param {boolean=} options.skipPrivilegeCheck
+ *     If true, the command is allowed to be forwarded to a privileged content
+ *     browsing context even without system access. Defaults to false, which
+ *     prevents the command from reaching a content browsing context that
+ *     became privileged after it was dispatched. Should only be set for
+ *     commands that are safe regardless of the context's privilege level.
+ *
+ * @throws {NoSuchWindowError}
+ *     Browsing context has been discarded.
+ * @throws {UnsupportedOperationError}
+ *     Not supported for browsing contexts in privileged scope.
  */
-export function getMarionetteCommandsActorProxy(browsingContextFn) {
+export function getMarionetteCommandsActorProxy(
+  browsingContextFn,
+  options = {}
+) {
+  const { skipPrivilegeCheck = false } = options;
+
   const MAX_ATTEMPTS = 10;
 
   /**
@@ -422,6 +448,23 @@ export function getMarionetteCommandsActorProxy(browsingContextFn) {
               throw new lazy.error.NoSuchWindowError(
                 `BrowsingContext does no longer exist`
               );
+            }
+
+            if (browsingContext.isContent) {
+              // The browsing context is (re-)resolved on every attempt and may
+              // have navigated to a privileged page since the command was
+              // initially dispatched. Without system access no command may run
+              // in a privileged context, so refuse to forward it there instead
+              // of executing with elevated privileges.
+              if (
+                !skipPrivilegeCheck &&
+                !lazy.RemoteAgent.allowSystemAccess &&
+                lazy.isPrivilegedContext(browsingContext)
+              ) {
+                throw new lazy.error.UnsupportedOperationError(
+                  `Cannot forward command "${methodName}" to a privileged browsing context`
+                );
+              }
             }
 
             try {
@@ -473,10 +516,10 @@ export function getMarionetteCommandsActorProxy(browsingContextFn) {
 /**
  * Register the MarionetteCommands actor that holds all the commands.
  *
- * @param {string} sessionId
- *     The id of the current WebDriver session.
+ * @param {WebDriverSession} session
+ *     The current WebDriver session.
  */
-export function registerCommandsActor(sessionId) {
+export function registerCommandsActor(session) {
   try {
     ChromeUtils.registerWindowActor("MarionetteCommands", {
       parent: {
@@ -500,11 +543,11 @@ export function registerCommandsActor(sessionId) {
     }
   }
 
-  webDriverSessionId = sessionId;
+  webDriverSession = session;
 }
 
 export function unregisterCommandsActor() {
-  webDriverSessionId = null;
+  webDriverSession = null;
 
   ChromeUtils.unregisterWindowActor("MarionetteCommands");
 }

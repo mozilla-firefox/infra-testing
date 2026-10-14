@@ -9,6 +9,7 @@
 
 #include "gc/MaybeRooted.h"
 #include "gc/StableCellHasher.h"
+#include "jit/JitRuntime.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/friend/StackLimits.h"    // js::AutoCheckRecursionLimit
 #include "js/Printer.h"               // js::GenericPrinter
@@ -16,8 +17,10 @@
 #include "vm/EqualityOperations.h"  // js::SameValue
 #include "vm/GetterSetter.h"        // js::GetterSetter
 #include "vm/Interpreter.h"         // js::CallGetter, js::CallSetter
+#include "vm/Iteration.h"           // js::ClassCanHaveExtraEnumeratedProperties
 #include "vm/JSONPrinter.h"         // js::JSONPrinter
 #include "vm/PlainObject.h"         // js::PlainObject
+#include "vm/Realm.h"               // js::PlainObjectCopyPropsCache
 #include "vm/TypedArrayObject.h"
 #include "vm/Watchtower.h"
 
@@ -349,15 +352,17 @@ bool NativeObject::growSlots(JSContext* cx, uint32_t oldCapacity,
       new (allocation) ObjectSlots(newCapacity, dictionarySpan, uid);
 
   HeapSlot* newSlots = newHeaderSlots->slots();
-#ifdef JS_GC_CONCURRENT_MARKING
-  InitializeSlotRange(newSlots + oldCapacity, newSlots + newCapacity);
-#else
   Debug_SetSlotRangeToCrashOnTouch(newSlots + oldCapacity,
                                    newCapacity - oldCapacity);
-#endif
 
   gc::MemoryReleaseFence(zone());
   slots_ = newSlots;
+
+  if (cx->runtime()->hasJitRuntime() &&
+      MOZ_UNLIKELY(cx->runtime()->jitRuntime()->inPureCall()) &&
+      is<GlobalObject>()) {
+    cx->runtime()->jitRuntime()->handleGrowSlotsForPureCall(cx);
+  }
 
   MOZ_ASSERT(hasDynamicSlots());
   return true;
@@ -393,13 +398,7 @@ bool NativeObject::allocateInitialSlots(JSContext* cx, uint32_t capacity) {
       ObjectSlots(capacity, 0, ObjectSlots::NoUniqueIdInDynamicSlots);
   HeapSlot* slots = headerSlots->slots();
 
-#ifdef JS_GC_CONCURRENT_MARKING
-  // TODO: This (and the other uses of InitializeSlotRange in this file) may
-  // unnecessarily initialize slots that get explicitly initialized later.
-  InitializeSlotRange(slots, slots + capacity);
-#else
   Debug_SetSlotRangeToCrashOnTouch(slots, capacity);
-#endif
 
   // Fence between initializing slot data and writing the slots_ pointer ensure
   // marking doesn't observe uninitialized memory.
@@ -430,11 +429,7 @@ bool NativeObject::allocateSlots(Nursery& nursery, uint32_t newCapacity) {
       newCapacity, dictionarySpan, ObjectSlots::NoUniqueIdInDynamicSlots);
 
   HeapSlot* newSlots = newHeaderSlots->slots();
-#ifdef JS_GC_CONCURRENT_MARKING
-  InitializeSlotRange(newSlots, newSlots + newCapacity);
-#else
   Debug_SetSlotRangeToCrashOnTouch(newSlots, newCapacity);
-#endif
 
   gc::MemoryReleaseFence(zone());
   slots_ = newSlots;
@@ -524,6 +519,15 @@ void NativeObject::shrinkSlots(JSContext* cx, uint32_t oldCapacity,
 
   auto* newHeaderSlots =
       new (allocation) ObjectSlots(newCapacity, dictionarySpan, uid);
+
+#ifdef JS_GC_CONCURRENT_MARKING
+  // Clear any unused slots up to the end of the allocation in case we end up
+  // marking them.
+  // TODO: Not required for correctness. Could be removed.
+  InitializeSlotRange(newHeaderSlots->slots() + newCapacity,
+                      allocation + newAllocated);
+#endif
+
   gc::MemoryReleaseFence(zone());
   slots_ = newHeaderSlots->slots();
 }
@@ -1200,8 +1204,8 @@ static bool CallJSAddPropertyOp(JSContext* cx, JSAddPropertyOp op,
   return op(cx, obj, id, v);
 }
 
-static MOZ_ALWAYS_INLINE bool PreserveAnyUnpreservedWrapper(
-    JSContext* cx, Handle<NativeObject*> obj) {
+bool js::PreserveAnyUnpreservedWrapper(JSContext* cx,
+                                       Handle<NativeObject*> obj) {
   if (MOZ_LIKELY(!obj->hasUnpreservedWrapper())) {
     return true;
   }
@@ -2956,21 +2960,48 @@ bool js::CopyDataPropertiesNative(JSContext* cx, Handle<PlainObject*> target,
 
   // Don't use the fast path if |from| may have extra indexed or lazy
   // properties.
-  if (from->getDenseInitializedLength() > 0 || from->isIndexed() ||
-      from->is<TypedArrayObject>() || from->getClass()->getNewEnumerate() ||
-      from->getClass()->getEnumerate()) {
+  if (from->getDenseInitializedLength() > 0 || from->isIndexed()) {
     return true;
   }
+  const bool fromIsPlain = from->is<PlainObject>();
+  if (fromIsPlain) {
+    MOZ_ASSERT(!ClassCanHaveExtraEnumeratedProperties(from->getClass()));
+  } else {
+    if (ClassCanHaveExtraEnumeratedProperties(from->getClass())) {
+      return true;
+    }
+  }
+
+  // Check the plainObjectSpreadCache.
+  if (!excludedItems) {
+    const PlainObjectCopyPropsCache& cache =
+        cx->realm()->plainObjectSpreadCache;
+    if (SharedShape* newShape = cache.lookup(target->shape(), from->shape())) {
+      *optimized = true;
+      return CopyPropertiesWithNewShape(cx, target, &from->as<PlainObject>(),
+                                        newShape, newShape->slotSpan());
+    }
+  }
+
+  // If |target| contains no own properties, we can directly call
+  // AddDataPropertyToNativeObjectNoHooks.
+  const bool targetHadNoOwnProperties = target->empty();
+
+  // If |target| is empty and every property of |from| is a plain enumerable
+  // data property, we try to reuse |from|'s Shape or PropMap.
+  bool canReuseFromShape = !excludedItems && targetHadNoOwnProperties &&
+                           fromIsPlain &&
+                           !Watchtower::watchesPropertyAdd(target);
 
   // Collect all enumerable data properties.
   Rooted<PropertyInfoWithKeyVector> props(cx, PropertyInfoWithKeyVector(cx));
 
-  Rooted<NativeShape*> fromShape(cx, from->shape());
-  for (ShapePropertyIter<NoGC> iter(fromShape); !iter.done(); iter++) {
+  for (ShapePropertyIter<NoGC> iter(from->shape()); !iter.done(); iter++) {
     jsid id = iter->key();
     MOZ_ASSERT(!id.isInt());
 
     if (!iter->enumerable()) {
+      canReuseFromShape = false;
       continue;
     }
     if (excludedItems && excludedItems->contains(cx, id)) {
@@ -2986,6 +3017,10 @@ bool js::CopyDataPropertiesNative(JSContext* cx, Handle<PlainObject*> target,
       return true;
     }
 
+    if (iter->flags() != PropertyFlags::defaultDataPropFlags) {
+      canReuseFromShape = false;
+    }
+
     if (!props.append(*iter)) {
       return false;
     }
@@ -2993,12 +3028,27 @@ bool js::CopyDataPropertiesNative(JSContext* cx, Handle<PlainObject*> target,
 
   *optimized = true;
 
-  // If |target| contains no own properties, we can directly call
-  // AddDataPropertyNonPrototype.
-  const bool targetHadNoOwnProperties = target->empty();
+  if (canReuseFromShape && !props.empty()) {
+    Rooted<Shape*> origTargetShape(cx, target->shape());
+    Handle<PlainObject*> fromPlain = Handle<JSObject*>(from).as<PlainObject>();
+    bool copied;
+    if (!TryCopyPropertiesReusingShapeOrPropMap(cx, target, fromPlain,
+                                                props.length(), &copied)) {
+      return false;
+    }
+    if (copied) {
+      cx->realm()->plainObjectSpreadCache.fill(&origTargetShape->asShared(),
+                                               fromPlain->sharedShape(),
+                                               target->sharedShape());
+      return true;
+    }
+  }
 
   RootedId key(cx);
   RootedValue value(cx);
+#ifdef DEBUG
+  Rooted<NativeShape*> fromShape(cx, from->shape());
+#endif
   for (size_t i = props.length(); i > 0; i--) {
     PropertyInfoWithKey prop = props[i - 1];
     MOZ_ASSERT(prop.isDataProperty());

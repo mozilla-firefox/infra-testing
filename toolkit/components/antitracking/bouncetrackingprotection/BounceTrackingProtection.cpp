@@ -502,10 +502,8 @@ BounceTrackingProtection::Observe(nsISupports* aSubject, const char* aTopic,
               __FUNCTION__, aTopic);
 
   if (!strcmp(aTopic, "idle-daily")) {
-#ifndef MOZ_WIDGET_ANDROID  // OHTTP is not supported on Android.
     // Submit custom telemetry ping.
     glean_pings::BounceTrackingProtection.Submit();
-#endif  // #ifndef MOZ_WIDGET_ANDROID
   }
   return NS_OK;
 }
@@ -700,6 +698,42 @@ BounceTrackingProtection::HasRecentlyPurgedSite(const nsACString& aSiteHost,
       return NS_OK;
     }
   }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+BounceTrackingProtection::GetRecentPurgedChainEntriesForSite(
+    const nsACString& aSiteHost,
+    nsTArray<RefPtr<nsIBounceTrackingPurgeEntry>>& aEntries) {
+  NS_ENSURE_TRUE(!aSiteHost.IsEmpty(), NS_ERROR_INVALID_ARG);
+
+  nsTArray<RefPtr<BounceTrackingPurgeEntry>> matchingEntries;
+
+  for (const auto& globalEntry : mStorage->StateGlobalMapRef()) {
+    RefPtr<BounceTrackingStateGlobal> stateGlobal = globalEntry.GetData();
+    MOZ_ASSERT(stateGlobal);
+
+    for (auto iter = stateGlobal->RecentPurgesMapRef().ConstIter();
+         !iter.Done(); iter.Next()) {
+      for (const auto& entry : iter.Data()) {
+        bool matches = iter.Key().Equals(aSiteHost);
+        if (!matches) {
+          BounceTrackingRecord* record = entry->GetBounceChainRecord();
+          if (record) {
+            matches = record->GetInitialHost().Equals(aSiteHost) ||
+                      record->GetFinalHost().Equals(aSiteHost) ||
+                      record->GetBounceHosts().Contains(aSiteHost);
+          }
+        }
+        if (matches) {
+          matchingEntries.InsertElementSorted(entry,
+                                              PurgeEntryTimeComparator{});
+        }
+      }
+    }
+  }
+
+  aEntries.AppendElements(matchingEntries);
   return NS_OK;
 }
 
@@ -1265,15 +1299,26 @@ nsresult BounceTrackingProtection::PurgeStateForHostAndOriginAttributes(
 
   NS_ENSURE_TRUE(pattern.ToJSON(oaPatternString), NS_ERROR_FAILURE);
 
+  // XPIDL consts can't use & or ~, so CLEAR_STATE_FOR_TRACKER_PURGING lists
+  // its flags explicitly. Catch it drifting from CLEAR_COOKIES_AND_SITE_DATA.
+  static_assert(
+      nsIClearDataService::CLEAR_STATE_FOR_TRACKER_PURGING ==
+          ((nsIClearDataService::CLEAR_ALL_CACHES |
+            nsIClearDataService::CLEAR_COOKIES_AND_SITE_DATA |
+            nsIClearDataService::CLEAR_CLIENT_AUTH_REMEMBER_SERVICE |
+            nsIClearDataService::CLEAR_MEDIA_DEVICES |
+            nsIClearDataService::CLEAR_STORAGE_ACCESS) &
+           ~nsIClearDataService::CLEAR_BOUNCE_TRACKING_PROTECTION_STATE),
+      "CLEAR_STATE_FOR_TRACKER_PURGING is out of sync with "
+      "CLEAR_COOKIES_AND_SITE_DATA");
+
   rv = clearDataService->DeleteDataFromSiteAndOriginAttributesPatternString(
       aHost, oaPatternString, false,
-      // Exempt purging our own state for the given tracker since we already
-      // update it ourselves. Additionally a nested call to the
+      // CLEAR_STATE_FOR_TRACKER_PURGING excludes our own state. We already
+      // update it ourselves and a nested call to the
       // BounceTrackingProtectionCleaner while iterating over the candidate set
       // may lead to crashes.
-      nsIClearDataService::CLEAR_STATE_FOR_TRACKER_PURGING &
-          ~nsIClearDataService::CLEAR_BOUNCE_TRACKING_PROTECTION_STATE,
-      cb);
+      nsIClearDataService::CLEAR_STATE_FOR_TRACKER_PURGING, cb);
   NS_ENSURE_SUCCESS(rv, rv);
 
   clearPromise.forget(aClearPromise);

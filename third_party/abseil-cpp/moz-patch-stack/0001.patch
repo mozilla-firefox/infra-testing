@@ -1,25 +1,35 @@
-From: Michael Froman <mfroman@mozilla.com>
-Date: Thu, 10 Oct 2024 13:42:00 +0000
-Subject: Bug 1921707 - abseil-cpp preprocessor, .json, .gni, and *.gn changes
- r=ng
+From: Ryan VanderMeulen <rvandermeulen@mozilla.com>
+Date: Sun, 23 Aug 2026 13:55:19 -0400
+Subject: Bug 1921707, Bug 1974813, Bug 1965053 - abseil-cpp gn build
+ integration.
 
-Differential Revision: https://phabricator.services.mozilla.com/D224077
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/6207cac8e337488d54927a5a09e574afec9b432d
+Relocates abseil out of libwebrtc: preprocessor/.json/.gni/*.gn changes, dep-path
+filtering from //third_party/abseil-cpp/ to //, and pointing at the new build
+directory location.
+
+absl.gni also drops the prevent_unsafe_narrowing config, which chromium/build now
+includes automatically, and silences -Wcomma and -Wtautological-type-limit-compare.
+Those fire on deliberate comma expressions and on portability range checks that
+are tautological only on 64-bit; abseil does not enable either warning.
+
+absl.gni also defines CHECK_INCLUDES_STRICT_PUBLIC_INCLUDES_PRIVATE, which the
+abseil BUILD.gn files reference and chromium provides from
+build/strict_deps_failures.gni, a file our chromium build config does not carry.
 ---
- abseil-cpp/.gn                           | 10 ++++++++++
- abseil-cpp/absl.gni                      | 16 +++++++++-------
- abseil-cpp/absl/random/internal/BUILD.gn |  2 ++
- 3 files changed, 21 insertions(+), 7 deletions(-)
+ abseil-cpp/.gn      | 10 +++++
+ abseil-cpp/BUILD.gn |  8 ++--
+ abseil-cpp/absl.gni | 99 ++++++++++++++++++++++++++++++++++++++-------
+ 3 files changed, 99 insertions(+), 18 deletions(-)
  create mode 100644 abseil-cpp/.gn
 
 diff --git a/abseil-cpp/.gn b/abseil-cpp/.gn
 new file mode 100644
-index 00000000000..648423a128f
+index 00000000000..bd6c38b3762
 --- /dev/null
 +++ b/abseil-cpp/.gn
 @@ -0,0 +1,10 @@
 +# The location of the build configuration file.
-+buildconfig = "//build/config/BUILDCONFIG.gn"
++buildconfig = "//chromium/build/config/BUILDCONFIG.gn"
 +script_executable = "python3"
 +secondary_source = "//abseil-cpp/"
 +
@@ -28,30 +38,84 @@ index 00000000000..648423a128f
 +is_component_build = false
 +}
 +
+diff --git a/abseil-cpp/BUILD.gn b/abseil-cpp/BUILD.gn
+index 3761b75f66a..de7b95f3f92 100644
+--- a/abseil-cpp/BUILD.gn
++++ b/abseil-cpp/BUILD.gn
+@@ -6,10 +6,10 @@
+ # opts will be linked together, and in some cases headers compiled with and
+ # without these options will be part of the same program.
+ 
+-import("//build/config/c++/c++.gni")
+-import("//build/config/compiler/compiler.gni")
+-import("//build/config/sanitizers/sanitizers.gni")
+-import("//build/toolchain/toolchain.gni")
++import("//chromium/build/config/c++/c++.gni")
++import("//chromium/build/config/compiler/compiler.gni")
++import("//chromium/build/config/sanitizers/sanitizers.gni")
++import("//chromium/build/toolchain/toolchain.gni")
+ import("//build_overrides/build.gni")
+ import("//third_party/abseil-cpp/absl.gni")
+ 
 diff --git a/abseil-cpp/absl.gni b/abseil-cpp/absl.gni
-index 5ec01f6d23c..3e5c21f9544 100644
+index 5ec01f6d23c..7a684ca2e4a 100644
 --- a/abseil-cpp/absl.gni
 +++ b/abseil-cpp/absl.gni
-@@ -21,6 +21,7 @@ import("//build_overrides/build.gni")
+@@ -21,37 +21,54 @@ import("//build_overrides/build.gni")
  
  declare_args() {
    absl_build_tests = build_with_chromium
 +  moz_webrtc_build = true
  }
  
++CHECK_INCLUDES_STRICT_PUBLIC_INCLUDES_PRIVATE = false
++
  template("absl_source_set") {
-@@ -33,8 +34,8 @@ template("absl_source_set") {
+   source_set(target_name) {
+     if (defined(invoker.testonly) && invoker.testonly && !absl_build_tests) {
+       not_needed(invoker, "*")
+     } else {
+       forward_variables_from(invoker, "*")
+-      configs -= [ "//build/config/compiler:chromium_code" ]
++      configs -= [ "//chromium/build/config/compiler:chromium_code" ]
        configs += [
-         "//build/config/compiler:no_chromium_code",
-         "//build/config/compiler:prevent_unsafe_narrowing",
+-        "//build/config/compiler:no_chromium_code",
+-        "//build/config/compiler:prevent_unsafe_narrowing",
 -        "//third_party/abseil-cpp:absl_default_cflags_cc",
 -        "//third_party/abseil-cpp:absl_define_config",
++        "//chromium/build/config/compiler:no_chromium_code",
++        "//chromium/build/config/compiler:prevent_unsafe_narrowing",
 +        "//abseil-cpp:absl_default_cflags_cc",
 +        "//abseil-cpp:absl_define_config",
        ]
  
++      if (moz_webrtc_build) {
++        configs -= [ "//chromium/build/config/compiler:prevent_unsafe_narrowing" ]
++
++        # Silence -Wcomma / -Wtautological-type-limit-compare spam from
++        # third-party abseil sources. See bug 1965053.
++        if (!defined(cflags_cc)) {
++          cflags_cc = []
++        }
++        cflags_cc += [
++          "-Wno-comma",
++          "-Wno-tautological-type-limit-compare",
++        ]
++      }
++
        if (!defined(defines)) {
-@@ -51,7 +52,7 @@ template("absl_source_set") {
+         defines = []
+       }
+       if (is_component_build) {
+         defines += [ "ABSL_BUILD_DLL" ]
+         if (!is_win && current_os != "aix") {
+-          configs -= [ "//build/config/gcc:symbol_visibility_hidden" ]
+-          configs += [ "//build/config/gcc:symbol_visibility_default" ]
++          configs -= [ "//chromium/build/config/gcc:symbol_visibility_hidden" ]
++          configs += [ "//chromium/build/config/gcc:symbol_visibility_default" ]
+         }
+       }
+ 
        if (!defined(public_configs)) {
          public_configs = []
        }
@@ -60,21 +124,64 @@ index 5ec01f6d23c..3e5c21f9544 100644
  
        if (!defined(visibility)) {
          # Within Chromium builds, restrict direct visibility of Abseil sources,
-@@ -80,6 +81,7 @@ template("absl_source_set") {
+@@ -79,6 +96,45 @@ template("absl_source_set") {
+           visibility = [ "*" ]
          }
        }
++      visibility += [ "//abseil-cpp/*" ]
++
++      # Now that abseil-cpp lives under Mozilla's third_party instead
++      # of under libwebrtc's third_party and is built as a stand-alone
++      # library, we need to "re-root" the dependency paths.  We can
++      # modify the dependencies here to avoid modifying most, if not
++      # all, of the BUILD.gn files.
++      if (defined(deps)) {
++        modified_deps = []
++        foreach (dep, deps) {
++          newdep = string_replace(dep, "//third_party/abseil-cpp/", "//")
++          newdep = string_replace(newdep, "//build", "//chromium/build")
++          modified_deps += [ newdep ]
++        }
++        deps = []
++        deps = modified_deps
++      }
++
++      # Same for public_deps
++      if (defined(public_deps)) {
++        modified_deps = []
++        foreach (dep, public_deps) {
++          newdep = string_replace(dep, "//third_party/abseil-cpp/", "//")
++          modified_deps += [ newdep ]
++        }
++        public_deps = []
++        public_deps = modified_deps
++      }
++
++      # Same for visibility
++      if (defined(visibility)) {
++        modified_deps = []
++        foreach (dep, visibility) {
++          newdep = string_replace(dep, "//third_party/abseil-cpp/", "//")
++          modified_deps += [ newdep ]
++        }
++        visibility = []
++        visibility = modified_deps
++      }
      }
-+    visibility += [ "//abseil-cpp/*" ]
    }
  }
- 
-@@ -93,15 +95,15 @@ template("absl_test") {
-       configs -= [ "//build/config/compiler:chromium_code" ]
+@@ -90,18 +146,18 @@ template("absl_test") {
+     } else {
+       forward_variables_from(invoker, "*")
+       testonly = true
+-      configs -= [ "//build/config/compiler:chromium_code" ]
++      configs -= [ "//chromium/build/config/compiler:chromium_code" ]
        configs += [
-         "//build/config/compiler:no_chromium_code",
+-        "//build/config/compiler:no_chromium_code",
 -        "//third_party/abseil-cpp:absl_default_cflags_cc",
 -        "//third_party/abseil-cpp:absl_define_config",
 -        "//third_party/abseil-cpp:absl_test_config",
++        "//chromium/build/config/compiler:no_chromium_code",
 +        "//abseil-cpp:absl_default_cflags_cc",
 +        "//abseil-cpp:absl_define_config",
 +        "//abseil-cpp:absl_test_config",
@@ -88,23 +195,24 @@ index 5ec01f6d23c..3e5c21f9544 100644
  
        visibility = [ "//third_party/abseil-cpp/:*" ]
        deps += [
-diff --git a/abseil-cpp/absl/random/internal/BUILD.gn b/abseil-cpp/absl/random/internal/BUILD.gn
-index 16df061a720..1a0775f74f7 100644
---- a/abseil-cpp/absl/random/internal/BUILD.gn
-+++ b/abseil-cpp/absl/random/internal/BUILD.gn
-@@ -243,6 +243,7 @@ absl_source_set("randen_hwaes_impl") {
-   visibility = [ "//third_party/abseil-cpp/absl/random/*" ]
+@@ -109,5 +165,20 @@ template("absl_test") {
+         "//third_party/googletest:gtest",
+       ]
+     }
++
++    # Now that abseil-cpp lives under Mozilla's third_party instead
++    # of under libwebrtc's third_party and is built as a stand-alone
++    # library, we need to "re-root" the dependency paths.  We can
++    # modify the dependencies here to avoid modifying most, if not
++    # all, of the BUILD.gn files.
++    if (defined(deps)) {
++      modified_deps = []
++      foreach (dep, deps) {
++        newdep = string_replace(dep, "//third_party/abseil-cpp/", "//")
++        modified_deps += [ newdep ]
++      }
++      deps = []
++      deps = modified_deps
++    }
+   }
  }
- 
-+if (!moz_webrtc_build) {
- executable("gaussian_distribution_gentables") {
-   sources = [ "gaussian_distribution_gentables.cc" ]
-   deps = [
-@@ -251,6 +252,7 @@ executable("gaussian_distribution_gentables") {
-   ]
-   visibility = [ "//third_party/abseil-cpp/absl/random/*" ]
- }
-+}
- 
- absl_source_set("distribution_test_util") {
-   testonly = true

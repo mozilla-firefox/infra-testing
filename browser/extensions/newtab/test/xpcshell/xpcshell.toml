@@ -61,8 +61,6 @@ tags = "remote-settings"
 
 ["test_SmartShortcutsFeed.js"]
 
-["test_SportsFeed.js"]
-
 ["test_StartupCacheInit.js"]
 
 ["test_StocksFeed.js"]
@@ -86,5 +84,7 @@ support-files = ["../schemas/*.schema.json"]
 
 ["test_WallpaperFeed.js"]
 tags = "remote-settings"
+
+["test_WallpaperFileNames.js"]
 
 ["test_WeatherFeed.js"]

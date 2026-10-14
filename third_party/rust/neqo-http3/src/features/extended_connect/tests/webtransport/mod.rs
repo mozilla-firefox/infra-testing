@@ -619,7 +619,7 @@ impl WtTest {
         self.client.webtransport_max_datagram_size(stream_id)
     }
 
-    fn send_datagram(&mut self, stream_id: StreamId, buf: &[u8]) -> Result<(), Error> {
+    fn send_datagram(&mut self, stream_id: StreamId, buf: &[u8]) -> Result<bool, Error> {
         self.client
             .webtransport_send_datagram(stream_id, buf, None, now())
     }
@@ -656,25 +656,5 @@ impl WtTest {
             )
         };
         assert!(self.server.events().any(wt_datagram_event));
-    }
-
-    fn check_no_datagram_received_client(&mut self) {
-        let wt_datagram_event = |e| {
-            matches!(
-                e,
-                Http3ClientEvent::WebTransport(WebTransportEvent::Datagram { .. })
-            )
-        };
-        assert!(!self.client.events().any(wt_datagram_event));
-    }
-
-    fn check_no_datagram_received_server(&self) {
-        let wt_datagram_event = |e| {
-            matches!(
-                e,
-                Http3ServerEvent::WebTransport(ServerEvent::Datagram { .. })
-            )
-        };
-        assert!(!self.server.events().any(wt_datagram_event));
     }
 }

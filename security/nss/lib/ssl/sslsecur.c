@@ -197,9 +197,6 @@ SSL_ResetHandshake(PRFileDesc *s, PRBool asServer)
     status = ssl_CreateSecurityInfo(ss);
     ssl_ReleaseXmitBufLock(ss);
 
-    ssl_ReleaseSSL3HandshakeLock(ss);
-    ssl_Release1stHandshakeLock(ss);
-
     ssl3_DestroyRemoteExtensions(&ss->ssl3.hs.remoteExtensions);
     ssl3_DestroyRemoteExtensions(&ss->ssl3.hs.echOuterExtensions);
     ssl3_ResetExtensionData(&ss->xtnData, ss);
@@ -222,6 +219,9 @@ SSL_ResetHandshake(PRFileDesc *s, PRBool asServer)
     tls13_ClientGreaseDestroy(ss);
 
     tls_ClientHelloExtensionPermutationDestroy(ss);
+
+    ssl_ReleaseSSL3HandshakeLock(ss);
+    ssl_Release1stHandshakeLock(ss);
 
     if (!ss->TCPconnected)
         ss->TCPconnected = (PR_SUCCESS == ssl_DefGetpeername(ss, &addr));
@@ -633,9 +633,12 @@ ssl_CopySecurityInfo(sslSocket *ss, sslSocket *os)
 {
     ss->sec.isServer = os->sec.isServer;
 
-    ss->sec.peerCert = CERT_DupCertificate(os->sec.peerCert);
-    if (os->sec.peerCert && !ss->sec.peerCert)
-        goto loser;
+    if (os->sec.peerCertDER.data) {
+        if (ssl_SetPeerCertificate(&ss->sec, &os->sec.peerCertDER) !=
+            SECSuccess) {
+            goto loser;
+        }
+    }
 
     return SECSuccess;
 
@@ -653,10 +656,7 @@ ssl_ResetSecurityInfo(sslSecurityInfo *sec, PRBool doMemset)
         CERT_DestroyCertificate(sec->localCert);
         sec->localCert = NULL;
     }
-    if (sec->peerCert) {
-        CERT_DestroyCertificate(sec->peerCert);
-        sec->peerCert = NULL;
-    }
+    ssl_ClearPeerCertificate(sec);
     if (sec->peerKey) {
         SECKEY_DestroyPublicKey(sec->peerKey);
         sec->peerKey = NULL;

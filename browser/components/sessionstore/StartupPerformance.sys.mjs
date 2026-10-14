@@ -2,8 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const lazy = {};
-ChromeUtils.defineESModuleGetters(lazy, {
+import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+
+const lazy = XPCOMUtils.declareLazy({
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
@@ -203,17 +204,10 @@ export var StartupPerformance = {
             // to reach that point.
             let win = subject;
 
-            let observer = event => {
-              // We don't care about tab restorations that are due to
-              // a browser flipping from out-of-main-process to in-main-process
-              // or vice-versa. We only care about restorations that are due
-              // to the user switching to a lazily restored tab, or for tabs
-              // that are restoring eagerly.
-              if (!event.detail.isRemotenessUpdate) {
-                ChromeUtils.addProfilerMarker("SSTabRestored");
-                this._latestRestoredTimeStamp = Date.now();
-                this._totalNumberOfEagerTabs += 1;
-              }
+            let observer = () => {
+              ChromeUtils.addProfilerMarker("SSTabRestored");
+              this._latestRestoredTimeStamp = Date.now();
+              this._totalNumberOfEagerTabs += 1;
             };
             win.gBrowser.tabContainer.addEventListener(
               "SSTabRestored",

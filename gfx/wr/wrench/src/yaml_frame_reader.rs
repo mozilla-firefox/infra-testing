@@ -64,6 +64,36 @@ impl FontDescriptor {
     }
 }
 
+/// GL texture format parameters for an image format.
+struct GlFormatDesc {
+    internal: gl::GLenum,
+    external: gl::GLenum,
+    pixel_type: gl::GLenum,
+}
+
+fn gl_format_desc(format: ImageFormat) -> GlFormatDesc {
+    let (internal, external, pixel_type) = match format {
+        ImageFormat::R8 => (gl::R8, gl::RED, gl::UNSIGNED_BYTE),
+        ImageFormat::R16 => (gl::R16, gl::RED, gl::UNSIGNED_SHORT),
+        ImageFormat::BGRA8 => unreachable!("BGRA8 is uploaded through the RGBA8 layout, see add_image"),
+        ImageFormat::RGBA8 => (gl::RGBA8, gl::RGBA, gl::UNSIGNED_BYTE),
+        ImageFormat::RGBAF32 => (gl::RGBA32F, gl::RGBA, gl::FLOAT),
+        ImageFormat::RGBAI32 => (gl::RGBA32I, gl::RGBA_INTEGER, gl::INT),
+        ImageFormat::RG8 => (gl::RG8, gl::RG, gl::UNSIGNED_BYTE),
+        ImageFormat::RG16 => (gl::RG16, gl::RG, gl::UNSIGNED_SHORT),
+    };
+    GlFormatDesc { internal, external, pixel_type }
+}
+
+fn gl_target(target: ImageBufferKind) -> gl::GLenum {
+    match target {
+        ImageBufferKind::Texture2D => gl::TEXTURE_2D,
+        ImageBufferKind::TextureRect => gl::TEXTURE_RECTANGLE,
+        ImageBufferKind::TextureExternal |
+        ImageBufferKind::TextureExternalBT709 => gl::TEXTURE_EXTERNAL_OES,
+    }
+}
+
 struct LocalExternalImageHandler {
     texture_ids: Vec<(gl::GLuint, ImageDescriptor)>,
 }
@@ -78,7 +108,7 @@ impl LocalExternalImageHandler {
     fn init_gl_texture(
         id: gl::GLuint,
         gl_target: gl::GLuint,
-        format_desc: webrender::FormatDesc,
+        format_desc: GlFormatDesc,
         width: gl::GLint,
         height: gl::GLint,
         bytes: &[u8],
@@ -104,29 +134,28 @@ impl LocalExternalImageHandler {
     }
 
     pub fn add_image(&mut self,
-        device: &webrender::Device,
+        gl: &dyn gl::Gl,
         desc: ImageDescriptor,
         target: ImageBufferKind,
         image_data: ImageData,
     ) -> ImageData {
         let (image_id, channel_idx) = match image_data {
             ImageData::Raw(ref data) => {
-                let gl = device.gl();
                 let texture_ids = gl.gen_textures(1);
                 let format_desc = if desc.format == ImageFormat::BGRA8 {
                     // Force BGRA8 data to RGBA8 layout to avoid potential
                     // need for usage of texture-swizzle.
-                    webrender::FormatDesc {
+                    GlFormatDesc {
                         external: gl::BGRA,
-                        .. device.gl_describe_format(ImageFormat::RGBA8)
+                        .. gl_format_desc(ImageFormat::RGBA8)
                     }
                 } else {
-                    device.gl_describe_format(desc.format)
+                    gl_format_desc(desc.format)
                 };
 
                 LocalExternalImageHandler::init_gl_texture(
                     texture_ids[0],
-                    webrender::get_gl_target(target),
+                    gl_target(target),
                     format_desc,
                     desc.size.width as gl::GLint,
                     desc.size.height as gl::GLint,
@@ -160,7 +189,7 @@ impl ExternalImageHandler for LocalExternalImageHandler {
         let (id, desc) = self.texture_ids[key.0 as usize];
         ExternalImage {
             uv: TexelRect::new(0.0, 0.0, desc.size.width as f32, desc.size.height as f32),
-            source: ExternalImageSource::NativeTexture(id),
+            source: ExternalImageSource::NativeTexture(ExternalTextureHandle(id as u64)),
         }
     }
     fn unlock(&mut self, _key: ExternalImageId, _channel_index: u8) {}
@@ -420,6 +449,11 @@ impl YamlFrameReader {
         &self.yaml_path
     }
 
+    /// The number of transactions sent so far.
+    pub fn frame_count(&self) -> u32 {
+        self.frame_count
+    }
+
     pub fn new_from_args(args: &clap::ArgMatches) -> YamlFrameReader {
         let yaml_file = args.value_of("INPUT").map(PathBuf::from).unwrap();
         YamlFrameReader::new(&yaml_file)
@@ -474,6 +508,19 @@ impl YamlFrameReader {
         self.reset();
 
         self.parse_transform_properties(&yaml);
+
+        // Pipelines to remove before this frame's display lists are set. Sent
+        // as its own transaction, with no display list and so no scene rebuild,
+        // which is what a pipeline removal looks like coming from Gecko.
+        if let Some(removed) = yaml["remove-pipelines"].as_vec() {
+            let mut txn = Transaction::new();
+            for pipeline in removed {
+                txn.remove_pipeline(
+                    pipeline.as_pipeline_id().expect("remove-pipelines takes pipeline ids"),
+                );
+            }
+            wrench.api.send_transaction(wrench.document_id, txn);
+        }
 
         if let Some(pipelines) = yaml["pipelines"].as_vec() {
             for pipeline in pipelines {
@@ -826,7 +873,7 @@ impl YamlFrameReader {
 
             let external_image_data =
                 self.external_image_handler.as_mut().unwrap().add_image(
-                    &wrench.renderer.device,
+                    wrench.gl(),
                     descriptor,
                     external_target,
                     image_data
@@ -1725,6 +1772,8 @@ impl YamlFrameReader {
                 ("scrollbar-container", PrimitiveFlags::IS_SCROLLBAR_CONTAINER),
                 ("prefer-compositor-surface", PrimitiveFlags::PREFER_COMPOSITOR_SURFACE),
                 ("checkerboard-background", PrimitiveFlags::CHECKERBOARD_BACKGROUND),
+                ("antialiased", PrimitiveFlags::ANTIALISED),
+                ("rasterized-for-rect", PrimitiveFlags::RASTERIZED_FOR_RECT),
             ] {
                 if let Some(value) = item[key].as_bool() {
                     flags.set(flag, value);

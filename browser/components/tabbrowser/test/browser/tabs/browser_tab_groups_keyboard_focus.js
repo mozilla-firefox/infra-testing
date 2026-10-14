@@ -2,10 +2,7 @@
 
 add_setup(() =>
   SpecialPowers.pushPrefEnv({
-    set: [
-      ["test.wait300msAfterTabSwitch", true],
-      ["browser.tabs.groups.enabled", true],
-    ],
+    set: [["browser.tabs.groups.enabled", true]],
   })
 );
 
@@ -368,6 +365,51 @@ add_task(async function test_TabGroupPreviewKeyboardMovement() {
     "Group label remains keyboard focused"
   );
 
+  await TabGroupTestUtils.removeTabGroup(group);
+  BrowserTestUtils.removeTab(ungroupedTab);
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function test_TabGroupPreviewCancelledWhenKeyboardFocusLeaves() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["ui.tooltip.delay_ms", 100000]],
+  });
+
+  let groupedTab = await addTab("about:blank");
+  let group = gBrowser.addTabGroup([groupedTab]);
+  let ungroupedTab = await addTab("about:blank");
+  await TabGroupTestUtils.toggleCollapsed(group, true);
+
+  await BrowserTestUtils.switchTab(gBrowser, ungroupedTab);
+  Services.focus.setFocus(ungroupedTab, Services.focus.FLAG_BYKEY);
+
+  gBrowser.tabContainer.ensureTabPreviewPanelLoaded();
+  let { panelOpener } = gBrowser.tabContainer.previewPanel;
+  panelOpener.reset();
+
+  await synthesizeKeyForKeyboardMovement(group.labelElement, "KEY_ArrowLeft");
+  Assert.ok(
+    panelOpener.delayActive,
+    "Focusing the group label schedules its preview"
+  );
+  await synthesizeKeyForKeyboardMovement(ungroupedTab, "KEY_ArrowRight");
+  Assert.ok(
+    !panelOpener.delayActive,
+    "Moving keyboard focus off the group label cancels the pending preview"
+  );
+
+  await synthesizeKeyForKeyboardMovement(group.labelElement, "KEY_ArrowLeft");
+  Assert.ok(
+    panelOpener.delayActive,
+    "Focusing the group label again schedules its preview"
+  );
+  gURLBar.focus();
+  Assert.ok(
+    !panelOpener.delayActive,
+    "Moving focus out of the tab strip cancels the pending preview"
+  );
+
+  panelOpener.reset();
   await TabGroupTestUtils.removeTabGroup(group);
   BrowserTestUtils.removeTab(ungroupedTab);
   await SpecialPowers.popPrefEnv();

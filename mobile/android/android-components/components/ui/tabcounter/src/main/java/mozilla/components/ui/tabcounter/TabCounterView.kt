@@ -22,6 +22,7 @@ import androidx.core.view.isVisible
 import java.text.NumberFormat
 import mozilla.components.support.ktx.android.content.pixelSizeFor
 import mozilla.components.support.utils.DrawableUtils
+import mozilla.components.ui.icons.R as iconsR
 import mozilla.components.ui.tabcounter.databinding.MozacUiTabcounterLayoutBinding
 
 class TabCounterView
@@ -69,8 +70,7 @@ constructor(
     /** Sets the colors of the tab counter box and text. */
     @VisibleForTesting
     internal fun setColor(colorStateList: ColorStateList) {
-        val tabCounterBox =
-            DrawableUtils.loadAndTintDrawable(context, R.drawable.mozac_ui_tabcounter_box, colorStateList)
+        val tabCounterBox = DrawableUtils.loadAndTintDrawable(context, iconsR.drawable.mozac_ic_tab_24, colorStateList)
         counterBox.setImageDrawable(tabCounterBox)
         counterText.setTextColor(colorStateList)
     }
@@ -125,8 +125,8 @@ constructor(
     private fun setBackgroundDrawable(count: Int) {
         val drawableRes =
             when (count > MAX_VISIBLE_TABS) {
-                true -> R.drawable.mozac_ui_infinite_tabcounter_box
-                false -> R.drawable.mozac_ui_tabcounter_box
+                true -> iconsR.drawable.mozac_ic_infinite_tabs_24
+                false -> iconsR.drawable.mozac_ic_tab_24
             }
 
         val currentCounterColor = counterColor

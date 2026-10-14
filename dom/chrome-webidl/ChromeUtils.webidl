@@ -290,11 +290,8 @@ namespace ChromeUtils {
    * Returns an empty string if the cache is not found.
    *
    * The key parameter should be the data parameter passed to the
-   * http-on-resource-cache-response observer notification, and uri and
-   * hintCharset parameters should be extracted from the channel
-   * of the notification.
-   * nonce and hintCharset should be empty strings if they're not set for the
-   * channel.
+   * http-on-resource-cache-response observer notification, and the uri
+   * parameter should be extracted from the channel of the notification.
    *
    * If the cached entry has already been cleared, for example by
    * `clearResourceCache` above, this returns undefined.
@@ -307,8 +304,7 @@ namespace ChromeUtils {
    * JS::Value -> Gecko String -> JS::Value turnaround.
    */
   [Throws]
-  any getCachedJavaScriptSource(UTF8String key, UTF8String uri,
-                                UTF8String hintCharset);
+  any getCachedJavaScriptSource(UTF8String key, UTF8String uri);
 
   /**
    * Clears the bfcache (backward-forward cache)
@@ -360,6 +356,27 @@ namespace ChromeUtils {
   undefined addProfilerMarker(UTF8String name,
                               optional (ProfilerMarkerOptions or double) options = {},
                               optional (UTF8String or object) data);
+
+  /**
+   * Create a new profiler counter for counting a scalar value, and displaying it
+   * in the profiler UI as a track in the thread list. The counter can be incremented
+   * or decremented as frequently as you want, but its value is only recorded when
+   * the profiler records a sample.
+   *
+   * Counters are a general-purpose way to record how some quantity changes over the
+   * course of time. In Nightly, the profiler automatically tracks total allocated memory
+   * through a ProfilerCounter. This API lets any subsystem expose its own metric
+   * as a graphed track.
+   *
+   * Usage:
+   *   const counter = ChromeUtils.addProfilerCounter({ name: "Cache Size", category: "Memory" });
+   *   counter.add(10);
+   *   counter.add(-3);
+   *
+   * @param options:  Options for how to configure the counter.
+   */
+  [Exposed=Window]
+  ProfilerCounter addProfilerCounter(ProfilerCounterOptions options);
 
   /**
    * Register a custom marker schema for use with the profiler.
@@ -426,6 +443,14 @@ namespace ChromeUtils {
    * that works in all JavaScript contexts and can be used with addProfilerMarker.
    */
   double now();
+
+  /**
+   * Return a fractional number of milliseconds measured with a monotonic
+   * clock that only advances while the system is awake, so time spent
+   * suspended is not counted. The origin is unspecified; only differences
+   * between two values are meaningful.
+   */
+  double awakeNow();
 
   /**
    * Defines a getter on a specified object that will be created upon first

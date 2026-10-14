@@ -40,6 +40,8 @@ skip-if = ["os == 'win'"]
 
 ["test_file_whitespace.py"]
 
+["test_ffvpx_symbols.py"]
+
 ["test_fluent_lint.py"]
 
 ["test_forbid_moduleloaderbase_include.py"]
@@ -54,6 +56,8 @@ skip-if = ["os == 'win'"]
 
 ["test_includes.py"]
 
+["test_license_declarations.py"]
+
 ["test_lintpref.py"]
 
 ["test_manifest_toml.py"]
@@ -63,6 +67,8 @@ skip-if = ["os == 'win'"]
 ["test_node_licenses.py"]
 
 ["test_node_package_names.py"]
+
+["test_pnpm_audit.py"]
 
 ["test_python_sites.py"]
 
@@ -74,10 +80,16 @@ skip-if = ["os == 'win'"]
 
 ["test_shellcheck.py"]
 
+["test_source_headers.py"]
+
+["test_spidermonkey.py"]
+
 ["test_stylelint.py"]
 skip-if = ["os == 'win'"]  # busts the tree for subsequent tasks on the same worker (bug 1708591)
 # Setup conflicts with eslint setup so this should run sequentially.
 sequential = true
+
+["test_toolchain_parity.py"]
 
 ["test_trojan_source.py"]
 

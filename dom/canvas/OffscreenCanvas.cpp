@@ -213,7 +213,12 @@ void OffscreenCanvas::GetContext(
   // if we need to flush our contents to its ImageContainer for display.
   RefPtr<ThreadSafeWorkerRef> workerRef;
   if (mDisplay) {
-    if (WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate()) {
+    WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
+    if (!mDisplay->MayUpdateContext(workerPrivate, aRv)) {
+      aResult.SetNull();
+      return;
+    }
+    if (workerPrivate) {
       RefPtr<StrongWorkerRef> strongRef = StrongWorkerRef::Create(
           workerPrivate, "OffscreenCanvas::GetContext",
           [display = mDisplay]() { display->DestroyCanvas(); });

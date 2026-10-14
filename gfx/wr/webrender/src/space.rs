@@ -9,7 +9,7 @@ use std::fmt;
 
 use euclid::{Transform3D, Box2D, Point2D, Vector2D};
 
-use api::units::{DeviceRect, DevicePoint};
+use api::units::{DevicePoint, DeviceRect, LayoutSideOffsets, LayoutVector2D};
 use crate::spatial_tree::{CoordinateSystemId, SpatialTree, CoordinateSpaceMapping, SpatialNodeIndex, VisibleFace};
 use crate::surface::SurfaceInfo;
 use crate::util::project_rect;
@@ -249,6 +249,8 @@ pub struct SpaceSnapper {
     /// when the target cannot be snapped (a non-axis-aligned reference frame
     /// between it and the snap node).
     snapping_transform: Option<SnapTransform>,
+    /// See `set_shadow_offset`.
+    shadow_offset: LayoutVector2D,
 }
 
 impl SpaceSnapper {
@@ -313,7 +315,35 @@ impl SpaceSnapper {
             raster_coord_system_id: snap_node.coordinate_system_id,
             current_target_spatial_node_index: SpatialNodeIndex::INVALID,
             snapping_transform: None,
+            shadow_offset: LayoutVector2D::zero(),
         }
+    }
+
+    /// Snap subsequent rects as shadow copies translated by `offset` (in the
+    /// target's local space) from the content they shadow: the rect is
+    /// snapped where the shadowed content is, then moved by `offset` rounded to
+    /// whole device pixels on the axes that snap. Snapping the copy on its own
+    /// would let the visible offset flip between whole pixels with the
+    /// content's sub-pixel phase (bug 2076646).
+    pub fn set_shadow_offset(&mut self, offset: LayoutVector2D) {
+        self.shadow_offset = offset;
+    }
+
+    /// How far to move a shadow copy's rect, in the target's local space, so
+    /// that it sits a whole number of device pixels from the shadowed content
+    /// on the requested device axes. `None` if there is nothing to adjust.
+    pub fn shadow_snap_adjustment<F>(&self, snap_x: bool, snap_y: bool) -> Option<Vector2D<f32, F>> {
+        if self.shadow_offset == LayoutVector2D::zero() || (!snap_x && !snap_y) {
+            return None;
+        }
+        let SnapTransform { ref scale_offset, swap_xy } = *self.snapping_transform.as_ref()?;
+        let o = self.shadow_offset;
+        let (x, y) = if swap_xy { (o.y, o.x) } else { (o.x, o.y) };
+        let adjust = |v: f32, scale: f32, snap: bool| {
+            if snap && scale != 0.0 { (v * scale).round() / scale - v } else { 0.0 }
+        };
+        let (ax, ay) = (adjust(x, scale_offset.scale.x, snap_x), adjust(y, scale_offset.scale.y, snap_y));
+        Some(if swap_xy { Vector2D::new(ay, ax) } else { Vector2D::new(ax, ay) })
     }
 
     /// Set the spatial node whose content subsequent `snap_rect` calls snap.
@@ -374,39 +404,109 @@ impl SpaceSnapper {
         self.snap_rect_rounded(rect, SnapRounding::Nearest)
     }
 
+    /// Snap only the requested device axes of a rect to the nearest pixel,
+    /// leaving the other axis exact. A text run's glyphs are grid-snapped on one
+    /// axis and sub-pixel positioned on the other, and its clip wants to agree
+    /// with whichever quantisation the glyphs actually got. `snap_x` / `snap_y`
+    /// are DEVICE axes, so `swap_xy` needs no special case.
+    pub fn snap_rect_axes<F>(
+        &self,
+        rect: &Box2D<f32, F>,
+        snap_x: bool,
+        snap_y: bool,
+    ) -> Box2D<f32, F> where F: fmt::Debug {
+        match self.shadow_snap_adjustment(snap_x, snap_y) {
+            Some(adjustment) => {
+                let offset = self.shadow_offset.cast_unit();
+                self.snap_rect_axes_impl(&rect.translate(-offset), snap_x, snap_y)
+                    .translate(offset + adjustment)
+            }
+            None => self.snap_rect_axes_impl(rect, snap_x, snap_y),
+        }
+    }
+
+    fn snap_rect_axes_impl<F>(
+        &self,
+        rect: &Box2D<f32, F>,
+        snap_x: bool,
+        snap_y: bool,
+    ) -> Box2D<f32, F> where F: fmt::Debug {
+        debug_assert!(!self.enabled || self.current_target_spatial_node_index != SpatialNodeIndex::INVALID);
+        if !snap_x && !snap_y {
+            return *rect;
+        }
+        match self.snapping_transform {
+            Some(SnapTransform { ref scale_offset, swap_xy }) => {
+                let r = if swap_xy { swap_box_xy(rect) } else { *rect };
+                let device_rect: DeviceRect = scale_offset.map_rect(&r);
+                let snapped = DeviceRect::new(
+                    DevicePoint::new(
+                        if snap_x { device_rect.min.x.round() } else { device_rect.min.x },
+                        if snap_y { device_rect.min.y.round() } else { device_rect.min.y },
+                    ),
+                    DevicePoint::new(
+                        if snap_x { device_rect.max.x.round() } else { device_rect.max.x },
+                        if snap_y { device_rect.max.y.round() } else { device_rect.max.y },
+                    ),
+                );
+                let unmapped: Box2D<f32, F> = scale_offset.unmap_rect(&snapped);
+                if swap_xy { swap_box_xy(&unmapped) } else { unmapped }
+            }
+            None => *rect,
+        }
+    }
+
     /// Snap a rect to the device pixel grid using the current target's snapping
     /// transform: map the rect into device space, round it to the grid per
     /// `rounding`, then map it back. A target that can't be snapped (or a
     /// disabled snapper) leaves the rect unchanged. See `SnapRounding` for what
     /// each mode is for.
     pub fn snap_rect_rounded<F>(&self, rect: &Box2D<f32, F>, rounding: SnapRounding) -> Box2D<f32, F> where F: fmt::Debug {
+        let snaps = rounding != SnapRounding::Exact;
+        match self.shadow_snap_adjustment(snaps, snaps) {
+            Some(adjustment) => {
+                let offset = self.shadow_offset.cast_unit();
+                self.snap_rect_rounded_impl(&rect.translate(-offset), rounding)
+                    .translate(offset + adjustment)
+            }
+            None => self.snap_rect_rounded_impl(rect, rounding),
+        }
+    }
+
+    fn snap_rect_rounded_impl<F>(&self, rect: &Box2D<f32, F>, rounding: SnapRounding) -> Box2D<f32, F> where F: fmt::Debug {
         debug_assert!(!self.enabled || self.current_target_spatial_node_index != SpatialNodeIndex::INVALID);
+        // Short-circuit rather than round-tripping through the snap transform,
+        // which wouldn't be bit-exact.
+        if rounding == SnapRounding::Exact {
+            return *rect;
+        }
         match self.snapping_transform {
             Some(SnapTransform { ref scale_offset, swap_xy }) => {
                 let rect = if swap_xy { swap_box_xy(rect) } else { *rect };
                 let device_rect: DeviceRect = scale_offset.map_rect(&rect);
                 let snapped: DeviceRect = match rounding {
+                    SnapRounding::Exact => unreachable!("returned above"),
                     SnapRounding::Nearest => device_rect.snap(),
                     SnapRounding::RoundOut => device_rect.round_out(),
                     SnapRounding::Line { horizontal } =>
                         snap_line_device_rect(&device_rect, horizontal ^ swap_xy),
-                    SnapRounding::RoundOutNonSubpx { subpx_horizontal } => {
-                        // Round the non-sub-pixel axis outward, leave the
-                        // sub-pixel axis exact. Device axes are swapped relative
-                        // to the target's own when `swap_xy` (mirrors `Line`), so
-                        // map the sub-pixel axis through it.
-                        if subpx_horizontal ^ swap_xy {
-                            // Sub-pixel axis is device X: keep X exact, round Y out.
-                            DeviceRect::new(
-                                DevicePoint::new(device_rect.min.x, device_rect.min.y.floor()),
-                                DevicePoint::new(device_rect.max.x, device_rect.max.y.ceil()),
-                            )
-                        } else {
-                            DeviceRect::new(
-                                DevicePoint::new(device_rect.min.x.floor(), device_rect.min.y),
-                                DevicePoint::new(device_rect.max.x.ceil(), device_rect.max.y),
-                            )
-                        }
+                    SnapRounding::BorderInner { .. } if swap_xy => device_rect.snap(),
+                    SnapRounding::BorderInner { ref widths } => {
+                        // Map the inner rect from layout space the way content
+                        // meeting it maps its own rect, so both round a tie the
+                        // same way.
+                        let inner: Box2D<f32, F> = Box2D::new(
+                            Point2D::new(rect.min.x + widths.left, rect.min.y + widths.top),
+                            Point2D::new(rect.max.x - widths.right, rect.max.y - widths.bottom),
+                        );
+                        let inner_device: DeviceRect = scale_offset.map_rect(&inner);
+                        snap_border_device_rect(
+                            &device_rect,
+                            &inner_device,
+                            widths,
+                            scale_offset.scale.x,
+                            scale_offset.scale.y,
+                        )
                     }
                 };
                 let unmapped: Box2D<f32, F> = scale_offset.unmap_rect(&snapped);
@@ -420,6 +520,10 @@ impl SpaceSnapper {
 /// How a rect is rounded to the device pixel grid by `snap_rect_rounded`.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum SnapRounding {
+    /// Don't round: leave the rect at its exact sub-pixel position. For a prim
+    /// that resolves its own edges in the shader (anti-aliasing), where moving an
+    /// edge to the grid is what the anti-aliasing is there to avoid.
+    Exact,
     /// Round each edge to the nearest device pixel. Crisp fills / borders that
     /// tile seamlessly with neighbours (`round(max_of_A) == round(min_of_B)`).
     Nearest,
@@ -439,14 +543,64 @@ pub enum SnapRounding {
     /// phase dependence. `horizontal` is the line orientation in the target's
     /// own space (a horizontal line is thin in Y).
     Line { horizontal: bool },
-    /// Round the non-sub-pixel axis of a device-space text run's clip *outward*
-    /// to the grid, leaving the sub-pixel axis exact. The glyph is grid-snapped
-    /// on the non-sub-pixel axis, so an exact fractional clip edge there shaves a
-    /// whole glyph row (bug 2055145); the sub-pixel axis stays exact so the clip
-    /// keeps matching the glyph's exact sub-pixel position, as it did before
-    /// (bug 2050692). `subpx_horizontal` is the sub-pixel axis in the target's
-    /// own space.
-    RoundOutNonSubpx { subpx_horizontal: bool },
+    /// Round a border's edges to the nearest pixel, then pull an outer edge in
+    /// where the whole-pixel width measured from it (each side's width rounded
+    /// as `NormalBorderData` rounds it) would stop short of the inner edge's
+    /// own nearest pixel. Content that meets the border in layout snaps to that
+    /// pixel, so the shortfall shows as a gap between them (bug 2074176). The
+    /// border never grows past its `Nearest` rect. Falls back to `Nearest` when
+    /// a width is not snapped to whole pixels, or across a 90-degree rotation.
+    BorderInner { widths: LayoutSideOffsets },
+}
+
+/// Snap a device-space border rect so its inner edges never fall short of
+/// the content they meet. See `SnapRounding::BorderInner`.
+fn snap_border_device_rect(
+    r: &DeviceRect,
+    inner: &DeviceRect,
+    widths: &LayoutSideOffsets,
+    scale_x: f32,
+    scale_y: f32,
+) -> DeviceRect {
+    // Mirrors the width snapping in `NormalBorderData::update`: widths of at
+    // least one layout pixel round to whole device pixels, zero stays zero.
+    let snapped_width = |w: f32, s: f32| {
+        if w == 0.0 {
+            Some(0.0)
+        } else if w >= 1.0 && s > 0.0 {
+            Some((w * s).round().max(1.0))
+        } else {
+            None
+        }
+    };
+    let (Some(left), Some(top), Some(right), Some(bottom)) = (
+        snapped_width(widths.left, scale_x),
+        snapped_width(widths.top, scale_y),
+        snapped_width(widths.right, scale_x),
+        snapped_width(widths.bottom, scale_y),
+    ) else {
+        return r.snap();
+    };
+
+    if inner.is_empty() {
+        return r.snap();
+    }
+    let outer = r.snap();
+    let inner = inner.snap();
+
+    // Content meeting the inner edge snaps it to `inner`. Where the whole-pixel
+    // width measured from the snapped outer edge stops short of that, the gap
+    // would show, so pull the outer edge in to close it. Where it reaches past
+    // `inner` instead, the outer edge stays put, so the border never grows past
+    // its own snapped rect.
+    let snapped = DeviceRect::new(
+        DevicePoint::new(outer.min.x.max(inner.min.x - left), outer.min.y.max(inner.min.y - top)),
+        DevicePoint::new(outer.max.x.min(inner.max.x + right), outer.max.y.min(inner.max.y + bottom)),
+    );
+    if snapped.width() < left + right || snapped.height() < top + bottom {
+        return outer;
+    }
+    snapped
 }
 
 /// Snap a device-space decoration-line rect: round both edges of the long axis
@@ -488,8 +642,8 @@ mod tests {
     use super::*;
     use api::{PipelineId, PropertyBinding, ReferenceFrameKind, StickyOffsetBounds, TransformStyle};
     use api::units::{
-        DevicePixelScale, DeviceSize, LayoutPoint, LayoutRect, LayoutSize, LayoutTransform,
-        LayoutVector2D,
+        DevicePixelScale, DevicePoint, DeviceSize, LayoutPoint, LayoutRect, LayoutSize,
+        LayoutTransform, LayoutVector2D,
     };
     use crate::scene::SceneProperties;
     use crate::spatial_node::StickyFrameInfo;
@@ -563,6 +717,7 @@ mod tests {
             DeviceRect::from_origin_and_size(DevicePoint::zero(), DeviceSize::new(1000.0, 1000.0)),
             st,
             DevicePixelScale::new(1.0),
+            (1.0, 1.0),
             (1.0, 1.0),
             (1.0, 1.0),
             true,
@@ -713,6 +868,7 @@ mod tests {
             DevicePixelScale::new(1.0),
             (1.0, 1.0),
             (1.0, 1.0),
+            (1.0, 1.0),
             true,
             false,
         );
@@ -742,22 +898,31 @@ mod tests {
         }
     }
 
-    // bug 2055145 / bug 2050692: a device-space text run's clip rounds OUT on
-    // its non-sub-pixel axis (so a grid-snapped glyph row whose center lies just
-    // beyond a fractional clip edge is never shaved) while its sub-pixel axis
-    // stays EXACT (so the clip keeps matching the glyph's exact sub-pixel
-    // position, as it did before the regressor). This asserts the per-axis snap
-    // policy directly, independent of any rasterizer.
     #[test]
-    fn test_round_out_non_subpx() {
+    fn test_shadow_offset_snaps_relative_to_shadowed_content() {
+        // Under a scale(1.25), a 1.25 shadow offset is 1.5625 device pixels.
+        // Whatever the shadowed rect's sub-pixel phase, the snapped copy must
+        // land exactly 2 device pixels from the snapped original (bug 2076646).
         let mut cst = SceneSpatialTree::new();
         let root = cst.root_reference_frame_index();
+        let scaled = cst.add_reference_frame(
+            root,
+            TransformStyle::Flat,
+            PropertyBinding::Value(LayoutTransform::scale(1.25, 1.25, 1.0)),
+            ReferenceFrameKind::Transform {
+                is_2d_scale_translation: true,
+                should_snap: false,
+                paired_with_perspective: false,
+            },
+            LayoutVector2D::zero(),
+            PipelineId::dummy(),
+            false,
+        );
+
         let mut st = SpatialTree::new();
         st.apply_updates(cst.end_frame_and_get_pending_updates());
         st.update_tree(&SceneProperties::new());
 
-        // Snapper at device scale 1 in the root coordinate system, so the device
-        // grid coincides with integer layout coordinates.
         let surface = SurfaceInfo::new(
             root,
             root,
@@ -766,51 +931,36 @@ mod tests {
             DevicePixelScale::new(1.0),
             (1.0, 1.0),
             (1.0, 1.0),
+            (1.0, 1.0),
             true,
             false,
         );
+
+        let offset = LayoutVector2D::new(1.25, 1.25);
         let mut snapper = SpaceSnapper::new(&surface, &st);
-        snapper.set_target_spatial_node(root, &st);
+        snapper.set_target_spatial_node(scaled, &st);
+        let mut shadow_snapper = snapper.clone();
+        shadow_snapper.set_shadow_offset(offset);
 
-        // Fractional on both axes: x in [10.3, 60.6], y in [40.7, 44.3].
-        let rect = LayoutRect::from_origin_and_size(
-            LayoutPoint::new(10.3, 40.7),
-            LayoutSize::new(50.3, 3.6),
-        );
-        let near = |a: f32, b: f32| (a - b).abs() < 0.01;
+        for phase in [0.0, 0.1, 0.2, 0.3, 0.5, 0.7] {
+            let rect = LayoutRect::from_origin_and_size(
+                LayoutPoint::new(10.0 + phase, 40.0 + phase),
+                LayoutSize::new(40.0, 8.0),
+            );
+            let original = snapper.snap_rect(&rect);
+            let copy = shadow_snapper.snap_rect(&rect.translate(offset));
+            let delta = (copy.min - original.min) * 1.25;
+            assert!(
+                (delta.x - 2.0).abs() < 0.001 && (delta.y - 2.0).abs() < 0.001,
+                "phase {}: copy is {:?} device pixels from the original",
+                phase,
+                delta,
+            );
 
-        // Horizontal sub-pixel (normal LTR text): X stays exact, Y rounds out.
-        let h = snapper.snap_rect_rounded(
-            &rect,
-            SnapRounding::RoundOutNonSubpx { subpx_horizontal: true },
-        );
-        assert!(near(h.min.x, 10.3) && near(h.max.x, 60.6), "X must stay exact, got {:?}", h);
-        assert!(near(h.min.y, 40.0) && near(h.max.y, 45.0), "Y must round out, got {:?}", h);
-        // Round-out never moves an edge inward, so a glyph that fits is not shaved.
-        assert!(h.min.y <= rect.min.y && h.max.y >= rect.max.y, "Y must not shrink, got {:?}", h);
-
-        // Vertical sub-pixel (vertical writing mode): axes swap.
-        let v = snapper.snap_rect_rounded(
-            &rect,
-            SnapRounding::RoundOutNonSubpx { subpx_horizontal: false },
-        );
-        assert!(near(v.min.y, 40.7) && near(v.max.y, 44.3), "Y must stay exact, got {:?}", v);
-        assert!(near(v.min.x, 10.0) && near(v.max.x, 61.0), "X must round out, got {:?}", v);
-
-        // No sub-pixel positioning (e.g. mono): both axes round out.
-        let b = snapper.snap_rect_rounded(&rect, SnapRounding::RoundOut);
-        assert!(
-            near(b.min.x, 10.0) && near(b.max.x, 61.0) && near(b.min.y, 40.0) && near(b.max.y, 45.0),
-            "both axes must round out, got {:?}",
-            b,
-        );
-
-        // Nearest (snapping prims) can round the fractional edge inward - the
-        // behavior text must avoid on its non-sub-pixel axis. Confirms the modes
-        // are actually distinct.
-        let n = snapper.snap_rect_rounded(&rect, SnapRounding::Nearest);
-        assert!(near(n.max.y, 44.0), "Nearest rounds the fractional edge inward, got {:?}", n);
+            // An unsnapped prim keeps its exact offset.
+            let exact = shadow_snapper.snap_rect_rounded(&rect.translate(offset), SnapRounding::Exact);
+            assert_eq!(exact, rect.translate(offset));
+        }
     }
 }
-
 

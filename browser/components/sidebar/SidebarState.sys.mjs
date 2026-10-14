@@ -304,10 +304,18 @@ export class SidebarState {
       // show() is async, so make sure we return its promise here
       return this.#controller.showInitially(this.command);
     }
-    if (["hide-sidebar", "hide-launcher"].includes(this.revampVisibility)) {
-      // No panel is open, so the launcher stays hidden as these modes intend. A
-      // new or restored window can otherwise inherit a visible launcher state,
-      // which shouldn't carry over here.
+    if (this.launcherHiddenWithPanel) {
+      // "hide-launcher" replaces the launcher with the panel header switcher,
+      // so it never shows regardless of what was restored.
+      this.launcherVisible = false;
+    } else if (
+      !hasPreviousVisibleState &&
+      this.revampVisibility === "hide-sidebar"
+    ) {
+      // No panel is open and the state we were handed didn't say whether the
+      // launcher was visible, so fall back to hidden as this mode intends. An
+      // explicitly restored or adopted visibility wins over that default,
+      // otherwise a launcher the user revealed would be lost on every restart.
       this.launcherVisible = false;
     }
     return this.#controller.hide();
@@ -599,25 +607,28 @@ export class SidebarState {
       }
 
       this.#launcherEl.toggleAttribute("customWidth", true);
-    } else if (this.launcherWidth < LAUNCHER_MINIMUM_WIDTH) {
-      // Re-enable expand on hover if necessary
-      if (this.#controller.sidebarRevampVisibility === "expand-on-hover") {
-        this.#controller.toggleExpandOnHover(true, true);
-      }
-
-      // Snap back to collapsed state when the new width is too narrow.
-      this.launcherExpanded = false;
-      if (this.revampVisibility === "hide-sidebar") {
-        this.launcherVisible = false;
-      }
     } else {
+      this.launcherWidth =
+        this.#controllerGlobal.windowUtils.getBoundsWithoutFlushing(
+          this.#launcherContainerEl
+        ).width;
+
       // Re-enable expand on hover if necessary
       if (this.#controller.sidebarRevampVisibility === "expand-on-hover") {
         this.#controller.toggleExpandOnHover(true, true);
       }
 
-      // Store the user-preferred launcher width.
-      this.expandedLauncherWidth = this.launcherWidth;
+      if (this.launcherWidth < LAUNCHER_MINIMUM_WIDTH) {
+        // Snap back to collapsed state when the new width is too narrow.
+        this.launcherExpanded = false;
+        if (this.revampVisibility === "hide-sidebar") {
+          this.launcherVisible = false;
+        }
+      } else {
+        this.launcherExpanded = true;
+        // Store the user-preferred launcher width.
+        this.expandedLauncherWidth = this.launcherWidth;
+      }
     }
     const rootEl = this.#controllerGlobal.document.documentElement;
     rootEl.toggleAttribute("sidebar-launcher-drag-active", active);
@@ -639,10 +650,10 @@ export class SidebarState {
         this.#pinnedTabsContainerEl
       ).height;
     if (!active) {
-      this.pinnedTabsHeight = Math.min(
-        pinnedTabsContainerHeight,
-        itemsWrapperHeight
-      );
+      // Dragging to the full content height resets to auto-sizing rather than
+      // storing a height that only reflects the current layout.
+      const atMaxHeight = itemsWrapperHeight - pinnedTabsContainerHeight < 1;
+      this.pinnedTabsHeight = atMaxHeight ? 0 : pinnedTabsContainerHeight;
       // Store the user-preferred pinned tabs height.
       if (this.#props.launcherExpanded) {
         this.expandedPinnedTabsHeight = this.pinnedTabsHeight;

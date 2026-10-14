@@ -390,6 +390,16 @@ void XMLHttpRequestMainThread::SetAssociatedBrowsingContextID(uint64_t aId) {
 }
 
 void XMLHttpRequestMainThread::ResetResponse() {
+  if (RefPtr<nsXHRParseEndListener> listener = mParseEndListener.forget()) {
+    if (mResponseXML) {
+      if (EventListenerManager* manager =
+              mResponseXML->GetExistingListenerManager()) {
+        manager->RemoveEventListenerByType(listener,
+                                           kLiteralString_DOMContentLoaded,
+                                           TrustedEventsAtSystemGroupBubble());
+      }
+    }
+  }
   mResponseXML = nullptr;
   mResponseBody.Truncate();
   TruncateResponseText();
@@ -1051,6 +1061,9 @@ void XMLHttpRequestMainThread::CloseRequest(nsresult detail) {
                                "XMLHttpRequestMainThread::CloseRequest"_ns);
   }
   CancelTimeoutTimer();
+  if (mResponseXML) {
+    mResponseXML->StopDocumentLoad();
+  }
 }
 
 void XMLHttpRequestMainThread::CloseRequestWithError(
@@ -1825,8 +1838,8 @@ class FileCreationHandler final : public PromiseNativeHandler {
     aPromise->AppendNativeHandler(handler);
   }
 
-  void ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue,
-                        ErrorResult& aRv) override {
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void ResolvedCallback(
+      JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult& aRv) override {
     if (NS_WARN_IF(!aValue.isObject())) {
       mXHR->LocalFileToBlobCompleted(nullptr);
       return;
@@ -1838,11 +1851,12 @@ class FileCreationHandler final : public PromiseNativeHandler {
       return;
     }
 
-    mXHR->LocalFileToBlobCompleted(blob->Impl());
+    const RefPtr<BlobImpl> blobImpl = blob->Impl();
+    mXHR->LocalFileToBlobCompleted(blobImpl);
   }
 
-  void RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue,
-                        ErrorResult& aRv) override {
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void RejectedCallback(
+      JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult& aRv) override {
     mXHR->LocalFileToBlobCompleted(nullptr);
   }
 
@@ -1853,7 +1867,7 @@ class FileCreationHandler final : public PromiseNativeHandler {
 
   ~FileCreationHandler() = default;
 
-  RefPtr<XMLHttpRequestMainThread> mXHR;
+  MOZ_KNOWN_LIVE const RefPtr<XMLHttpRequestMainThread> mXHR;
 };
 
 NS_IMPL_ISUPPORTS0(FileCreationHandler)
@@ -2006,6 +2020,30 @@ XMLHttpRequestMainThread::OnStartRequest(nsIRequest* request) {
   mFlagParseBody = true;
   if (mErrorLoad == ErrorType::eOK) {
     ChangeState(XMLHttpRequest_Binding::HEADERS_RECEIVED);
+  }
+
+  // Re-run earlier check after scripts may have changed the state.
+
+  if (request != mChannel) {
+    // Can this still happen?
+    return NS_OK;
+  }
+
+  // Don't do anything if we have been aborted
+  if (mState == XMLHttpRequest_Binding::UNSENT) {
+    return NS_OK;
+  }
+
+  // Don't do anything if we're in mid-abort, but let the request
+  // know (this can happen due to race conditions in valid XHRs,
+  // see bz1070763 for info).
+  if (mFlagAborted) {
+    return NS_BINDING_ABORTED;
+  }
+
+  // Don't do anything if we have timed out.
+  if (mFlagTimedOut) {
+    return NS_OK;
   }
 
   ResetResponse();
@@ -2215,7 +2253,8 @@ XMLHttpRequestMainThread::OnStartRequest(nsIRequest* request) {
 }
 
 NS_IMETHODIMP
-XMLHttpRequestMainThread::OnStopRequest(nsIRequest* request, nsresult status) {
+XMLHttpRequestMainThread::OnStopRequest(nsIRequest* request, nsresult status)
+    MOZ_CAN_RUN_SCRIPT_BOUNDARY {
   DEBUG_WORKERREFS;
   AUTO_PROFILER_LABEL("XMLHttpRequestMainThread::OnStopRequest", NETWORK);
 
@@ -2547,8 +2586,7 @@ void XMLHttpRequestMainThread::ChangeStateToDoneInternal() {
   // Call this prior to changing state to DONE to ensure we set up the
   // observer before mutations occur.
   if (mErrorLoad == ErrorType::eOK) {
-    Document* doc = GetDocumentIfCurrent();
-    if (doc) {
+    if (const RefPtr<Document> doc = GetDocumentIfCurrent()) {
       doc->NotifyFetchOrXHRSuccess();
     }
   }

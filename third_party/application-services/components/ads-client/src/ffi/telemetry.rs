@@ -8,6 +8,8 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
+#[cfg(feature = "stateful")]
+use crate::ads_store::builder::AdsStoreBuilderError;
 use crate::client::error::RequestAdsError;
 use crate::client::ClientOperationEvent;
 use crate::http_cache::{CacheOutcome, HttpCacheBuilderError};
@@ -50,20 +52,9 @@ impl MozAdsTelemetryWrapper {
             inner: Arc::new(RwLock::new(Some(Arc::new(NoopMozAdsTelemetry)))),
         }
     }
-
-    #[cfg(test)]
-    pub fn clone_inner_arc(&self) -> Option<Arc<dyn MozAdsTelemetry>> {
-        self.inner.read().clone()
-    }
 }
 
 impl Telemetry for MozAdsTelemetryWrapper {
-    // MozAdsTelemetry has hanging uniffi callbacks which need to be explicitly dropped before closing.
-    // This replaces it with a `None` internally, meaning future calls will be noops.
-    fn shutdown(&self) {
-        let _dropped = self.inner.write().take();
-    }
-
     fn record(&self, event: &dyn Any) {
         let Some(inner) = self.inner.read().clone() else {
             return;
@@ -99,6 +90,21 @@ impl Telemetry for MozAdsTelemetryWrapper {
                 ClientOperationEvent::ReportAd => "report_ad".to_string(),
                 ClientOperationEvent::RequestAds => "request_ads".to_string(),
             });
+            return;
+        }
+
+        #[cfg(feature = "stateful")]
+        if let Some(cache_builder_error) = event.downcast_ref::<AdsStoreBuilderError>() {
+            inner.record_build_cache_error(
+                match cache_builder_error {
+                    AdsStoreBuilderError::EmptyDbPath => "store_empty_db_path".to_string(),
+                    AdsStoreBuilderError::Database(_) => "store_database_error".to_string(),
+                    AdsStoreBuilderError::InvalidMaxSize { .. } => {
+                        "store_invalid_max_size".to_string()
+                    }
+                },
+                format!("{}", cache_builder_error),
+            );
             return;
         }
         if let Some(cache_builder_error) = event.downcast_ref::<HttpCacheBuilderError>() {
@@ -145,6 +151,12 @@ impl Telemetry for MozAdsTelemetryWrapper {
         eprintln!("Unsupported telemetry event type: {:?}", event.type_id());
         #[cfg(test)]
         panic!("Unsupported telemetry event type: {:?}", event.type_id());
+    }
+
+    // MozAdsTelemetry has hanging uniffi callbacks which need to be explicitly dropped before closing.
+    // This replaces it with a `None` internally, meaning future calls will be noops.
+    fn shutdown(&self) {
+        let _dropped = self.inner.write().take();
     }
 }
 

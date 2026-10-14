@@ -173,15 +173,14 @@ class DispatchControlsResizeEvent final : public Runnable {
  public:
   explicit DispatchControlsResizeEvent(nsIContent* aContent)
       : Runnable("DispatchControlsResizeEvent"), mContent(aContent) {}
-  NS_IMETHOD Run() override {
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHOD Run() override {
     // This is ok-ish because we're dispatching it in the shadow dom so it
     // doesn't propagate up to the <video>.
-    nsContentUtils::DispatchTrustedEvent(mContent->OwnerDoc(), mContent,
-                                         u"resizevideocontrols"_ns,
+    nsContentUtils::DispatchTrustedEvent(mContent, u"resizevideocontrols"_ns,
                                          CanBubble::eNo, Cancelable::eNo);
     return NS_OK;
   }
-  nsCOMPtr<nsIContent> mContent;
+  MOZ_KNOWN_LIVE const nsCOMPtr<nsIContent> mContent;
 };
 
 bool nsVideoFrame::ReflowFinished() {
@@ -614,7 +613,7 @@ class nsDisplayVideo final : public nsPaintedDisplayItem {
     return container.forget();
   }
 
-  bool CreateWebRenderCommands(
+  WebRenderCommandsResult CreateWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
       const mozilla::layers::StackingContextHelper& aSc,
@@ -625,7 +624,7 @@ class nsDisplayVideo final : public nsPaintedDisplayItem {
     nsRect dest;
     RefPtr<ImageContainer> container = GetImageContainer(destGFXRect, dest);
     if (!container) {
-      return true;
+      return Ok();
     }
 
     container->SetRotation(element->RotationDegrees());
@@ -640,7 +639,7 @@ class nsDisplayVideo final : public nsPaintedDisplayItem {
 
     dom::ContainerTimingHelpers::MaybeProcessPaintForContainer(element, Frame(),
                                                                dest);
-    return true;
+    return Ok();
   }
 
   // For opaque videos, we will want to override GetOpaqueRegion here.

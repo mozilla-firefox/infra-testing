@@ -54,8 +54,8 @@ class ShareControllerTest {
     private val shareSubject = "shareSubject"
     private val shareData =
         listOf(
-            ShareData(url = "url0", title = "title0"),
-            ShareData(url = "url1", title = "title1"),
+            ShareData(url = "url0", title = "title0", private = false),
+            ShareData(url = "url1", title = "title1", private = false),
         )
 
     // Navigation between app fragments uses ShareTab as arguments. SendTabUseCases uses TabData.
@@ -92,7 +92,6 @@ class ShareControllerTest {
                     appStore,
                     shareSubject,
                     shareData,
-                    false,
                     sendTabUseCases,
                     saveToPdfUseCase,
                     printUseCase,
@@ -100,10 +99,9 @@ class ShareControllerTest {
                     navController,
                     recentAppStorage,
                     this,
+                    this,
                     testDispatcher,
-                    testDispatcher,
-                    FenixFxAEntryPoint.ShareMenu,
-                    dismiss,
+                    dismiss = dismiss,
                 )
 
             controller.handleShareClosed()
@@ -130,7 +128,6 @@ class ShareControllerTest {
                     appStore,
                     shareSubject,
                     shareData,
-                    false,
                     mockk(),
                     mockk(),
                     mockk(),
@@ -138,7 +135,7 @@ class ShareControllerTest {
                     mockk(),
                     recentAppStorage,
                     this,
-                    testDispatcher,
+                    this,
                     testDispatcher,
                     FenixFxAEntryPoint.ShareMenu,
                     dismiss,
@@ -199,7 +196,6 @@ class ShareControllerTest {
                     appStore,
                     shareSubject,
                     shareData,
-                    false,
                     mockk(),
                     mockk(),
                     mockk(),
@@ -207,7 +203,7 @@ class ShareControllerTest {
                     mockk(),
                     recentAppStorage,
                     this,
-                    testDispatcher,
+                    this,
                     testDispatcher,
                     FenixFxAEntryPoint.ShareMenu,
                     dismiss,
@@ -248,7 +244,6 @@ class ShareControllerTest {
                     appStore,
                     shareSubject,
                     shareData,
-                    false,
                     mockk(),
                     mockk(),
                     mockk(),
@@ -256,7 +251,7 @@ class ShareControllerTest {
                     mockk(),
                     recentAppStorage,
                     this,
-                    testDispatcher,
+                    this,
                     testDispatcher,
                     FenixFxAEntryPoint.ShareMenu,
                     dismiss,
@@ -296,7 +291,6 @@ class ShareControllerTest {
                     appStore = appStore,
                     shareSubject = shareSubject,
                     shareData = shareData,
-                    isPrivate = false,
                     sendTabUseCases = mockk(),
                     saveToPdfUseCase = mockk(),
                     printUseCase = mockk(),
@@ -304,6 +298,7 @@ class ShareControllerTest {
                     navController = mockk(),
                     recentAppsStorage = recentAppStorage,
                     viewLifecycleScope = this,
+                    applicationScope = this,
                     ioDispatcher = testDispatcher,
                     dismiss = dismiss,
                 )
@@ -337,7 +332,6 @@ class ShareControllerTest {
                     appStore = appStore,
                     shareSubject = shareSubject,
                     shareData = shareData,
-                    isPrivate = false,
                     sendTabUseCases = mockk(),
                     saveToPdfUseCase = mockk(),
                     printUseCase = mockk(),
@@ -345,6 +339,7 @@ class ShareControllerTest {
                     navController = mockk(),
                     recentAppsStorage = recentAppStorage,
                     viewLifecycleScope = this,
+                    applicationScope = this,
                     ioDispatcher = testDispatcher,
                     dismiss = dismiss,
                 )
@@ -370,7 +365,6 @@ class ShareControllerTest {
                     appStore = appStore,
                     shareSubject = shareSubject,
                     shareData = shareData,
-                    isPrivate = false,
                     sendTabUseCases = mockk(),
                     saveToPdfUseCase = saveToPdfUseCase,
                     printUseCase = mockk(),
@@ -378,6 +372,7 @@ class ShareControllerTest {
                     navController = mockk(),
                     recentAppsStorage = recentAppStorage,
                     viewLifecycleScope = this,
+                    applicationScope = this,
                     ioDispatcher = testDispatcher,
                     dismiss = dismiss,
                 )
@@ -399,7 +394,6 @@ class ShareControllerTest {
                     appStore = appStore,
                     shareSubject = shareSubject,
                     shareData = shareData,
-                    isPrivate = false,
                     sendTabUseCases = mockk(),
                     saveToPdfUseCase = mockk(),
                     printUseCase = printUseCase,
@@ -407,6 +401,7 @@ class ShareControllerTest {
                     navController = mockk(),
                     recentAppsStorage = recentAppStorage,
                     viewLifecycleScope = this,
+                    applicationScope = this,
                     ioDispatcher = testDispatcher,
                     dismiss = dismiss,
                 )
@@ -434,7 +429,6 @@ class ShareControllerTest {
                     appStore = appStore,
                     shareSubject = shareSubject,
                     shareData = shareData,
-                    isPrivate = false,
                     sendTabUseCases = mockk(),
                     saveToPdfUseCase = mockk(),
                     printUseCase = mockk(),
@@ -442,6 +436,7 @@ class ShareControllerTest {
                     navController = mockk(),
                     recentAppsStorage = recentAppStorage,
                     viewLifecycleScope = this,
+                    applicationScope = this,
                     ioDispatcher = testDispatcher,
                     dismiss = dismiss,
                 )
@@ -459,7 +454,6 @@ class ShareControllerTest {
                     appStore = appStore,
                     shareSubject = null,
                     shareData = shareData,
-                    isPrivate = false,
                     sendTabUseCases = mockk(),
                     saveToPdfUseCase = mockk(),
                     printUseCase = mockk(),
@@ -467,6 +461,7 @@ class ShareControllerTest {
                     navController = mockk(),
                     recentAppsStorage = recentAppStorage,
                     viewLifecycleScope = this,
+                    applicationScope = this,
                     ioDispatcher = testDispatcher,
                     dismiss = dismiss,
                 )
@@ -480,8 +475,8 @@ class ShareControllerTest {
             val activityContext: Context = mockk<Activity>()
             val partialTitlesShareData =
                 listOf(
-                    ShareData(url = "url0", title = null),
-                    ShareData(url = "url1", title = "title1"),
+                    ShareData(url = "url0", title = null, private = false),
+                    ShareData(url = "url1", title = "title1", private = false),
                 )
             val testController =
                 DefaultShareController(
@@ -489,7 +484,6 @@ class ShareControllerTest {
                     appStore = appStore,
                     shareSubject = null,
                     shareData = partialTitlesShareData,
-                    isPrivate = false,
                     sendTabUseCases = mockk(),
                     saveToPdfUseCase = mockk(),
                     printUseCase = mockk(),
@@ -497,6 +491,7 @@ class ShareControllerTest {
                     navController = mockk(),
                     recentAppsStorage = recentAppStorage,
                     viewLifecycleScope = this,
+                    applicationScope = this,
                     ioDispatcher = testDispatcher,
                     dismiss = dismiss,
                 )
@@ -510,8 +505,8 @@ class ShareControllerTest {
             val activityContext: Context = mockk<Activity>()
             val noTitleShareData =
                 listOf(
-                    ShareData(url = "url0", title = null),
-                    ShareData(url = "url1", title = null),
+                    ShareData(url = "url0", title = null, private = false),
+                    ShareData(url = "url1", title = null, private = false),
                 )
             val testController =
                 DefaultShareController(
@@ -519,7 +514,6 @@ class ShareControllerTest {
                     appStore = appStore,
                     shareSubject = null,
                     shareData = noTitleShareData,
-                    isPrivate = false,
                     sendTabUseCases = mockk(),
                     saveToPdfUseCase = mockk(),
                     printUseCase = mockk(),
@@ -527,6 +521,7 @@ class ShareControllerTest {
                     navController = mockk(),
                     recentAppsStorage = recentAppStorage,
                     viewLifecycleScope = this,
+                    applicationScope = this,
                     ioDispatcher = testDispatcher,
                     dismiss = dismiss,
                 )
@@ -540,8 +535,8 @@ class ShareControllerTest {
             val activityContext: Context = mockk<Activity>()
             val noTitleShareData =
                 listOf(
-                    ShareData(url = "url0", title = ""),
-                    ShareData(url = "url1", title = ""),
+                    ShareData(url = "url0", title = "", private = false),
+                    ShareData(url = "url1", title = "", private = false),
                 )
             val testController =
                 DefaultShareController(
@@ -549,7 +544,6 @@ class ShareControllerTest {
                     context = activityContext,
                     shareSubject = null,
                     shareData = noTitleShareData,
-                    isPrivate = false,
                     sendTabUseCases = mockk(),
                     saveToPdfUseCase = mockk(),
                     printUseCase = mockk(),
@@ -557,6 +551,7 @@ class ShareControllerTest {
                     navController = mockk(),
                     recentAppsStorage = recentAppStorage,
                     viewLifecycleScope = this,
+                    applicationScope = this,
                     ioDispatcher = testDispatcher,
                     dismiss = dismiss,
                 )
@@ -573,7 +568,6 @@ class ShareControllerTest {
                     appStore,
                     shareSubject,
                     shareData,
-                    false,
                     sendTabUseCases,
                     saveToPdfUseCase,
                     printUseCase,
@@ -581,7 +575,7 @@ class ShareControllerTest {
                     navController,
                     recentAppStorage,
                     this,
-                    testDispatcher,
+                    this,
                     testDispatcher,
                     FenixFxAEntryPoint.ShareMenu,
                     dismiss,
@@ -603,7 +597,7 @@ class ShareControllerTest {
 
             every {
                 sendTabUseCases.sendToDeviceAsync(
-                    any(),
+                    any<String>(),
                     any<List<TabData>>(),
                 )
             } returns CompletableDeferred(true)
@@ -636,7 +630,6 @@ class ShareControllerTest {
                     appStore,
                     shareSubject,
                     shareData,
-                    false,
                     sendTabUseCases,
                     saveToPdfUseCase,
                     printUseCase,
@@ -644,7 +637,7 @@ class ShareControllerTest {
                     navController,
                     recentAppStorage,
                     this,
-                    testDispatcher,
+                    this,
                     testDispatcher,
                     FenixFxAEntryPoint.ShareMenu,
                     dismiss,
@@ -700,7 +693,6 @@ class ShareControllerTest {
                     appStore,
                     shareSubject,
                     shareData,
-                    false,
                     sendTabUseCases,
                     saveToPdfUseCase,
                     printUseCase,
@@ -708,7 +700,7 @@ class ShareControllerTest {
                     navController,
                     recentAppStorage,
                     this,
-                    testDispatcher,
+                    this,
                     testDispatcher,
                     FenixFxAEntryPoint.ShareMenu,
                     dismiss,
@@ -738,7 +730,6 @@ class ShareControllerTest {
                     appStore,
                     shareSubject,
                     shareData,
-                    false,
                     sendTabUseCases,
                     saveToPdfUseCase,
                     printUseCase,
@@ -746,7 +737,7 @@ class ShareControllerTest {
                     navController,
                     recentAppStorage,
                     this,
-                    testDispatcher,
+                    this,
                     testDispatcher,
                     FenixFxAEntryPoint.ShareMenu,
                     dismiss,
@@ -774,7 +765,6 @@ class ShareControllerTest {
                     appStore,
                     shareSubject,
                     shareData,
-                    false,
                     sendTabUseCases,
                     saveToPdfUseCase,
                     printUseCase,
@@ -782,7 +772,7 @@ class ShareControllerTest {
                     navController,
                     recentAppStorage,
                     this,
-                    testDispatcher,
+                    this,
                     testDispatcher,
                     FenixFxAEntryPoint.ShareMenu,
                     dismiss,
@@ -812,7 +802,6 @@ class ShareControllerTest {
                     appStore,
                     shareSubject,
                     shareData,
-                    false,
                     sendTabUseCases,
                     saveToPdfUseCase,
                     printUseCase,
@@ -820,7 +809,7 @@ class ShareControllerTest {
                     navController,
                     recentAppStorage,
                     this,
-                    testDispatcher,
+                    this,
                     testDispatcher,
                     FenixFxAEntryPoint.ShareMenu,
                     dismiss,
@@ -850,7 +839,6 @@ class ShareControllerTest {
                     appStore,
                     shareSubject,
                     shareData,
-                    false,
                     sendTabUseCases,
                     saveToPdfUseCase,
                     printUseCase,
@@ -858,7 +846,7 @@ class ShareControllerTest {
                     navController,
                     recentAppStorage,
                     this,
-                    testDispatcher,
+                    this,
                     testDispatcher,
                     FenixFxAEntryPoint.ShareMenu,
                     dismiss,
@@ -872,9 +860,12 @@ class ShareControllerTest {
         runTest(testDispatcher) {
             val shareData =
                 listOf(
-                    ShareData(url = "moz-extension://eb8df45a-895b-4f3a-896a-c0c71ae4/page.html"),
-                    ShareData(url = "moz-extension://eb8df45a-895b-4f3a-896a-c0c71ae5/page.html?url=url0"),
-                    ShareData(url = "url1"),
+                    ShareData(url = "moz-extension://eb8df45a-895b-4f3a-896a-c0c71ae4/page.html", private = false),
+                    ShareData(
+                        url = "moz-extension://eb8df45a-895b-4f3a-896a-c0c71ae5/page.html?url=url0",
+                        private = false,
+                    ),
+                    ShareData(url = "url1", private = false),
                 )
             val controller =
                 DefaultShareController(
@@ -882,7 +873,6 @@ class ShareControllerTest {
                     appStore = appStore,
                     shareSubject = shareSubject,
                     shareData = shareData,
-                    isPrivate = false,
                     sendTabUseCases = sendTabUseCases,
                     saveToPdfUseCase = mockk(),
                     printUseCase = mockk(),
@@ -890,6 +880,7 @@ class ShareControllerTest {
                     navController = navController,
                     recentAppsStorage = recentAppStorage,
                     viewLifecycleScope = this,
+                    applicationScope = this,
                     ioDispatcher = testDispatcher,
                     dismiss = dismiss,
                 )
@@ -907,7 +898,6 @@ class ShareControllerTest {
                     appStore,
                     shareSubject,
                     shareData,
-                    false,
                     sendTabUseCases,
                     saveToPdfUseCase,
                     printUseCase,
@@ -915,7 +905,7 @@ class ShareControllerTest {
                     navController,
                     recentAppStorage,
                     this,
-                    testDispatcher,
+                    this,
                     testDispatcher,
                     FenixFxAEntryPoint.ShareMenu,
                     dismiss,
@@ -933,7 +923,6 @@ class ShareControllerTest {
                     appStore = appStore,
                     shareSubject = null,
                     shareData = shareData,
-                    isPrivate = false,
                     sendTabUseCases = sendTabUseCases,
                     saveToPdfUseCase = mockk(),
                     printUseCase = mockk(),
@@ -941,6 +930,7 @@ class ShareControllerTest {
                     navController = navController,
                     recentAppsStorage = recentAppStorage,
                     viewLifecycleScope = this,
+                    applicationScope = this,
                     ioDispatcher = testDispatcher,
                     dismiss = dismiss,
                 )
@@ -951,110 +941,44 @@ class ShareControllerTest {
     @Test
     fun `ShareTab#toTabData maps a list of ShareTab to a TabData list`() =
         runTest(testDispatcher) {
-            val controller =
-                DefaultShareController(
-                    testContext,
-                    appStore,
-                    shareSubject,
-                    shareData,
-                    false,
-                    sendTabUseCases,
-                    saveToPdfUseCase,
-                    printUseCase,
-                    sentFromFirefoxManager,
-                    navController,
-                    recentAppStorage,
-                    this,
-                    testDispatcher,
-                    testDispatcher,
-                    FenixFxAEntryPoint.ShareMenu,
-                    dismiss,
-                )
-
-            var tabData: List<TabData>
-
-            with(controller) {
-                tabData = shareData.toTabData()
-            }
+            val tabData: List<TabData> = shareData.toTabData()
 
             assertEquals(tabsData, tabData)
         }
 
     @Test
-    fun `ShareTab#toTabData creates a data url from text if no url is specified`() =
-        runTest(testDispatcher) {
-            val controller =
-                DefaultShareController(
-                    testContext,
-                    appStore,
-                    shareSubject,
-                    shareData,
-                    false,
-                    sendTabUseCases,
-                    saveToPdfUseCase,
-                    printUseCase,
-                    sentFromFirefoxManager,
-                    navController,
-                    recentAppStorage,
-                    this,
-                    testDispatcher,
-                    testDispatcher,
-                    FenixFxAEntryPoint.ShareMenu,
-                    dismiss,
+    fun `ShareTab#toTabData creates a data url from text if no url is specified`() {
+        val expected =
+            listOf(
+                TabData(title = "title0", url = "", privacy = TabPrivacy.Normal),
+                TabData(title = "title1", url = "data:,Hello%2C%20World!", privacy = TabPrivacy.Normal),
+            )
+
+        val tabData: List<TabData> =
+            listOf(
+                    ShareData(title = "title0", private = false),
+                    ShareData(title = "title1", text = "Hello, World!", private = false),
                 )
+                .toTabData()
 
-            var tabData: List<TabData>
-            val expected =
-                listOf(
-                    TabData(title = "title0", url = "", privacy = TabPrivacy.Normal),
-                    TabData(title = "title1", url = "data:,Hello%2C%20World!", privacy = TabPrivacy.Normal),
-                )
-
-            with(controller) {
-                tabData =
-                    listOf(
-                            ShareData(title = "title0"),
-                            ShareData(title = "title1", text = "Hello, World!"),
-                        )
-                        .toTabData()
-            }
-
-            assertEquals(expected, tabData)
-        }
+        assertEquals(expected, tabData)
+    }
 
     @Test
     fun `ShareTab#toTabData respects private browsing mode`() {
-        runTest(testDispatcher) {
-            val privateController =
-                DefaultShareController(
-                    context = testContext,
-                    appStore = appStore,
-                    shareSubject = null,
-                    shareData = shareData,
-                    isPrivate = true,
-                    sendTabUseCases = sendTabUseCases,
-                    saveToPdfUseCase = mockk(),
-                    printUseCase = mockk(),
-                    sentFromFirefoxManager = sentFromFirefoxManager,
-                    navController = navController,
-                    recentAppsStorage = recentAppStorage,
-                    viewLifecycleScope = this,
-                    ioDispatcher = testDispatcher,
-                    dismiss = dismiss,
-                )
+        val privateShareData =
+            listOf(
+                ShareData(url = "url0", title = "title0", private = true),
+                ShareData(url = "url1", title = "title1", private = true),
+            )
+        val expected =
+            listOf(
+                TabData(title = "title0", url = "url0", privacy = TabPrivacy.Private),
+                TabData(title = "title1", url = "url1", privacy = TabPrivacy.Private),
+            )
 
-            var tabData: List<TabData>
-            val expected =
-                listOf(
-                    TabData(title = "title0", url = "url0", privacy = TabPrivacy.Private),
-                    TabData(title = "title1", url = "url1", privacy = TabPrivacy.Private),
-                )
-
-            with(privateController) {
-                tabData = shareData.toTabData()
-            }
-            assertEquals(expected, tabData)
-        }
+        val tabData: List<TabData> = privateShareData.toTabData()
+        assertEquals(expected, tabData)
     }
 
     // SAM routed through mockk so verifyOrder can still span dismiss calls and other mocked

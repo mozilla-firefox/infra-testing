@@ -313,11 +313,6 @@ pref("media.videocontrols.keyboard-tab-to-all-controls", true);
   pref("media.peerconnection.ice.proxy_only_if_pbmode", false);
   pref("media.peerconnection.turn.disable", false);
   pref("media.peerconnection.treat_warnings_as_errors", false);
-  #ifdef NIGHTLY_BUILD
-    pref("media.peerconnection.description.legacy.enabled", false);
-  #else
-    pref("media.peerconnection.description.legacy.enabled", true);
-  #endif
 
   // 770 = DTLS 1.0, 771 = DTLS 1.2, 772 = DTLS 1.3
   pref("media.peerconnection.dtls.version.min", 771);
@@ -387,29 +382,16 @@ pref("gfx.downloadable_fonts.enabled", true);
 pref("gfx.downloadable_fonts.fallback_delay", 3000);
 pref("gfx.downloadable_fonts.fallback_delay_short", 100);
 
-#ifdef XP_WIN
-  // Bug 2011408 will remove this pref and the code that uses it completely if
-  // we don't see any performance issues.
-  pref("gfx.font_rendering.directwrite.use_gdi_table_loading", false);
-#endif
-
 // comma separated list of backends to use in order of preference
 // e.g., pref("gfx.canvas.azure.backends", "direct2d,skia");
 pref("gfx.canvas.azure.backends", "skia");
 pref("gfx.content.azure.backends", "skia");
-
-#ifdef XP_WIN
-  pref("gfx.webrender.flip-sequential", false);
-  pref("gfx.webrender.dcomp-win.enabled", true);
-  pref("gfx.webrender.triple-buffering.enabled", true);
-#endif
 
 // WebRender debugging utilities.
 pref("gfx.webrender.debug.texture-cache", false);
 pref("gfx.webrender.debug.texture-cache.clear-evicted", true);
 pref("gfx.webrender.debug.render-targets", false);
 pref("gfx.webrender.debug.gpu-cache", false);
-pref("gfx.webrender.debug.alpha-primitives", false);
 pref("gfx.webrender.debug.profiler", false);
 pref("gfx.webrender.debug.gpu-time-queries", false);
 pref("gfx.webrender.debug.gpu-sample-queries", false);
@@ -417,7 +399,6 @@ pref("gfx.webrender.debug.disable-batching", false);
 pref("gfx.webrender.debug.epochs", false);
 pref("gfx.webrender.debug.echo-driver-messages", false);
 pref("gfx.webrender.debug.show-overdraw", false);
-pref("gfx.webrender.debug.slow-frame-indicator", false);
 pref("gfx.webrender.debug.picture-caching", false);
 pref("gfx.webrender.debug.picture-borders", false);
 pref("gfx.webrender.debug.force-picture-invalidation", false);
@@ -592,6 +573,9 @@ pref("toolkit.telemetry.user_characteristics_ping.logLevel", "Warn");
 #else
   pref("toolkit.asyncshutdown.crash_timeout", 60000); // 1 minute
 #endif // !defined(MOZ_ASAN) && !defined(MOZ_TSAN)
+// Additional delay before the terminator crashes on top of crash_timeout, to
+// let AsyncShutdown write its own crash report first.
+pref("toolkit.asyncshutdown.crash_timeout_additional_wait", 10000); // 10 seconds
 // Extra logging for AsyncShutdown barriers and phases
 pref("toolkit.asyncshutdown.log", false);
 
@@ -1378,14 +1362,6 @@ pref("network.negotiate-auth.allow-proxies", true);
 // Path to a specific gssapi library
 pref("network.negotiate-auth.gsslib", "");
 
-// Specify if the gss lib comes standard with the OS
-pref("network.negotiate-auth.using-native-gsslib", true);
-
-#ifdef XP_WIN
-  // Default to using the SSPI intead of GSSAPI on windows
-  pref("network.auth.use-sspi", true);
-#endif
-
 // Controls which NTLM authentication implementation we default to. True forces
 // the use of our generic (internal) NTLM authentication implementation vs. any
 // native implementation provided by the os. This pref is for diagnosing issues
@@ -1912,10 +1888,6 @@ pref("dom.ipc.keepProcessesAlive.privilegedabout", 1);
 
 // Disable support for SVG
 pref("svg.disabled", false);
-
-// This pref will cause assertions when a remoteType triggers a process switch
-// to a new remoteType it should not be able to trigger.
-pref("browser.tabs.remote.enforceRemoteTypeRestrictions", false);
 
 // Pref to control whether we use a separate privileged content process
 // for about: pages. This pref name did not age well: we will have multiple
@@ -3036,7 +3008,9 @@ pref("signon.storage.rust.restoreEnabled", true);
 pref("signon.storage.rust.active", false);
 pref("signon.storage.rust.migrationAttempts", 0);
 pref("signon.storage.rust.restoreAttempts", 0);
-pref("signon.storage.rust.restoreDone", false);
+pref("signon.storage.rust.restoreAttemptsVersion", 0);
+pref("signon.storage.rust.restoreVersion", 0);
+pref("signon.storage.rust.restoreTargetVersion", 1);
 
 // Satchel (Form Manager) prefs
 pref("browser.formfill.debug",            false);
@@ -3358,7 +3332,7 @@ pref("urlclassifier.features.antifraud.annotate.blocklistTables", "anti-fraud-tr
 pref("urlclassifier.features.antifraud.annotate.allowlistTables", "mozstd-trackwhite-digest256");
 
 // These tables will never trigger a gethash call.
-pref("urlclassifier.disallow_completions", "goog-downloadwhite-digest256,base-track-digest256,mozstd-trackwhite-digest256,content-track-digest256,mozplugin-block-digest256,mozplugin2-block-digest256,ads-track-digest256,social-track-digest256,analytics-track-digest256,base-fingerprinting-track-digest256,content-fingerprinting-track-digest256,base-cryptomining-track-digest256,content-cryptomining-track-digest256,fanboyannoyance-ads-digest256,fanboysocial-ads-digest256,easylist-ads-digest256,easyprivacy-ads-digest256,adguard-ads-digest256,social-tracking-protection-digest256,social-tracking-protection-facebook-digest256,social-tracking-protection-linkedin-digest256,social-tracking-protection-twitter-digest256,base-email-track-digest256,content-email-track-digest256,consent-manager-track-digest256,anti-fraud-track-digest256,harmful-addon-block-digest256");
+pref("urlclassifier.disallow_completions", "goog-downloadwhite-digest256,base-track-digest256,mozstd-trackwhite-digest256,content-track-digest256,ads-track-digest256,social-track-digest256,analytics-track-digest256,base-fingerprinting-track-digest256,content-fingerprinting-track-digest256,base-cryptomining-track-digest256,content-cryptomining-track-digest256,fanboyannoyance-ads-digest256,fanboysocial-ads-digest256,easylist-ads-digest256,easyprivacy-ads-digest256,adguard-ads-digest256,social-tracking-protection-digest256,social-tracking-protection-facebook-digest256,social-tracking-protection-linkedin-digest256,social-tracking-protection-twitter-digest256,base-email-track-digest256,content-email-track-digest256,consent-manager-track-digest256,anti-fraud-track-digest256,harmful-addon-block-digest256");
 
 // Workaround for Google Recaptcha
 pref("urlclassifier.trackingAnnotationSkipURLs", "");
@@ -3451,9 +3425,9 @@ pref("browser.safebrowsing.provider.google5.advisoryName", "Google Safe Browsing
 
 pref("browser.safebrowsing.reportPhishURL", "https://%LOCALE%.phish-report.mozilla.com/?url=");
 
-// Mozilla Safe Browsing provider (for tracking protection and plugin blocking)
+// Mozilla Safe Browsing provider (for tracking protection)
 pref("browser.safebrowsing.provider.mozilla.pver", "2.2");
-pref("browser.safebrowsing.provider.mozilla.lists", "base-track-digest256,mozstd-trackwhite-digest256,google-trackwhite-digest256,content-track-digest256,mozplugin-block-digest256,mozplugin2-block-digest256,ads-track-digest256,social-track-digest256,analytics-track-digest256,base-fingerprinting-track-digest256,content-fingerprinting-track-digest256,base-cryptomining-track-digest256,content-cryptomining-track-digest256,fanboyannoyance-ads-digest256,fanboysocial-ads-digest256,easylist-ads-digest256,easyprivacy-ads-digest256,adguard-ads-digest256,social-tracking-protection-digest256,social-tracking-protection-facebook-digest256,social-tracking-protection-linkedin-digest256,social-tracking-protection-twitter-digest256,base-email-track-digest256,content-email-track-digest256,consent-manager-track-digest256,anti-fraud-track-digest256,harmful-addon-block-digest256,harmful-addon-entitylist-digest256");
+pref("browser.safebrowsing.provider.mozilla.lists", "base-track-digest256,mozstd-trackwhite-digest256,google-trackwhite-digest256,content-track-digest256,ads-track-digest256,social-track-digest256,analytics-track-digest256,base-fingerprinting-track-digest256,content-fingerprinting-track-digest256,base-cryptomining-track-digest256,content-cryptomining-track-digest256,fanboyannoyance-ads-digest256,fanboysocial-ads-digest256,easylist-ads-digest256,easyprivacy-ads-digest256,adguard-ads-digest256,social-tracking-protection-digest256,social-tracking-protection-facebook-digest256,social-tracking-protection-linkedin-digest256,social-tracking-protection-twitter-digest256,base-email-track-digest256,content-email-track-digest256,consent-manager-track-digest256,anti-fraud-track-digest256,harmful-addon-block-digest256,harmful-addon-entitylist-digest256");
 pref("browser.safebrowsing.provider.mozilla.updateURL", "moz-sbrs:://antitracking");
 pref("browser.safebrowsing.provider.mozilla.gethashURL", "https://shavar.services.mozilla.com/gethash?client=SAFEBROWSING_ID&appver=%MAJOR_VERSION%&pver=2.2");
 // Set to a date in the past to force immediate download in new profiles.
@@ -3463,12 +3437,8 @@ pref("browser.safebrowsing.provider.mozilla.nextupdatetime", "1");
 pref("browser.safebrowsing.provider.mozilla.lists.base", "moz-std");
 pref("browser.safebrowsing.provider.mozilla.lists.content", "moz-full");
 
-// The table and global pref for blocking plugin content
-#ifdef NIGHTLY_BUILD
-  pref("urlclassifier.blockedTable", "moztest-block-simple,mozplugin-block-digest256");
-#else
-  pref("urlclassifier.blockedTable", "moztest-block-simple");
-#endif
+// The table and global pref for blocking URIs
+pref("urlclassifier.blockedTable", "moztest-block-simple");
 
 #ifdef XP_MACOSX
   #if !defined(RELEASE_OR_BETA) || defined(DEBUG)
@@ -3484,9 +3454,15 @@ pref("browser.search.log", false);
 pref("browser.search.update", true);
 pref("browser.search.suggest.enabled", true);
 pref("browser.search.suggest.enabled.private", false);
-pref("browser.search.separatePrivateDefault", true);
-pref("browser.search.separatePrivateDefault.ui.enabled", false);
+pref("browser.search.separatePrivateDefault.enabled", false);
+pref("browser.search.separatePrivateDefault.featureGate", false);
 pref("browser.search.removeEngineInfobar.enabled", true);
+
+// Enables a new search configuration style with no functional changes for the
+// user. This is solely intended as a rollout button - it will go away once the
+// new configuration has been rolled out.
+// Whether search-config-v3 is enabled.
+pref("browser.search.configV3.featureGate", false);
 
 // GMPInstallManager prefs
 
@@ -3668,6 +3644,7 @@ pref("browser.ai.control.smartTabGroups", "default");
 pref("browser.ai.control.linkPreviewKeyPoints", "default");
 pref("browser.ai.control.sidebarChatbot", "default");
 pref("browser.ai.control.smartWindow", "default");
+pref("browser.ai.control.speechRecognition", "default");
 
 // Enable the experimental machine learning inference engine.
 pref("browser.ml.enable", true);
@@ -3681,6 +3658,8 @@ pref("browser.ml.modelHubUrlTemplate", "{model}/{revision}");
 pref("browser.ml.modelCacheMaxSize", 4);
 // Model cache timeout in ms
 pref("browser.ml.modelCacheTimeout", 120000);
+// Route llama.cpp inference to the HWInference utility process
+pref("browser.ml.llama.hwInference", true);
 // Minimal Physical RAM required in GiB
 pref("browser.ml.minimumPhysicalMemory", 3);
 // Check for memory before running
@@ -3692,7 +3671,7 @@ pref("browser.ml.pageExtractor.headlessTimeoutMs", 15000);
 
 // Extract video metadata and the transcript from YouTube watch pages during
 // page extraction.
-pref("browser.pageextractor.youtube.enabled", false);
+pref("browser.pageextractor.youtube.enabled", true);
 
 // How long, in milliseconds, to wait for the YouTube transcript panel to render
 // after it is opened before giving up and returning metadata alone.
@@ -3814,6 +3793,8 @@ pref("services.common.log.logger.tokenserverclient", "Debug");
   // The addresses and CC engines might not actually be available at all.
   pref("services.sync.engine.addresses.available", false);
   pref("services.sync.engine.creditcards.available", false);
+
+  pref("services.sync.perDeviceEngineChoices", false);
 
   // If true, add-on sync ignores changes to the user-enabled flag. This
   // allows people to have the same set of add-ons installed across all
@@ -4091,6 +4072,40 @@ pref("extensions.formautofill.useml.twoHead", true);
 // How long an idle ML autofill engine is kept alive, in milliseconds. -1 means
 // never time out. Controlled by the form-autofill-ml Nimbus feature.
 pref("extensions.formautofill.useml.timeoutMS", 120000);
+// Comma separated list of field types the ML model is not trusted with. Those
+// types are classified by the regular expression based heuristics instead, and
+// any prediction the model makes for one of them is discarded. Related field
+// types belong on the list together, see `_getRegexpHeuristicFieldNames`.
+// Controlled by the autofill-ml-ignore-field-types Nimbus feature.
+pref("extensions.formautofill.useml.ignoreFieldTypes", "");
+
+// If ML identifies a field as 'other' or cannot identify a field,
+// use the heuristics value instead if assigned.
+pref("extensions.formautofill.useml.useHeuristicsForOther", false);
+
+// Optional AutoFill tokenizer features, as a JSON array of feature keys that
+// change a field's exported mlData:
+//   "select_option"    - "<first>...<last>" option-range token for a <select>.
+//   "input_attributes" - "**maxlen<N>"/"**inputmode<mode>" tokens.
+//   "strip_common"     - in forms with 3+ fields, drop tokens present in EVERY
+//                        field (form-wide boilerplate like "form1"/"ctl00").
+//   "strip_frequent"   - like strip_common but drops tokens present in >=85% of
+//                        the form's fields (catches near-universal boilerplate).
+// Default "[]" (none). Each feature changes the mlData contract, so the consuming
+// model must be trained with the same features enabled.
+pref("extensions.formautofill.useml.features", "[]");
+
+// Field types whose regex-heuristic recommendation is fed to the model as a
+// "**hint<class>" token (the "regex_hint" mlFeature); a regex prediction outside
+// this set becomes "**hintnone". Only takes effect when "regex_hint" is in
+// useml.features. This list is part of the model's input contract and must match
+// the hintable set the shipped model was trained with.
+pref("extensions.formautofill.useml.hint.fields",
+  "[\"email\",\"tel\",\"tel-country-code\",\"street-address\",\"address-line1\",\"address-line2\",\"address-line3\",\"postal-code\",\"address-level1\",\"address-level2\",\"organization\",\"country\",\"name\",\"given-name\",\"family-name\",\"cc-name\",\"cc-type\"]");
+
+// Pin the ML model revision to load (the encoder and head engines share one
+// version). Empty = use the Remote Settings default.
+pref("extensions.formautofill.useml.modelVersion", "");
 
 pref("extensions.formautofill.addresses.enabled", true);
 pref("extensions.formautofill.addresses.capture.enabled", true);
@@ -4106,9 +4121,69 @@ pref("extensions.formautofill.addresses.capture.enabled", true);
 pref("extensions.formautofill.addresses.ignoreAutocompleteOff", true);
 // Supported countries need to follow ISO 3166-1 to align with "browser.search.region"
 pref("extensions.formautofill.addresses.supportedCountries", "US,CA,GB,FR,DE,BR,ES,JP,AT,IN,IT,PL,AU,NL");
+
+// Move desktop addresses to the Application Services autofill store. Read at
+// startup and watched afterwards: the addresses are copied over to the store
+// this asks for, which then serves them once that copy is verified complete.
+pref("extensions.formautofill.addresses.storage.rust.enabled", false);
+// Which store is in fact serving addresses. Managed by Firefox, not a knob:
+// the pref above only asks, and a profile whose copy has not completed keeps
+// reading from where its addresses are.
+pref("extensions.formautofill.addresses.storage.rust.active", false);
+// Run the migration purely to measure it, while the pref above is still off.
+// The copy is reported through migrate_to_rust and then wiped. Nightly only,
+// and once per profile per generation: it is what says whether the real move is
+// safe to make.
+#ifdef NIGHTLY_BUILD
+  pref("extensions.formautofill.addresses.storage.rust.runMigrationTest", true);
+#else
+  pref("extensions.formautofill.addresses.storage.rust.runMigrationTest", false);
+#endif
+// Which generation of the dry run above this profile has done, so a build that
+// fixes a migration bug can bump it and measure the same profiles again.
+pref("extensions.formautofill.addresses.storage.rust.migrationTestVersion", 0);
+// How many launches have already tried and failed to migrate. Managed by
+// Firefox, which gives up after a budget.
+pref("extensions.formautofill.addresses.storage.rust.migrationAttempts", 0);
+
+// Move desktop credit cards to the Application Services autofill store. Read at
+// startup and watched afterwards: the cards are copied over to the store this
+// asks for, which then serves them once that copy is verified complete.
+pref("extensions.formautofill.creditCards.storage.rust.enabled", false);
+// Which store is in fact serving credit cards. Managed by Firefox, not a knob:
+// the pref above only asks, and a profile whose copy has not completed keeps
+// reading from where its cards are.
+pref("extensions.formautofill.creditCards.storage.rust.active", false);
+// Run the migration purely to measure it, while the pref above is still off.
+// The copy is reported through migrate_to_rust and then wiped.
+pref("extensions.formautofill.creditCards.storage.rust.runMigrationTest", false);
+// Which generation of the dry run above this profile has done, so a build that
+// fixes a migration bug can bump it and measure the same profiles again.
+pref("extensions.formautofill.creditCards.storage.rust.migrationTestVersion", 0);
+// How many launches have already tried and failed to migrate. Managed by
+// Firefox, which gives up after a budget.
+pref("extensions.formautofill.creditCards.storage.rust.migrationAttempts", 0);
 pref("extensions.formautofill.creditCards.supported", "on");
 pref("extensions.formautofill.creditCards.enabled", true);
 pref("extensions.formautofill.creditCards.ignoreAutocompleteOff", true);
+
+// Whether the CVV/CSC feature has been rolled out to this user, using the same
+// "on"/"off" values as the other supported prefs above. Nothing about the CVV
+// (cc-csc) field is offered while this is "off", including the setting that
+// lets the user turn capture on or off.
+pref("extensions.formautofill.creditCards.cvv.supported", "off");
+// The user's own choice, exposed as a setting once the feature is supported.
+// CVVs are only captured and stored when both prefs are true; see
+// FormAutofill.isAutofillCreditCardCVVEnabled.
+pref("extensions.formautofill.creditCards.cvv.enabled", true);
+
+// Leave a field whose autocomplete attribute is present but cannot be parsed
+// into a known field name, e.g. autocomplete="shopify checkout", out of
+// autofill entirely: it is offered no dropdown of its own, and it is not
+// filled when autofill is triggered from another field in the same form.
+// Treated as a signal that the site provides its own suggestion UI. A field
+// with no autocomplete attribute, or with "off"/"on", is unaffected.
+pref("extensions.formautofill.suppressUnrecognizedAutocomplete.enabled", false);
 
 // Supported countries need to follow ISO 3166-1 to align with "browser.search.region"
 pref("extensions.formautofill.creditCards.supportedCountries", "US,CA,GB,FR,DE,IT,ES,AT,BE,PL");
@@ -4185,4 +4260,15 @@ pref("general.smoothScroll", true, sticky);
 // Trigger FOG's Artifact Build support on artifact builds.
 #ifdef MOZ_ARTIFACT_BUILDS
   pref("telemetry.fog.artifact_build", true);
+#endif
+
+// For artifact builds, launch child process executables using the executable
+// names in their respective Info.plist files rather than the compile-time
+// branding macros. Artifact build branding doesn't always match the local
+// repo branding configuration leading to mismatches because some macOS
+// executable filenames are derived from the branding. The plist files could
+// always be used, but reading the executable names from the plist requires
+// extra library calls so by default we'll use compile-time brand macros.
+#if defined(MOZ_ARTIFACT_BUILDS) && defined(XP_MACOSX)
+  pref("dom.ipc.processLaunch.useMacPlists", true);
 #endif

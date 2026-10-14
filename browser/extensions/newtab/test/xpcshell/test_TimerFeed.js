@@ -14,8 +14,8 @@ ChromeUtils.defineLazyGetter(lazy, "gNewTabStrings", () => {
   return new Localization(["browser/newtab/newtab.ftl"], true);
 });
 
-const PREF_TIMER_ENABLED = "widgets.timer.enabled";
-const PREF_SYSTEM_TIMER_ENABLED = "widgets.system.timer.enabled";
+const PREF_TIMER_ENABLED = "widgets.focusTimer.enabled";
+const PREF_SYSTEM_TIMER_ENABLED = "widgets.system.focusTimer.enabled";
 const PREF_TIMER_SHOW_NOTIFICATIONS =
   "widgets.focusTimer.showSystemNotifications";
 
@@ -117,6 +117,30 @@ add_task(async function test_isEnabled() {
   };
 
   info("TimerFeed should be enabled via trainhopConfig");
+  Assert.ok(feed.enabled);
+});
+
+add_task(async function test_isEnabled_via_trainhop_namespace() {
+  let feed = new TimerFeed();
+
+  feed.store = {
+    getState() {
+      return this.state;
+    },
+    dispatch: sinon.spy(),
+    state: {
+      Prefs: {
+        values: {
+          [PREF_TIMER_ENABLED]: true,
+          trainhopConfig: { widgetFocusTimer: { visible: true } },
+        },
+      },
+    },
+  };
+
+  info(
+    "TimerFeed should be enabled via trainhopConfig.widgetFocusTimer.visible"
+  );
   Assert.ok(feed.enabled);
 });
 

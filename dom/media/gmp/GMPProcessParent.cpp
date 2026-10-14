@@ -18,6 +18,9 @@
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/ipc/ProcessChild.h"
 #include "mozilla/ipc/ProcessUtils.h"
+#ifdef MOZ_WIDGET_ANDROID
+#  include "mozilla/java/GeckoProcessManagerWrappers.h"
+#endif
 #include "nsFmtString.h"
 
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
@@ -90,7 +93,7 @@ bool GMPProcessParent::Launch(int32_t aTimeoutMs) {
       auto prefSerializer = MakeUnique<ipc::SharedPreferenceSerializer>();
       bool success =
           prefSerializer->SerializeToSharedMemory(GeckoProcessType_GMPlugin,
-                                                  /* remoteType */ ""_ns);
+                                                  /* remoteType */ {});
 
       MonitorAutoLock lock(mMonitor);
       MOZ_ASSERT(!mComplete);
@@ -226,6 +229,11 @@ bool GMPProcessParent::Launch(int32_t aTimeoutMs) {
   } else {
     geckoargs::sPluginPath.Put(mGMPPath.c_str(), args);
   }
+#endif
+
+#ifdef MOZ_WIDGET_ANDROID
+  java::GeckoProcessManager::SetIsolatedGmpEnabled(
+      StaticPrefs::media_gmp_android_isolated_process());
 #endif
 
   // We need to wait until OnChannelConnected to clear the pref serializer, but

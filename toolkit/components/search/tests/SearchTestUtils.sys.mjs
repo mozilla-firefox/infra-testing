@@ -690,8 +690,7 @@ class _SearchTestUtils {
   }
 
   /**
-   * Sets the search configuration and search overrides configuration without
-   * reloading the engines.
+   * Sets the search configuration without reloading the engines.
    * If parameters are not specified, the appropriate configuration is
    * reset to the data stored in remote settings.
    *
@@ -700,13 +699,10 @@ class _SearchTestUtils {
    *
    * @param {object[]} [partialConfig]
    *   The replacement configuration. Will be expanded via `expandPartialConfig`.
-   * @param {object[]} [overridesConfig]
-   *   The replacement overrides configuration.
    */
-  setRemoteSettingsConfig(partialConfig, overridesConfig) {
+  setRemoteSettingsConfig(partialConfig) {
     let config = this.expandPartialConfig(partialConfig);
     this.#stubConfig(lazy.SearchUtils.SETTINGS_KEY, config);
-    this.#stubConfig(lazy.SearchUtils.SETTINGS_OVERRIDES_KEY, overridesConfig);
   }
 
   /**
@@ -719,37 +715,22 @@ class _SearchTestUtils {
    *
    * @param {object[]} [partialConfig]
    *   The replacement configuration. Will be expanded via `expandPartialConfig`.
-   * @param {object[]} [overridesConfig]
-   *   The replacement overrides configuration.
    */
-  async updateRemoteSettingsConfig(partialConfig, overridesConfig) {
+  async updateRemoteSettingsConfig(partialConfig) {
     if (!this.#idleServiceCID) {
       this.useMockIdleService();
     }
     let config = this.expandPartialConfig(partialConfig);
     this.#stubConfig(lazy.SearchUtils.SETTINGS_KEY, config);
-    this.#stubConfig(lazy.SearchUtils.SETTINGS_OVERRIDES_KEY, overridesConfig);
 
     if (!config) {
       let settings = lazy.RemoteSettings(lazy.SearchUtils.SETTINGS_KEY);
       config = await settings.get();
     }
-    if (!overridesConfig) {
-      let settings = lazy.RemoteSettings(
-        lazy.SearchUtils.SETTINGS_OVERRIDES_KEY
-      );
-      overridesConfig = await settings.get();
-    }
     const reloadObserved = this.promiseSearchNotification("engines-reloaded");
     await lazy.RemoteSettings(lazy.SearchUtils.SETTINGS_KEY).emit("sync", {
       data: { current: config },
     });
-    await lazy
-      .RemoteSettings(lazy.SearchUtils.SETTINGS_OVERRIDES_KEY)
-      .emit("sync", {
-        data: { current: overridesConfig },
-      });
-
     this.idleService._fireObservers("idle");
     await reloadObserved;
   }

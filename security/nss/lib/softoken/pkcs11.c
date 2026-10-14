@@ -18,6 +18,7 @@
  *   that created or generated them.
  */
 #include "seccomon.h"
+#include "eccutil.h"
 #include "secitem.h"
 /* we need to use the deprecated mechanisms values for backward compatibility */
 #include "pkcs11.h"
@@ -40,6 +41,7 @@
 #include "secerr.h"
 #include "lgglue.h"
 #include "kem.h"
+#include "kyber.h"
 
 PRBool parentForkedAfterC_Initialize;
 
@@ -679,20 +681,13 @@ static const struct mechanismList mechanisms[] = {
     { CKM_NSS_IKE_PRF_DERIVE, { 8, 64, CKF_DERIVE }, PR_TRUE },
     { CKM_NSS_IKE1_PRF_DERIVE, { 8, 64, CKF_DERIVE }, PR_TRUE },
     { CKM_NSS_IKE1_APP_B_PRF_DERIVE, { 8, 255 * 64, CKF_DERIVE }, PR_TRUE },
-/* -------------------- Kyber Operations ----------------------- */
-#ifndef NSS_DISABLE_KYBER
-    { CKM_NSS_KYBER_KEY_PAIR_GEN, { 0, 0, CKF_GENERATE_KEY_PAIR }, PR_TRUE },
-    { CKM_NSS_KYBER, { 0, 0, CKF_KEM }, PR_TRUE },
-#endif
-    { CKM_NSS_ML_KEM_KEY_PAIR_GEN, { 0, 0, CKF_GENERATE_KEY_PAIR }, PR_TRUE },
-    { CKM_NSS_ML_KEM, { 0, 0, CKF_KEM }, PR_TRUE },
-    { CKM_ML_KEM_KEY_PAIR_GEN, { 0, 0, CKF_GENERATE_KEY_PAIR }, PR_TRUE },
-    { CKM_ML_KEM, { 0, 0, CKF_KEM }, PR_TRUE },
-/* don't advertize ML_DSA support until we have it working in freebl */
-#ifdef NSS_ENABLE_ML_DSA
+    /* -------------------- Kyber Operations ----------------------- */
+    { CKM_NSS_ML_KEM_KEY_PAIR_GEN, { MLKEM512_PUBLIC_KEY_BYTES, MLKEM1024_PUBLIC_KEY_BYTES, CKF_GENERATE_KEY_PAIR }, PR_TRUE },
+    { CKM_NSS_ML_KEM, { MLKEM512_PUBLIC_KEY_BYTES, MLKEM1024_PUBLIC_KEY_BYTES, CKF_KEM }, PR_TRUE },
+    { CKM_ML_KEM_KEY_PAIR_GEN, { MLKEM512_PUBLIC_KEY_BYTES, MLKEM1024_PUBLIC_KEY_BYTES, CKF_GENERATE_KEY_PAIR }, PR_TRUE },
+    { CKM_ML_KEM, { KYBER768_PUBLIC_KEY_BYTES, MLKEM1024_PUBLIC_KEY_BYTES, CKF_KEM }, PR_TRUE },
     { CKM_ML_DSA_KEY_PAIR_GEN, { ML_DSA_44_PUBLICKEY_LEN, ML_DSA_87_PUBLICKEY_LEN, CKF_GENERATE }, PR_TRUE },
     { CKM_ML_DSA, { ML_DSA_44_PUBLICKEY_LEN, ML_DSA_87_PUBLICKEY_LEN, CKF_SN_VR }, PR_TRUE },
-#endif
 };
 static const CK_ULONG mechanismCount = sizeof(mechanisms) / sizeof(mechanisms[0]);
 
@@ -1186,9 +1181,6 @@ sftk_handlePublicKeyObject(SFTKSession *session, SFTKObject *object,
             derive = (key_type == CKK_EC_EDWARDS) ? CK_FALSE : CK_TRUE;    /* CK_TRUE for ECDH */
             verify = (key_type == CKK_EC_MONTGOMERY) ? CK_FALSE : CK_TRUE; /* for ECDSA and EDDSA */
             break;
-#ifndef NSS_DISABLE_KYBER
-        case CKK_NSS_KYBER:
-#endif
         case CKK_NSS_ML_KEM:
         case CKK_ML_KEM:
             if (!sftk_hasAttribute(object, CKA_PARAMETER_SET)) {
@@ -1423,9 +1415,6 @@ sftk_handlePrivateKeyObject(SFTKSession *session, SFTKObject *object, CK_KEY_TYP
             derive = CK_TRUE;
             createObjectInfo = PR_FALSE;
             break;
-#ifndef NSS_DISABLE_KYBER
-        case CKK_NSS_KYBER:
-#endif
         case CKK_NSS_ML_KEM:
         case CKK_ML_KEM:
             if (!sftk_hasAttribute(object, CKA_KEY_TYPE)) {
@@ -2232,9 +2221,14 @@ sftk_GetPubKey(SFTKObject *object, CK_KEY_TYPE key_type,
                                           object, CKA_VALUE);
             break;
         case CKK_EC_EDWARDS:
+            pubKey->keyType = NSSLOWKEYECEdwardsKey;
+            goto ec_continue;
         case CKK_EC_MONTGOMERY:
+            pubKey->keyType = NSSLOWKEYECMontgomeryKey;
+            goto ec_continue;
         case CKK_EC:
             pubKey->keyType = NSSLOWKEYECKey;
+        ec_continue:
             crv = sftk_Attribute2SSecItem(arena,
                                           &pubKey->u.ec.ecParams.DEREncoding,
                                           object, CKA_EC_PARAMS);
@@ -2254,29 +2248,36 @@ sftk_GetPubKey(SFTKObject *object, CK_KEY_TYPE key_type,
                                           object, CKA_EC_POINT);
             if (crv == CKR_OK) {
                 unsigned int keyLen = EC_GetPointSize(&pubKey->u.ec.ecParams);
-                /* special note: We can't just use the first byte to distinguish
-                 * between EC_POINT_FORM_UNCOMPRESSED and SEC_ASN1_OCTET_STRING.
-                 * Both are 0x04. */
+                SECItem *point = &pubKey->u.ec.publicValue;
+                /* ECPoint_IsBare wants one coordinate, not the whole point */
+                unsigned int fieldLen = keyLen ? (keyLen - 1) / 2 : 0;
 
                 /* Handle the non-DER encoded case.
                  * Some curves are always pressumed to be non-DER.
                  */
+                if (pubKey->u.ec.ecParams.type != ec_params_named) {
+                    break;
+                }
 
-                /* is the public key in uncompressed form? */
-                if (pubKey->u.ec.ecParams.type != ec_params_named ||
-                    (pubKey->u.ec.publicValue.len == keyLen &&
-                     pubKey->u.ec.publicValue.data[0] == EC_POINT_FORM_UNCOMPRESSED)) {
-                    break; /* key was not DER encoded, no need to unwrap */
+                /* Due to a bug in some NSS version, we may have a bare SEC#1
+                 * point in uncompressed format. If so, skip the decoding
+                 * step. */
+                if (ECPoint_IsBare(point, fieldLen)) {
+                    if (point->data[0] != EC_POINT_FORM_UNCOMPRESSED) {
+                        crv = CKR_ATTRIBUTE_VALUE_INVALID;
+                    }
+                    break;
                 }
 
                 /* handle the encoded case */
-                if (pubKey->u.ec.publicValue.data[0] == SEC_ASN1_OCTET_STRING) {
+                if (point->len != 0 &&
+                    point->data[0] == SEC_ASN1_OCTET_STRING) {
                     SECItem publicValue;
                     SECStatus rv;
 
                     rv = SEC_QuickDERDecodeItem(arena, &publicValue,
                                                 SEC_ASN1_GET(SEC_OctetStringTemplate),
-                                                &pubKey->u.ec.publicValue);
+                                                point);
                     /* nope, didn't decode correctly */
                     if (rv != SECSuccess) {
                         crv = CKR_ATTRIBUTE_VALUE_INVALID;
@@ -2313,9 +2314,6 @@ sftk_GetPubKey(SFTKObject *object, CK_KEY_TYPE key_type,
                 crv = CKR_ATTRIBUTE_VALUE_INVALID;
             }
             break;
-#ifndef NSS_DISABLE_KYBER
-        case CKK_NSS_KYBER:
-#endif
         case CKK_NSS_ML_KEM:
         case CKK_ML_KEM:
             pubKey->keyType = NSSLOWKEYMLKEMKey;
@@ -2460,9 +2458,14 @@ sftk_mkPrivKey(SFTKObject *object, CK_KEY_TYPE key_type, CK_RV *crvp)
              * if we don't set it explicitly */
             break;
         case CKK_EC_EDWARDS:
+            privKey->keyType = NSSLOWKEYECEdwardsKey;
+            goto ec_continue;
         case CKK_EC_MONTGOMERY:
+            privKey->keyType = NSSLOWKEYECMontgomeryKey;
+            goto ec_continue;
         case CKK_EC:
             privKey->keyType = NSSLOWKEYECKey;
+        ec_continue:
             crv = sftk_Attribute2SSecItem(arena,
                                           &privKey->u.ec.ecParams.DEREncoding,
                                           object, CKA_EC_PARAMS);
@@ -2523,12 +2526,10 @@ sftk_mkPrivKey(SFTKObject *object, CK_KEY_TYPE key_type, CK_RV *crvp)
             }
             break;
 
-#ifndef NSS_DISABLE_KYBER
-        case CKK_NSS_KYBER:
-#endif
         case CKK_NSS_ML_KEM:
         case CKK_ML_KEM:
             privKey->keyType = NSSLOWKEYMLKEMKey;
+
             crv = sftk_GetULongAttribute(object, CKA_PARAMETER_SET,
                                          &paramSet);
             if (crv != CKR_OK) {
@@ -2883,7 +2884,9 @@ sftk_PutPubKey(SFTKObject *publicKey, SFTKObject *privateKey, CK_KEY_TYPE keyTyp
             break;
         case CKK_EC:
         case CKK_EC_MONTGOMERY:
-        case CKK_EC_EDWARDS:
+        case CKK_EC_EDWARDS: {
+            SECItem encodedPoint = { siBuffer, NULL, 0 };
+            const SECItem *point = &pubKey->u.ec.publicValue;
             sftk_DeleteAttributeType(publicKey, CKA_EC_PARAMS);
             sftk_DeleteAttributeType(publicKey, CKA_EC_POINT);
             crv = sftk_AddAttributeType(publicKey, CKA_EC_PARAMS,
@@ -2891,9 +2894,25 @@ sftk_PutPubKey(SFTKObject *publicKey, SFTKObject *privateKey, CK_KEY_TYPE keyTyp
             if (crv != CKR_OK) {
                 break;
             }
+            /* NSC_GenerateKeyPair stores a CKK_EC point DER encoded and an
+             * Edwards or Montgomery one bare, so match that here. What
+             * nsslowkey_ConvertToPublicKey handed us is normally the bare
+             * point, but don't wrap it twice if it isn't. */
+            if (keyType == CKK_EC &&
+                ECPoint_IsBare(point,
+                               (EC_GetPointSize(&pubKey->u.ec.ecParams) - 1) / 2)) {
+                if (SEC_ASN1EncodeItem(NULL, &encodedPoint, point,
+                                       SEC_ASN1_GET(SEC_OctetStringTemplate)) == NULL) {
+                    crv = CKR_HOST_MEMORY;
+                    break;
+                }
+                point = &encodedPoint;
+            }
             crv = sftk_AddAttributeType(publicKey, CKA_EC_POINT,
-                                        sftk_item_expand(&pubKey->u.ec.publicValue));
+                                        sftk_item_expand(point));
+            SECITEM_FreeItem(&encodedPoint, PR_FALSE);
             break;
+        }
         default:
             return CKR_KEY_TYPE_INCONSISTENT;
     }
@@ -4621,11 +4640,24 @@ NSC_InitToken(CK_SLOT_ID slotID, CK_CHAR_PTR pPin,
              * because we know that we are freeing all the sessions, we can
              * do more efficient processing */
             if (object) {
+                SFTKSessionObject *so = sftk_narrowToSessionObject(object);
+
                 slot->sessObjHashTable[i] = object->next;
 
                 if (object->next)
                     object->next->prev = NULL;
                 object->next = object->prev = NULL;
+                /* Keep the two queues in agreement: sftk_ClearSession()
+                 * relies on an object being on a session's list only while it
+                 * is still in the slot hash. Leaving it linked would let that
+                 * walk touch this object after we drop the queues' reference
+                 * below. */
+                if (so && so->session) {
+                    PORT_Assert(sftkqueue_is_queued(&so->sessionList, 0,
+                                                    so->session->objects, 0));
+                    sftkqueue_delete(&so->sessionList, 0,
+                                     so->session->objects, 0);
+                }
             }
             if (object)
                 sftk_FreeObject(object);
@@ -4941,7 +4973,7 @@ NSC_CloseSession(CK_SESSION_HANDLE hSession)
         sftkqueue_delete(session, hSession, slot->head, slot->sessHashSize);
         /* Drop the bucket's reference. We still hold the reference taken
          * by sftk_SessionFromHandle, so refCount cannot reach 0 here. */
-        PORT_Assert(session->refCount > 1);
+        PORT_ReleaseAssert(session->refCount > 1);
         session->refCount--;
     }
     PR_Unlock(lock);

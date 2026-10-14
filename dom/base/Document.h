@@ -51,6 +51,7 @@
 #include "mozilla/dom/EventTarget.h"
 #include "mozilla/dom/LargestContentfulPaint.h"
 #include "mozilla/dom/Nullable.h"
+#include "mozilla/dom/PermissionsPolicy.h"
 #include "mozilla/dom/RadioGroupContainer.h"
 #include "mozilla/dom/TreeOrderedArray.h"
 #include "mozilla/dom/UserActivation.h"
@@ -174,7 +175,6 @@ class nsIVariant;
 class nsNodeInfoManager;
 class nsPIWindowRoot;
 class nsPresContext;
-class nsRange;
 class nsTextNode;
 class nsViewManager;
 class nsViewportInfo;
@@ -242,7 +242,7 @@ class EditContext;
 class Event;
 class EventListener;
 struct FailedCertSecurityInfo;
-class FeaturePolicy;
+class PermissionsPolicy;
 class FontFaceSet;
 class FragmentDirective;
 class FrameRequestCallback;
@@ -268,9 +268,11 @@ class NodeInfo;
 class NodeIterator;
 enum class OrientationType : uint8_t;
 enum class PopoverAttributeState : uint8_t;
+enum class SkipTransitionReason : uint8_t;
 class ProcessingInstruction;
 class Promise;
 struct PropertyDefinition;
+class Range;
 class ScriptLoader;
 class Selection;
 class ServiceWorkerDescriptor;
@@ -399,10 +401,9 @@ class ExternalResourceMap {
    * Request an external resource document.  This does exactly what
    * Document::RequestExternalResource is documented to do.
    */
-  Document* RequestResource(nsIURI* aURI, nsIReferrerInfo* aReferrerInfo,
-                            nsINode* aRequestingNode,
-                            Document* aDisplayDocument,
-                            ExternalResourceLoad** aPendingLoad);
+  MOZ_CAN_RUN_SCRIPT Document* RequestResource(
+      nsIURI* aURI, nsIReferrerInfo* aReferrerInfo, nsINode* aRequestingNode,
+      Document* aDisplayDocument, ExternalResourceLoad** aPendingLoad);
 
   /**
    * Enumerate the resource documents.  See
@@ -526,9 +527,10 @@ class ExternalResourceMap {
    * function makes sure to remove the pending load for aURI, if any, from our
    * hashtable, and to notify its observers, if any.
    */
-  nsresult AddExternalResource(nsIURI* aURI, nsIDocumentViewer* aViewer,
-                               nsILoadGroup* aLoadGroup,
-                               Document* aDisplayDocument);
+  MOZ_CAN_RUN_SCRIPT nsresult AddExternalResource(nsIURI* aURI,
+                                                  nsIDocumentViewer* aViewer,
+                                                  nsILoadGroup* aLoadGroup,
+                                                  Document* aDisplayDocument);
 
   nsClassHashtable<nsURIHashKey, ExternalResource> mMap;
   nsRefPtrHashtable<nsURIHashKey, PendingLoad> mPendingLoads;
@@ -1033,6 +1035,17 @@ class Document : public nsINode,
   void SetBidiEnabled() { mBidiEnabled = true; }
 
   /**
+   * If false, every element in this document is definitely LTR.
+   * If true, there might be <bdi> elements or dir!=LTR attributes.
+   */
+  bool NeedsDirHandling() const { return mNeedsDirHandling; }
+
+  /**
+   * Irreversibly indicate that elements might have RTL directionality.
+   */
+  void SetNeedsDirHandling() { mNeedsDirHandling = true; }
+
+  /**
    * Whether a document is the initial document in its window, and if so,
    * which stage of initialness it is in.
    */
@@ -1340,6 +1353,21 @@ class Document : public nsINode,
       const nsAString& aThirdPartyOrigin, const bool aRequireUserInteraction,
       ErrorResult& aRv);
 
+ private:
+  // Consumes transient user gesture activation and rejects aPromise with a
+  // NotAllowedError, as done whenever requestStorageAccess (or
+  // requestStorageAccessForOrigin) is denied.
+  void ConsumeUserGestureAndRejectRequestStorageAccessPromise(
+      Promise* aPromise);
+
+  // If aMaybeResult has a value, resolves or rejects aPromise accordingly and
+  // returns true so the caller can return early. Returns false if
+  // aMaybeResult is empty, meaning the caller should continue on to its next
+  // check.
+  bool MaybeResolveOrRejectRequestStorageAccessPromise(
+      const Maybe<bool>& aMaybeResult, Promise* aPromise);
+
+ public:
   bool UseRegularPrincipal() const;
 
   /**
@@ -1587,6 +1615,9 @@ class Document : public nsINode,
   EditContext* GetActiveEditContext() const { return mActiveEditContext; }
   // https://w3c.github.io/edit-context/#dfn-update-the-text-edit-context
   MOZ_CAN_RUN_SCRIPT void UpdateTextEditContext();
+  // Deactivate the current EditContext and, even if the active editor
+  // is not an EditContext, commit the current composition.
+  MOZ_CAN_RUN_SCRIPT void DeactivateEditContextAndEndComposition();
 
   void SetKeyPressEventModel(uint16_t aKeyPressEventModel);
 
@@ -1611,11 +1642,12 @@ class Document : public nsINode,
   void AddMediaElementWithMSE();
   void RemoveMediaElementWithMSE();
 
-  void DoNotifyPossibleTitleChange();
+  MOZ_CAN_RUN_SCRIPT void DoNotifyPossibleTitleChange();
 
-  void InitFeaturePolicy(const Variant<Nothing, FeaturePolicyInfo, Element*>&
-                             aContainerFeaturePolicy);
-  nsresult InitFeaturePolicy(nsIChannel* aChannel);
+  void InitPermissionsPolicy(
+      const Variant<Nothing, PermissionsPolicyInfo, Element*>&
+          aContainerPermissionsPolicy);
+  nsresult InitPermissionsPolicy(nsIChannel* aChannel);
 
   void EnsureNotEnteringAndExitFullscreen();
 
@@ -1626,6 +1658,7 @@ class Document : public nsINode,
   nsresult InitCSP(nsIChannel* aChannel);
   nsresult InitIntegrityPolicy(nsIChannel* aChannel);
   nsresult InitIntegrityPolicyWAICT(nsIChannel* aChannel);
+  nsresult InitConnectionAllowlists(nsIChannel* aChannel);
   nsresult InitCOEP(nsIChannel* aChannel);
   nsresult InitDocPolicy(nsIChannel* aChannel);
   nsresult InitTLSCertificateBinding(nsIChannel* aChannel);
@@ -1644,7 +1677,9 @@ class Document : public nsINode,
                          NotNull<const Encoding*>& aEncoding,
                          nsHtml5TreeOpExecutor* aExecutor);
 
-  MOZ_CAN_RUN_SCRIPT void DispatchContentLoadedEvents();
+  MOZ_CAN_RUN_SCRIPT void DispatchContentLoadedEvents(bool aFinishSync);
+  // Unblocks the load event. An aborted load also gets readyState complete.
+  MOZ_CAN_RUN_SCRIPT void FinishDOMContentLoaded();
 
   // TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230)
   MOZ_CAN_RUN_SCRIPT_BOUNDARY void DispatchPageTransition(
@@ -1691,9 +1726,7 @@ class Document : public nsINode,
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult TurnEditingOff();
 
-  // MOZ_CAN_RUN_SCRIPT_BOUNDARY because this is called from all sorts
-  // of places, and I'm pretty sure the exact ExecCommand call it
-  // makes cannot actually run script.
+  // TODO: Convert this to MOZ_CAN_RUN_SCRIPT
   MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult EditingStateChanged();
 
   void MaybeEditingStateChanged();
@@ -1854,7 +1887,11 @@ class Document : public nsINode,
    */
   AttributeStyles* GetAttributeStyles() const { return mAttributeStyles.get(); }
 
-  virtual void SetScriptGlobalObject(nsIScriptGlobalObject* aGlobalObject);
+  // This calls UpdateVisibilityState with DispatchVisibilityChange::No. Then,
+  // UpdateVisibilityState does not run script. Additionally, this needs to be
+  // called by Unlink(). Therefore, we mark this as MOZ_CAN_RUN_SCRIPT_BOUNDARY.
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual void SetScriptGlobalObject(
+      nsIScriptGlobalObject* aGlobalObject);
 
   /**
    * Get/set the object from which the context for the event/script handling can
@@ -1980,7 +2017,8 @@ class Document : public nsINode,
   // It returns ElementReadyCheckResult::eOk if the given element is allowed to
   // go into fullscreen. It is responsive to dispatch "fullscreenerror" event
   // when necessary.
-  ElementReadyCheckResult FullscreenElementReadyCheck(FullscreenRequest&);
+  MOZ_CAN_RUN_SCRIPT ElementReadyCheckResult
+  FullscreenElementReadyCheck(FullscreenRequest&);
 
   /**
    * When this is called on content process, this asynchronously requests that
@@ -1995,13 +2033,15 @@ class Document : public nsINode,
    * the <iframe> or <browser> that contains this document is also mode
    * fullscreen. This happens recursively in all ancestor documents.
    */
-  void RequestFullscreen(UniquePtr<FullscreenRequest> aRequest,
-                         bool aApplyFullscreenDirectly = false);
+  MOZ_CAN_RUN_SCRIPT void RequestFullscreen(
+      UniquePtr<FullscreenRequest> aRequest,
+      bool aApplyFullscreenDirectly = false);
 
  private:
-  void RequestFullscreenInContentProcess(UniquePtr<FullscreenRequest> aRequest,
-                                         bool aApplyFullscreenDirectly);
-  void RequestFullscreenInParentProcess(UniquePtr<FullscreenRequest> aRequest);
+  MOZ_CAN_RUN_SCRIPT void RequestFullscreenInContentProcess(
+      UniquePtr<FullscreenRequest> aRequest, bool aApplyFullscreenDirectly);
+  MOZ_CAN_RUN_SCRIPT void RequestFullscreenInParentProcess(
+      UniquePtr<FullscreenRequest> aRequest);
 
   // Pushes aElement onto the top layer
   void TopLayerPush(Element&);
@@ -2080,8 +2120,8 @@ class Document : public nsINode,
    * aFrameElement is the frame element which contains the child-process
    * fullscreen document.
    */
-  void RemoteFrameFullscreenChanged(Element* aFrameElement,
-                                    bool aFullscreenKeyboardLockEnabled);
+  MOZ_CAN_RUN_SCRIPT void RemoteFrameFullscreenChanged(
+      Element* aFrameElement, bool aFullscreenKeyboardLockEnabled);
 
   /**
    * Called when a frame in a remote child document has rolled back fullscreen
@@ -2092,18 +2132,22 @@ class Document : public nsINode,
    * fullscreen document has a parent and that parent isn't fullscreen. We
    * preserve this property across process boundaries.
    */
-  void RemoteFrameFullscreenReverted();
+  MOZ_CAN_RUN_SCRIPT void RemoteFrameFullscreenReverted();
 
   /**
    * Restores the previous fullscreen element to fullscreen status. If there
    * is no former fullscreen element, this exits fullscreen, moving the
    * top-level browser window out of fullscreen mode.
    */
-  void RestorePreviousFullscreenState(UniquePtr<FullscreenExit>);
+  MOZ_CAN_RUN_SCRIPT void RestorePreviousFullscreenState(
+      UniquePtr<FullscreenExit>);
 
   /**
-   * Returns true if this document is a fullscreen leaf document, i.e. it
-   * is in fullscreen mode and has no fullscreen children.
+   * Returns true if this document is a fullscreen leaf document, i.e. it is
+   * in fullscreen mode and its current fullscreen element does not embed
+   * another in-process fullscreen document. Note that this document may still
+   * have other fullscreen subdocuments which are not part of the current
+   * fullscreen document chain.
    */
   bool IsFullscreenLeaf();
 
@@ -2159,7 +2203,8 @@ class Document : public nsINode,
    *
    * Returns whether there is any fullscreen request handled.
    */
-  static bool HandlePendingFullscreenRequests(Document* aDocument);
+  MOZ_CAN_RUN_SCRIPT static bool HandlePendingFullscreenRequests(
+      Document* aDocument);
 
   /**
    * Clear pending fullscreen in aDocument.
@@ -2205,7 +2250,10 @@ class Document : public nsINode,
   uint32_t UpdateNestingLevel() { return mUpdateNestLevel; }
 
   void BeginLoad();
-  virtual void EndLoad();
+  // aFireDOMContentLoadedSync must be false for a terminated parse.
+  // See bug 344305.
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual void EndLoad(
+      bool aFireDOMContentLoadedSync);
 
   enum ReadyState {
     READYSTATE_UNINITIALIZED = 0,
@@ -2273,7 +2321,7 @@ class Document : public nsINode,
   void RemoveWorkerDocumentListener(WorkerDocumentListener* aListener);
 
   // Triggers an update of <svg:use> element shadow trees.
-  void UpdateSVGUseElementShadowTrees() {
+  MOZ_CAN_RUN_SCRIPT void UpdateSVGUseElementShadowTrees() {
     if (mSVGUseElementsNeedingShadowTreeUpdate.IsEmpty()) {
       return;
     }
@@ -2570,7 +2618,7 @@ class Document : public nsINode,
   virtual void Destroy();
 
   // https://wicg.github.io/document-picture-in-picture/#close-on-destroy
-  void CloseAnyAssociatedDocumentPiPWindows();
+  MOZ_CAN_RUN_SCRIPT void CloseAnyAssociatedDocumentPiPWindows();
 
   /**
    * Notify the document that its associated DocumentViewer is no longer
@@ -2608,7 +2656,8 @@ class Document : public nsINode,
 
   void BlockDOMContentLoaded() { ++mBlockDOMContentLoaded; }
 
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY void UnblockDOMContentLoaded();
+  // If aFireSync is false, DOMContentLoaded fires from a task instead.
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void UnblockDOMContentLoaded(bool aFireSync);
 
   /**
    * Notification that the page has been shown, for documents which are loaded
@@ -2623,8 +2672,9 @@ class Document : public nsINode,
    * Note: if aDispatchStartTarget isn't null, the showing state of the
    * document won't be altered.
    */
-  virtual void OnPageShow(bool aPersisted, EventTarget* aDispatchStartTarget,
-                          bool aOnlySystemGroup = false);
+  MOZ_CAN_RUN_SCRIPT virtual void OnPageShow(bool aPersisted,
+                                             EventTarget* aDispatchStartTarget,
+                                             bool aOnlySystemGroup = false);
 
   /**
    * Notification that the page has been hidden, for documents which are loaded
@@ -2639,8 +2689,9 @@ class Document : public nsINode,
    * Note: if aDispatchStartTarget isn't null, the showing state of the
    * document won't be altered.
    */
-  void OnPageHide(bool aPersisted, EventTarget* aDispatchStartTarget,
-                  bool aOnlySystemGroup = false);
+  MOZ_CAN_RUN_SCRIPT void OnPageHide(bool aPersisted,
+                                     EventTarget* aDispatchStartTarget,
+                                     bool aOnlySystemGroup = false);
 
   /*
    * We record the set of links in the document that are relevant to
@@ -2811,6 +2862,7 @@ class Document : public nsINode,
                "Display documents should not nest");
     mDisplayDocument = aDisplayDocument;
     mHasDisplayDocument = !!aDisplayDocument;
+    mIsBeingUsedAsImage |= aDisplayDocument->mIsBeingUsedAsImage;
   }
 
   /**
@@ -2827,10 +2879,9 @@ class Document : public nsINode,
    * @param aRequestingNode the node making the request
    * @param aPendingLoad the pending load for this request, if any
    */
-  Document* RequestExternalResource(nsIURI* aURI,
-                                    nsIReferrerInfo* aReferrerInfo,
-                                    nsINode* aRequestingNode,
-                                    ExternalResourceLoad** aPendingLoad);
+  MOZ_CAN_RUN_SCRIPT Document* RequestExternalResource(
+      nsIURI* aURI, nsIReferrerInfo* aReferrerInfo, nsINode* aRequestingNode,
+      ExternalResourceLoad** aPendingLoad);
 
   /**
    * Enumerate the external resource documents associated with this document.
@@ -3133,7 +3184,7 @@ class Document : public nsINode,
    * @param aPrintSettings The print settings for this clone.
    * @param aOutHasInProcessPrintCallbacks Self-descriptive.
    */
-  already_AddRefed<Document> CreateStaticClone(
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<Document> CreateStaticClone(
       nsIDocShell* aCloneContainer, nsIDocumentViewer* aDocumentViewer,
       nsIPrintSettings* aPrintSettings, bool* aOutHasInProcessPrintCallbacks);
 
@@ -3455,7 +3506,7 @@ class Document : public nsINode,
   //
   // Whether the event fires is controlled by the argument.
   enum class DispatchVisibilityChange { No, Yes };
-  void UpdateVisibilityState(
+  MOZ_CAN_RUN_SCRIPT void UpdateVisibilityState(
       DispatchVisibilityChange = DispatchVisibilityChange::Yes);
 
   // Posts an event to call UpdateVisibilityState.
@@ -3565,7 +3616,7 @@ class Document : public nsINode,
   already_AddRefed<Event> CreateEvent(const nsAString& aEventType,
                                       CallerType aCallerType,
                                       ErrorResult& rv) const;
-  already_AddRefed<nsRange> CreateRange(ErrorResult& rv);
+  already_AddRefed<Range> CreateRange(ErrorResult& rv);
   already_AddRefed<NodeIterator> CreateNodeIterator(nsINode& aRoot,
                                                     uint32_t aWhatToShow,
                                                     NodeFilter* aFilter,
@@ -3610,6 +3661,7 @@ class Document : public nsINode,
   Document* Open(const mozilla::dom::Optional<nsAString>& /* unused */,
                  const mozilla::dom::Optional<nsAString>& /* unused */,
                  mozilla::ErrorResult& aError);
+  MOZ_CAN_RUN_SCRIPT
   mozilla::dom::Nullable<mozilla::dom::WindowProxyHolder> Open(
       const nsACString& aURL, const nsAString& aName,
       const nsAString& aFeatures, mozilla::ErrorResult& rv);
@@ -3755,7 +3807,7 @@ class Document : public nsINode,
   // Return the fullscreen element in the top layer
   Element* GetUnretargetedFullscreenElement() const;
   bool Fullscreen() const { return !!GetUnretargetedFullscreenElement(); }
-  already_AddRefed<Promise> ExitFullscreen(ErrorResult&);
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> ExitFullscreen(ErrorResult&);
   void ExitPointerLock() {
     PointerLockManager::Unlock("Document::ExitPointerLock", this);
   }
@@ -3821,7 +3873,7 @@ class Document : public nsINode,
    * Wrapper around CaretPositionFromPoint that returns Range instead of
    * CaretPosition.
    */
-  already_AddRefed<nsRange> CaretRangeFromPoint(int32_t aX, int32_t aY);
+  already_AddRefed<Range> CaretRangeFromPoint(int32_t aX, int32_t aY);
 
   MOZ_CAN_RUN_SCRIPT Element* GetScrollingElement();
   // Like GetScrollingElement, but does not flush pending layout. Callers get
@@ -3961,12 +4013,6 @@ class Document : public nsINode,
   // Reports document use counters via telemetry.  This method only has an
   // effect once per document, and so is called during document destruction.
   void ReportDocumentUseCounters();
-
-  // Report the names of the HTMLDocument properties that had
-  // been shadowed using ID/name, and which were subsequently accessed
-  // ("DOM clobbering"). This data is collected by the corresponding NamedGetter
-  // method and limited to 10 unique entries.
-  void ReportShadowedProperties();
 
   // Reports largest contentful paint via telemetry. We want the most up to
   // date value for LCP and so this is called during document destruction.
@@ -4209,6 +4255,7 @@ class Document : public nsINode,
     return mActiveViewTransition;
   }
   void ClearActiveViewTransition();
+  void MaybeSkipActiveViewTransition(SkipTransitionReason);
   MOZ_CAN_RUN_SCRIPT void PerformPendingViewTransitionOperations();
   void EnsureViewTransitionOperationsHappen();
   void MaybeSkipTransitionAfterVisibilityChange();
@@ -4234,7 +4281,7 @@ class Document : public nsINode,
   // Notify the document that a fetch or a XHR request has completed
   // succesfully in this document. This is used by the password manager to infer
   // whether a form is submitted.
-  void NotifyFetchOrXHRSuccess();
+  MOZ_CAN_RUN_SCRIPT void NotifyFetchOrXHRSuccess();
 
   // Set whether NotifyFetchOrXHRSuccess should dispatch an event.
   void SetNotifyFetchSuccess(bool aShouldNotify);
@@ -4378,9 +4425,11 @@ class Document : public nsINode,
   // mScaleMinFloat, mScaleMaxFloat and mScaleFloat respectively.
   void ParseScalesInViewportMetaData(const ViewportMetaData& aViewportMetaData);
 
-  // Get parent FeaturePolicy from container. The parent FeaturePolicy is
-  // stored in parent iframe or container's browsingContext (cross process)
-  already_AddRefed<mozilla::dom::FeaturePolicy> GetParentFeaturePolicy();
+  // Get the parent PermissionsPolicy from the container. The parent
+  // PermissionsPolicy is stored in parent iframe or container's browsingContext
+  // (cross process)
+  already_AddRefed<mozilla::dom::PermissionsPolicy>
+  GetParentPermissionsPolicy();
 
  public:
   const OriginTrials& Trials() const { return mTrials; }
@@ -4453,7 +4502,7 @@ class Document : public nsINode,
     --mIgnoreOpensDuringUnloadCounter;
   }
 
-  mozilla::dom::FeaturePolicy* FeaturePolicy() const;
+  mozilla::dom::PermissionsPolicy* PermissionsPolicy() const;
 
   /**
    * Find the (non-anonymous) content in this document for aFrame. It will
@@ -4472,7 +4521,7 @@ class Document : public nsINode,
 
   dom::XPathEvaluator* XPathEvaluator();
 
-  void MaybeInitializeFinalizeFrameLoaders();
+  MOZ_CAN_RUN_SCRIPT void MaybeInitializeFinalizeFrameLoaders();
 
   void SetDelayFrameLoaderInitialization(bool aDelayFrameLoaderInitialization) {
     mDelayFrameLoaderInitialization = aDelayFrameLoaderInitialization;
@@ -4597,7 +4646,7 @@ class Document : public nsINode,
   // page use counters to.
   WindowContext* GetWindowContextForPageUseCounters() const;
 
-  void DoUpdateSVGUseElementShadowTrees();
+  MOZ_CAN_RUN_SCRIPT void DoUpdateSVGUseElementShadowTrees();
 
   already_AddRefed<nsIPrincipal> MaybeDowngradePrincipal(
       nsIPrincipal* aPrincipal);
@@ -4630,8 +4679,7 @@ class Document : public nsINode,
   // Apply the fullscreen state to the document, and trigger related
   // events. It returns false if the fullscreen element ready check
   // fails and nothing gets changed.
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY bool ApplyFullscreen(
-      UniquePtr<FullscreenRequest>);
+  MOZ_CAN_RUN_SCRIPT bool ApplyFullscreen(UniquePtr<FullscreenRequest>);
 
   void RemoveDocStyleSheetsFromStyleSets();
   void ResetStylesheetsToURI(nsIURI* aURI);
@@ -4891,7 +4939,8 @@ class Document : public nsINode,
   Element* GetScrollingElementImpl(Flush);
   bool IsPotentiallyScrollableImpl(HTMLBodyElement* aBody, Flush);
 
-  void MaybeAllowStorageForOpenerAfterUserInteraction();
+  void MaybeAllowStorageForOpenerAfterUserInteraction(
+      bool aHadPriorUserInteraction);
 
   void MaybeStoreUserInteractionAsPermission();
 
@@ -5039,8 +5088,8 @@ class Document : public nsINode,
 
   RefPtr<Promise> mReadyForIdle;
 
-  // Lazily created in FeaturePolicy().
-  mutable RefPtr<mozilla::dom::FeaturePolicy> mFeaturePolicy;
+  // Lazily created in PermissionsPolicy().
+  mutable RefPtr<mozilla::dom::PermissionsPolicy> mPermissionsPolicy;
 
   // Permission Delegate Handler, lazily-initialized in
   // GetPermissionDelegateHandler
@@ -5069,6 +5118,9 @@ class Document : public nsINode,
 
   // True if BIDI is enabled.
   bool mBidiEnabled : 1;
+
+  // True if we cannot assume all elements to be LTR and need to compute.
+  bool mNeedsDirHandling : 1;
 
   // True if we are trying to fire the load event for the initial about:blank.
   // Since the initial about:blank is already in READYSTATE_COMPLETE when
@@ -5762,7 +5814,7 @@ class Document : public nsINode,
 
   nsTArray<RefPtr<nsFrameLoader>> mInitializableFrameLoaders;
   nsTArray<nsCOMPtr<nsIRunnable>> mFrameLoaderFinalizers;
-  RefPtr<nsRunnableMethod<Document>> mFrameLoaderRunner;
+  RefPtr<nsIRunnable> mFrameLoaderRunner;
 
   nsTArray<PendingFrameStaticClone> mPendingFrameStaticClones;
 
@@ -5910,14 +5962,28 @@ class Document : public nsINode,
   // See SetNotifyFormOrPasswordRemoved and ShouldNotifyFormOrPasswordRemoved.
   bool mShouldNotifyFormOrPasswordRemoved;
 
-  // Used by the shadowed_html_document_property_access telemetry probe to
-  // collected shadowed HTMLDocument properties. (Limited to 10 entries)
-  nsTArray<nsString> mShadowedHTMLDocumentProperties;
-
   // Collection of data used by the pageload event.
   PageloadEventData mPageloadEventData;
 
-  // Submit the page load event at the end of the document's lifetime.
+  // Whether AccumulatePageLoadTelemetry() collected metrics, and whether the
+  // tab was foreground when the load event started. Background loads are still
+  // reported, but are left out of the paint and load timing histograms, as is
+  // a load whose load event never fired.
+  bool mPageLoadMetricsAccumulated = false;
+  bool mPageLoadWasForeground = false;
+
+  // Whether the load event fired. Tracked separately from loadTime, which is
+  // only set for a strictly positive duration.
+  bool mPageLoadCompleted = false;
+
+  // Whether ReportPageLoadTelemetry() has already run for this document.
+  bool mPageLoadTelemetryReported = false;
+
+  // Submit the page load event and the LCP histograms, once the document is
+  // hidden or at the end of its lifetime if it never was. ReportPageLoadEvent
+  // must run first: ReportLCP skips its histogram when the event carried the
+  // same LCP value.
+  void ReportPageLoadTelemetry();
   void ReportPageLoadEvent();
 
   // Accumulate JS telemetry collected

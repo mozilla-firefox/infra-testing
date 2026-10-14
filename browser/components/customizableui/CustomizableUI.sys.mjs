@@ -68,7 +68,7 @@ const kSubviewEvents = ["ViewShowing", "ViewHiding"];
  * The current version. We can use this to auto-add new default widgets as necessary.
  * (would be const but isn't because of testing purposes)
  */
-var kVersion = 26;
+var kVersion = 28;
 
 /**
  * Buttons removed from built-ins by version they were removed. kVersion must be
@@ -382,7 +382,11 @@ var CustomizableUIInternal = {
         type: CustomizableUI.TYPE_TOOLBAR,
         overflowable: true,
         defaultPlacements: navbarPlacements,
-        verticalTabsDefaultPlacements: ["alltabs-button", "ai-window-toggle"],
+        verticalTabsDefaultPlacements: [
+          "alltabs-button",
+          "smartwindow-group-tabs-button",
+          "ai-window-toggle",
+        ],
         defaultCollapsed: false,
       },
       true
@@ -409,6 +413,7 @@ var CustomizableUIInternal = {
           "new-tab-button",
           "spring",
           "alltabs-button",
+          "smartwindow-group-tabs-button",
           "ai-window-toggle",
         ],
         verticalTabsDefaultPlacements: [],
@@ -922,6 +927,122 @@ var CustomizableUIInternal = {
         CustomizableUIInternal.saveHorizontalTabStripState(
           insertBeforeAllTabs(horizontalSnapshot)
         );
+      }
+    }
+
+    // The Organize Tabs button reached the defaults after these profiles were
+    // saved, so instead of landing in its default slot it was appended after
+    // the Smart Window switcher, or into the hidden tab strip when tabs are
+    // vertical. Put it back beside the switcher.
+    if (currentVersion < 27) {
+      const organizeTabs = "smartwindow-group-tabs-button";
+      const switcher = "ai-window-toggle";
+      const areaPlacements = area => {
+        const placements = gSavedState.placements[area];
+        return Array.isArray(placements) ? placements : [];
+      };
+      const tabstrip = areaPlacements(CustomizableUI.AREA_TABSTRIP);
+      const navbar = areaPlacements(CustomizableUI.AREA_NAVBAR);
+
+      const placeBeforeSwitcher = (placements, reserveSlot) => {
+        const switcherIndex = placements.indexOf(switcher);
+        if (switcherIndex == -1) {
+          return;
+        }
+        let appendedIndex = switcherIndex + 1;
+        if (placements[appendedIndex] == "sidebar-button") {
+          appendedIndex++;
+        }
+        const buttonIndex = placements.indexOf(organizeTabs);
+        if (buttonIndex == appendedIndex) {
+          placements.splice(buttonIndex, 1);
+          placements.splice(switcherIndex, 0, organizeTabs);
+        } else if (buttonIndex == -1 && reserveSlot) {
+          placements.splice(switcherIndex, 0, organizeTabs);
+        }
+      };
+
+      if (
+        CustomizableUI.verticalTabsEnabled &&
+        tabstrip.includes(organizeTabs) &&
+        !navbar.includes(organizeTabs) &&
+        navbar.includes(switcher)
+      ) {
+        tabstrip.splice(tabstrip.indexOf(organizeTabs), 1);
+        navbar.splice(navbar.indexOf(switcher), 0, organizeTabs);
+      }
+      const neverCreated =
+        !gSeenWidgets.has(organizeTabs) &&
+        !Object.values(gSavedState.placements).some(
+          placements =>
+            Array.isArray(placements) && placements.includes(organizeTabs)
+        );
+      placeBeforeSwitcher(tabstrip, neverCreated);
+      placeBeforeSwitcher(navbar, neverCreated);
+
+      // A snapshot taken before the button existed lacks it for that reason,
+      // not because the user removed it, so go by where the button is now.
+      const isPlaced =
+        tabstrip.includes(organizeTabs) || navbar.includes(organizeTabs);
+
+      const horizontalSnapshot =
+        CustomizableUIInternal.getSavedHorizontalSnapshotState();
+      if (horizontalSnapshot.length) {
+        placeBeforeSwitcher(horizontalSnapshot, isPlaced);
+        CustomizableUIInternal.saveHorizontalTabStripState(horizontalSnapshot);
+      }
+
+      const verticalSnapshot =
+        CustomizableUIInternal.getSavedVerticalSnapshotState();
+      if (verticalSnapshot.length) {
+        placeBeforeSwitcher(verticalSnapshot, isPlaced);
+        CustomizableUIInternal.saveNavBarWhenVerticalTabsState(
+          verticalSnapshot
+        );
+      }
+    }
+
+    // The version 26 migration above anchored the flexible space to the
+    // alltabs-button, so profiles that had removed that button kept no space
+    // at all between the tab strip and the window controls. Put one back at
+    // the end of the tab strip for them.
+    if (currentVersion < 28) {
+      let restoreFlexibleSpace = placements => {
+        // The live tab strip placements are empty while tabs are vertical, and
+        // a corrupt saved state can hold anything.
+        if (!Array.isArray(placements) || !placements.length) {
+          return;
+        }
+        // Version 26 had its anchor when there is an alltabs-button, so a
+        // space missing here is one the user removed on purpose.
+        if (placements.includes("alltabs-button")) {
+          return;
+        }
+        // Any flexible space left after the tabs already does this job,
+        // wherever in the strip the user put it.
+        let afterTabs = placements.slice(
+          placements.indexOf("tabbrowser-tabs") + 1
+        );
+        if (
+          !afterTabs.some(id =>
+            CustomizableUIInternal.matchingSpecials(id, "spring")
+          )
+        ) {
+          placements.push("spring");
+        }
+      };
+
+      restoreFlexibleSpace(
+        gSavedState.placements[CustomizableUI.AREA_TABSTRIP]
+      );
+
+      // Users currently in vertical tabs keep their horizontal layout in the
+      // snapshot rather than in the live tab strip placements.
+      let horizontalSnapshot =
+        CustomizableUIInternal.getSavedHorizontalSnapshotState();
+      if (horizontalSnapshot.length) {
+        restoreFlexibleSpace(horizontalSnapshot);
+        CustomizableUIInternal.saveHorizontalTabStripState(horizontalSnapshot);
       }
     }
   },
@@ -2850,7 +2971,7 @@ var CustomizableUIInternal = {
   /**
    * @see CustomizableUI.addShortcut
    * @param {Element} aShortcutNode
-   * @param {Element|null} aTargetNode
+   * @param {Element} [aTargetNode]
    */
   addShortcut(aShortcutNode, aTargetNode = aShortcutNode) {
     // Detect if we've already been here before.
@@ -4134,11 +4255,17 @@ var CustomizableUIInternal = {
         // area here.
         let canBeAutoAdded = autoAdd && !gSeenWidgets.has(widget.id);
         if (!widget.currentArea && (!widget.removable || canBeAutoAdded)) {
-          if (widget.defaultArea) {
-            if (this.isAreaLazy(widget.defaultArea)) {
-              gFuturePlacements.get(widget.defaultArea).add(widget.id);
+          // The CustomizableUI.AREA_TABSTRIP is hidden while tabs are vertical, so a widget that
+          // defaults into it would be auto-added somewhere the user can't see.
+          let defaultArea =
+            (CustomizableUI.verticalTabsEnabled &&
+              widget.defaultAreaVerticalTabs) ||
+            widget.defaultArea;
+          if (defaultArea) {
+            if (this.isAreaLazy(defaultArea)) {
+              gFuturePlacements.get(defaultArea).add(widget.id);
             } else {
-              this.addWidgetToArea(widget.id, widget.defaultArea);
+              this.addWidgetToArea(widget.id, defaultArea);
             }
           }
         }
@@ -4248,6 +4375,7 @@ var CustomizableUIInternal = {
       removable: true,
       overflows: true,
       defaultArea: null,
+      defaultAreaVerticalTabs: null,
       shortcutId: null,
       tabSpecific: false,
       locationSpecific: false,
@@ -4328,6 +4456,14 @@ var CustomizableUIInternal = {
           "valid defaultArea as well."
       );
       return null;
+    }
+
+    if (
+      aData.defaultAreaVerticalTabs &&
+      (aSource == CustomizableUI.SOURCE_BUILTIN ||
+        gAreas.has(aData.defaultAreaVerticalTabs))
+    ) {
+      widget.defaultAreaVerticalTabs = aData.defaultAreaVerticalTabs;
     }
 
     if ("type" in aData && gSupportedWidgetTypes.has(aData.type)) {
@@ -5591,6 +5727,7 @@ export var CustomizableUI = {
   /**
    * An iteratable property of windows managed by CustomizableUI.
    * Note that this can *only* be used as an iterator. ie:
+   *
    *     for (let window of CustomizableUI.windows) { ... }
    */
   windows: {
@@ -6247,6 +6384,11 @@ export var CustomizableUI = {
    *   The default area to add the widget to. If not supplied, this widget will
    *   be placed in the palette by default. A valid default area is required if
    *   the widget is not removable.
+   * @property {string} [defaultAreaVerticalTabs]
+   *   The default area to add the widget to while tabs are vertical, taking
+   *   precedence over defaultArea. Widgets that default into AREA_TABSTRIP
+   *   need this, as that area is hidden while tabs are vertical. If not
+   *   supplied, defaultArea is used regardless of tab orientation.
    * @property {string} [shortcutId]
    *   The id of an element that has a shortcut for this widget. This is only
    *   used to display the shortcut as part of the tooltip for builtin widgets
@@ -6747,9 +6889,9 @@ export var CustomizableUI = {
    *
    * @param {Element} aShortcutNode
    *   The XUL node where the shortcut will be derived from;
-   * @param {Element|null} aTargetNode
-   *   The XUL node on which the `shortcut` attribute will be set. If NULL, the
-   *   shortcut will be set on aShortcutNode.
+   * @param {Element} [aTargetNode]
+   *   The XUL node on which the `shortcut` attribute will be set. If missing,
+   *   the shortcut will be set on aShortcutNode.
    */
   addShortcut(aShortcutNode, aTargetNode) {
     return CustomizableUIInternal.addShortcut(aShortcutNode, aTargetNode);
@@ -7463,11 +7605,11 @@ function XULWidgetSingleWrapper(aWidgetId, aNode, aDocument) {
  * There are two panels that toolbar items can be overflowed to:
  *
  * 1. The default items overflow panel
- *   This is where built-in default toolbar items will go to.
+ *    This is where built-in default toolbar items will go to.
  * 2. The Unified Extensions panel
- *   This is where browser_action toolbar buttons created by extensions will
- *   go to if the Unified Extensions UI is enabled - otherwise, those items will
- *   go to the default items overflow panel.
+ *    This is where browser_action toolbar buttons created by extensions will
+ *    go to if the Unified Extensions UI is enabled - otherwise, those items will
+ *    go to the default items overflow panel.
  *
  * Finally, OverflowableToolbar manages the showing of the default items
  * overflow panel when the associated anchor is clicked or dragged over. The

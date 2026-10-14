@@ -7,8 +7,8 @@
 # result matches what is committed.
 #
 # Every vendored moz.yaml (one with a `vendoring:` section, non-rust) must
-# appear in exactly one group's `members` -- the `coverage` task turns the tree
-# orange for any that don't. Which group a library is in only decides which task
+# appear in a group's `members` -- the `coverage` task turns the tree orange
+# for any that are missing. Which group a library is in only decides which task
 # verifies it, so put a new one with related libraries.
 #
 # Libraries that do not re-vendor cleanly yet are annotated in
@@ -59,7 +59,10 @@ algorithms:
         - modules/fdlibm/moz.yaml
         - modules/xz-embedded/moz.yaml
         - modules/zlib/moz.yaml
+        - mozglue/static/lz4/moz.yaml
+        - mozglue/static/xxhash/moz.yaml
         - nsprpub/moz.yaml
+        - other-licenses/snappy/moz.yaml
         - security/nss/moz.yaml
         - third_party/gemmology/moz.yaml
         - third_party/js/PKI.js/moz.yaml
@@ -167,7 +170,6 @@ misc:
         symbol: vendor(misc)
     members:
         - ipc/chromium/src/third_party/libevent/moz.yaml
-        - mobile/android/android-components/plugins/dependencies/src/main/java/moz.yaml
         - third_party/application-services/moz.yaml
         - third_party/content_analysis_sdk/moz.yaml
         - third_party/cups/moz.yaml
@@ -176,8 +178,10 @@ misc:
         - third_party/llama.cpp/moz.yaml
         - third_party/opentelemetry-cpp/moz.yaml
         - third_party/opentelemetry-cpp/third_party/opentelemetry-proto/moz.yaml
+        - third_party/parakeet.cpp/moz.yaml
         - third_party/perfetto/moz.yaml
         - third_party/python/vsdownload/moz.yaml
+        - toolkit/components/content-classifier/etp_engine/moz.yaml
         - toolkit/components/ml/vendor/openai/moz.yaml
         - toolkit/components/nimbus/schemas/moz.yaml
         - tools/lint/eslint/eslint-plugin-sdl-vendored/moz.yaml

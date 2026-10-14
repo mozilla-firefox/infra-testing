@@ -6,6 +6,8 @@
 
 #include <stdint.h>
 
+#include <memory>
+
 #include "CubebUtils.h"
 #include "H264.h"
 #include "ImageContainer.h"
@@ -213,6 +215,26 @@ uint32_t DecideAudioPlaybackSampleRate(const AudioInfo& aInfo,
 
 bool IsDefaultPlaybackDeviceMono() {
   return CubebUtils::MaxNumberOfChannels() == 1;
+}
+
+void SetOpusOutputChannels(AudioInfo& aInfo) {
+  if (!aInfo.mCodecSpecificConfig.is<OpusCodecSpecificData>()) {
+    return;
+  }
+  aInfo.mCodecSpecificConfig.as<OpusCodecSpecificData>().mOutputChannels =
+      DecideAudioPlaybackChannels(aInfo);
+}
+
+uint32_t AudioPlaybackChannels(const AudioInfo& aInfo) {
+  if (aInfo.mCodecSpecificConfig.is<OpusCodecSpecificData>()) {
+    uint32_t channels =
+        aInfo.mCodecSpecificConfig.as<OpusCodecSpecificData>().mOutputChannels;
+    if (channels) {
+      return channels;
+    }
+    MOZ_ASSERT_UNREACHABLE("Opus config has no playback channel count");
+  }
+  return DecideAudioPlaybackChannels(aInfo);
 }
 
 bool IsVideoContentType(const nsCString& aContentType) {
@@ -1189,10 +1211,10 @@ UniquePtr<TrackInfo> CreateTrackInfoWithMIMEType(
     const nsACString& aCodecMIMEType) {
   UniquePtr<TrackInfo> trackInfo;
   if (StartsWith(aCodecMIMEType, "audio/")) {
-    trackInfo.reset(new AudioInfo());
+    trackInfo = std::make_unique<AudioInfo>();
     trackInfo->mMimeType = aCodecMIMEType;
   } else if (StartsWith(aCodecMIMEType, "video/")) {
-    trackInfo.reset(new VideoInfo());
+    trackInfo = std::make_unique<VideoInfo>();
     trackInfo->mMimeType = aCodecMIMEType;
   }
   return trackInfo;

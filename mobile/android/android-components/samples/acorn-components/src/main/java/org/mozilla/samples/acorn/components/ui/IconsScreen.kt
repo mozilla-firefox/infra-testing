@@ -667,6 +667,7 @@ private val iconsTabs24 =
         iconsR.drawable.mozac_ic_tab_group_24,
         iconsR.drawable.mozac_ic_tab_group_close_24,
         iconsR.drawable.mozac_ic_tab_ungroup_24,
+        iconsR.drawable.mozac_ic_infinite_tabs_24,
     )
 
 private val iconsThemes24 = listOf(iconsR.drawable.mozac_ic_themes_24)

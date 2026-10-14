@@ -10,12 +10,6 @@ task-defaults:
     worker-type: b-linux-docker-amd
     run:
         clone-with: hg
-        extra-config:
-            extra_mozconfig_content:
-                # Builds on automation don't normally build geckodriver,
-                # but to ensure we also successfully build geckodriver with
-                # the MSRV, force it to be built.
-                - ac_add_options --enable-geckodriver
 
 linux64-base-toolchains/opt:
     description: "Linux64 base toolchains Opt"
@@ -31,8 +25,9 @@ linux64-base-toolchains/opt:
         env:
             PERFHERDER_EXTRA_OPTIONS: base-toolchains
             FORCE_GCC: '1'
+    mozconfig:
+        variant: nightly-base-toolchains
     run:
-        clone-with: hg
         using: mozharness
         actions: [get-secrets, build]
         config:
@@ -72,8 +67,9 @@ linux64-base-toolchains/debug:
         env:
             PERFHERDER_EXTRA_OPTIONS: base-toolchains
             FORCE_GCC: '1'
+    mozconfig:
+        variant: debug-base-toolchains
     run:
-        clone-with: hg
         using: mozharness
         actions: [get-secrets, build]
         config:
@@ -82,7 +78,6 @@ linux64-base-toolchains/debug:
         script: "mozharness/scripts/fx_desktop_build.py"
         secrets: true
         custom-build-variant-cfg: debug
-        mozconfig-variant: debug
         tooltool-downloads: public
     use-sccache: true
     fetches:
@@ -114,8 +109,9 @@ linux64-base-toolchains-clang/opt:
         env:
             PERFHERDER_EXTRA_OPTIONS: base-toolchains-clang
             DISABLE_CLANG_PLUGIN: '1'
+    mozconfig:
+        variant: nightly-base-toolchains
     run:
-        clone-with: hg
         using: mozharness
         actions: [get-secrets, build]
         config:
@@ -154,8 +150,9 @@ linux64-base-toolchains-clang/debug:
         env:
             PERFHERDER_EXTRA_OPTIONS: base-toolchains-clang
             DISABLE_CLANG_PLUGIN: '1'
+    mozconfig:
+        variant: debug-base-toolchains
     run:
-        clone-with: hg
         using: mozharness
         actions: [get-secrets, build]
         config:
@@ -164,7 +161,6 @@ linux64-base-toolchains-clang/debug:
         script: "mozharness/scripts/fx_desktop_build.py"
         secrets: true
         custom-build-variant-cfg: debug
-        mozconfig-variant: debug
         tooltool-downloads: public
     use-sccache: true
     fetches:

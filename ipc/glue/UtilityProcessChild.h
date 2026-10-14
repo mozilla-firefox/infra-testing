@@ -85,6 +85,8 @@ class UtilityProcessChild final : public PUtilityProcessChild {
   mozilla::ipc::IPCResult RecvUnblockUntrustedModulesThread();
 #endif  // defined(XP_WIN)
 
+  mozilla::ipc::IPCResult RecvShutdown();
+
   AsyncBlockers& AsyncShutdownService() { return mShutdownBlockers; }
 
 #if defined(NIGHTLY_BUILD) && !defined(MOZ_NO_SMART_CARDS)
@@ -93,8 +95,7 @@ class UtilityProcessChild final : public PUtilityProcessChild {
 #endif  // NIGHTLY_BUILD && !MOZ_NO_SMART_CARDS
 
 #ifndef ANDROID
-  mozilla::ipc::IPCResult RecvStartHWInferenceService(
-      Endpoint<PHWInferenceChild>&& aEndpoint);
+  already_AddRefed<hwinference::PHWInferenceChild> AllocPHWInferenceChild();
 #endif  // !ANDROID
 
   void ActorDestroy(ActorDestroyReason aWhy) override;

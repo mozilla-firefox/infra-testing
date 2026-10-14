@@ -51,7 +51,10 @@ class FetchDriverObserver {
       : mReporter(new ConsoleReportCollector()), mGotResponseAvailable(false) {}
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(FetchDriverObserver);
-  void OnResponseAvailable(SafeRefPtr<InternalResponse> aResponse);
+  // FIXME: This should be marked as MOZ_CAN_RUN_SCRIPT, but SafeRefPtr is not
+  // treated as safe by the clang-plugin.
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void OnResponseAvailable(
+      SafeRefPtr<InternalResponse> aResponse);
 
   enum EndReason {
     eAborted,
@@ -81,7 +84,7 @@ class FetchDriverObserver {
  protected:
   virtual ~FetchDriverObserver() = default;
 
-  virtual void OnResponseAvailableInternal(
+  MOZ_CAN_RUN_SCRIPT virtual void OnResponseAvailableInternal(
       SafeRefPtr<InternalResponse> aResponse) = 0;
 
   nsCOMPtr<nsIConsoleReportCollector> mReporter;
@@ -111,6 +114,10 @@ class FetchDriver final : public nsIChannelEventSink,
               nsICookieJarSettings* aCookieJarSettings,
               PerformanceStorage* aPerformanceStorage,
               net::ClassificationFlags aTrackingFlags);
+
+  FetchDriver() = delete;
+  FetchDriver(const FetchDriver&) = delete;
+  FetchDriver& operator=(const FetchDriver&) = delete;
 
   nsresult Fetch(AbortSignalImpl* aSignalImpl, FetchDriverObserver* aObserver);
 
@@ -220,9 +227,6 @@ class FetchDriver final : public nsIChannelEventSink,
 
   friend class AlternativeDataStreamListener;
 
-  FetchDriver() = delete;
-  FetchDriver(const FetchDriver&) = delete;
-  FetchDriver& operator=(const FetchDriver&) = delete;
   ~FetchDriver();
 
   already_AddRefed<PreloaderBase> FindPreload(nsIURI* aURI);
@@ -231,7 +235,7 @@ class FetchDriver final : public nsIChannelEventSink,
 
   nsresult HttpFetch(const nsACString& aPreferredAlternativeDataType = ""_ns);
   // Returns the filtered response sent to the observer.
-  SafeRefPtr<InternalResponse> BeginAndGetFilteredResponse(
+  MOZ_CAN_RUN_SCRIPT SafeRefPtr<InternalResponse> BeginAndGetFilteredResponse(
       SafeRefPtr<InternalResponse> aResponse, bool aFoundOpaqueRedirect);
   // Utility since not all cases need to do any post processing of the filtered
   // response.
@@ -240,7 +244,8 @@ class FetchDriver final : public nsIChannelEventSink,
   void SetRequestHeaders(nsIHttpChannel* aChannel, bool aStripRequestBodyHeader,
                          bool aStripAuthHeader) const;
 
-  void FinishOnStopRequest(AlternativeDataStreamListener* aAltDataListener);
+  MOZ_CAN_RUN_SCRIPT void FinishOnStopRequest(
+      AlternativeDataStreamListener* aAltDataListener);
 };
 
 }  // namespace dom

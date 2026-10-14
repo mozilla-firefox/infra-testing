@@ -235,6 +235,8 @@ bitflags! {
         const C2_IS_NONE = 1 << 2;
         /// Whether the alpha component is `none`.
         const ALPHA_IS_NONE = 1 << 3;
+        /// Whether any color or alpha component is `none`.
+        const NONE_FLAGS = Self::C0_IS_NONE.0 | Self::C1_IS_NONE.0 | Self::C2_IS_NONE.0 | Self::ALPHA_IS_NONE.0;
         /// Marks that this color is in the legacy color format. This flag is
         /// only valid for the `Srgb` color space.
         const IS_LEGACY_SRGB = 1 << 4;
@@ -260,19 +262,19 @@ pub struct AbsoluteColor {
 impl PartialEq for AbsoluteColor {
     // See https://github.com/w3c/csswg-drafts/issues/13157#issuecomment-4165667681
     fn eq(&self, other: &Self) -> bool {
-        let none_flags = ColorFlags::C0_IS_NONE
-            | ColorFlags::C1_IS_NONE
-            | ColorFlags::C2_IS_NONE
-            | ColorFlags::ALPHA_IS_NONE;
         // If both colors have the same color-space, just compare components; note that
         // any `none` components only match `none` in the other color.
         if self.color_space == other.color_space {
             return self.components == other.components
                 && self.alpha == other.alpha
-                && (self.flags & none_flags) == (other.flags & none_flags);
+                && (self.flags & ColorFlags::NONE_FLAGS) == (other.flags & ColorFlags::NONE_FLAGS);
         }
         // Otherwise, if any `none` components are present in either color, return false.
-        if self.flags.union(other.flags).intersects(none_flags) {
+        if self
+            .flags
+            .union(other.flags)
+            .intersects(ColorFlags::NONE_FLAGS)
+        {
             return false;
         }
         // Otherwise, convert both colors to Oklab for comparison, and allow EPSILON
@@ -624,16 +626,14 @@ impl AbsoluteColor {
         use ColorSpace::*;
 
         if self.color_space == color_space {
-            return self.clone();
+            return *self;
         }
 
         // Missing components are treated as 0 for the conversion math.
         // Carry-forward of `none` to analogous channels is handled at call
         // sites where needed.
         macro_rules! missing_to_zero {
-            ($c:expr) => {{
-                crate::values::normalize($c.unwrap_or(0.0))
-            }};
+            ($c:expr) => {{ crate::values::normalize($c.unwrap_or(0.0)) }};
         }
 
         let components = ColorComponents(
@@ -701,13 +701,7 @@ impl AbsoluteColor {
         // A NAN value coming from a conversion function means the the component
         // is missing, so we convert it to None.
         macro_rules! nan_to_missing {
-            ($v:expr) => {{
-                if $v.is_nan() {
-                    None
-                } else {
-                    Some($v)
-                }
-            }};
+            ($v:expr) => {{ if $v.is_nan() { None } else { Some($v) } }};
         }
 
         Self::new(
@@ -717,17 +711,6 @@ impl AbsoluteColor {
             nan_to_missing!(result.2),
             self.alpha(),
         )
-    }
-
-    /// Convert a color value to `nscolor`.
-    pub fn to_nscolor(&self) -> u32 {
-        let srgb = self.to_color_space(ColorSpace::Srgb);
-        u32::from_le_bytes([
-            (srgb.components.0 * 255.0).round() as u8,
-            (srgb.components.1 * 255.0).round() as u8,
-            (srgb.components.2 * 255.0).round() as u8,
-            (srgb.alpha * 255.0).round() as u8,
-        ])
     }
 
     /// Convert a given `nscolor` to a Servo AbsoluteColor value.

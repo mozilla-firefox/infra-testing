@@ -141,13 +141,7 @@ class Module : public JS::WasmModule {
   class PartialTier2CompileTaskImpl;
 
   Module(const ModuleMetadata& moduleMeta, const Code& code,
-         bool loggingDeserialized = false)
-      : moduleMeta_(&moduleMeta),
-        code_(&code),
-        loggingDeserialized_(loggingDeserialized),
-        testingTier2Active_(false) {
-    initGCMallocBytesExcludingCode();
-  }
+         bool loggingDeserialized = false);
   ~Module() override;
 
   const Code& code() const { return *code_; }
@@ -208,9 +202,6 @@ class Module : public JS::WasmModule {
 
   WASM_DECLARE_FRIEND_SERIALIZE(Module);
 };
-
-using MutableModule = RefPtr<Module>;
-using SharedModule = RefPtr<const Module>;
 
 // JS API implementations:
 

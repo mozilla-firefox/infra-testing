@@ -46,6 +46,30 @@ CONFIGS = defaultdict(
                 "LIB_SUFFIX": "a",
             },
         },
+        "objdir-local-includes": {
+            "defines": {},
+            "substs": {
+                "COMPILE_ENVIRONMENT": "1",
+                "LIB_PREFIX": "lib",
+                "LIB_SUFFIX": "a",
+            },
+        },
+        "xpidl": {
+            "defines": {},
+            "substs": {
+                "COMPILE_ENVIRONMENT": "1",
+            },
+        },
+        "database-defines": {
+            "defines": {},
+            "substs": {
+                "CC": ["clang"],
+                "CXX": ["clang++"],
+                "COMPILE_ENVIRONMENT": "1",
+                "LIB_PREFIX": "lib",
+                "LIB_SUFFIX": "a",
+            },
+        },
         "database-compiler-wrapper": {
             "defines": {},
             "substs": {
@@ -71,6 +95,36 @@ CONFIGS = defaultdict(
             "substs": {
                 "COMPILE_ENVIRONMENT": "1",
                 "RUST_TARGET": "x86_64-unknown-linux-gnu",
+                "RUST_LTO_ELIGIBLE": "1",
+                "LIB_PREFIX": "lib",
+                "LIB_SUFFIX": "a",
+            },
+        },
+        "rust-library-no-lto": {
+            "defines": {},
+            "substs": {
+                "COMPILE_ENVIRONMENT": "1",
+                "RUST_TARGET": "x86_64-unknown-linux-gnu",
+                "RUST_LTO_ELIGIBLE": "1",
+                "LIB_PREFIX": "lib",
+                "LIB_SUFFIX": "a",
+            },
+        },
+        "rust-library-flags": {
+            "defines": {},
+            "substs": {
+                "COMPILE_ENVIRONMENT": "1",
+                "RUST_TARGET": "x86_64-unknown-linux-gnu",
+                "LIB_PREFIX": "lib",
+                "LIB_SUFFIX": "a",
+            },
+        },
+        "rust-megazord-library": {
+            "defines": {},
+            "substs": {
+                "COMPILE_ENVIRONMENT": "1",
+                "OS_TARGET": "WINNT",
+                "RUST_TARGET": "x86_64-pc-windows-msvc",
                 "LIB_PREFIX": "lib",
                 "LIB_SUFFIX": "a",
             },
@@ -96,6 +150,16 @@ CONFIGS = defaultdict(
             },
         },
         "rust-library-features": {
+            "defines": {},
+            "substs": {
+                "COMPILE_ENVIRONMENT": "1",
+                "RUST_TARGET": "x86_64-unknown-linux-gnu",
+                "RUST_LTO_ELIGIBLE": "1",
+                "LIB_PREFIX": "lib",
+                "LIB_SUFFIX": "a",
+            },
+        },
+        "rust-library-cargo-profile": {
             "defines": {},
             "substs": {
                 "COMPILE_ENVIRONMENT": "1",
@@ -132,10 +196,28 @@ CONFIGS = defaultdict(
                 "HOST_BIN_SUFFIX": ".exe",
             },
         },
+        "rust-program-output-category": {
+            "defines": {},
+            "substs": {
+                "COMPILE_ENVIRONMENT": "1",
+                "RUST_TARGET": "i686-pc-windows-msvc",
+                "BIN_SUFFIX": ".exe",
+            },
+        },
+        "generated-file-rust-archive-dep": {
+            "defines": {},
+            "substs": {
+                "COMPILE_ENVIRONMENT": "1",
+                "RUST_TARGET": "x86_64-unknown-linux-gnu",
+                "LIB_PREFIX": "lib",
+                "LIB_SUFFIX": "a",
+            },
+        },
         "rust-programs": {
             "defines": {},
             "substs": {
                 "COMPILE_ENVIRONMENT": "1",
+                "MOZ_WIDGET_TOOLKIT": "windows",
                 "RUST_TARGET": "i686-pc-windows-msvc",
                 "RUST_HOST_TARGET": "i686-pc-windows-msvc",
                 "BIN_SUFFIX": ".exe",
@@ -232,6 +314,9 @@ CONFIGS = defaultdict(
             "substs": {
                 "COMPILE_ENVIRONMENT": "1",
                 "BIN_SUFFIX": "",
+                "LIB_SUFFIX": "a",
+                "DLL_PREFIX": "lib",
+                "DLL_SUFFIX": ".so",
             },
         },
         "shared-lib-paths": {
@@ -272,6 +357,19 @@ CONFIGS = defaultdict(
                 "LIB_PREFIX": "lib",
                 "LIB_SUFFIX": "a",
                 "OBJ_SUFFIX": "o",
+            },
+        },
+        "l10n-manifest-roots": {
+            "defines": {},
+            "substs": {
+                "OS_TARGET": "WINNT",
+                "MOZ_L10N_CHROME_ROOTS": ["app/locales"],
+            },
+        },
+        "l10n-manifest-roots-unfiltered": {
+            "defines": {},
+            "substs": {
+                "OS_TARGET": "WINNT",
             },
         },
     },
@@ -320,7 +418,12 @@ class BackendTester(unittest.TestCase):
     def _consume(self, name, cls, env=None):
         env, objs = self._emit(name, env=env)
         backend = cls(env)
-        backend.consume(objs)
+        try:
+            backend.consume(objs)
+        except Exception:
+            for backend_file in getattr(backend, "_backend_files", {}).values():
+                backend_file.fh.avoid_writing_to_file()
+            raise
 
         return env
 

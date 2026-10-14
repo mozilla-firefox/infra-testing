@@ -10,10 +10,8 @@
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
-const lazy = {};
-
-ChromeUtils.defineESModuleGetters(lazy, {
-  CleanupManager: "resource://normandy/lib/CleanupManager.sys.mjs",
+const lazy = XPCOMUtils.declareLazy({
+  AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
   ExperimentManager: "resource://nimbus/lib/ExperimentManager.sys.mjs",
   FeatureManifest: "resource://nimbus/FeatureManifest.sys.mjs",
   FirstStartup: "resource://gre/modules/FirstStartup.sys.mjs",
@@ -23,13 +21,18 @@ ChromeUtils.defineESModuleGetters(lazy, {
   RemoteSettingsExperimentLoader:
     "resource://nimbus/lib/RemoteSettingsExperimentLoader.sys.mjs",
   UnenrollmentCause: "resource://nimbus/lib/ExperimentManager.sys.mjs",
-});
 
-ChromeUtils.defineLazyGetter(lazy, "log", () => {
-  const { Logger } = ChromeUtils.importESModule(
-    "resource://messaging-system/lib/Logger.sys.mjs"
-  );
-  return new Logger("ExperimentAPI");
+  log: () => {
+    const { Logger } = ChromeUtils.importESModule(
+      "resource://messaging-system/lib/Logger.sys.mjs"
+    );
+    return new Logger("ExperimentAPI");
+  },
+
+  COLLECTION_ID: {
+    pref: "messaging-system.rsexperimentloader.collection_id",
+    default: "nimbus-desktop-experiments",
+  },
 });
 
 const CRASHREPORTER_ENABLED =
@@ -43,16 +46,8 @@ const Prefs = Object.freeze({
   ROLLOUTS_ENABLED: "nimbus.rollouts.enabled",
   TELEMETRY_ENABLED: "datareporting.healthreport.uploadEnabled",
   STUDIES_ENABLED: "app.shield.optoutstudies.enabled",
-  COLLECTION_ID: "messaging-system.rsexperimentloader.collection_id",
   NIMBUS_PROFILE_ID: "nimbus.profileId",
 });
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "COLLECTION_ID",
-  Prefs.COLLECTION_ID,
-  "nimbus-desktop-experiments"
-);
 
 function parseJSON(value) {
   if (value) {
@@ -332,18 +327,32 @@ export const ExperimentAPI = new (class {
       lazy.log.error("Failed to enable RemoteSettingsExperimentLoader:", e);
     }
 
-    try {
-      await lazy.NimbusMigrations.applyMigrations(
-        lazy.NimbusMigrations.Phase.AFTER_REMOTE_SETTINGS_UPDATE
-      );
-    } catch (e) {
-      lazy.log.error(
-        `Failed to apply migrations in phase ${
+    // TODO(bug 2066569): this should be more robust and cover more of this
+    // function.
+    const inShutdown = Services.startup.isInOrBeyondShutdownPhase(
+      Ci.nsIAppStartup.SHUTDOWN_PHASE_APPSHUTDOWNCONFIRMED
+    );
+
+    // If we're in shutdown, we should try to avoid doing as much as possible to
+    // avoid timing out. In that vein, we're going to skip attempting to apply
+    // migrations (which might just fail anyway due to shutdown).
+    if (!inShutdown) {
+      try {
+        await lazy.NimbusMigrations.applyMigrations(
           lazy.NimbusMigrations.Phase.AFTER_REMOTE_SETTINGS_UPDATE
-        }`,
-        e
-      );
+        );
+      } catch (e) {
+        lazy.log.error(
+          `Failed to apply migrations in phase ${
+            lazy.NimbusMigrations.Phase.AFTER_REMOTE_SETTINGS_UPDATE
+          }`,
+          e
+        );
+      }
     }
+
+    // ... but we should still try to report telemetry and connect the crash
+    // reporter.
 
     if (this.#firstStartupTimestamps) {
       this.#firstStartupTimestamps.loaderInitEnd = ChromeUtils.now();
@@ -353,34 +362,46 @@ export const ExperimentAPI = new (class {
       this.manager.store.on("update", this._annotateCrashReport);
       this._annotateCrashReport();
 
-      lazy.CleanupManager.addCleanupHandler(
-        ExperimentAPI._removeCrashReportAnnotator
-      );
+      if (!inShutdown) {
+        lazy.AsyncShutdown.appShutdownConfirmed.addBlocker(
+          "ExperimentAPI: removing crash report annotator",
+          this._removeCrashReportAnnotator
+        );
+      }
     }
 
-    Services.prefs.addObserver(
-      Prefs.ROLLOUTS_ENABLED,
-      this._onEnabledPrefChange
-    );
-    Services.prefs.addObserver(
-      Prefs.STUDIES_ENABLED,
-      this._onEnabledPrefChange
-    );
-    Services.prefs.addObserver(
-      Prefs.TELEMETRY_ENABLED,
-      this._onEnabledPrefChange
-    );
-    Services.prefs.addObserver(
-      Prefs.AI_FEATURES_ENABLED,
-      this._onEnabledPrefChange
-    );
-
-    // If Nimbus was disabled between the start of this function and registering
-    // the pref observers we have not handled it yet.
+    // Avoid registering these observers during shutdown as they may trigger
+    // enrollment changes (and in the case of `Prefs.AI_FEATURES_ENABLED`,
+    // trigger an entire update which will then fail).
     //
-    // If the enabled state hasn't actually changed, calling this function is a
-    // no-op.
-    await this._onEnabledPrefChange();
+    // We will detect these changes on the next restart and trigger
+    // unenrollments in `ExperimentManager.onStartup` (for studies and rollouts)
+    // or `RemoteSettingsExperimentLoader.enable` (for AI-based experiments).
+    if (!inShutdown) {
+      Services.prefs.addObserver(
+        Prefs.ROLLOUTS_ENABLED,
+        this._onEnabledPrefChange
+      );
+      Services.prefs.addObserver(
+        Prefs.STUDIES_ENABLED,
+        this._onEnabledPrefChange
+      );
+      Services.prefs.addObserver(
+        Prefs.TELEMETRY_ENABLED,
+        this._onEnabledPrefChange
+      );
+      Services.prefs.addObserver(
+        Prefs.AI_FEATURES_ENABLED,
+        this._onEnabledPrefChange
+      );
+
+      // If Nimbus was disabled between the start of this function and registering
+      // the pref observers we have not handled it yet.
+      //
+      // If the enabled state hasn't actually changed, calling this function is a
+      // no-op.
+      await this._onEnabledPrefChange();
+    }
 
     if (this.#firstStartupTimestamps) {
       this.#firstStartupTimestamps.nimbusInitEnd = ChromeUtils.now();
@@ -433,7 +454,9 @@ export const ExperimentAPI = new (class {
     this.#experimentLoader?.disable();
     this.#experimentLoader = null;
 
-    lazy.CleanupManager.removeCleanupHandler(this._removeCrashReportAnnotator);
+    lazy.AsyncShutdown.appShutdownConfirmed.removeBlocker(
+      this._removeCrashReportAnnotator
+    );
     this.#experimentManager?.store.off("update", this._annotateCrashReport);
     this.#experimentManager = null;
 
@@ -531,11 +554,21 @@ export const ExperimentAPI = new (class {
    * and doing so breaks a lot of tests due to enabling the
    * RemoteSettingsExperimentLoader et al.
    *
+   * Resolves immediately if Nimbus is disabled and initialization has not started.
+   *
    * @returns {Promise}
    *          A promise that resolves when the API has synchronized to the main
-   *          store
+   *          store, or immediately when Nimbus is disabled.
    */
   async ready() {
+    if (!this.#initializedPromise) {
+      this.#computeEnabled();
+
+      if (!this.enabled) {
+        return Promise.resolve();
+      }
+    }
+
     return this.manager.store.ready();
   }
 
@@ -587,11 +620,13 @@ export const ExperimentAPI = new (class {
       aiFeaturesPreviouslyEnabled !== this.aiFeaturesEnabled;
 
     if (studiesEnabledChanged || rolloutsEnabledChanged) {
-      if (!this.studiesEnabled) {
+      if (studiesEnabledChanged && !this.studiesEnabled) {
+        Glean.nimbusEvents.studiesOptOut.record();
         this.manager._handleStudiesOptOut();
       }
 
-      if (!this.rolloutsEnabled) {
+      if (rolloutsEnabledChanged && !this.rolloutsEnabled) {
+        Glean.nimbusEvents.rolloutsOptOut.record();
         this.manager._handleRolloutsOptOut();
       }
 

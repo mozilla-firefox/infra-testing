@@ -496,6 +496,9 @@ class ContStackAllocator {
   // How many stacks to put in an arena. Computed once at the first allocation,
   // like stackSize_.
   uint32_t arenaCapacity_ = 0;
+  // The most arenas we will map, derived from the virtual memory cap. Computed
+  // once at the first allocation, like stackSize_.
+  size_t maxArenas_ = 0;
   // The pool of arenas. These are sorted by base address and don't overlap,
   // which allows us to binary search to find an arena for a given SP.
   ContStackArenaVector arenas_;

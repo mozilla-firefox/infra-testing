@@ -6,7 +6,7 @@
 
 use log::{debug, error, trace};
 use pkcs11_bindings::*;
-use rsclientcerts::manager::{IsSearchingForClientCerts, Manager};
+use rsclientcerts::manager::Manager;
 use rsclientcerts::{
     declare_pkcs11_find_functions, declare_pkcs11_informational_functions,
     declare_pkcs11_pin_functions, declare_pkcs11_session_functions, declare_pkcs11_sign_functions,
@@ -18,7 +18,7 @@ mod backend;
 
 use backend::Backend;
 
-static MANAGER: Mutex<Option<Manager<Backend, AlwaysSearchingForClientCerts>>> = Mutex::new(None);
+static MANAGER: Mutex<Option<Manager<Backend>>> = Mutex::new(None);
 
 macro_rules! try_to_get_manager_guard {
     () => {
@@ -38,14 +38,6 @@ macro_rules! manager_guard_to_manager {
     };
 }
 
-struct AlwaysSearchingForClientCerts;
-
-impl IsSearchingForClientCerts for AlwaysSearchingForClientCerts {
-    fn is_searching_for_client_certs() -> bool {
-        true
-    }
-}
-
 extern "C" fn C_Initialize(_pInitArgs: CK_VOID_PTR) -> CK_RV {
     // This will fail if this has already been called, but this isn't a problem because either way,
     // logging has been initialized.
@@ -59,6 +51,7 @@ extern "C" fn C_Initialize(_pInitArgs: CK_VOID_PTR) -> CK_RV {
             CKF_USER_PIN_INITIALIZED | CKF_LOGIN_REQUIRED | CKF_TOKEN_INITIALIZED,
             Vec::new(),
             Vec::new(),
+            Vec::new(),
         ),
         Backend::new(
             SLOT_DESCRIPTIONS_BYTES[1],
@@ -69,19 +62,27 @@ extern "C" fn C_Initialize(_pInitArgs: CK_VOID_PTR) -> CK_RV {
                 | CKF_LOGIN_REQUIRED
                 | CKF_TOKEN_INITIALIZED,
             vec![
-                include_str!("client-cert-rsa.pem"),
-                include_str!("client-cert-ecdsa.pem"),
+                (
+                    include_str!("client-cert-rsa.pem"),
+                    include_str!("client-cert-rsa.key"),
+                ),
+                (
+                    include_str!("client-cert-ecdsa.pem"),
+                    include_str!("client-cert-ecdsa.key"),
+                ),
             ],
             vec![
-                include_str!("client-cert-rsa.key"),
-                include_str!("client-cert-ecdsa.key"),
+                include_str!("test-int-ee.pem"),
+                include_str!("test-int.pem"),
             ],
+            vec![include_str!("test-ca.pem")],
         ),
         Backend::new(
             SLOT_DESCRIPTIONS_BYTES[2],
             TOKEN_LABELS_BYTES[2],
             CKF_REMOVABLE_DEVICE,
             CKF_TOKEN_INITIALIZED,
+            Vec::new(),
             Vec::new(),
             Vec::new(),
         ),
@@ -126,10 +127,10 @@ declare_pkcs11_sign_functions!();
 declare_pkcs11_pin_functions!();
 declare_unsupported_pkcs11_functions!();
 
-/// To be a valid PKCS #11 module, this list of functions must be supported. At least cryptoki 2.2
-/// must be supported for this module to work in NSS.
+/// To be a valid PKCS #11 module, this list of functions must be supported. This module claims to
+/// be cryptoki 3.2 in order to support trust objects.
 static FUNCTION_LIST: CK_FUNCTION_LIST = CK_FUNCTION_LIST {
-    version: CK_VERSION { major: 2, minor: 2 },
+    version: CK_VERSION { major: 3, minor: 2 },
     C_Initialize: Some(C_Initialize),
     C_Finalize: Some(C_Finalize),
     C_GetInfo: Some(C_GetInfo),

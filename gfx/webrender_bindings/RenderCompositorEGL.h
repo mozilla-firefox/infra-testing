@@ -5,8 +5,11 @@
 #ifndef MOZILLA_GFX_RENDERCOMPOSITOR_EGL_H
 #define MOZILLA_GFX_RENDERCOMPOSITOR_EGL_H
 
+#include <list>
+
 #include "GLTypes.h"
 #include "mozilla/webrender/RenderCompositor.h"
+#include "mozilla/webrender/RenderTextureHost.h"
 
 namespace mozilla {
 
@@ -44,7 +47,9 @@ class RenderCompositorEGL : public RenderCompositor {
   void SetBufferDamageRegion(const wr::DeviceIntRect* aRects,
                              size_t aNumRects) override;
 
-  RefPtr<layers::Fence> GetAndResetReleaseFence() override;
+  RefPtr<layers::Fence> GetAndResetReadFence() override;
+
+  void MaybeWaitingForPendingReadFence(RenderTextureHost* aTexture) override;
 
  protected:
   EGLSurface CreateEGLSurface();
@@ -65,6 +70,8 @@ class RenderCompositorEGL : public RenderCompositor {
   // AHardwareBuffer is ended. The fence is delivered to client side via
   // ImageBridge. It is used only on android.
   RefPtr<layers::Fence> mReleaseFence;
+
+  std::list<RefPtr<RenderTextureHost>> mWaitingForPendingReadFence;
 };
 
 }  // namespace wr

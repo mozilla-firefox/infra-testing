@@ -88,8 +88,9 @@ void SocketProcessParent::ActorDestroy(ActorDestroyReason aWhy) {
 #endif  // defined(MOZ_WIDGET_ANDROID)
 
   if (aWhy == AbnormalShutdown) {
-    GenerateCrashReport();
-    MaybeTerminateProcess();
+    nsAutoString dumpID;
+    GenerateCrashReport(&dumpID);
+    MaybeTerminateProcess(dumpID);
   }
 
   if (mHost) {
@@ -263,15 +264,16 @@ SocketProcessParent::AllocPAltServiceParent() {
 
 already_AddRefed<PProxyConfigLookupParent>
 SocketProcessParent::AllocPProxyConfigLookupParent(
-    nsIURI* aURI, const uint32_t& aProxyResolveFlags) {
-  RefPtr<ProxyConfigLookupParent> actor =
-      new ProxyConfigLookupParent(aURI, aProxyResolveFlags);
+    nsIURI* aURI, const uint32_t& aProxyResolveFlags,
+    const bool& aIsTRRServiceChannel) {
+  RefPtr<ProxyConfigLookupParent> actor = new ProxyConfigLookupParent(
+      aURI, aProxyResolveFlags, aIsTRRServiceChannel);
   return actor.forget();
 }
 
 mozilla::ipc::IPCResult SocketProcessParent::RecvPProxyConfigLookupConstructor(
     PProxyConfigLookupParent* aActor, nsIURI* aURI,
-    const uint32_t& aProxyResolveFlags) {
+    const uint32_t& aProxyResolveFlags, const bool& aIsTRRServiceChannel) {
   mozilla::ipc::ActorCast<ProxyConfigLookupParent>(aActor)->DoProxyLookup();
   return IPC_OK();
 }
@@ -362,10 +364,10 @@ mozilla::ipc::IPCResult SocketProcessParent::RecvSSLTokensCacheData(
 
 #if defined(XP_WIN)
 mozilla::ipc::IPCResult SocketProcessParent::RecvGetModulesTrust(
-    ModulePaths&& aModPaths, bool aRunAtNormalPriority,
+    ModuleIdentifiers&& aModIdents, bool aRunAtNormalPriority,
     GetModulesTrustResolver&& aResolver) {
   RefPtr<DllServices> dllSvc(DllServices::Get());
-  dllSvc->GetModulesTrust(std::move(aModPaths), aRunAtNormalPriority)
+  dllSvc->GetModulesTrust(std::move(aModIdents), aRunAtNormalPriority)
       ->Then(
           GetMainThreadSerialEventTarget(), __func__,
           [aResolver](ModulesMapResult&& aResult) {

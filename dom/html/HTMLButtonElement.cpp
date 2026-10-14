@@ -290,7 +290,7 @@ nsresult HTMLButtonElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
   return rv;
 }
 
-void EndSubmitClick(EventChainVisitor& aVisitor) {
+MOZ_CAN_RUN_SCRIPT void EndSubmitClick(EventChainVisitor& aVisitor) {
   if ((aVisitor.mItemFlags & NS_IN_SUBMIT_CLICK)) {
     nsCOMPtr<nsIContent> content(do_QueryInterface(aVisitor.mItemData));
     RefPtr<HTMLFormElement> form = HTMLFormElement::FromNodeOrNull(content);
@@ -311,7 +311,8 @@ void EndSubmitClick(EventChainVisitor& aVisitor) {
 
 // https://html.spec.whatwg.org/multipage/form-elements.html#the-button-element:activation-behaviour
 void HTMLButtonElement::ActivationBehavior(EventChainPostVisitor& aVisitor) {
-  auto endSubmit = MakeScopeExit([&] { EndSubmitClick(aVisitor); });
+  auto endSubmit = MakeScopeExit(
+      [&]() MOZ_CAN_RUN_SCRIPT_BOUNDARY { EndSubmitClick(aVisitor); });
 
   if (!aVisitor.mPresContext) {
     return;

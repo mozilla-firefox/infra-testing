@@ -115,6 +115,11 @@ void MacroAssembler::xor32(const Address& src, Register dest) {
   ma_xor(dest, scratch2);
 }
 
+void MacroAssembler::nor32(Imm32 imm, Register src, Register dest) {
+  or32(imm, src, dest);
+  not32(dest);
+}
+
 // ===============================================================
 // Swap instructions
 
@@ -1260,8 +1265,8 @@ void MacroAssembler::branchTestGCThingImpl(Condition cond, const T& address,
 void MacroAssembler::branchTestPrimitive(Condition cond, Register tag,
                                          Label* label) {
   MOZ_ASSERT(cond == Equal || cond == NotEqual);
-  ma_b(tag, ImmTag(JS::detail::ValueUpperExclPrimitiveTag), label,
-       (cond == Equal) ? Below : AboveOrEqual);
+  ma_b(tag, ImmTag(JSVAL_TAG_OBJECT), label,
+       (cond == Equal) ? NotEqual : Equal);
 }
 
 void MacroAssembler::branchTestMagic(Condition cond, Register tag,

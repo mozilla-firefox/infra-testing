@@ -197,18 +197,6 @@ add_task(
   }
 );
 
-add_task(async function test_search_config_override_validates_to_schema() {
-  let collectionData = await RemoteSettings(
-    SearchUtils.SETTINGS_OVERRIDES_KEY
-  ).get();
-
-  await assertSearchConfigValidates({
-    collectionName: "search-config-overrides-v2",
-    collectionData,
-    getEntryId: entry => entry.identifier,
-  });
-});
-
 add_task(async function test_search_config_icons_validates_to_schema() {
   let searchIcons = RemoteSettings("search-config-icons");
 

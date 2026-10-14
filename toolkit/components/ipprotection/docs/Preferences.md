@@ -92,6 +92,12 @@ know what you are doing.
 : Milliseconds to wait for a proxy activation or a proxy pass rotation to finish
   before aborting the attempt and moving to the error state.
 
+`browser.ipProtection.serviceWaitTimeout` (integer, default: `90000`)
+
+: Milliseconds `start()` holds traffic for a service that is not `READY` yet
+  but may still become so, as during startup. A wait is not a request, so it
+  is not bounded by the guardian timeout.
+
 `browser.ipProtection.guardian.retryAfter` (integer, default: `500`)
 
 : Milliseconds to delay before retrying a proxy pass fetch that failed with a
@@ -103,10 +109,13 @@ know what you are doing.
 
 `browser.ipProtection.mode` (integer, default: `0`)
 
-: Selects which requests are proxied by `IPPChannelFilter`:
-  `0` routes all traffic (`MODE_FULL`), `1` only private browsing windows
-  (`MODE_PB`), `2` only requests classified as tracking (`MODE_TRACKER`),
-  (`MODE_INCLUSION`), `3` routes no traffic unless matching `browser.ipProtection.inclusion.match_patterns`.
+: `IPPMode` value new connections start in; anything else is treated as
+  `MODE_FULL`. Read at connection start, so it leaves a running connection
+  alone.
+
+  :::{seealso}
+  [IPPMode](Constants.md#proxy-modes)
+  :::
 
 `browser.ipProtection.inclusion.match_patterns` (string, default: `""`)
 
@@ -157,10 +166,6 @@ know what you are doing.
 `browser.ipProtection.onboardingMessageMask` (integer, default: `0`)
 
 : Bitmask tracking which onboarding messages have already been shown.
-
-`browser.ipProtection.openedPanelWithLocation` (boolean, default: `false`)
-
-: Tracks whether the user has opened the panel with the egress location visible.
 
 `browser.ipProtection.userEnableCount` (integer, default: `0`)
 

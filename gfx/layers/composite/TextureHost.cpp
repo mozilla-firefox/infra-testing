@@ -10,7 +10,6 @@
 #include "CompositableHost.h"  // for CompositableHost
 #include "gfxUtils.h"
 #include "mozilla/RefPtr.h"  // for nsRefPtr
-#include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/gfx/2D.h"  // for DataSourceSurface, Factory
 #include "mozilla/gfx/CanvasManagerParent.h"
@@ -33,7 +32,6 @@
 #include "mozilla/layers/VideoBridgeParent.h"
 #include "mozilla/layers/WebRenderTextureHost.h"
 #include "mozilla/webrender/RenderBufferTextureHost.h"
-#include "mozilla/webrender/RenderExternalTextureHost.h"
 #include "mozilla/webrender/RenderThread.h"
 #include "mozilla/webrender/WebRenderAPI.h"
 #include "nsAString.h"
@@ -49,6 +47,11 @@
 #  ifdef MOZ_WMF_MEDIA_ENGINE
 #    include "mozilla/layers/DcompSurfaceImage.h"
 #  endif
+#endif
+
+#ifdef MOZ_WAYLAND
+#  include "mozilla/WidgetUtilsGtk.h"
+#  include "mozilla/webrender/RenderWaylandTextureHost.h"
 #endif
 
 #if 0
@@ -180,10 +183,15 @@ already_AddRefed<TextureHost> CreateDummyBufferTextureHost(
   aFlags |= TextureFlags::DUMMY_TEXTURE;
   UniquePtr<TextureData> textureData(BufferTextureData::Create(
       gfx::IntSize(1, 1), gfx::SurfaceFormat::B8G8R8A8, gfx::ColorSpace2::SRGB,
-      gfx::TransferFunction::SRGB, gfx::BackendType::SKIA, aBackend, aFlags,
-      TextureAllocationFlags::ALLOC_DEFAULT, nullptr));
+      gfx::TransferFunction::SRGB, gfx::BackendType::SKIA, aBackend,
+      TextureFlags::NO_FLAGS, TextureAllocationFlags::ALLOC_DEFAULT, nullptr));
+  if (!textureData) {
+    return nullptr;
+  }
   SurfaceDescriptor surfDesc;
-  textureData->Serialize(surfDesc);
+  if (!textureData->Serialize(surfDesc)) {
+    return nullptr;
+  }
   const SurfaceDescriptorBuffer& bufferDesc =
       surfDesc.get_SurfaceDescriptorBuffer();
   const MemoryOrShmem& data = bufferDesc.data();
@@ -268,10 +276,10 @@ already_AddRefed<TextureHost> CreateBackendIndependentTextureHost(
             // We failed to map the shmem so we can't verify its size.
             // Attempting to construct a ShmemTextureHost with it will succeed,
             // but the resulting object will have a null shmem and can't ever be
-            // locked or mapped -- it's not useful at all. We just return
-            // nullptr instead.
-            gfxCriticalError() << "Failed texture host with unmappable shmem.";
-            return nullptr;
+            // locked or mapped -- it's not useful at all. We return a dummy
+            // texture host of the appropriate size instead.
+            gfxCriticalNote << "Failed texture host with unmappable shmem.";
+            return CreateDummyBufferTextureHost(aBackend, aFlags);
           }
 
           size_t bufSize = shmem.Size<char>();
@@ -491,14 +499,9 @@ BufferTextureHost::BufferTextureHost(const BufferDescriptor& aDesc,
       MOZ_CRASH("GFX: Bad descriptor");
   }
 
-#ifdef XP_MACOSX
-  const int kMinSize = 1024;
-  const int kMaxSize = 4096;
+#ifdef MOZ_WAYLAND
   mUseExternalTextures =
-      kMaxSize >= mSize.width && mSize.width >= kMinSize &&
-      kMaxSize >= mSize.height && mSize.height >= kMinSize &&
-      StaticPrefs::gfx_webrender_enable_client_storage_AtStartup() &&
-      !gfx::gfxVars::UseWebRenderANGLE();
+      widget::GdkIsWaylandDisplay() && gfx::gfxVars::UseWebRenderCompositor();
 #else
   mUseExternalTextures = false;
 #endif
@@ -517,11 +520,13 @@ void BufferTextureHost::CreateRenderTexture(
   MOZ_ASSERT(mExternalImageId.isSome());
 
   RefPtr<wr::RenderTextureHost> texture;
-
+#ifdef MOZ_WAYLAND
   if (UseExternalTextures()) {
-    texture = MakeRefPtr<wr::RenderExternalTextureHost>(GetBuffer(),
-                                                        GetBufferDescriptor());
-  } else {
+    texture = MakeRefPtr<wr::RenderWaylandTextureHost>(GetBuffer(),
+                                                       GetBufferDescriptor());
+  } else
+#endif
+  {
     texture = MakeRefPtr<wr::RenderBufferTextureHost>(GetBuffer(),
                                                       GetBufferDescriptor());
   }

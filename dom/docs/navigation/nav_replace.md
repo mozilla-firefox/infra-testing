@@ -38,7 +38,7 @@ objects to be replaced. The general rules look something like this:
 ### in-process navigations
 
 An in-process navigation is the traditional type of navigation, and the most
-common type of navigation when {ref}`Fission` is not enabled.
+common type of navigation when Fission is not enabled.
 
 These navigations are used when no process switching or BrowsingContext
 replacement is required, which includes most navigations with Fission
@@ -50,7 +50,7 @@ disabled, and most same site-origin navigations when Fission is enabled.
 
 A cross-process navigation is used when a navigation requires a process
 switch to occur, and no BrowsingContext replacement is required. This is a
-common type of load when {ref}`Fission` is enabled, though it is also used
+common type of load when Fission is enabled, though it is also used
 for navigations to and from special URLs like `file://` URIs when
 Fission is disabled.
 
@@ -67,7 +67,7 @@ a browsing context group switch](https://html.spec.whatwg.org/multipage/origin.h
 
 These types of switches may or may not cause the process to change, but will
 finish within a different `BrowsingContextGroup` than they started with.
-Like {ref}`cross-process navigations`, these navigations are triggered using
+Like [cross-process navigations](#cross-process-navigations), these navigations are triggered using
 the process switching logic in `DocumentLoadListener`.
 
 As the parent of a content browsing context cannot change due to a navigation,

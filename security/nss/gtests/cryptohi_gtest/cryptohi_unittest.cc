@@ -37,15 +37,15 @@ class SignParamsTestF : public ::testing::Test {
   void SetUp() {
     arena_.reset(PORT_NewArena(2048));
 
-    SECKEYPublicKey *pubk;
-    SECKEYPrivateKey *privk = SECKEY_CreateRSAPrivateKey(1024, &pubk, NULL);
+    SECKEYPublicKey* pubk;
+    SECKEYPrivateKey* privk = SECKEY_CreateRSAPrivateKey(1024, &pubk, NULL);
     ASSERT_NE(nullptr, pubk);
     pubk_.reset(pubk);
     ASSERT_NE(nullptr, privk);
     privk_.reset(privk);
 
     SECKEYECParams ecParams = {siBuffer, NULL, 0};
-    SECOidData *oidData;
+    SECOidData* oidData;
     oidData = SECOID_FindOIDByTag(SEC_OID_CURVE25519);
     ASSERT_NE(nullptr, oidData);
     ASSERT_NE(nullptr,
@@ -54,8 +54,8 @@ class SignParamsTestF : public ::testing::Test {
     ecParams.data[0] = SEC_ASN1_OBJECT_ID; /* we have to prepend 0x06 */
     ecParams.data[1] = oidData->oid.len;
     memcpy(ecParams.data + 2, oidData->oid.data, oidData->oid.len);
-    SECKEYPublicKey *ecPubk;
-    SECKEYPrivateKey *ecPrivk =
+    SECKEYPublicKey* ecPubk;
+    SECKEYPrivateKey* ecPrivk =
         SECKEY_CreateECPrivateKey(&ecParams, &ecPubk, NULL);
     SECITEM_FreeItem(&ecParams, PR_FALSE);
     ASSERT_NE(nullptr, ecPubk);
@@ -64,18 +64,18 @@ class SignParamsTestF : public ::testing::Test {
     ecPrivk_.reset(ecPrivk);
   }
 
-  void CreatePssParams(SECKEYRSAPSSParams *params, SECOidTag hashAlgTag) {
+  void CreatePssParams(SECKEYRSAPSSParams* params, SECOidTag hashAlgTag) {
     PORT_Memset(params, 0, sizeof(SECKEYRSAPSSParams));
 
-    params->hashAlg = (SECAlgorithmID *)PORT_ArenaZAlloc(
-        arena_.get(), sizeof(SECAlgorithmID));
+    params->hashAlg =
+        (SECAlgorithmID*)PORT_ArenaZAlloc(arena_.get(), sizeof(SECAlgorithmID));
     ASSERT_NE(nullptr, params->hashAlg);
     SECStatus rv =
         SECOID_SetAlgorithmID(arena_.get(), params->hashAlg, hashAlgTag, NULL);
     ASSERT_EQ(SECSuccess, rv);
   }
 
-  void CreatePssParams(SECKEYRSAPSSParams *params, SECOidTag hashAlgTag,
+  void CreatePssParams(SECKEYRSAPSSParams* params, SECOidTag hashAlgTag,
                        SECOidTag maskHashAlgTag) {
     CreatePssParams(params, hashAlgTag);
 
@@ -85,12 +85,12 @@ class SignParamsTestF : public ::testing::Test {
         SECOID_SetAlgorithmID(arena_.get(), &maskHashAlg, maskHashAlgTag, NULL);
     ASSERT_EQ(SECSuccess, rv);
 
-    SECItem *maskHashAlgItem =
+    SECItem* maskHashAlgItem =
         SEC_ASN1EncodeItem(arena_.get(), NULL, &maskHashAlg,
                            SEC_ASN1_GET(SECOID_AlgorithmIDTemplate));
 
-    params->maskAlg = (SECAlgorithmID *)PORT_ArenaZAlloc(
-        arena_.get(), sizeof(SECAlgorithmID));
+    params->maskAlg =
+        (SECAlgorithmID*)PORT_ArenaZAlloc(arena_.get(), sizeof(SECAlgorithmID));
     ASSERT_NE(nullptr, params->maskAlg);
 
     rv = SECOID_SetAlgorithmID(arena_.get(), params->maskAlg,
@@ -98,16 +98,16 @@ class SignParamsTestF : public ::testing::Test {
     ASSERT_EQ(SECSuccess, rv);
   }
 
-  void CreatePssParams(SECKEYRSAPSSParams *params, SECOidTag hashAlgTag,
+  void CreatePssParams(SECKEYRSAPSSParams* params, SECOidTag hashAlgTag,
                        SECOidTag maskHashAlgTag, unsigned long saltLength) {
     CreatePssParams(params, hashAlgTag, maskHashAlgTag);
 
-    SECItem *saltLengthItem =
+    SECItem* saltLengthItem =
         SEC_ASN1EncodeInteger(arena_.get(), &params->saltLength, saltLength);
     ASSERT_EQ(&params->saltLength, saltLengthItem);
   }
 
-  void CheckHashAlg(SECKEYRSAPSSParams *params, SECOidTag hashAlgTag) {
+  void CheckHashAlg(SECKEYRSAPSSParams* params, SECOidTag hashAlgTag) {
     // If hash algorithm is SHA-1, it must be omitted in the parameters
     if (hashAlgTag == SEC_OID_SHA1) {
       EXPECT_EQ(nullptr, params->hashAlg);
@@ -117,7 +117,7 @@ class SignParamsTestF : public ::testing::Test {
     }
   }
 
-  void CheckMaskAlg(SECKEYRSAPSSParams *params, SECOidTag hashAlgTag) {
+  void CheckMaskAlg(SECKEYRSAPSSParams* params, SECOidTag hashAlgTag) {
     SECStatus rv;
 
     // If hash algorithm is SHA-1, it must be omitted in the parameters
@@ -137,7 +137,7 @@ class SignParamsTestF : public ::testing::Test {
     }
   }
 
-  void CheckSaltLength(SECKEYRSAPSSParams *params, SECOidTag hashAlg) {
+  void CheckSaltLength(SECKEYRSAPSSParams* params, SECOidTag hashAlg) {
     // If the salt length parameter is missing, that means it is 20 (default)
     if (!params->saltLength.data) {
       return;
@@ -184,7 +184,7 @@ TEST_P(SignParamsTest, CreateRsa) {
   SECOidTag hashAlg = std::get<0>(GetParam());
   SECOidTag srcHashAlg = std::get<1>(GetParam());
 
-  SECItem *srcParams;
+  SECItem* srcParams;
   if (srcHashAlg != SEC_OID_UNKNOWN) {
     SECKEYRSAPSSParams pssParams;
     ASSERT_NO_FATAL_FAILURE(
@@ -196,7 +196,7 @@ TEST_P(SignParamsTest, CreateRsa) {
     srcParams = NULL;
   }
 
-  SECItem *params = SEC_CreateSignatureAlgorithmParameters(
+  SECItem* params = SEC_CreateSignatureAlgorithmParameters(
       arena_.get(), nullptr, SEC_OID_PKCS1_RSA_ENCRYPTION, hashAlg, srcParams,
       privk_.get());
 
@@ -214,7 +214,7 @@ TEST_P(SignParamsTest, CreateRsaPss) {
   SECOidTag hashAlg = std::get<0>(GetParam());
   SECOidTag srcHashAlg = std::get<1>(GetParam());
 
-  SECItem *srcParams;
+  SECItem* srcParams;
   if (srcHashAlg != SEC_OID_UNKNOWN) {
     SECKEYRSAPSSParams pssParams;
     ASSERT_NO_FATAL_FAILURE(
@@ -226,7 +226,7 @@ TEST_P(SignParamsTest, CreateRsaPss) {
     srcParams = NULL;
   }
 
-  SECItem *params = SEC_CreateSignatureAlgorithmParameters(
+  SECItem* params = SEC_CreateSignatureAlgorithmParameters(
       arena_.get(), nullptr, SEC_OID_PKCS1_RSA_PSS_SIGNATURE, hashAlg,
       srcParams, privk_.get());
 
@@ -273,7 +273,7 @@ TEST_P(SignParamsTest, CreateRsaPssWithECPrivateKey) {
   SECOidTag hashAlg = std::get<0>(GetParam());
   SECOidTag srcHashAlg = std::get<1>(GetParam());
 
-  SECItem *srcParams;
+  SECItem* srcParams;
   if (srcHashAlg != SEC_OID_UNKNOWN) {
     SECKEYRSAPSSParams pssParams;
     ASSERT_NO_FATAL_FAILURE(
@@ -285,7 +285,7 @@ TEST_P(SignParamsTest, CreateRsaPssWithECPrivateKey) {
     srcParams = NULL;
   }
 
-  SECItem *params = SEC_CreateSignatureAlgorithmParameters(
+  SECItem* params = SEC_CreateSignatureAlgorithmParameters(
       arena_.get(), nullptr, SEC_OID_PKCS1_RSA_PSS_SIGNATURE, hashAlg,
       srcParams, ecPrivk_.get());
 
@@ -295,7 +295,7 @@ TEST_P(SignParamsTest, CreateRsaPssWithECPrivateKey) {
 TEST_P(SignParamsTest, CreateRsaPssWithInvalidHashAlg) {
   SECOidTag srcHashAlg = std::get<1>(GetParam());
 
-  SECItem *srcParams;
+  SECItem* srcParams;
   if (srcHashAlg != SEC_OID_UNKNOWN) {
     SECKEYRSAPSSParams pssParams;
     ASSERT_NO_FATAL_FAILURE(
@@ -307,7 +307,7 @@ TEST_P(SignParamsTest, CreateRsaPssWithInvalidHashAlg) {
     srcParams = NULL;
   }
 
-  SECItem *params = SEC_CreateSignatureAlgorithmParameters(
+  SECItem* params = SEC_CreateSignatureAlgorithmParameters(
       arena_.get(), nullptr, SEC_OID_PKCS1_RSA_PSS_SIGNATURE, SEC_OID_MD5,
       srcParams, privk_.get());
 
@@ -317,7 +317,7 @@ TEST_P(SignParamsTest, CreateRsaPssWithInvalidHashAlg) {
 TEST_P(SignParamsSourceTest, CreateRsaPssWithInvalidHashAlg) {
   SECOidTag hashAlg = GetParam();
 
-  SECItem *srcParams;
+  SECItem* srcParams;
   SECKEYRSAPSSParams pssParams;
   ASSERT_NO_FATAL_FAILURE(
       CreatePssParams(&pssParams, SEC_OID_MD5, SEC_OID_MD5));
@@ -325,7 +325,7 @@ TEST_P(SignParamsSourceTest, CreateRsaPssWithInvalidHashAlg) {
                                  SEC_ASN1_GET(SECKEY_RSAPSSParamsTemplate));
   ASSERT_NE(nullptr, srcParams);
 
-  SECItem *params = SEC_CreateSignatureAlgorithmParameters(
+  SECItem* params = SEC_CreateSignatureAlgorithmParameters(
       arena_.get(), nullptr, SEC_OID_PKCS1_RSA_PSS_SIGNATURE, hashAlg,
       srcParams, privk_.get());
 
@@ -335,7 +335,7 @@ TEST_P(SignParamsSourceTest, CreateRsaPssWithInvalidHashAlg) {
 TEST_P(SignParamsSourceTest, CreateRsaPssWithInvalidSaltLength) {
   SECOidTag hashAlg = GetParam();
 
-  SECItem *srcParams;
+  SECItem* srcParams;
   SECKEYRSAPSSParams pssParams;
   ASSERT_NO_FATAL_FAILURE(
       CreatePssParams(&pssParams, SEC_OID_SHA512, SEC_OID_SHA512, 100));
@@ -343,7 +343,7 @@ TEST_P(SignParamsSourceTest, CreateRsaPssWithInvalidSaltLength) {
                                  SEC_ASN1_GET(SECKEY_RSAPSSParamsTemplate));
   ASSERT_NE(nullptr, srcParams);
 
-  SECItem *params = SEC_CreateSignatureAlgorithmParameters(
+  SECItem* params = SEC_CreateSignatureAlgorithmParameters(
       arena_.get(), nullptr, SEC_OID_PKCS1_RSA_PSS_SIGNATURE, hashAlg,
       srcParams, privk_.get());
 
@@ -353,7 +353,7 @@ TEST_P(SignParamsSourceTest, CreateRsaPssWithInvalidSaltLength) {
 TEST_P(SignParamsSourceTest, CreateRsaPssWithHashMismatch) {
   SECOidTag hashAlg = GetParam();
 
-  SECItem *srcParams;
+  SECItem* srcParams;
   SECKEYRSAPSSParams pssParams;
   ASSERT_NO_FATAL_FAILURE(
       CreatePssParams(&pssParams, SEC_OID_SHA256, SEC_OID_SHA512));
@@ -361,7 +361,7 @@ TEST_P(SignParamsSourceTest, CreateRsaPssWithHashMismatch) {
                                  SEC_ASN1_GET(SECKEY_RSAPSSParamsTemplate));
   ASSERT_NE(nullptr, srcParams);
 
-  SECItem *params = SEC_CreateSignatureAlgorithmParameters(
+  SECItem* params = SEC_CreateSignatureAlgorithmParameters(
       arena_.get(), nullptr, SEC_OID_PKCS1_RSA_PSS_SIGNATURE, hashAlg,
       srcParams, privk_.get());
 
@@ -389,24 +389,24 @@ static const size_t kOversizedLen = 0x80000021UL;
 // Reserve `size` bytes of virtual address space.  Touched pages are committed
 // lazily (POSIX) or explicitly via CommitTouchedRange (Windows), so untouched
 // regions consume no backing memory.  Returns nullptr on failure.
-static unsigned char *ReserveSparseRange(size_t size) {
+static unsigned char* ReserveSparseRange(size_t size) {
 #if defined(_WIN32)
-  return static_cast<unsigned char *>(
+  return static_cast<unsigned char*>(
       VirtualAlloc(nullptr, size, MEM_RESERVE, PAGE_NOACCESS));
 #else
   int flags = MAP_PRIVATE | MAP_ANONYMOUS;
 #ifdef MAP_NORESERVE
   flags |= MAP_NORESERVE;
 #endif
-  void *p = mmap(nullptr, size, PROT_READ | PROT_WRITE, flags, -1, 0);
-  return p == MAP_FAILED ? nullptr : static_cast<unsigned char *>(p);
+  void* p = mmap(nullptr, size, PROT_READ | PROT_WRITE, flags, -1, 0);
+  return p == MAP_FAILED ? nullptr : static_cast<unsigned char*>(p);
 #endif
 }
 
 // Ensure the pages covering [offset, offset + len) of a region returned by
 // ReserveSparseRange are readable and writable.  No-op on POSIX, where
 // anonymous mappings are demand-paged automatically.  Returns true on success.
-static bool CommitTouchedRange(unsigned char *base, size_t offset, size_t len) {
+static bool CommitTouchedRange(unsigned char* base, size_t offset, size_t len) {
 #if defined(_WIN32)
   SYSTEM_INFO si;
   GetSystemInfo(&si);
@@ -423,7 +423,7 @@ static bool CommitTouchedRange(unsigned char *base, size_t offset, size_t len) {
 #endif
 }
 
-static void ReleaseSparseRange(unsigned char *base, size_t size) {
+static void ReleaseSparseRange(unsigned char* base, size_t size) {
 #if defined(_WIN32)
   (void)size;
   VirtualFree(base, 0, MEM_RELEASE);
@@ -438,8 +438,8 @@ static void ReleaseSparseRange(unsigned char *base, size_t size) {
 // big-INTEGER content body is never read or written by QuickDER (the parser
 // only does pointer arithmetic across it).  Sets *item and *total_out; caller
 // must call ReleaseSparseRange on success.  Returns nullptr on failure.
-static unsigned char *MakeOversizedDerSig(bool oversized_r, SECItem *item,
-                                          size_t *total_out) {
+static unsigned char* MakeOversizedDerSig(bool oversized_r, SECItem* item,
+                                          size_t* total_out) {
   static const size_t kBigHdr = 6;    // tag(1) + 0x84(1) + 4-byte length
   static const size_t kSmallTlv = 3;  // 02 01 01
 
@@ -447,7 +447,7 @@ static unsigned char *MakeOversizedDerSig(bool oversized_r, SECItem *item,
   size_t total = 6 + seq_content;  // SEQUENCE header + content
   *total_out = total;
 
-  unsigned char *buf = ReserveSparseRange(total);
+  unsigned char* buf = ReserveSparseRange(total);
   if (buf == nullptr) return nullptr;
 
   // The leading header region is touched by every test; commit a small chunk
@@ -504,7 +504,7 @@ static unsigned char *MakeOversizedDerSig(bool oversized_r, SECItem *item,
 TEST(DSAUTest, DecodeDerSigOversizedRRejected) {
   SECItem item = {};
   size_t total;
-  unsigned char *buf = MakeOversizedDerSig(/*oversized_r=*/true, &item, &total);
+  unsigned char* buf = MakeOversizedDerSig(/*oversized_r=*/true, &item, &total);
   ASSERT_NE(nullptr, buf);
   ScopedSECItem result(DSAU_DecodeDerSig(&item));
   ReleaseSparseRange(buf, total);
@@ -514,7 +514,7 @@ TEST(DSAUTest, DecodeDerSigOversizedRRejected) {
 TEST(DSAUTest, DecodeDerSigOversizedSRejected) {
   SECItem item = {};
   size_t total;
-  unsigned char *buf =
+  unsigned char* buf =
       MakeOversizedDerSig(/*oversized_r=*/false, &item, &total);
   ASSERT_NE(nullptr, buf);
   ScopedSECItem result(DSAU_DecodeDerSig(&item));
@@ -524,7 +524,7 @@ TEST(DSAUTest, DecodeDerSigOversizedSRejected) {
 
 TEST(DSAUTest, VfyVerifyDataDirectOversizedSigRejected) {
   SECKEYECParams ecParams = {siBuffer, nullptr, 0};
-  SECOidData *oidData = SECOID_FindOIDByTag(SEC_OID_ANSIX962_EC_PRIME256V1);
+  SECOidData* oidData = SECOID_FindOIDByTag(SEC_OID_ANSIX962_EC_PRIME256V1);
   ASSERT_NE(nullptr, oidData);
   ASSERT_NE(nullptr,
             SECITEM_AllocItem(nullptr, &ecParams, 2 + oidData->oid.len));
@@ -532,7 +532,7 @@ TEST(DSAUTest, VfyVerifyDataDirectOversizedSigRejected) {
   ecParams.data[1] = static_cast<unsigned char>(oidData->oid.len);
   memcpy(ecParams.data + 2, oidData->oid.data, oidData->oid.len);
 
-  SECKEYPublicKey *pubk = nullptr;
+  SECKEYPublicKey* pubk = nullptr;
   ScopedSECKEYPrivateKey privk(
       SECKEY_CreateECPrivateKey(&ecParams, &pubk, nullptr));
   SECITEM_FreeItem(&ecParams, PR_FALSE);
@@ -542,7 +542,7 @@ TEST(DSAUTest, VfyVerifyDataDirectOversizedSigRejected) {
 
   SECItem sig = {};
   size_t total;
-  unsigned char *buf = MakeOversizedDerSig(/*oversized_r=*/true, &sig, &total);
+  unsigned char* buf = MakeOversizedDerSig(/*oversized_r=*/true, &sig, &total);
   ASSERT_NE(nullptr, buf);
   const unsigned char data[] = "hello";
   SECStatus rv = VFY_VerifyDataDirect(data, sizeof(data), pubKey.get(), &sig,
@@ -552,5 +552,197 @@ TEST(DSAUTest, VfyVerifyDataDirectOversizedSigRejected) {
   EXPECT_EQ(SECFailure, rv);
 }
 #endif  // NSS_TEST_HAVE_LARGE_VA
+
+// RFC 3279, Section 2.3.2 allows a DSA certificate to omit the parameters
+// field of its SubjectPublicKeyInfo AlgorithmIdentifier and inherit p, q and g
+// from the issuer. No key can be extracted from such a SubjectPublicKeyInfo
+// until SECKEY_UpdateCertPQG() has copied the parameters in from the issuer.
+
+// SubjectPublicKeyInfo for a DSA key that carries its own Dss-Parms. The
+// values are not a usable key, only well formed.
+static const uint8_t kDsaSpki[] = {
+    0x30, 0x1c,  // SEQUENCE
+    0x30, 0x14,  // AlgorithmIdentifier
+    0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x38, 0x04, 0x01,  // id-dsa
+    0x30, 0x09,                                            // Dss-Parms
+    0x02, 0x01, 0x0b,                                      // p
+    0x02, 0x01, 0x05,                                      // q
+    0x02, 0x01, 0x02,                                      // g
+    0x03, 0x04, 0x00, 0x02, 0x01, 0x03                     // BIT STRING { y }
+};
+
+// The same key with the parameters field absent.
+static const uint8_t kDsaSpkiInheritedParams[] = {
+    0x30, 0x11,  // SEQUENCE
+    0x30, 0x09,  // AlgorithmIdentifier
+    0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x38, 0x04, 0x01,  // id-dsa
+    0x03, 0x04, 0x00, 0x02, 0x01, 0x03                     // BIT STRING { y }
+};
+
+static ScopedCERTSubjectPublicKeyInfo DecodeSpki(const uint8_t* der,
+                                                 size_t len) {
+  SECItem item = {siBuffer, const_cast<unsigned char*>(der),
+                  static_cast<unsigned int>(len)};
+  return ScopedCERTSubjectPublicKeyInfo(
+      SECKEY_DecodeDERSubjectPublicKeyInfo(&item));
+}
+
+TEST(SpkiInheritedParamsTest, DsaWithParameters) {
+  ScopedCERTSubjectPublicKeyInfo spki(DecodeSpki(kDsaSpki, sizeof(kDsaSpki)));
+  ASSERT_NE(nullptr, spki.get());
+  ASSERT_NE(0u, spki->algorithm.parameters.len);
+
+  ScopedSECKEYPublicKey key(SECKEY_ExtractPublicKey(spki.get()));
+  EXPECT_NE(nullptr, key.get());
+}
+
+TEST(SpkiInheritedParamsTest, DsaInheritedParametersNoKey) {
+  ScopedCERTSubjectPublicKeyInfo spki(
+      DecodeSpki(kDsaSpkiInheritedParams, sizeof(kDsaSpkiInheritedParams)));
+  ASSERT_NE(nullptr, spki.get());
+  ASSERT_EQ(0u, spki->algorithm.parameters.len);
+
+  ScopedSECKEYPublicKey key(SECKEY_ExtractPublicKey(spki.get()));
+  EXPECT_EQ(nullptr, key.get());
+  EXPECT_EQ(SEC_ERROR_INPUT_LEN, PORT_GetError());
+}
+
+TEST(SpkiInheritedParamsTest, EcInheritedParametersNoKey) {
+  SECKEYECParams ecParams = {siBuffer, nullptr, 0};
+  SECOidData* oidData = SECOID_FindOIDByTag(SEC_OID_ANSIX962_EC_PRIME256V1);
+  ASSERT_NE(nullptr, oidData);
+  ASSERT_NE(nullptr,
+            SECITEM_AllocItem(nullptr, &ecParams, 2 + oidData->oid.len));
+  ecParams.data[0] = SEC_ASN1_OBJECT_ID;
+  ecParams.data[1] = static_cast<unsigned char>(oidData->oid.len);
+  memcpy(ecParams.data + 2, oidData->oid.data, oidData->oid.len);
+
+  SECKEYPublicKey* pubk = nullptr;
+  ScopedSECKEYPrivateKey privk(
+      SECKEY_CreateECPrivateKey(&ecParams, &pubk, nullptr));
+  SECITEM_FreeItem(&ecParams, PR_FALSE);
+  ScopedSECKEYPublicKey pubKey(pubk);
+  ASSERT_NE(nullptr, privk.get());
+  ASSERT_NE(nullptr, pubKey.get());
+
+  ScopedCERTSubjectPublicKeyInfo spki(
+      SECKEY_CreateSubjectPublicKeyInfo(pubKey.get()));
+  ASSERT_NE(nullptr, spki.get());
+  ASSERT_NE(0u, spki->algorithm.parameters.len);
+
+  ScopedSECKEYPublicKey withParams(SECKEY_ExtractPublicKey(spki.get()));
+  EXPECT_NE(nullptr, withParams.get());
+
+  // Drop the named curve, as an absent OPTIONAL parameters field decodes.
+  // The memory stays owned by the SubjectPublicKeyInfo's arena.
+  spki->algorithm.parameters.data = nullptr;
+  spki->algorithm.parameters.len = 0;
+
+  ScopedSECKEYPublicKey inherited(SECKEY_ExtractPublicKey(spki.get()));
+  EXPECT_EQ(nullptr, inherited.get());
+  EXPECT_EQ(SEC_ERROR_INPUT_LEN, PORT_GetError());
+}
+
+// SubjectPublicKeyInfo encoding of RFC 8410 keys (edKey, ecMontKey). The
+// algorithm OID is the RFC 8410 one (id-X25519, id-Ed25519); in particular the
+// pre-RFC 8410 curve25519 OID must never appear there, since nothing can parse
+// it back.
+class Rfc8410SpkiTest : public ::testing::Test {
+ protected:
+  static void MakeEcParams(SECOidTag oid, ScopedSECItem& params) {
+    SECOidData* oidData = SECOID_FindOIDByTag(oid);
+    ASSERT_NE(nullptr, oidData);
+    SECItem* tmp = SECITEM_AllocItem(nullptr, nullptr, 2 + oidData->oid.len);
+    ASSERT_NE(nullptr, tmp);
+    tmp->type = siDEROID;
+    tmp->data[0] = SEC_ASN1_OBJECT_ID;
+    tmp->data[1] = static_cast<unsigned char>(oidData->oid.len);
+    memcpy(tmp->data + 2, oidData->oid.data, oidData->oid.len);
+    params.reset(tmp);
+  }
+
+  static void GenerateKeyPair(CK_MECHANISM_TYPE mech, SECOidTag oid,
+                              ScopedSECKEYPublicKey& pub,
+                              ScopedSECKEYPrivateKey& priv) {
+    ScopedPK11SlotInfo slot(PK11_GetInternalSlot());
+    ASSERT_NE(nullptr, slot.get());
+    ScopedSECItem params;
+    ASSERT_NO_FATAL_FAILURE(MakeEcParams(oid, params));
+    SECKEYPublicKey* pubTmp = nullptr;
+    priv.reset(PK11_GenerateKeyPair(slot.get(), mech, params.get(), &pubTmp,
+                                    PR_FALSE, PR_FALSE, nullptr));
+    ASSERT_NE(nullptr, priv.get());
+    ASSERT_NE(nullptr, pubTmp);
+    pub.reset(pubTmp);
+  }
+
+  // Encode |pub| to an SPKI, check the algorithm OID, then decode it again and
+  // check that we recovered the same key.
+  static void ExpectRoundTrip(const ScopedSECKEYPublicKey& pub,
+                              KeyType expectedType, SECOidTag expectedAlgOid) {
+    ScopedSECItem der(SECKEY_EncodeDERSubjectPublicKeyInfo(pub.get()));
+    ASSERT_NE(nullptr, der.get());
+
+    ScopedCERTSubjectPublicKeyInfo spki(
+        SECKEY_DecodeDERSubjectPublicKeyInfo(der.get()));
+    ASSERT_NE(nullptr, spki.get());
+    EXPECT_EQ(expectedAlgOid, SECOID_GetAlgorithmTag(&spki->algorithm));
+
+    ScopedSECKEYPublicKey back(SECKEY_ExtractPublicKey(spki.get()));
+    ASSERT_NE(nullptr, back.get()) << "SEC error " << PORT_GetError();
+    EXPECT_EQ(expectedType, back->keyType);
+    EXPECT_EQ(0, SECITEM_CompareItem(&pub->u.ec.publicValue,
+                                     &back->u.ec.publicValue));
+  }
+};
+
+TEST_F(Rfc8410SpkiTest, X25519WithRfc8410Oid) {
+  ScopedSECKEYPublicKey pub;
+  ScopedSECKEYPrivateKey priv;
+  ASSERT_NO_FATAL_FAILURE(GenerateKeyPair(CKM_EC_MONTGOMERY_KEY_PAIR_GEN,
+                                          SEC_OID_X25519, pub, priv));
+  ASSERT_EQ(ecMontKey, pub->keyType);
+  ExpectRoundTrip(pub, ecMontKey, SEC_OID_X25519);
+}
+
+// CKM_EC_MONTGOMERY_KEY_PAIR_GEN accepts the pre-RFC 8410 curve25519 OID as
+// the named curve. The resulting key must still encode to an SPKI that says
+// id-X25519, not curve25519.
+TEST_F(Rfc8410SpkiTest, X25519WithLegacyCurve25519Oid) {
+  ScopedSECKEYPublicKey pub;
+  ScopedSECKEYPrivateKey priv;
+  ASSERT_NO_FATAL_FAILURE(GenerateKeyPair(CKM_EC_MONTGOMERY_KEY_PAIR_GEN,
+                                          SEC_OID_CURVE25519, pub, priv));
+  ASSERT_EQ(ecMontKey, pub->keyType);
+  ExpectRoundTrip(pub, ecMontKey, SEC_OID_X25519);
+}
+
+TEST_F(Rfc8410SpkiTest, Ed25519) {
+  ScopedSECKEYPublicKey pub;
+  ScopedSECKEYPrivateKey priv;
+  ASSERT_NO_FATAL_FAILURE(GenerateKeyPair(
+      CKM_EC_EDWARDS_KEY_PAIR_GEN, SEC_OID_ED25519_PUBLIC_KEY, pub, priv));
+  ASSERT_EQ(edKey, pub->keyType);
+  ExpectRoundTrip(pub, edKey, SEC_OID_ED25519_PUBLIC_KEY);
+}
+
+// A curve that has no RFC 8410 identifier must be refused outright rather than
+// encoded into an SPKI that cannot be read back.
+TEST_F(Rfc8410SpkiTest, UnrelatedCurveRejected) {
+  ScopedSECKEYPublicKey pub;
+  ScopedSECKEYPrivateKey priv;
+  ASSERT_NO_FATAL_FAILURE(GenerateKeyPair(CKM_EC_MONTGOMERY_KEY_PAIR_GEN,
+                                          SEC_OID_X25519, pub, priv));
+
+  // Relabel the curve; the key material is irrelevant here.
+  ScopedSECItem params;
+  ASSERT_NO_FATAL_FAILURE(MakeEcParams(SEC_OID_ANSIX962_EC_PRIME256V1, params));
+  ASSERT_EQ(
+      SECSuccess,
+      SECITEM_CopyItem(pub->arena, &pub->u.ec.DEREncodedParams, params.get()));
+
+  EXPECT_EQ(nullptr, SECKEY_EncodeDERSubjectPublicKeyInfo(pub.get()));
+  EXPECT_EQ(SEC_ERROR_UNSUPPORTED_KEYALG, PORT_GetError());
+}
 
 }  // namespace nss_test

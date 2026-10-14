@@ -20,6 +20,7 @@ import {
 } from "common/WidgetsRegistry.mjs";
 import { MoveSubmenu } from "../MoveSubmenu";
 import { useWidgetTelemetry } from "../useWidgetTelemetry";
+import { WidgetMenuButton } from "../WidgetMenuButton";
 
 const USER_ACTION_TYPES = {
   CHANGE_SIZE: "change_size",
@@ -376,16 +377,20 @@ function Crossword({
               data-l10n-id="newtab-widget-lists-label-new"
             ></moz-badge>
           )}
-          <h3 className="newtab-crossword-title">Daily crossword</h3>
+          <h3 className="newtab-widget-title newtab-crossword-title">
+            Daily crossword
+          </h3>
         </div>
         <div className="crossword-context-menu-wrapper">
-          <moz-button
+          <WidgetMenuButton
             className="crossword-context-menu-button"
-            iconSrc="chrome://global/skin/icons/more.svg"
             menuId="crossword-context-menu"
-            type="ghost"
+            l10nId="newtab-crossword-widget-open-menu-button"
           />
-          <panel-list id="crossword-context-menu">
+          <panel-list
+            className="panel-list-no-icons"
+            id="crossword-context-menu"
+          >
             {MENU_ACTION_ITEMS.filter(
               item => !(puzzleCompleted && item.hideWhenCompleted)
             ).map(item => (

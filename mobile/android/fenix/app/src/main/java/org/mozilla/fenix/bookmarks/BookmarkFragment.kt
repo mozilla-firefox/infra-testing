@@ -152,7 +152,8 @@ class BookmarkFragment : Fragment(), SystemInsetsPaddedFragment {
                                             )
                                     },
                                     shareBookmarks = { bookmarks ->
-                                        val shareItems = bookmarks.asShareDataArray().toList()
+                                        val shareItems =
+                                            bookmarks.asShareDataArray(appStore.state.mode.isPrivate).toList()
                                         requireComponents.useCases.shareUseCases.shareItems(
                                             items = shareItems,
                                             source = ShareSource.BOOKMARKS,
@@ -169,7 +170,7 @@ class BookmarkFragment : Fragment(), SystemInsetsPaddedFragment {
                                                 navController.nav(
                                                     R.id.bookmarkFragment,
                                                     BookmarkFragmentDirections.actionGlobalShareFragment(
-                                                        data = bookmarks.asShareDataArray()
+                                                        data = bookmarks.asShareDataArray(appStore.state.mode.isPrivate)
                                                     ),
                                                 )
                                             },

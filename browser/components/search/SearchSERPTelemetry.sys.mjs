@@ -81,6 +81,26 @@ export const SearchSERPTelemetryUtils = {
   },
 };
 
+/**
+ * The possible outcomes of the phase that checks a SERP for the presence of
+ * ads before it is categorized.
+ */
+const PRESCAN = {
+  FOUND: "found",
+  NONE_FOUND: "none_found",
+  NOT_RUN: "not_run",
+};
+
+/**
+ * The possible outcomes of the phase that categorizes the components of a
+ * SERP.
+ */
+const SCAN = {
+  COMPLETE: "complete",
+  ERROR: "error",
+  NOT_RUN: "not_run",
+};
+
 const AD_COMPONENTS = [
   SearchSERPTelemetryUtils.COMPONENTS.AD_CAROUSEL,
   SearchSERPTelemetryUtils.COMPONENTS.AD_IMAGE_ROW,
@@ -327,10 +347,6 @@ class TelemetryHandler {
   // Browser objects mapped to the info in _browserInfoByURL.
   #browserToItemMap = new WeakMap();
 
-  // An array of regular expressions that match urls that could be subframes
-  // on SERPs.
-  #subframeRegexps = [];
-
   /**
    * @type {WeakMap<MozBrowser, keyof KNOWN_SEARCH_SOURCES>}
    *   A map of the latest search source for a particular browser.
@@ -367,9 +383,6 @@ class TelemetryHandler {
 
   constructor() {
     this._contentHandler = new ContentHandler({
-      browserInfoByURL: this._browserInfoByURL,
-      findBrowserItemForURL: this._findBrowserItemForURL.bind(this),
-      checkURLForSerpMatch: this._checkURLForSerpMatch.bind(this),
       findItemForBrowser: this.findItemForBrowser.bind(this),
     });
   }
@@ -550,7 +563,6 @@ class TelemetryHandler {
    *   A raw array of provider information to set.
    */
   _setSearchProviderInfo(providerInfo) {
-    this.#subframeRegexps = [];
     this._searchProviderInfo = providerInfo.map(provider => {
       let newProvider = {
         ...provider,
@@ -580,12 +592,12 @@ class TelemetryHandler {
         provider.nonAdsLinkQueryParamNames ?? [];
 
       newProvider.subframes =
-        provider.subframes?.map(obj => {
-          let regexp = new RegExp(obj.regexp);
-          // Also add the Regexp to the list of urls to observe.
-          this.#subframeRegexps.push(regexp);
-          return { ...obj, regexp };
-        }) ?? [];
+        provider.subframes
+          ?.filter(obj => obj.inspectRegexpInParent)
+          .map(obj => {
+            let regexp = new RegExp(obj.regexp);
+            return { ...obj, regexp };
+          }) ?? [];
 
       if (provider.impressionAttributes?.length) {
         newProvider.impressionAttributes = provider.impressionAttributes.map(
@@ -702,6 +714,7 @@ class TelemetryHandler {
       item.browserTelemetryStateMap.set(browser, {
         adsReported: false,
         adImpressionsReported: false,
+        prescan: PRESCAN.NOT_RUN,
         impressionId,
         urlToComponentMap: null,
         impressionInfo,
@@ -723,6 +736,7 @@ class TelemetryHandler {
         browserTelemetryStateMap: new WeakMap().set(browser, {
           adsReported: false,
           adImpressionsReported: false,
+          prescan: PRESCAN.NOT_RUN,
           impressionId,
           urlToComponentMap: null,
           impressionInfo,
@@ -1084,53 +1098,6 @@ class TelemetryHandler {
    */
   findItemForBrowser(browser) {
     return this.#browserToItemMap.get(browser);
-  }
-
-  /**
-   * Parts of the URL, like search params and hashes, may be mutated by scripts
-   * on a page we're tracking. Since we don't want to keep track of that
-   * ourselves in order to keep the list of browser objects a weak-referenced
-   * set, we do optional fuzzy matching of URLs to fetch the most relevant item
-   * that contains tracking information.
-   *
-   * @param {string} urlString URL to fetch the tracking data for.
-   * @returns {object} Map containing the following members:
-   *   - {WeakMap} browsers
-   *     Map of browser elements that belong to `url` and their ad report state.
-   *   - {object} info
-   *     Info dictionary as returned by `_checkURLForSerpMatch`.
-   *   - {number} count
-   *     The number of browser element we can most accurately tell we're
-   *     tracking, since they're inside a WeakMap.
-   */
-  _findBrowserItemForURL(urlString) {
-    let url = URL.parse(urlString);
-    if (!url) {
-      return null;
-    }
-
-    let item;
-    let currentBestMatch = 0;
-    for (let [trackingURL, candidateItem] of this._browserInfoByURL) {
-      if (currentBestMatch === Infinity) {
-        break;
-      }
-      // Make sure to cache the parsed URL object, since there's no reason to
-      // do it twice.
-      trackingURL =
-        candidateItem._trackingURL ||
-        (candidateItem._trackingURL = URL.parse(trackingURL));
-      if (!trackingURL) {
-        continue;
-      }
-      let score = this.compareUrls(url, trackingURL);
-      if (score > currentBestMatch) {
-        item = candidateItem;
-        currentBestMatch = score;
-      }
-    }
-
-    return item;
   }
 
   // nsIWindowMediatorListener
@@ -1539,19 +1506,10 @@ class ContentHandler {
    *
    * @param {object} options
    *   The options for the handler.
-   * @param {Map} options.browserInfoByURL
-   *   The map of urls from TelemetryHandler.
-   * @param {(urlString: string) => object} options.findBrowserItemForURL
-   *   The function for finding a browser item for the URL.
-   * @param {(url: string) => null|object} options.checkURLForSerpMatch
-   *   The function for checking a URL for a SERP match.
    * @param {(browser: object) => object} options.findItemForBrowser
    *   The function for finding an item for the browser.
    */
   constructor(options) {
-    this._browserInfoByURL = options.browserInfoByURL;
-    this._findBrowserItemForURL = options.findBrowserItemForURL;
-    this._checkURLForSerpMatch = options.checkURLForSerpMatch;
     this._findItemForBrowser = options.findItemForBrowser;
   }
 
@@ -1596,6 +1554,7 @@ class ContentHandler {
    */
   overrideSearchTelemetryForTests(providerInfo) {
     Services.ppmm.sharedData.set("SearchTelemetry:ProviderInfo", providerInfo);
+    Services.ppmm.sharedData.flush();
   }
 
   observe(aSubject, aTopic) {
@@ -1846,14 +1805,13 @@ class ContentHandler {
       // Exceptions:
       // - If a searchbox was used to initiate the load, don't record another
       //   engagement because the event was logged elsewhere.
-      // - If the ad impression hasn't been recorded yet, we have no way of
-      //   knowing precisely what kind of component was selected.
+      //
+      // If the ad impression hasn't been recorded yet, we can't know precisely
+      // which component was selected, but we can still tell an ad from a
+      // non-ad by the URL alone. Recording the engagement as uncategorized is
+      // better than dropping it.
       let isSerp = false;
-      if (
-        telemetryState &&
-        telemetryState.adImpressionsReported &&
-        !telemetryState.searchBoxSubmitted
-      ) {
+      if (telemetryState && !telemetryState.searchBoxSubmitted) {
         if (info.searchPageRegexp?.test(originURL)) {
           isSerp = true;
         }
@@ -1883,12 +1841,14 @@ class ContentHandler {
           }
         }
 
-        // Determine the component type of the link.
+        // Determine the component type of the link. The map is null if the
+        // page was never categorized for components, in which case the type
+        // is resolved from the URL below.
         let type;
         for (let [
           storedUrl,
           componentType,
-        ] of telemetryState.urlToComponentMap.entries()) {
+        ] of telemetryState.urlToComponentMap?.entries() ?? []) {
           // The URL we're navigating to may have more query parameters if
           // the provider adds query parameters when the user clicks on a link.
           // On the other hand, the URL we are navigating to may have have
@@ -1910,8 +1870,10 @@ class ContentHandler {
           "Find component for URL"
         );
 
-        // If no component was found, it's possible the link was added after
-        // components were categorized.
+        // If no component was found, either the link was added after
+        // components were categorized, or the page was never categorized
+        // because the user engaged before the content process finished
+        // scanning it.
         if (!type) {
           let isAd = info.extraAdServersRegexps?.some(regex => regex.test(url));
           type = isAd
@@ -1960,7 +1922,8 @@ class ContentHandler {
   }
 
   /**
-   * Logs telemetry for a page with adverts, if it is one of the partner search
+   * Records the outcome of the prescan for a page and, if the page has
+   * adverts, logs telemetry for it, if it is one of the partner search
    * provider pages that we're tracking.
    *
    * @param {object} info
@@ -1976,14 +1939,22 @@ class ContentHandler {
     let item = this._findItemForBrowser(browser);
     if (!item) {
       lazy.logConsole.warn(
-        "Expected to report URI for",
+        "Expected to report the prescan outcome for",
         info.url,
-        "with ads but couldn't find the information"
+        "but couldn't find the information"
       );
       return;
     }
 
     let telemetryState = item.browserTelemetryStateMap.get(browser);
+    if (!info.hasAds) {
+      if (telemetryState.prescan == PRESCAN.NOT_RUN) {
+        telemetryState.prescan = PRESCAN.NONE_FOUND;
+      }
+      return;
+    }
+    telemetryState.prescan = PRESCAN.FOUND;
+
     if (telemetryState.adsReported) {
       lazy.logConsole.debug(
         "Ad was previously reported for browser with URI",
@@ -2087,6 +2058,22 @@ class ContentHandler {
   }
 
   /**
+   * Records an ad impression for ads that were found in the prescan but could
+   * not be categorized into an ad component.
+   *
+   * @param {object} telemetryState
+   *   The telemetry state of the SERP the ads were found on.
+   */
+  _recordUncategorizedAdImpression(telemetryState) {
+    lazy.logConsole.debug("Counting uncategorized ads");
+    Glean.serp.adImpression.record({
+      impression_id: telemetryState.impressionId,
+      component: SearchSERPTelemetryUtils.COMPONENTS.AD_UNCATEGORIZED,
+    });
+    telemetryState.adImpressionsReported = true;
+  }
+
+  /**
    * Records a page action from a SERP page. Normally, actions are tracked in
    * parent process by observing network events but some actions are not
    * possible to detect outside of subscribing to the child process.
@@ -2169,6 +2156,8 @@ class ContentHandler {
         shopping_tab_displayed:
           info.elementBasedAttributes?.shopping_tab_displayed ?? "false",
         has_ai_summary: info.elementBasedAttributes?.has_ai_summary ?? "false",
+        prescan: telemetryState.prescan,
+        scan: info.scan,
       });
 
       telemetryState.impressionRecorded = true;
@@ -2180,7 +2169,17 @@ class ContentHandler {
         ...restImpressionInfo,
         ...urlBasedAttributes,
         ...info.elementBasedAttributes,
+        prescan: telemetryState.prescan,
+        scan: info.scan,
       });
+
+      if (
+        info.scan == SCAN.ERROR &&
+        telemetryState.prescan == PRESCAN.FOUND &&
+        !telemetryState.adImpressionsReported
+      ) {
+        this._recordUncategorizedAdImpression(telemetryState);
+      }
       Services.obs.notifyObservers(null, "reported-page-with-impression");
     } else if (telemetryState.impressionRecorded) {
       lazy.logConsole.debug("Impression already recorded for browser.");
@@ -2207,6 +2206,8 @@ class ContentHandler {
         impressionInfo.urlBasedAttributes?.is_shopping_page ?? "false",
       shopping_tab_displayed: "unknown",
       has_ai_summary: "unknown",
+      prescan: telemetryState.prescan,
+      scan: SCAN.NOT_RUN,
     });
 
     telemetryState.impressionRecorded = true;
@@ -2219,7 +2220,13 @@ class ContentHandler {
       ...urlBasedAttributes,
       shopping_tab_displayed: "unknown",
       has_ai_summary: "unknown",
+      prescan: telemetryState.prescan,
+      scan: SCAN.NOT_RUN,
     });
+
+    if (telemetryState.prescan == PRESCAN.FOUND) {
+      this._recordUncategorizedAdImpression(telemetryState);
+    }
     Services.obs.notifyObservers(null, "reported-page-with-impression");
   }
 

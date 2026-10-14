@@ -285,6 +285,35 @@ bool LimitFileToLessThanSize(const char* aFilename, uint32_t aSize,
   return true;
 }
 
+// Converts megabytes to bytes, clamped so that the result fits in an int32_t.
+// Negative values return 0, which disables the option.
+static int32_t MegabytesToLogSize(const char* aOption, int32_t aMegabytes) {
+  constexpr int32_t kMaxMegabytes = INT32_MAX >> 20;
+  if (aMegabytes < 0) {
+    NS_WARNING(nsPrintfCString("MOZ_LOG: negative %s %d MB (ignoring %s)",
+                               aOption, aMegabytes, aOption)
+                   .get());
+    return 0;
+  }
+  if (aMegabytes > kMaxMegabytes) {
+    NS_WARNING(nsPrintfCString("MOZ_LOG: clamping %s %d MB to %d MB", aOption,
+                               aMegabytes, kMaxMegabytes)
+                   .get());
+    return kMaxMegabytes << 20;
+  }
+  return aMegabytes << 20;
+}
+
+int32_t MaxSizeOptionToBytes(int32_t aMegabytes) {
+  return MegabytesToLogSize("maxsize", aMegabytes);
+}
+
+// Returns the size of each of the kRotateFilesNumber rotated files.
+int32_t RotateOptionToBytes(int32_t aMegabytes) {
+  return MegabytesToLogSize("rotate", aMegabytes) /
+         static_cast<int32_t>(kRotateFilesNumber);
+}
+
 }  // namespace detail
 
 namespace {
@@ -296,6 +325,8 @@ void empty_va(va_list* va, ...) {
 
 struct LogMarker : public BaseMarkerType<LogMarker> {
   static constexpr const char* Name = "Log";
+  // Call sites pass the log module's name, so ETW must keep that name.
+  static constexpr bool ETWStoreName = true;
   static constexpr const char* TableLabel =
       "[{marker.data.level}] {marker.name}: {marker.data.message}";
   static constexpr const char* ColorField = "color";
@@ -419,9 +450,9 @@ class LogModuleManager {
           } else if (strcmp(aName, "raw") == 0) {
             isRaw = true;
           } else if (strcmp(aName, "rotate") == 0) {
-            rotate = (aValue << 20) / kRotateFilesNumber;
+            rotate = detail::RotateOptionToBytes(aValue);
           } else if (strcmp(aName, "maxsize") == 0) {
-            maxSize = aValue << 20;
+            maxSize = detail::MaxSizeOptionToBytes(aValue);
           } else if (strcmp(aName, "prependheader") == 0) {
             prependHeader = true;
           } else if (strcmp(aName, "profilerstacks") == 0) {
@@ -455,7 +486,7 @@ class LogModuleManager {
     if (maxSize > 0 && !shouldAppend) {
       NS_WARNING(
           "MOZ_LOG: when you limit the log to maxsize, you must use append! "
-          "(ignorning maxsize)");
+          "(ignoring maxsize)");
       maxSize = 0;
     }
 

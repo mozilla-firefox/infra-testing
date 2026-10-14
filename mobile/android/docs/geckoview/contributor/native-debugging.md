@@ -214,7 +214,7 @@ android {
 
 #### Using Android Studio on Windows
 
-You can now use {ref}`artifact builds <Understanding Artifact Builds>`
+You can now use {doc}`artifact builds </contributing/build/artifact_builds>`
 mode on [MozillaBuild environment](https://wiki.mozilla.org/MozillaBuild) even if you are
 not using WSL. If you want to debug GeckoView using Android Studio on
 Windows, you have to set an additional environment variable via the

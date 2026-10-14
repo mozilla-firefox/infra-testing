@@ -73,6 +73,7 @@
  *       cc-exp-year,          // 2-digit year will be converted to 4 digits
  *                             // upon saving
  *       cc-type,              // Optional card network id (instrument type)
+ *       cc-csc,               // Optional card security code
  *
  *       // computed fields (These fields are computed based on the above fields
  *       // and are not allowed to be modified directly.)
@@ -140,9 +141,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   CreditCardRecord: "resource://gre/modules/shared/CreditCardRecord.sys.mjs",
   FormAutofillNameUtils:
     "resource://gre/modules/shared/FormAutofillNameUtils.sys.mjs",
-  FormAutofillUtils: "resource://gre/modules/shared/FormAutofillUtils.sys.mjs",
   OSKeyStore: "resource://gre/modules/OSKeyStore.sys.mjs",
-  PhoneNumber: "resource://gre/modules/shared/PhoneNumber.sys.mjs",
 });
 
 const CryptoHash = Components.Constructor(
@@ -196,6 +195,8 @@ export const VALID_CREDIT_CARD_FIELDS = [
   "cc-exp-month",
   "cc-exp-year",
   "cc-type",
+  // TODO: Uncomment this when storage is ready.
+  // "cc-csc",
 ];
 
 const VALID_CREDIT_CARD_COMPUTED_FIELDS = [
@@ -410,6 +411,12 @@ class AutofillRecords {
     } else {
       this._ensureMatchingVersion(record);
       recordToSave = record;
+      // Stripped before computing, as update() and reconcile() do. A caller
+      // that hands back a record it read still has the derived fields on it,
+      // and computeFields only fills in the ones that are missing -- so
+      // without this they are stored as they arrived and never derived again.
+      // Callers should not have to know which fields those are.
+      await this._stripComputedFields(recordToSave);
       await this.computeFields(recordToSave);
     }
 
@@ -525,6 +532,119 @@ class AutofillRecords {
       "formautofill-storage-changed",
       "update"
     );
+  }
+
+  /**
+   * The write half of the migration contract. Each of these writes `_data`
+   * directly, so a record keeps the guid, timestamps and sync metadata it was
+   * handed, and none of them notifies or announces anything.
+   *
+   * The derived fields are stripped and recomputed, as _saveRecord() does,
+   * since a record read out of a store that computes them on read arrives with
+   * them already set and this store persists what it is given. Which fields
+   * those are is the subclass's business -- for credit cards the number is
+   * decrypted and re-encrypted on the way through -- so this works for any
+   * collection.
+   */
+  /**
+   * @param {Array<object>} records
+   * @returns {Promise<Array<{guid: string}|{error: string}>>} One entry per
+   *   record, in order.
+   */
+  async addManyWithMeta(records) {
+    const results = [];
+    for (const record of records) {
+      const index = this._findIndexByGUID(record.guid, {
+        includeDeleted: true,
+      });
+      if (index != -1) {
+        if (!this._data[index].deleted) {
+          results.push({ error: `a record with guid ${record.guid} exists` });
+          continue;
+        }
+        // A tombstone here and a live record in the source means the source
+        // has it back, from sync or from the store it was copied to. Unlike a
+        // store with a column per field, this one can drop the tombstone and
+        // take the record.
+        this._data.splice(index, 1);
+      }
+      this._data.push(await this.#recordForMigration(record));
+      results.push({ guid: record.guid });
+    }
+    this._store.saveSoon();
+    return results;
+  }
+
+  /**
+   * @param {Array<object>} records
+   * @returns {Promise<Array<{guid: string}|{error: string}>>}
+   */
+  async updateManyWithMeta(records) {
+    const results = [];
+    for (const record of records) {
+      const index = this._findIndexByGUID(record.guid);
+      if (index == -1) {
+        results.push({ error: `no record with guid ${record.guid}` });
+        continue;
+      }
+      this._data[index] = await this.#recordForMigration(record);
+      results.push({ guid: record.guid });
+    }
+    this._store.saveSoon();
+    return results;
+  }
+
+  /**
+   * Delete by guid, through remove() so that the rule about which deletions
+   * leave a tombstone stays in one place. The one write here that announces
+   * itself, once per record.
+   *
+   * @param {Array<string>} guids
+   * @returns {Promise<Array<{guid: string}|{error: string}>>}
+   */
+  async removeMany(guids) {
+    const results = [];
+    for (const guid of guids) {
+      if (!this._findByGUID(guid)) {
+        results.push({ error: `no record with guid ${guid}` });
+        continue;
+      }
+      this.remove(guid);
+      results.push({ guid });
+    }
+    return results;
+  }
+
+  /**
+   * The record as another store should receive it: the read half of the
+   * migration contract, and the counterpart of #recordForMigration.
+   *
+   * A store that keeps a field encrypted hands it over in the clear here, so
+   * that the store receiving it can encrypt on its own terms rather than having
+   * to understand this one's. Nothing to do for a collection that stores
+   * everything as it reads it.
+   *
+   * Throwing is how a record that cannot be exported is refused: the migrator
+   * counts it as failed and leaves the source untouched, rather than writing a
+   * record whose value it could not recover.
+   *
+   * @param {object} record
+   * @returns {Promise<object>}
+   */
+  async _recordForMigrationExport(record) {
+    return record;
+  }
+
+  async #recordForMigration(record) {
+    // Whatever the record arrives with, including no `_sync` at all: a store
+    // that cannot export its sync metadata leaves the record looking unsynced,
+    // which costs one upload. Keeping the entry this store already had would
+    // cost more -- a counter of 0 from before the other store took over would
+    // suppress the upload of everything done since.
+    const stored = { ...record, version: this.version };
+    await this._stripComputedFields(stored);
+    await this.computeFields(stored);
+    return stored;
   }
 
   /**
@@ -1504,10 +1624,7 @@ export class AddressesBase extends AutofillRecords {
   }
 
   _recordReadProcessor(address) {
-    if (address.country && !FormAutofill.countries.has(address.country)) {
-      delete address.country;
-      delete address["country-name"];
-    }
+    AddressRecord.hideCountryWithoutMetaData(address);
   }
 
   _isMigrationNeeded(record) {
@@ -1558,120 +1675,7 @@ export class AddressesBase extends AutofillRecords {
   }
 
   _normalizeFields(address) {
-    this._normalizeCountryFields(address);
-    this._normalizeNameFields(address);
-    this._normalizeAddressFields(address);
-    this._normalizeTelFields(address);
-  }
-
-  _normalizeNameFields(address) {
-    if (
-      !address.name &&
-      (address["given-name"] ||
-        address["additional-name"] ||
-        address["family-name"])
-    ) {
-      address.name = lazy.FormAutofillNameUtils.joinNameParts({
-        given: address["given-name"] ?? "",
-        middle: address["additional-name"] ?? "",
-        family: address["family-name"] ?? "",
-      });
-    }
-
-    delete address["given-name"];
-    delete address["additional-name"];
-    delete address["family-name"];
-  }
-
-  _normalizeAddressFields(address) {
-    if (address["address-housenumber"]) {
-      let streetField = "";
-      if (address["address-line1"]) {
-        streetField = "address-line1";
-      } else if (address["street-address"]) {
-        streetField = "street-address";
-      }
-      if (streetField) {
-        let region = address.country || FormAutofill.DEFAULT_REGION;
-        let reversed = lazy.FormAutofillUtils.getAddressReversed(region);
-
-        if (reversed) {
-          address[streetField] =
-            address[streetField] + " " + address["address-housenumber"];
-        } else {
-          address[streetField] =
-            address["address-housenumber"] + " " + address[streetField];
-        }
-      }
-
-      delete address["address-housenumber"];
-    }
-
-    if (AddressRecord.STREET_ADDRESS_COMPONENTS.some(c => !!address[c])) {
-      // Treat "street-address" as "address-line1" if it contains only one line
-      // and "address-line1" is omitted.
-      if (
-        !address["address-line1"] &&
-        address["street-address"] &&
-        !address["street-address"].includes("\n")
-      ) {
-        address["address-line1"] = address["street-address"];
-        delete address["street-address"];
-      }
-
-      // Concatenate "address-line*" if "street-address" is omitted.
-      if (!address["street-address"]) {
-        address["street-address"] = AddressRecord.STREET_ADDRESS_COMPONENTS.map(
-          c => address[c]
-        )
-          .join("\n")
-          .replace(/\n+$/, "");
-      }
-    }
-    AddressRecord.STREET_ADDRESS_COMPONENTS.forEach(c => delete address[c]);
-  }
-
-  _normalizeCountryFields(address) {
-    // When we can't identify the country code, it is possible because that the region exists
-    // in regionNames.properties but not in libaddressinput.
-    const country =
-      lazy.FormAutofillUtils.identifyCountryCode(
-        address.country || address["country-name"]
-      ) || address.country;
-
-    // Only values included in the region list will be saved.
-    let hasLocalizedName = false;
-    try {
-      if (country) {
-        let localizedName = Services.intl.getRegionDisplayNames(undefined, [
-          country,
-        ]);
-        hasLocalizedName = localizedName != country;
-      }
-    } catch (e) {}
-
-    if (country && hasLocalizedName) {
-      address.country = country;
-    } else {
-      address.country = FormAutofill.DEFAULT_REGION;
-    }
-
-    delete address["country-name"];
-  }
-
-  _normalizeTelFields(address) {
-    if (address.tel || AddressRecord.TEL_COMPONENTS.some(c => !!address[c])) {
-      lazy.FormAutofillUtils.compressTel(address);
-
-      let possibleRegion = address.country || FormAutofill.DEFAULT_REGION;
-      let tel = lazy.PhoneNumber.Parse(address.tel, possibleRegion);
-
-      if (tel && tel.internationalNumber) {
-        // Force to save numbers in E.164 format if parse success.
-        address.tel = tel.internationalNumber;
-      }
-    }
-    AddressRecord.TEL_COMPONENTS.forEach(c => delete address[c]);
+    AddressRecord.normalizeFields(address);
   }
 
   /**
@@ -1811,6 +1815,64 @@ export class CreditCardsBase extends AutofillRecords {
     }
 
     return super._computeMigratedRecord(creditCard);
+  }
+
+  /**
+   * Hand a card over with its number in the clear, so the receiving store can
+   * encrypt it under its own key. This store's is the OS key store's; the Rust
+   * store holds one of its own.
+   *
+   * Unlike _stripComputedFields, a decrypt failure is not swallowed here. There
+   * it is deliberate, so a card whose number cannot be read can still have its
+   * other fields edited. A migration has no such excuse: re-deriving from a
+   * masked number would encrypt the mask in place of the card, so a record that
+   * will not decrypt has to be refused and reported rather than copied.
+   *
+   * @param {object} record
+   * @returns {Promise<object>}
+   */
+  async _recordForMigrationExport(record) {
+    const exported = { ...record };
+    if (!exported["cc-number-encrypted"]) {
+      return exported;
+    }
+    exported["cc-number"] = await lazy.OSKeyStore.decrypt(
+      exported["cc-number-encrypted"],
+      "formautofill_cc"
+    );
+    delete exported["cc-number-encrypted"];
+    return exported;
+  }
+
+  /**
+   * The cleartext of an encrypted field of a stored record.
+   *
+   * Which fields a store keeps encrypted, where it keeps their ciphertext and
+   * what key reads them back is the store's business, so a consumer names the
+   * field it wants of the collection it read the record from. Here the OS key
+   * store does the re-authentication as part of decrypting.
+   *
+   * @param {object} record A record this store handed out.
+   * @param {string} field The field to read, e.g. "cc-number".
+   * @param {object} [options]
+   * @param {string|false} [options.reauth] The OS re-authentication prompt to
+   *   show first, or false to read it without one.
+   * @param {string} [options.trigger] What is asking, for the OS key store's
+   *   own telemetry.
+   * @returns {Promise<?string>} The cleartext, or null if the record holds
+   *   nothing encrypted under that field -- in which case nothing is asked of
+   *   the user.
+   */
+  decryptField(
+    record,
+    field,
+    { reauth = false, trigger = "formautofill_cc" } = {}
+  ) {
+    const ciphertext = record[lazy.CreditCardRecord.ciphertextField(field)];
+    if (!ciphertext) {
+      return Promise.resolve(null);
+    }
+    return lazy.OSKeyStore.decrypt(ciphertext, trigger, reauth);
   }
 
   async _stripComputedFields(creditCard) {

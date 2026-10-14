@@ -5,7 +5,6 @@
 #include "BrowserChild.h"
 
 #ifdef ACCESSIBILITY
-#  include "mozilla/a11y/DocAccessibleChild.h"
 #  include "nsAccessibilityService.h"
 #endif
 #include <utility>
@@ -124,12 +123,10 @@
 #  include "nsAppRunner.h"
 #endif
 
-#ifdef NS_PRINTING
-#  include "mozilla/layout/RemotePrintJobChild.h"
-#  include "nsIPrintSettings.h"
-#  include "nsIPrintSettingsService.h"
-#  include "nsIWebBrowserPrint.h"
-#endif
+#include "mozilla/layout/RemotePrintJobChild.h"
+#include "nsIPrintSettings.h"
+#include "nsIPrintSettingsService.h"
+#include "nsIWebBrowserPrint.h"
 
 static mozilla::LazyLogModule sApzChildLog("apz.child");
 
@@ -362,9 +359,6 @@ BrowserChild::BrowserChild(ContentChild* aManager, const TabId& aTabId,
       mShouldSendWebProgressEventsToParent(false),
       mRenderLayers(true),
       mIsPreservingLayers(false),
-#if defined(XP_WIN) && defined(ACCESSIBILITY)
-      mNativeWindowHandle(0),
-#endif
       mCancelContentJSEpoch(0) {
   mozilla::HoldJSObjects(this);
 
@@ -912,7 +906,6 @@ mozilla::ipc::IPCResult BrowserChild::RecvResumeLoad(
 nsresult BrowserChild::CloneDocumentTreeIntoSelf(
     const MaybeDiscarded<BrowsingContext>& aSourceBC,
     const embedding::PrintData& aPrintData) {
-#ifdef NS_PRINTING
   if (NS_WARN_IF(aSourceBC.IsNullOrDiscarded())) {
     return NS_ERROR_FAILURE;
   }
@@ -964,7 +957,6 @@ nsresult BrowserChild::CloneDocumentTreeIntoSelf(
     return rv;
   }
 
-#endif
   return NS_OK;
 }
 
@@ -974,9 +966,7 @@ mozilla::ipc::IPCResult BrowserChild::RecvCloneDocumentTreeIntoSelf(
     CloneDocumentTreeIntoSelfResolver&& aResolve) {
   nsresult rv = NS_OK;
 
-#ifdef NS_PRINTING
   rv = CloneDocumentTreeIntoSelf(aSourceBC, aPrintData);
-#endif
 
   aResolve(NS_SUCCEEDED(rv));
   return IPC_OK();
@@ -984,7 +974,6 @@ mozilla::ipc::IPCResult BrowserChild::RecvCloneDocumentTreeIntoSelf(
 
 nsresult BrowserChild::UpdateRemotePrintSettings(
     const embedding::PrintData& aPrintData) {
-#ifdef NS_PRINTING
   nsCOMPtr<nsIDocShell> ourDocShell = do_GetInterface(WebNavigation());
   if (NS_WARN_IF(!ourDocShell)) {
     return NS_ERROR_FAILURE;
@@ -1040,16 +1029,13 @@ nsresult BrowserChild::UpdateRemotePrintSettings(
     }
     return BrowsingContext::WalkFlag::Next;
   });
-#endif
 
   return NS_OK;
 }
 
 mozilla::ipc::IPCResult BrowserChild::RecvUpdateRemotePrintSettings(
     const embedding::PrintData& aPrintData) {
-#ifdef NS_PRINTING
   UpdateRemotePrintSettings(aPrintData);
-#endif
 
   return IPC_OK();
 }
@@ -2213,7 +2199,7 @@ already_AddRefed<DataTransfer> BrowserChild::ConvertToDataTransfer(
   // the principal permits it (and dom.events.datatransfer.protected.enabled is
   // false).  Otherwise, protected DataTransfer access should only be given to
   // the system.
-  if (!aPrincipal || Manager()->GetRemoteType() != EXTENSION_REMOTE_TYPE) {
+  if (!aPrincipal || !Manager()->GetRemoteType().IsExtension()) {
     aPrincipal = nsContentUtils::GetSystemPrincipal();
   }
 
@@ -2663,6 +2649,7 @@ mozilla::ipc::IPCResult BrowserChild::RecvNormalPrioritySelectionEvent(
 mozilla::ipc::IPCResult BrowserChild::RecvSimpleContentCommandEvent(
     const EventMessage& aMessage) {
   WidgetContentCommandEvent localEvent(true, aMessage, mPuppetWidget);
+  localEvent.MarkAsComingFromAnotherProcess();
   DispatchWidgetEventViaAPZ(localEvent);
   (void)SendOnEventNeedingAckHandled(aMessage, 0u);
   return IPC_OK();
@@ -2680,6 +2667,7 @@ mozilla::ipc::IPCResult BrowserChild::RecvInsertText(
   WidgetContentCommandEvent localEvent(true, eContentCommandInsertText,
                                        mPuppetWidget);
   localEvent.mString = Some(nsString(aStringToInsert));
+  localEvent.MarkAsComingFromAnotherProcess();
   DispatchWidgetEventViaAPZ(localEvent);
   (void)SendOnEventNeedingAckHandled(eContentCommandInsertText, 0u);
   return IPC_OK();
@@ -2692,7 +2680,7 @@ mozilla::ipc::IPCResult BrowserChild::RecvNormalPriorityInsertText(
 
 mozilla::ipc::IPCResult BrowserChild::RecvReplaceText(
     const nsString& aReplaceSrcString, const nsString& aStringToInsert,
-    uint32_t aOffset, bool aPreventSetSelection) {
+    uint32_t aOffset, PreventSetSelection aPreventSetSelection) {
   // Use normal event path to reach focused document.
   WidgetContentCommandEvent localEvent(true, eContentCommandReplaceText,
                                        mPuppetWidget);
@@ -2700,6 +2688,7 @@ mozilla::ipc::IPCResult BrowserChild::RecvReplaceText(
   localEvent.mSelection.mReplaceSrcString = aReplaceSrcString;
   localEvent.mSelection.mOffset = aOffset;
   localEvent.mSelection.mPreventSetSelection = aPreventSetSelection;
+  localEvent.MarkAsComingFromAnotherProcess();
   DispatchWidgetEventViaAPZ(localEvent);
   (void)SendOnEventNeedingAckHandled(eContentCommandReplaceText, 0u);
   return IPC_OK();
@@ -2707,7 +2696,7 @@ mozilla::ipc::IPCResult BrowserChild::RecvReplaceText(
 
 mozilla::ipc::IPCResult BrowserChild::RecvNormalPriorityReplaceText(
     const nsString& aReplaceSrcString, const nsString& aStringToInsert,
-    uint32_t aOffset, bool aPreventSetSelection) {
+    uint32_t aOffset, PreventSetSelection aPreventSetSelection) {
   return RecvReplaceText(aReplaceSrcString, aStringToInsert, aOffset,
                          aPreventSetSelection);
 }
@@ -2737,21 +2726,6 @@ mozilla::ipc::IPCResult BrowserChild::RecvPasteTransferable(
   ourDocShell->DoCommandWithParams("cmd_pasteTransferable", params);
   return IPC_OK();
 }
-
-#ifdef ACCESSIBILITY
-a11y::PDocAccessibleChild* BrowserChild::AllocPDocAccessibleChild(
-    PDocAccessibleChild*, const uint64_t&, const MaybeDiscardedBrowsingContext&,
-    const bool&) {
-  MOZ_ASSERT_UNREACHABLE("should never call this!");
-  return nullptr;
-}
-
-bool BrowserChild::DeallocPDocAccessibleChild(
-    a11y::PDocAccessibleChild* aChild) {
-  delete static_cast<mozilla::a11y::DocAccessibleChild*>(aChild);
-  return true;
-}
-#endif
 
 RefPtr<VsyncMainChild> BrowserChild::GetVsyncChild() {
   // Initializing VsyncMainChild here turns on per-BrowserChild Vsync for a
@@ -2895,7 +2869,6 @@ mozilla::ipc::IPCResult BrowserChild::RecvHandleAccessKey(
 mozilla::ipc::IPCResult BrowserChild::RecvPrintPreview(
     const PrintData& aPrintData, const MaybeDiscardedBrowsingContext& aSourceBC,
     PrintPreviewResolver&& aCallback) {
-#ifdef NS_PRINTING
   // If we didn't succeed in passing off ownership of aCallback, then something
   // went wrong.
   auto sendCallbackError = MakeScopeExit([&] {
@@ -2949,26 +2922,22 @@ mozilla::ipc::IPCResult BrowserChild::RecvPrintPreview(
                       nsGlobalWindowOuter::IsPreview::Yes,
                       nsGlobalWindowOuter::IsForWindowDotPrint::No,
                       std::move(aCallback), nullptr, IgnoreErrors());
-#endif
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult BrowserChild::RecvExitPrintPreview() {
-#ifdef NS_PRINTING
   nsCOMPtr<nsIWebBrowserPrint> webBrowserPrint =
       do_GetInterface(ToSupports(WebNavigation()));
   if (NS_WARN_IF(!webBrowserPrint)) {
     return IPC_OK();
   }
   webBrowserPrint->ExitPrintPreview();
-#endif
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult BrowserChild::CommonPrint(
     const MaybeDiscardedBrowsingContext& aBc, const PrintData& aPrintData,
     RefPtr<BrowsingContext>* aCachedBrowsingContext) {
-#ifdef NS_PRINTING
   if (NS_WARN_IF(aBc.IsNullOrDiscarded())) {
     return IPC_OK();
   }
@@ -3006,42 +2975,31 @@ mozilla::ipc::IPCResult BrowserChild::CommonPrint(
       return IPC_OK();
     }
   }
-#endif
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult BrowserChild::RecvPrint(
     const MaybeDiscardedBrowsingContext& aBc, const PrintData& aPrintData,
     bool aReturnStaticClone, PrintResolver&& aResolve) {
-#ifdef NS_PRINTING
   RefPtr<BrowsingContext> browsingContext;
   auto result = CommonPrint(aBc, aPrintData,
                             aReturnStaticClone ? &browsingContext : nullptr);
   aResolve(browsingContext);
   return result;
-#else
-  aResolve(nullptr);
-  return IPC_OK();
-#endif
 }
 
 mozilla::ipc::IPCResult BrowserChild::RecvPrintClonedPage(
     const MaybeDiscardedBrowsingContext& aBc, const PrintData& aPrintData,
     const MaybeDiscardedBrowsingContext& aClonedBc) {
-#ifdef NS_PRINTING
   if (aClonedBc.IsNullOrDiscarded()) {
     return IPC_OK();
   }
   RefPtr<BrowsingContext> clonedBc = aClonedBc.get();
   return CommonPrint(aBc, aPrintData, &clonedBc);
-#else
-  return IPC_OK();
-#endif
 }
 
 mozilla::ipc::IPCResult BrowserChild::RecvDestroyPrintClone(
     const MaybeDiscardedBrowsingContext& aCachedPage) {
-#ifdef NS_PRINTING
   if (aCachedPage) {
     RefPtr<nsPIDOMWindowOuter> window = aCachedPage->GetDOMWindow();
     if (NS_WARN_IF(!window)) {
@@ -3049,33 +3007,21 @@ mozilla::ipc::IPCResult BrowserChild::RecvDestroyPrintClone(
     }
     window->Close();
   }
-#endif
   return IPC_OK();
-}
-
-mozilla::ipc::IPCResult BrowserChild::RecvUpdateNativeWindowHandle(
-    const uintptr_t& aNewHandle) {
-#if defined(XP_WIN) && defined(ACCESSIBILITY)
-  mNativeWindowHandle = aNewHandle;
-  return IPC_OK();
-#else
-  return IPC_FAIL_NO_REASON(this);
-#endif
 }
 
 mozilla::ipc::IPCResult BrowserChild::RecvDestroy() {
   MOZ_ASSERT(!mDestroyed);
   mDestroyed = true;
 
-  nsTArray<PContentPermissionRequestChild*> childArray =
+  nsTArray<RefPtr<RemotePermissionRequest>> childArray =
       nsContentPermissionUtils::GetContentPermissionRequestChildById(
           GetTabId());
 
   // Need to close undeleted ContentPermissionRequestChilds before tab is
   // closed.
   for (auto& permissionRequestChild : childArray) {
-    auto* child = static_cast<RemotePermissionRequest*>(permissionRequestChild);
-    child->Destroy();
+    permissionRequestChild->Destroy();
   }
 
   if (mBrowserChildMessageManager) {
@@ -4238,7 +4184,7 @@ void BrowserChild::OnPointerRawUpdateEventListenerRemoved(
            mPointerRawUpdateWindowCount));
 }
 
-#if defined(ACCESSIBILITY) && defined(MOZ_ENABLE_SKIA_PDF)
+#ifdef ACCESSIBILITY
 mozilla::ipc::IPCResult BrowserChild::RecvRequestDocAccessibleForPrint() {
   if (RefPtr<Document> doc = GetTopLevelDocument()) {
     a11y::DocManager::NotifyOfPrintDocument(doc);

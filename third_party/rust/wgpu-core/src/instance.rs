@@ -1,5 +1,8 @@
 use alloc::{borrow::ToOwned as _, boxed::Box, string::String, sync::Arc, vec, vec::Vec};
-use core::fmt;
+use core::{
+    fmt,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use hashbrown::HashMap;
 use thiserror::Error;
@@ -9,10 +12,9 @@ use crate::{
     device::{
         queue::Queue, resource::Device, DeviceDescriptor, DeviceError, UserClosures, WaitIdleError,
     },
-    global::Global,
-    id::{markers, AdapterId, DeviceId, QueueId, SurfaceId},
+    id::markers,
     limits::{self, check_limits, FailedLimit},
-    lock::{rank, Mutex},
+    lock::{rank, Mutex, MutexGuard},
     present::{ConfigureSurfaceError, Presentation},
     resource::ResourceType,
     resource_log,
@@ -23,8 +25,6 @@ use crate::{
 
 use wgt::{Backend, Backends, InstanceFlags, PowerPreference};
 
-pub type RequestAdapterOptions = wgt::RequestAdapterOptions<SurfaceId>;
-
 #[test]
 fn downlevel_default_limits_less_than_default_limits() {
     let res = check_limits(&wgt::Limits::downlevel_defaults(), &wgt::Limits::default());
@@ -34,8 +34,8 @@ fn downlevel_default_limits_less_than_default_limits() {
     )
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct InstanceDevices(Arc<Mutex<WeakVec<Device>>>);
+#[derive(Debug)]
+pub(crate) struct InstanceDevices(Mutex<WeakVec<Device>>);
 
 impl Default for InstanceDevices {
     fn default() -> Self {
@@ -45,7 +45,7 @@ impl Default for InstanceDevices {
 
 impl InstanceDevices {
     pub(crate) fn new() -> Self {
-        Self(Arc::new(Mutex::new(rank::HUB_OTHER, WeakVec::new())))
+        Self(Mutex::new(rank::INSTANCE_DEVICES, WeakVec::new()))
     }
 
     pub(crate) fn push(&self, device: &Arc<Device>) {
@@ -126,92 +126,30 @@ pub struct Instance {
 impl Instance {
     pub fn new(
         name: &str,
-        mut instance_desc: wgt::InstanceDescriptor,
+        instance_desc: wgt::InstanceDescriptor,
         telemetry: Option<hal::Telemetry>,
-    ) -> Self {
-        let mut this = Self {
-            _name: name.to_owned(),
-            instance_per_backend: Vec::new(),
-            requested_backends: instance_desc.backends,
-            supported_backends: Backends::empty(),
-            flags: instance_desc.flags,
-            // HACK: We must take ownership of the field here, without being able to pass it into
-            // try_add_hal(). Remove it from the mutable descriptor instead, while try_add_hal()
-            // borrows the handle from `this.display` instead.
-            display: instance_desc.display.take(),
-            devices: InstanceDevices::new(),
-        };
+    ) -> Arc<Self> {
+        let mut this = InstanceBuilder::new(name, instance_desc, telemetry);
 
         #[cfg(all(vulkan, not(target_os = "netbsd")))]
-        this.try_add_hal(hal::api::Vulkan, &instance_desc, telemetry);
+        this.try_add_hal(hal::api::Vulkan);
         #[cfg(metal)]
-        this.try_add_hal(hal::api::Metal, &instance_desc, telemetry);
+        this.try_add_hal(hal::api::Metal);
         #[cfg(dx12)]
-        this.try_add_hal(hal::api::Dx12, &instance_desc, telemetry);
+        this.try_add_hal(hal::api::Dx12);
         #[cfg(gles)]
-        this.try_add_hal(hal::api::Gles, &instance_desc, telemetry);
+        this.try_add_hal(hal::api::Gles);
         #[cfg(feature = "noop")]
-        this.try_add_hal(hal::api::Noop, &instance_desc, telemetry);
+        this.try_add_hal(hal::api::Noop);
 
-        this
+        this.build()
     }
 
-    /// Helper for `Instance::new()`; attempts to add a single `wgpu-hal` backend to this instance.
-    fn try_add_hal<A: hal::Api>(
-        &mut self,
-        _: A,
-        instance_desc: &wgt::InstanceDescriptor,
-        telemetry: Option<hal::Telemetry>,
-    ) {
-        // Whether or not the backend was requested, and whether or not it succeeds,
-        // note that we *could* try it.
-        self.supported_backends |= A::VARIANT.into();
-
-        if !instance_desc.backends.contains(A::VARIANT.into()) {
-            log::trace!("Instance::new: backend {:?} not requested", A::VARIANT);
-            return;
-        }
-
-        // If this was Some, it was moved into self
-        assert!(instance_desc.display.is_none());
-
-        let hal_desc = hal::InstanceDescriptor {
-            name: "wgpu",
-            flags: self.flags,
-            memory_budget_thresholds: instance_desc.memory_budget_thresholds,
-            backend_options: instance_desc.backend_options.clone(),
-            telemetry,
-            // Pass a borrow, the core instance here keeps the owned handle alive already
-            // WARNING: Using self here, not instance_desc!
-            display: self.display.as_ref().map(|hdh| {
-                hdh.display_handle()
-                    .expect("Implementation did not provide a DisplayHandle")
-            }),
-        };
-
-        use hal::Instance as _;
-        // SAFETY: ???
-        match unsafe { A::Instance::init(&hal_desc) } {
-            Ok(instance) => {
-                log::debug!("Instance::new: created {:?} backend", A::VARIANT);
-                self.instance_per_backend
-                    .push((A::VARIANT, Box::new(instance)));
-            }
-            Err(err) => {
-                log::debug!(
-                    "Instance::new: failed to create {:?} backend: {:?}",
-                    A::VARIANT,
-                    err
-                );
-            }
-        }
-    }
-
-    pub(crate) fn from_hal_instance<A: hal::Api>(
+    pub fn from_hal_instance<A: hal::Api>(
         name: String,
         hal_instance: <A as hal::Api>::Instance,
-    ) -> Self {
-        Self {
+    ) -> Arc<Self> {
+        Arc::new(Self {
             _name: name,
             instance_per_backend: vec![(A::VARIANT, Box::new(hal_instance))],
             requested_backends: A::VARIANT.into(),
@@ -219,7 +157,7 @@ impl Instance {
             flags: InstanceFlags::default(),
             display: None, // TODO: Extract display from HAL instance if available?
             devices: InstanceDevices::new(),
-        }
+        })
     }
 
     pub fn raw(&self, backend: Backend) -> Option<&dyn hal::DynInstance> {
@@ -257,7 +195,7 @@ impl Instance {
     /// - `display_handle` must be a valid object to create a surface upon,
     ///   falls back to the instance display handle otherwise.
     /// - `window_handle` must remain valid as long as the returned
-    ///   [`SurfaceId`] is being used.
+    ///   [`Surface`] is being used.
     pub unsafe fn create_surface(
         &self,
         display_handle: Option<raw_window_handle::RawDisplayHandle>,
@@ -488,7 +426,7 @@ impl Instance {
     }
 
     pub fn enumerate_adapters(
-        &self,
+        self: &Arc<Self>,
         backends: Backends,
         apply_limit_buckets: bool,
     ) -> Vec<Arc<Adapter>> {
@@ -531,7 +469,7 @@ impl Instance {
                         }
                     })
                     .map(|raw| {
-                        let adapter = Adapter::new(raw, self.devices.clone(), self.flags);
+                        let adapter = Adapter::new(raw, self.clone());
                         api_log_debug!("Adapter {:?}", adapter.raw.info);
                         adapter
                     }),
@@ -541,7 +479,7 @@ impl Instance {
     }
 
     pub fn request_adapter(
-        &self,
+        self: &Arc<Self>,
         desc: &wgt::RequestAdapterOptions<&Surface>,
         backends: Backends,
     ) -> Result<Arc<Adapter>, wgt::RequestAdapterError> {
@@ -681,7 +619,7 @@ impl Instance {
 
         if let Some(adapter) = adapters.into_iter().next() {
             api_log_debug!("Request adapter result {:?}", adapter.info);
-            let adapter = Adapter::new(adapter, self.devices.clone(), self.flags);
+            let adapter = Adapter::new(adapter, self.clone());
             Ok(adapter)
         } else {
             Err(wgt::RequestAdapterError::NotFound {
@@ -731,12 +669,12 @@ impl Instance {
     ///
     /// [lt]: crate::limits#Limit-bucketing
     pub unsafe fn create_adapter_from_hal(
-        &self,
+        self: &Arc<Self>,
         hal_adapter: hal::DynExposedAdapter,
     ) -> Arc<Adapter> {
         profiling::scope!("Instance::create_adapter_from_hal");
 
-        let adapter = Adapter::new(hal_adapter, self.devices.clone(), self.flags);
+        let adapter = Adapter::new(hal_adapter, self.clone());
 
         resource_log!("Created Adapter {:?}", Arc::as_ptr(&adapter));
         adapter
@@ -756,6 +694,98 @@ impl Instance {
         closures.fire();
 
         Ok(all_queue_empty)
+    }
+}
+
+pub struct InstanceBuilder {
+    instance: Instance,
+    instance_desc: wgt::InstanceDescriptor,
+    telemetry: Option<hal::Telemetry>,
+}
+
+impl InstanceBuilder {
+    pub fn new(
+        name: &str,
+        mut desc: wgt::InstanceDescriptor,
+        telemetry: Option<hal::Telemetry>,
+    ) -> Self {
+        Self {
+            instance: Instance {
+                _name: name.to_owned(),
+                instance_per_backend: Vec::new(),
+                requested_backends: desc.backends,
+                supported_backends: Backends::empty(),
+                flags: desc.flags,
+                // HACK: We must take ownership of the field here, without being able to pass it into
+                // try_add_hal(). Remove it from the mutable descriptor instead, while try_add_hal()
+                // borrows the handle from `this.display` instead.
+                display: desc.display.take(),
+                devices: InstanceDevices::new(),
+            },
+            instance_desc: desc,
+            telemetry,
+        }
+    }
+
+    pub fn try_add_hal<A: hal::Api>(&mut self, api: A) {
+        use hal::Instance as _;
+        self.try_add_custom_hal(api, |hal_desc| unsafe { A::Instance::init(hal_desc) });
+    }
+
+    pub fn try_add_custom_hal<A: hal::Api>(
+        &mut self,
+        _: A,
+        f: impl FnOnce(&hal::InstanceDescriptor) -> Result<A::Instance, hal::InstanceError>,
+    ) {
+        if self.instance.supported_backends.contains(A::VARIANT.into()) {
+            return;
+        }
+
+        // Whether or not the backend was requested, and whether or not it succeeds,
+        // note that we *could* try it.
+        self.instance.supported_backends |= A::VARIANT.into();
+
+        if !self.instance_desc.backends.contains(A::VARIANT.into()) {
+            log::trace!("Instance::new: backend {:?} not requested", A::VARIANT);
+            return;
+        }
+
+        // If this was Some, it was moved into self
+        assert!(self.instance_desc.display.is_none());
+
+        let hal_desc = hal::InstanceDescriptor {
+            name: "wgpu",
+            flags: self.instance.flags,
+            memory_budget_thresholds: self.instance_desc.memory_budget_thresholds,
+            backend_options: self.instance_desc.backend_options.clone(),
+            telemetry: self.telemetry,
+            // Pass a borrow, the core instance here keeps the owned handle alive already
+            // WARNING: Using self here, not instance_desc!
+            display: self.instance.display.as_ref().map(|hdh| {
+                hdh.display_handle()
+                    .expect("Implementation did not provide a DisplayHandle")
+            }),
+        };
+
+        match f(&hal_desc) {
+            Ok(instance) => {
+                log::debug!("Instance::new: created {:?} backend", A::VARIANT);
+                self.instance
+                    .instance_per_backend
+                    .push((A::VARIANT, Box::new(instance)));
+            }
+            Err(err) => {
+                log::debug!(
+                    "Instance::new: failed to create {:?} backend: {:?}",
+                    A::VARIANT,
+                    err
+                );
+            }
+        }
+    }
+
+    pub fn build(self) -> Arc<Instance> {
+        Arc::new(self.instance)
     }
 }
 
@@ -859,11 +889,69 @@ impl Surface {
             .map(|surface| surface.as_ref())
     }
 
+    fn unconfigure_inner<'a>(
+        &self,
+        presentation: &mut MutexGuard<'a, Option<Presentation>>,
+    ) -> UserClosures {
+        let mut result = UserClosures::default();
+        if let Some(mut present) = presentation.take() {
+            if let Some(texture) = present.acquired_texture.take() {
+                texture.destroy();
+            }
+
+            let user_callbacks;
+            {
+                // Wait for all work that uses the surface texture to finish
+                let snatch_guard = present.device.snatchable_lock.read();
+
+                let result;
+                (user_callbacks, result) = present
+                    .device
+                    .maintain(wgt::PollType::wait_indefinitely(), snatch_guard);
+                match result {
+                    Ok(_) => {}
+                    Err(WaitIdleError::Device(_)) => {
+                        // we can ignore device lost errors here, since we are just cleaning up
+                    }
+                    Err(WaitIdleError::Timeout) if cfg!(target_arch = "wasm32") => {
+                        // On wasm, you cannot actually successfully wait for the surface.
+                        // However WebGL does not actually require you do this, so ignoring
+                        // the failure is totally fine. See https://github.com/gfx-rs/wgpu/issues/7363
+                    }
+                    Err(WaitIdleError::Timeout) => {
+                        unreachable!("wait_indefinitely() should never timeout")
+                    }
+                    Err(WaitIdleError::WrongSubmissionIndex(_, _)) => {
+                        unreachable!("no submission index was provided")
+                    }
+                }
+            }
+            result.extend(user_callbacks);
+
+            for (&backend, surface) in &self.surface_per_backend {
+                if backend == present.device.backend() {
+                    unsafe { surface.unconfigure(present.device.raw()) };
+                }
+            }
+        }
+        result
+    }
+
+    pub fn unconfigure(self: &Arc<Self>) {
+        profiling::scope!("Surface::unconfigure");
+        let user_callbacks;
+        {
+            let mut presentation = self.presentation.lock();
+            user_callbacks = self.unconfigure_inner(&mut presentation);
+        }
+        user_callbacks.fire();
+    }
+
     pub fn configure(
         self: &Arc<Self>,
         device: &Arc<Device>,
         config: &wgt::SurfaceConfiguration<Vec<wgt::TextureFormat>>,
-    ) -> Option<ConfigureSurfaceError> {
+    ) -> Result<(), ConfigureSurfaceError> {
         use ConfigureSurfaceError as E;
         profiling::scope!("Surface::configure");
 
@@ -876,152 +964,101 @@ impl Surface {
 
         log::debug!("configuring surface with {config:?}");
 
-        let error = 'error: {
-            // User callbacks must not be called while we are holding locks.
-            let user_callbacks;
-            {
-                if let Err(e) = device.check_is_valid() {
-                    break 'error e.into();
-                }
+        let caps = self
+            .get_hal_capabilities(&device.adapter)
+            .map_err(|_| E::UnsupportedQueueFamily)?;
 
-                let caps = match self.get_hal_capabilities(&device.adapter) {
-                    Ok(caps) => caps,
-                    Err(_) => break 'error E::UnsupportedQueueFamily,
-                };
-
-                let mut hal_view_formats = Vec::new();
-                for format in config.view_formats.iter() {
-                    if *format == config.format {
-                        continue;
-                    }
-                    if !caps.formats.iter().any(|fc| fc.format == config.format) {
-                        break 'error E::UnsupportedFormat {
-                            requested: config.format,
-                            available: caps.texture_formats().collect(),
-                        };
-                    }
-                    if config.format.remove_srgb_suffix() != format.remove_srgb_suffix() {
-                        break 'error E::InvalidViewFormat(*format, config.format);
-                    }
-                    hal_view_formats.push(*format);
-                }
-
-                if !hal_view_formats.is_empty() {
-                    if let Err(missing_flag) =
-                        device.require_downlevel_flags(wgt::DownlevelFlags::SURFACE_VIEW_FORMATS)
-                    {
-                        break 'error E::MissingDownlevelFlags(missing_flag);
-                    }
-                }
-
-                let maximum_frame_latency = config.desired_maximum_frame_latency.clamp(
-                    *caps.maximum_frame_latency.start(),
-                    *caps.maximum_frame_latency.end(),
-                );
-                let mut hal_config = hal::SurfaceConfiguration {
-                    maximum_frame_latency,
-                    present_mode: config.present_mode,
-                    composite_alpha_mode: config.alpha_mode,
-                    format: config.format,
-                    color_space: config.color_space,
-                    extent: wgt::Extent3d {
-                        width: config.width,
-                        height: config.height,
-                        depth_or_array_layers: 1,
-                    },
-                    usage: crate::conv::map_texture_usage(
-                        config.usage,
-                        hal::FormatAspects::COLOR,
-                        wgt::TextureFormatFeatureFlags::STORAGE_READ_ONLY
-                            | wgt::TextureFormatFeatureFlags::STORAGE_WRITE_ONLY
-                            | wgt::TextureFormatFeatureFlags::STORAGE_READ_WRITE,
-                    ),
-                    view_formats: hal_view_formats,
-                };
-
-                if let Err(error) = crate::device::surface_config::validate_surface_configuration(
-                    &mut hal_config,
-                    &caps,
-                    device.limits.max_texture_dimension_2d,
-                ) {
-                    break 'error error;
-                }
-
-                // Wait for all work to finish before configuring the surface.
-                let snatch_guard = device.snatchable_lock.read();
-
-                let maintain_result;
-                (user_callbacks, maintain_result) =
-                    device.maintain(wgt::PollType::wait_indefinitely(), snatch_guard);
-
-                match maintain_result {
-                    // We're happy
-                    Ok(wgt::PollStatus::QueueEmpty) => {}
-                    Ok(wgt::PollStatus::WaitSucceeded) => {
-                        // After the wait, the queue should be empty. It can only be non-empty
-                        // if another thread is submitting at the same time.
-                        break 'error E::GpuWaitTimeout;
-                    }
-                    Ok(wgt::PollStatus::Poll) => {
-                        unreachable!("Cannot get a Poll result from a Wait action.")
-                    }
-                    Err(WaitIdleError::Timeout) if cfg!(target_family = "wasm") => {
-                        // On wasm, you cannot actually successfully wait for the surface.
-                        // However WebGL does not actually require you do this, so ignoring
-                        // the failure is totally fine. See
-                        // https://github.com/gfx-rs/wgpu/issues/7363
-                    }
-                    Err(e) => {
-                        break 'error e.into();
-                    }
-                }
-
-                // All textures must be destroyed before the surface can be re-configured.
-                if let Some(present) = self.presentation.lock().take() {
-                    if present.acquired_texture.is_some() {
-                        break 'error E::PreviousOutputExists;
-                    }
-                }
-
-                // TODO: Texture views may still be alive that point to the texture.
-                // this will allow the user to render to the surface texture, long after
-                // it has been removed.
-                //
-                // https://github.com/gfx-rs/wgpu/issues/4105
-
-                let surface_raw = self.raw(device.backend()).unwrap();
-                match unsafe { surface_raw.configure(device.raw(), &hal_config) } {
-                    Ok(()) => (),
-                    Err(error) => {
-                        break 'error match error {
-                            hal::SurfaceError::Outdated
-                            | hal::SurfaceError::Lost
-                            | hal::SurfaceError::Occluded
-                            | hal::SurfaceError::Timeout => E::InvalidSurface,
-                            hal::SurfaceError::Device(error) => {
-                                E::Device(device.handle_hal_error(error))
-                            }
-                            hal::SurfaceError::Other(message) => {
-                                log::error!("surface configuration failed: {message}");
-                                E::InvalidSurface
-                            }
-                        }
-                    }
-                }
-
-                let mut presentation = self.presentation.lock();
-                *presentation = Some(Presentation {
-                    device: Arc::clone(device),
-                    config: config.clone(),
-                    acquired_texture: None,
+        let mut hal_view_formats = Vec::new();
+        for format in config.view_formats.iter() {
+            if *format == config.format {
+                continue;
+            }
+            if !caps.formats.iter().any(|fc| fc.format == config.format) {
+                return Err(E::UnsupportedFormat {
+                    requested: config.format,
+                    available: caps.texture_formats().collect(),
                 });
             }
+            if config.format.remove_srgb_suffix() != format.remove_srgb_suffix() {
+                return Err(E::InvalidViewFormat(*format, config.format));
+            }
+            hal_view_formats.push(*format);
+        }
 
-            user_callbacks.fire();
-            return None;
+        if !hal_view_formats.is_empty() {
+            device.require_downlevel_flags(wgt::DownlevelFlags::SURFACE_VIEW_FORMATS)?;
+        }
+
+        let maximum_frame_latency = config.desired_maximum_frame_latency.clamp(
+            *caps.maximum_frame_latency.start(),
+            *caps.maximum_frame_latency.end(),
+        );
+        let mut hal_config = hal::SurfaceConfiguration {
+            maximum_frame_latency,
+            present_mode: config.present_mode,
+            composite_alpha_mode: config.alpha_mode,
+            format: config.format,
+            color_space: config.color_space,
+            extent: wgt::Extent3d {
+                width: config.width,
+                height: config.height,
+                depth_or_array_layers: 1,
+            },
+            usage: crate::conv::map_texture_usage(
+                config.usage,
+                hal::FormatAspects::COLOR,
+                wgt::TextureFormatFeatureFlags::STORAGE_READ_ONLY
+                    | wgt::TextureFormatFeatureFlags::STORAGE_WRITE_ONLY
+                    | wgt::TextureFormatFeatureFlags::STORAGE_READ_WRITE,
+            ),
+            view_formats: hal_view_formats,
         };
 
-        Some(error)
+        crate::device::surface_config::validate_surface_configuration(
+            &mut hal_config,
+            &caps,
+            device.limits.max_texture_dimension_2d,
+        )?;
+
+        device.check_is_valid()?;
+
+        let user_callbacks;
+        {
+            // we keep presentation locked for the entire duration of the configure call,
+            // so that no change can happen in the middle of it.
+            let mut presentation = self.presentation.lock();
+
+            user_callbacks = self.unconfigure_inner(&mut presentation);
+
+            let surface_raw = self.raw(device.backend()).unwrap();
+            match unsafe { surface_raw.configure(device.raw(), &hal_config) } {
+                Ok(()) => (),
+                Err(error) => {
+                    return Err(match error {
+                        hal::SurfaceError::Outdated
+                        | hal::SurfaceError::Lost
+                        | hal::SurfaceError::Occluded
+                        | hal::SurfaceError::Timeout => E::InvalidSurface,
+                        hal::SurfaceError::Device(error) => {
+                            E::Device(device.handle_hal_error(error))
+                        }
+                        hal::SurfaceError::Other(message) => {
+                            log::error!("surface configuration failed: {message}");
+                            E::InvalidSurface
+                        }
+                    });
+                }
+            }
+
+            *presentation = Some(Presentation {
+                device: Arc::clone(device),
+                config: config.clone(),
+                acquired_texture: None,
+            });
+        }
+        user_callbacks.fire();
+
+        Ok(())
     }
 }
 
@@ -1031,32 +1068,27 @@ impl Drop for Surface {
         profiling::scope!("Surface::drop");
 
         api_log!("Surface::drop {:?}", self as *const _);
-        if let Some(present) = self.presentation.lock().take() {
-            for (&backend, surface) in &self.surface_per_backend {
-                if backend == present.device.backend() {
-                    unsafe { surface.unconfigure(present.device.raw()) };
-                }
-            }
+        let user_closures;
+        {
+            let mut presentation = self.presentation.lock();
+            user_closures = self.unconfigure_inner(&mut presentation);
         }
+        user_closures.fire();
     }
 }
 
 pub struct Adapter {
     pub(crate) raw: hal::DynExposedAdapter,
-    pub(crate) devices: InstanceDevices,
-    pub(crate) instance_flags: InstanceFlags,
+    pub(crate) instance: Arc<Instance>,
+    consumed: AtomicBool,
 }
 
 impl Adapter {
-    pub(crate) fn new(
-        raw: hal::DynExposedAdapter,
-        devices: InstanceDevices,
-        flags: InstanceFlags,
-    ) -> Arc<Self> {
+    pub(crate) fn new(raw: hal::DynExposedAdapter, instance: Arc<Instance>) -> Arc<Self> {
         Arc::new(Self {
             raw,
-            devices,
-            instance_flags: flags,
+            instance,
+            consumed: AtomicBool::new(false),
         })
     }
 
@@ -1199,10 +1231,26 @@ impl Adapter {
         profiling::scope!("Adapter::create_device_and_queue_from_hal");
         api_log!("Adapter::create_device_and_queue_from_hal");
 
-        let device = Device::new(hal_device.device, self, desc, self.instance_flags)?;
+        if self
+            .instance
+            .flags
+            .contains(InstanceFlags::STRICT_WEBGPU_COMPLIANCE)
+            && self.consumed.load(Ordering::SeqCst)
+        {
+            return Err(RequestDeviceError::AdapterConsumed);
+        }
+
+        let default_queue_desc = desc.default_queue.clone();
+
+        let device = Device::new(hal_device.device, self, desc, self.instance.flags)?;
         let device = Arc::new(device);
 
-        let queue = Queue::new(device.clone(), hal_device.queue, self.instance_flags)?;
+        let queue = Queue::new(
+            device.clone(),
+            hal_device.queue,
+            default_queue_desc,
+            self.instance.flags,
+        )?;
         let queue = Arc::new(queue);
 
         device.set_queue(&queue);
@@ -1211,7 +1259,9 @@ impl Adapter {
         resource_log!("Created Device {:?}", Arc::as_ptr(&device));
         resource_log!("Created Queue {:?}", Arc::as_ptr(&queue));
 
-        self.devices.push(&device);
+        self.instance.devices.push(&device);
+
+        self.consumed.store(true, Ordering::SeqCst);
 
         Ok((device, queue))
     }
@@ -1230,7 +1280,7 @@ impl Adapter {
         desc: &mut DeviceDescriptor,
     ) -> Result<(), RequestDeviceError> {
         filter_features_and_limits(
-            self.instance_flags,
+            self.instance.flags,
             &mut desc.required_features,
             &mut desc.required_limits,
         );
@@ -1278,6 +1328,8 @@ impl Adapter {
         if let Some(failed) = check_limits(&desc.required_limits, &caps.limits).pop() {
             return Err(RequestDeviceError::LimitsExceeded(failed));
         }
+
+        normalize_max_resource_per_shader_stage_limits(&mut desc.required_limits);
 
         Ok(())
     }
@@ -1341,6 +1393,8 @@ pub enum RequestDeviceError {
         "Some experimental features, {0}, were requested, but experimental features are not enabled"
     )]
     ExperimentalFeaturesNotEnabled(wgt::Features),
+    #[error("The adapter has already been consumed.")]
+    AdapterConsumed,
 }
 
 #[derive(Clone, Debug, Error)]
@@ -1359,305 +1413,6 @@ pub enum CreateSurfaceError {
         you must use `create_surface_unsafe()`."
     )]
     MissingDisplayHandle,
-}
-
-impl Global {
-    /// Creates a new surface targeting the given display/window handles.
-    ///
-    /// Internally attempts to create hal surfaces for all enabled backends.
-    ///
-    /// Fails only if creation for surfaces for all enabled backends fails in which case
-    /// the error for each enabled backend is listed.
-    /// Vice versa, if creation for any backend succeeds, success is returned.
-    /// Surface creation errors are logged to the debug log in any case.
-    ///
-    /// id_in:
-    /// - If `Some`, the id to assign to the surface. A new one will be generated otherwise.
-    ///
-    /// # Safety
-    ///
-    /// - `display_handle` must be a valid object to create a surface upon,
-    ///   falls back to the instance display handle otherwise.
-    /// - `window_handle` must remain valid as long as the returned
-    ///   [`SurfaceId`] is being used.
-    pub unsafe fn instance_create_surface(
-        &self,
-        display_handle: Option<raw_window_handle::RawDisplayHandle>,
-        window_handle: raw_window_handle::RawWindowHandle,
-        id_in: Option<SurfaceId>,
-    ) -> Result<SurfaceId, CreateSurfaceError> {
-        let surface = unsafe { self.instance.create_surface(display_handle, window_handle) }?;
-        let id = self.surfaces.prepare(id_in).assign(surface);
-        Ok(id)
-    }
-
-    /// Creates a new surface from the given drm configuration.
-    ///
-    /// # Safety
-    ///
-    /// - All parameters must point to valid DRM values.
-    ///
-    /// # Platform Support
-    ///
-    /// This function requires the `"drm"` feature, and is only available on
-    /// non-apple Unix-like platforms (Linux, FreeBSD) and currently only works
-    /// with the Vulkan backend.
-    #[cfg(drm)]
-    pub unsafe fn instance_create_surface_from_drm(
-        &self,
-        fd: i32,
-        plane: u32,
-        connector_id: u32,
-        width: u32,
-        height: u32,
-        refresh_rate: u32,
-        id_in: Option<SurfaceId>,
-    ) -> Result<SurfaceId, CreateSurfaceError> {
-        let surface = unsafe {
-            self.instance.create_surface_from_drm(
-                fd,
-                plane,
-                connector_id,
-                width,
-                height,
-                refresh_rate,
-            )
-        }?;
-        let id = self.surfaces.prepare(id_in).assign(surface);
-
-        Ok(id)
-    }
-
-    /// # Safety
-    ///
-    /// `layer` must be a valid pointer.
-    #[cfg(metal)]
-    pub unsafe fn instance_create_surface_metal(
-        &self,
-        layer: *mut core::ffi::c_void,
-        id_in: Option<SurfaceId>,
-    ) -> Result<SurfaceId, CreateSurfaceError> {
-        let surface = unsafe { self.instance.create_surface_metal(layer) }?;
-        let id = self.surfaces.prepare(id_in).assign(surface);
-        Ok(id)
-    }
-
-    #[cfg(dx12)]
-    /// # Safety
-    ///
-    /// The visual must be valid and able to be used to make a swapchain with.
-    pub unsafe fn instance_create_surface_from_visual(
-        &self,
-        visual: *mut core::ffi::c_void,
-        id_in: Option<SurfaceId>,
-    ) -> Result<SurfaceId, CreateSurfaceError> {
-        let surface = unsafe { self.instance.create_surface_from_visual(visual) }?;
-        let id = self.surfaces.prepare(id_in).assign(surface);
-        Ok(id)
-    }
-
-    #[cfg(dx12)]
-    /// # Safety
-    ///
-    /// The surface_handle must be valid and able to be used to make a swapchain with.
-    pub unsafe fn instance_create_surface_from_surface_handle(
-        &self,
-        surface_handle: *mut core::ffi::c_void,
-        id_in: Option<SurfaceId>,
-    ) -> Result<SurfaceId, CreateSurfaceError> {
-        let surface = unsafe {
-            self.instance
-                .create_surface_from_surface_handle(surface_handle)
-        }?;
-        let id = self.surfaces.prepare(id_in).assign(surface);
-        Ok(id)
-    }
-
-    #[cfg(dx12)]
-    /// # Safety
-    ///
-    /// The swap_chain_panel must be valid and able to be used to make a swapchain with.
-    pub unsafe fn instance_create_surface_from_swap_chain_panel(
-        &self,
-        swap_chain_panel: *mut core::ffi::c_void,
-        id_in: Option<SurfaceId>,
-    ) -> Result<SurfaceId, CreateSurfaceError> {
-        let surface = unsafe {
-            self.instance
-                .create_surface_from_swap_chain_panel(swap_chain_panel)
-        }?;
-        let id = self.surfaces.prepare(id_in).assign(surface);
-        Ok(id)
-    }
-
-    pub fn surface_drop(&self, id: SurfaceId) {
-        self.surfaces.remove(id);
-    }
-
-    pub fn enumerate_adapters(
-        &self,
-        backends: Backends,
-        apply_limit_buckets: bool,
-    ) -> Vec<AdapterId> {
-        let adapters = self
-            .instance
-            .enumerate_adapters(backends, apply_limit_buckets);
-        adapters
-            .into_iter()
-            .map(|adapter| self.hub.adapters.prepare(None).assign(adapter))
-            .collect()
-    }
-
-    pub fn request_adapter(
-        &self,
-        desc: &RequestAdapterOptions,
-        backends: Backends,
-        id_in: Option<AdapterId>,
-    ) -> Result<AdapterId, wgt::RequestAdapterError> {
-        let compatible_surface = desc.compatible_surface.map(|id| self.surfaces.get(id));
-        let desc = wgt::RequestAdapterOptions {
-            power_preference: desc.power_preference,
-            force_fallback_adapter: desc.force_fallback_adapter,
-            compatible_surface: compatible_surface.as_deref(),
-            apply_limit_buckets: desc.apply_limit_buckets,
-        };
-        let adapter = self.instance.request_adapter(&desc, backends)?;
-        let id = self.hub.adapters.prepare(id_in).assign(adapter);
-        Ok(id)
-    }
-
-    /// Create an adapter from a HAL adapter.
-    ///
-    /// The HAL adapter may be obtained e.g. by calling `enumerate_adapters` on
-    /// the HAL directly.
-    ///
-    /// If [limit bucketing][lt] is desired, [`crate::limits::apply_limit_buckets`]
-    /// should be called with the HAL adapter before calling this function.
-    ///
-    /// # Safety
-    ///
-    /// `hal_adapter` must be created from this global internal instance handle.
-    ///
-    /// [lt]: crate::limits#Limit-bucketing
-    pub unsafe fn create_adapter_from_hal(
-        &self,
-        hal_adapter: hal::DynExposedAdapter,
-        input: Option<AdapterId>,
-    ) -> AdapterId {
-        let fid = self.hub.adapters.prepare(input);
-        fid.assign(unsafe { self.instance.create_adapter_from_hal(hal_adapter) })
-    }
-
-    pub fn adapter_get_info(&self, adapter_id: AdapterId) -> wgt::AdapterInfo {
-        let adapter = self.hub.adapters.get(adapter_id);
-        adapter.get_info()
-    }
-
-    pub fn adapter_get_texture_format_features(
-        &self,
-        adapter_id: AdapterId,
-        format: wgt::TextureFormat,
-    ) -> wgt::TextureFormatFeatures {
-        let adapter = self.hub.adapters.get(adapter_id);
-        adapter.get_texture_format_features(format)
-    }
-
-    pub fn adapter_features(&self, adapter_id: AdapterId) -> wgt::Features {
-        let adapter = self.hub.adapters.get(adapter_id);
-        adapter.features()
-    }
-
-    pub fn adapter_limits(&self, adapter_id: AdapterId) -> wgt::Limits {
-        let adapter = self.hub.adapters.get(adapter_id);
-        adapter.limits()
-    }
-
-    pub fn adapter_downlevel_capabilities(
-        &self,
-        adapter_id: AdapterId,
-    ) -> wgt::DownlevelCapabilities {
-        let adapter = self.hub.adapters.get(adapter_id);
-        adapter.downlevel_capabilities()
-    }
-
-    pub fn adapter_get_presentation_timestamp(
-        &self,
-        adapter_id: AdapterId,
-    ) -> wgt::PresentationTimestamp {
-        let adapter = self.hub.adapters.get(adapter_id);
-        adapter.get_presentation_timestamp()
-    }
-
-    pub fn adapter_cooperative_matrix_properties(
-        &self,
-        adapter_id: AdapterId,
-    ) -> Vec<wgt::CooperativeMatrixProperties> {
-        let adapter = self.hub.adapters.get(adapter_id);
-        adapter.cooperative_matrix_properties()
-    }
-
-    pub fn adapter_drop(&self, adapter_id: AdapterId) {
-        self.hub.adapters.remove(adapter_id);
-    }
-}
-
-impl Global {
-    pub fn adapter_request_device(
-        &self,
-        adapter_id: AdapterId,
-        desc: &DeviceDescriptor,
-        device_id_in: Option<DeviceId>,
-        queue_id_in: Option<QueueId>,
-    ) -> Result<(DeviceId, QueueId), RequestDeviceError> {
-        let device_fid = self.hub.devices.prepare(device_id_in);
-        let queue_fid = self.hub.queues.prepare(queue_id_in);
-
-        let adapter = self.hub.adapters.get(adapter_id);
-        let (device, queue) = adapter.request_device(desc)?;
-
-        let device_id = device_fid.assign(device);
-        resource_log!("Created Device {:?}", device_id);
-
-        let queue_id = queue_fid.assign(queue);
-        resource_log!("Created Queue {:?}", queue_id);
-
-        Ok((device_id, queue_id))
-    }
-
-    pub fn adapter_validate_device_descriptor(
-        &self,
-        adapter_id: AdapterId,
-        desc: &mut DeviceDescriptor,
-    ) -> Result<(), RequestDeviceError> {
-        let adapter = self.hub.adapters.get(adapter_id);
-        adapter.validate_device_descriptor(desc)
-    }
-
-    /// # Safety
-    ///
-    /// - `hal_device` must be created from `adapter_id` or its internal handle.
-    /// - `desc` must be a subset of `hal_device` features and limits.
-    pub unsafe fn create_device_from_hal(
-        &self,
-        adapter_id: AdapterId,
-        hal_device: hal::DynOpenDevice,
-        desc: &DeviceDescriptor,
-        device_id_in: Option<DeviceId>,
-        queue_id_in: Option<QueueId>,
-    ) -> Result<(DeviceId, QueueId), RequestDeviceError> {
-        let devices_fid = self.hub.devices.prepare(device_id_in);
-        let queues_fid = self.hub.queues.prepare(queue_id_in);
-
-        let adapter = self.hub.adapters.get(adapter_id);
-        let (device, queue) =
-            unsafe { adapter.create_device_and_queue_from_hal(hal_device, desc) }?;
-
-        let device_id = devices_fid.assign(device);
-
-        let queue_id = queues_fid.assign(queue);
-
-        Ok((device_id, queue_id))
-    }
 }
 
 /// This function checks that the adapter obeys WebGPU's adapter capability
@@ -1734,6 +1489,53 @@ fn filter_features_and_limits(
         *features &= wgt::Features::all_webgpu_mask() | limits::EXEMPT_FEATURES;
         limits.zero_native_only();
     }
+}
+
+fn normalize_max_resource_per_shader_stage_limits(limits: &mut wgt::Limits) {
+    // The next steps are from <https://www.w3.org/TR/webgpu/#a-new-device>.
+
+    // > 7. Set `limits.maxStorageBuffersPerShaderStage` to
+    // >    `max(limits.maxStorageBuffersPerShaderStage, limits.maxStorageBuffersInVertexStage,
+    // >    limits.maxStorageBuffersInFragmentStage)`.
+
+    limits.max_storage_buffers_per_shader_stage = [
+        limits.max_storage_buffers_per_shader_stage,
+        limits.max_storage_buffers_in_vertex_stage,
+        limits.max_storage_buffers_in_fragment_stage,
+    ]
+    .into_iter()
+    .max()
+    .unwrap();
+
+    // > 8. Set `limits.maxStorageTexturesPerShaderStage` to
+    // >    `max(limits.maxStorageTexturesPerShaderStage, limits.maxStorageTexturesInVertexStage,
+    // >    limits.maxStorageTexturesInFragmentStage)`.
+
+    limits.max_storage_textures_per_shader_stage = [
+        limits.max_storage_textures_per_shader_stage,
+        limits.max_storage_textures_in_vertex_stage,
+        limits.max_storage_textures_in_fragment_stage,
+    ]
+    .into_iter()
+    .max()
+    .unwrap();
+
+    // > 9. If features contains "core-features-and-limits":
+    //
+    // NOTE: We don't implement compat (yet?), so we do this unconditionally. See also:
+    // <https://github.com/gfx-rs/wgpu/issues/8124>
+
+    // >   1. Set `limits.maxStorageBuffersInVertexStage` and
+    // >      `limits.maxStorageBuffersInFragmentStage` to
+    // >      `limits.maxStorageBuffersPerShaderStage`.
+    limits.max_storage_buffers_in_vertex_stage = limits.max_storage_buffers_per_shader_stage;
+    limits.max_storage_buffers_in_fragment_stage = limits.max_storage_buffers_per_shader_stage;
+
+    // >   2. Set `limits.maxStorageTexturesInVertexStage` and
+    // >      `limits.maxStorageTexturesInFragmentStage` to
+    // >      `limits.maxStorageTexturesPerShaderStage`.
+    limits.max_storage_textures_in_vertex_stage = limits.max_storage_textures_per_shader_stage;
+    limits.max_storage_textures_in_fragment_stage = limits.max_storage_textures_per_shader_stage;
 }
 
 #[cfg(test)]
@@ -1837,5 +1639,114 @@ mod tests {
             &wgt::Limits::defaults(),
             &compliant_downlevel()
         ));
+    }
+
+    mod storage_resource_limits {
+        use super::*;
+
+        #[track_caller]
+        fn assert_normalized_eq(non_normalized: &wgt::Limits, expected: &wgt::Limits) {
+            let mut normalized = non_normalized.clone();
+            normalize_max_resource_per_shader_stage_limits(&mut normalized);
+            assert_eq!(&normalized, expected);
+        }
+
+        #[test]
+        fn normalization_is_idempotent() {
+            let original = wgt::Limits {
+                max_storage_buffers_in_vertex_stage: 16,
+                max_storage_textures_in_vertex_stage: 9,
+                ..wgt::Limits::defaults()
+            };
+
+            let mut first_normalization = original.clone();
+            normalize_max_resource_per_shader_stage_limits(&mut first_normalization);
+            assert_ne!(original, first_normalization);
+
+            let mut second_normalization = first_normalization.clone();
+            normalize_max_resource_per_shader_stage_limits(&mut second_normalization);
+            assert_eq!(first_normalization, second_normalization);
+        }
+
+        #[test]
+        fn limits_presets_already_normalized() {
+            [
+                wgt::Limits::defaults(),
+                wgt::Limits::downlevel_defaults(),
+                wgt::Limits::downlevel_webgl2_defaults(),
+                wgt::Limits::unlimited(),
+            ]
+            .iter()
+            .for_each(|l| assert_normalized_eq(l, l))
+        }
+
+        #[test]
+        fn in_stage_raises_per_shader_stage() {
+            assert_normalized_eq(
+                &wgt::Limits {
+                    max_storage_buffers_per_shader_stage: 8,
+                    max_storage_buffers_in_vertex_stage: 16,
+                    max_storage_buffers_in_fragment_stage: 16,
+                    ..wgt::Limits::defaults()
+                },
+                &wgt::Limits {
+                    max_storage_buffers_per_shader_stage: 16,
+                    max_storage_buffers_in_vertex_stage: 16,
+                    max_storage_buffers_in_fragment_stage: 16,
+                    ..wgt::Limits::defaults()
+                },
+            );
+
+            assert_normalized_eq(
+                &wgt::Limits {
+                    max_storage_textures_per_shader_stage: 8,
+                    max_storage_textures_in_vertex_stage: 9,
+                    max_storage_textures_in_fragment_stage: 9,
+                    ..wgt::Limits::defaults()
+                },
+                &wgt::Limits {
+                    max_storage_textures_per_shader_stage: 9,
+                    max_storage_textures_in_vertex_stage: 9,
+                    max_storage_textures_in_fragment_stage: 9,
+                    ..wgt::Limits::defaults()
+                },
+            );
+        }
+
+        #[test]
+        fn per_shader_stage_raises_in_stage() {
+            assert_normalized_eq(
+                &wgt::Limits {
+                    max_storage_buffers_per_shader_stage: 16,
+                    max_storage_buffers_in_vertex_stage: 4,
+                    max_storage_buffers_in_fragment_stage: 4,
+                    max_storage_textures_per_shader_stage: 8,
+                    max_storage_textures_in_vertex_stage: 4,
+                    max_storage_textures_in_fragment_stage: 4,
+                    ..wgt::Limits::defaults()
+                },
+                &wgt::Limits {
+                    max_storage_buffers_per_shader_stage: 16,
+                    max_storage_buffers_in_vertex_stage: 16,
+                    max_storage_buffers_in_fragment_stage: 16,
+                    max_storage_textures_per_shader_stage: 8,
+                    max_storage_textures_in_vertex_stage: 8,
+                    max_storage_textures_in_fragment_stage: 8,
+                    ..wgt::Limits::defaults()
+                },
+            );
+        }
+
+        #[test]
+        fn lowering_per_shader_stage_noop() {
+            assert_normalized_eq(
+                &wgt::Limits {
+                    max_storage_buffers_per_shader_stage: 1,
+                    max_storage_textures_per_shader_stage: 1,
+                    ..wgt::Limits::defaults()
+                },
+                &wgt::Limits::defaults(),
+            );
+        }
     }
 }

@@ -56,10 +56,52 @@ holiday, sick, or busy with another project. Only request a specific person when
 covers the code you are touching, or when someone is already the obvious owner of that
 change.
 
+- Run `mach file-info reviewers` on the files you changed (see below); this is usually enough to
+  find the right group.
 - If your code fits into one of the [review groups](#review-groups) below, request review from that group.
 - If you have a mentor assigned on the bug you are fixing, the mentor can usually either also review or find a suitable reviewer on your behalf.
 - Otherwise, try looking at the history of the file to see who has modified it recently (for example, `git log <modified-file>`).
 - Finally if you are still unable to identify someone, try asking in the [#introduction channel on Matrix](https://chat.mozilla.org/#/room/#introduction:mozilla.org).
+
+### Suggesting reviewers from the command line
+
+`mach file-info reviewers` takes the paths you modified and prints the reviewers to
+request:
+
+```shell
+./mach file-info reviewers dom/media/mediasink/AudioSink.cpp
+```
+
+```
+Module reviewer groups (from mots.yaml):
+  #media-playback-reviewers (Core: Media Playback)
+
+Herald reviewers (automatically added):
+  #media-playback-reviewers (blocking)
+```
+
+It reports up to three kinds of suggestion:
+
+- **Module reviewer groups** are the groups of the [modules](/mots/index.md) owning the
+  files, taken from the in-tree `mots.yaml`.
+- **Herald reviewers** are the groups and individuals that Phabricator's Herald rules add
+  by themselves once you submit the patch. Those marked `(blocking)` have to accept the
+  patch before it can land, so requesting them up front saves a round trip.
+- **Recent reviewers** are the reviewers of recent patches touching the files, read from
+  the `r=` lines in the version control history. These are only shown when the two sources
+  above have nothing to say, since they are a weaker signal: a file may have last been
+  touched by an unrelated cleanup.
+
+Pass several paths at once to get the reviewers for a whole patch, and `--format json` if
+you want to consume the output from a script. The Herald rules are downloaded and cached;
+use `--offline` to work from the cached copy only.
+
+To see every group name that Phabricator knows about, for example to check the spelling of
+one before putting it in a commit message, run:
+
+```shell
+./mach file-info reviewer-groups
+```
 
 ## Keeping track of your review queue
 
@@ -96,7 +138,7 @@ Remember that reviewers are human too, and may have complex reasons that prevent
 
 For simple documentation changes, reviews are not required.
 
-For more information about the review process, see the {ref}`Code Review FAQ`.
+For more information about the review process, see the {doc}`Code_Review_FAQ`.
 
 ## Review groups
 
@@ -188,6 +230,9 @@ For more information about the review process, see the {ref}`Code Review FAQ`.
    * - #media-playback-reviewers
      - `Media playback <https://wiki.mozilla.org/Modules/All#Media_Playback>`__
      - `Member list <https://phabricator.services.mozilla.com/project/profile/159/>`__
+   * - #mobiletest-reviewers
+     - Android UI test/framework and UI test infra code
+     - `Member list <https://phabricator.services.mozilla.com/project/members/201/>`__
    * - #mozbase
      - Mozbase
      - `Member list <https://phabricator.services.mozilla.com/project/members/113/>`__
@@ -200,6 +245,9 @@ For more information about the review process, see the {ref}`Code Review FAQ`.
    * - #nss-reviewers
      - Network Security Services (NSS)
      - `Member list <https://phabricator.services.mozilla.com/project/members/156/>`__
+   * - #pdfjs-reviewers
+     - `Core: PDF </mots/index.html#core-pdf>`__ (the `pdf.js <https://github.com/mozilla/pdf.js>`__ viewer and its Gecko integration)
+     - `Member list <https://phabricator.services.mozilla.com/project/members/152/>`__
    * - #perftest-reviewers
      - Perf Tests
      - `Member list <https://phabricator.services.mozilla.com/project/members/102/>`__
@@ -245,6 +293,9 @@ For more information about the review process, see the {ref}`Code Review FAQ`.
    * - #theme or #desktop-theme-reviewers
      - `Firefox: Theme and Toolkit: Themes </mots/index.html#desktop-theme>`__
      - `Member list <https://phabricator.services.mozilla.com/project/members/141/>`__
+   * - #toolkit-telemetry-reviewers-rotation
+     - `Toolkit :: Telemetry </mots/index.html#telemetry>`__
+     - `Member list <https://phabricator.services.mozilla.com/project/members/229/>`__
    * - #translations-reviewers
      - `Firefox: Translation <https://firefox-source-docs.mozilla.org/mots/index.html#translation>`__
      - `Member list <https://phabricator.services.mozilla.com/project/members/192/>`__

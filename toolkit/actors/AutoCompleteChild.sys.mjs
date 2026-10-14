@@ -118,6 +118,7 @@ export class AutoCompleteChild extends JSWindowActorChild {
     let window = element.documentGlobal;
     let rect = window.windowUtils.getElementBoundingScreenRect(element);
     let dir = window.getComputedStyle(element).direction;
+    let isDarkBackground = ChromeUtils.isDarkBackground(element);
     let results = this.getResultsFromController(input);
     let formOrigin = lazy.LoginHelper.getLoginOrigin(
       element.ownerDocument.documentURI
@@ -131,6 +132,7 @@ export class AutoCompleteChild extends JSWindowActorChild {
       results,
       rect,
       dir,
+      isDarkBackground,
       inputElementIdentifier,
       formOrigin,
       selectedIndex,
@@ -360,6 +362,20 @@ export class AutoCompleteChild extends JSWindowActorChild {
     }
     let result = Services.cpmm.sendSyncMessage(
       "AutoComplete:MaybeActivateSecondaryAction",
+      {
+        browsingContext: this.browsingContext,
+      }
+    );
+    this._secondaryActionFocused = false;
+    return result.length == 1 && result[0];
+  }
+
+  maybeLeaveSecondaryAction() {
+    if (!this._secondaryActionFocused) {
+      return false;
+    }
+    let result = Services.cpmm.sendSyncMessage(
+      "AutoComplete:MaybeLeaveSecondaryAction",
       {
         browsingContext: this.browsingContext,
       }

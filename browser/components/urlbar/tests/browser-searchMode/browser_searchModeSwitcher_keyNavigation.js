@@ -187,26 +187,34 @@ async function test_dont_open_switcher(dontOpenKey) {
  * Test we can navigate the SearchModeSwitcher with various keys
  *
  * @param {string} navKey - The keyboard character used to navigate.
- * @param {Int} navTimes - The number of times we press that key.
+ * @param {string} activateKey - The keyboard character used to activate items.
+ * @param {number} navTimes - The number of times we press that key.
  * @param {object} searchMode - The searchMode that we expect to select.
  */
-async function test_navigate_switcher(navKey, navTimes, searchMode) {
+async function test_navigate_switcher(
+  navKey,
+  activateKey,
+  navTimes,
+  searchMode
+) {
+  let initialValue = gURLBar.value;
   let popup = UrlbarTestUtils.searchModeSwitcherPopup(window).parentElement;
   let promiseMenuOpen = BrowserTestUtils.waitForEvent(popup, "popupshown");
 
-  info("Open the urlbar and open the switcher via Enter key");
+  info(`Open the urlbar and open the switcher via '${activateKey}'`);
   await focusSearchModeSwitcher();
-  EventUtils.synthesizeKey("KEY_Enter");
+  EventUtils.synthesizeKey(activateKey);
   await promiseMenuOpen;
 
   info("Select first result and enter search mode");
   for (let i = 0; i < navTimes; i++) {
     EventUtils.synthesizeKey(navKey);
   }
-  EventUtils.synthesizeKey("KEY_Enter");
+  EventUtils.synthesizeKey(activateKey);
   await UrlbarTestUtils.promiseSearchComplete(window);
 
   await UrlbarTestUtils.assertSearchMode(window, searchMode);
+  Assert.equal(gURLBar.value, initialValue, "Value didn't change");
 
   info("Exit the search mode");
   await UrlbarTestUtils.promisePopupClose(window, () => {
@@ -231,15 +239,15 @@ add_task(async function test_keyboard_nav() {
     source: 3,
   };
 
-  await test_navigate_switcher("KEY_ArrowDown", 0, {
+  await test_navigate_switcher("KEY_ArrowDown", "KEY_Enter", 0, {
     engineName: "engine1",
     ...searchModeTemplate,
   });
-  await test_navigate_switcher("KEY_ArrowDown", 1, {
+  await test_navigate_switcher("KEY_ArrowDown", "KEY_Enter", 1, {
     engineName: "engine2",
     ...searchModeTemplate,
   });
-  await test_navigate_switcher("KEY_ArrowDown", 2, {
+  await test_navigate_switcher("KEY_ArrowDown", " ", 2, {
     engineName: "engine3",
     ...searchModeTemplate,
   });
@@ -565,13 +573,23 @@ add_task(async function test_ctrl_tab() {
   gURLBar.handleRevert();
 });
 
-add_task(async function test_accesskeys() {
-  info("Test 'E' to enter search mode for engine1.");
-  await UrlbarTestUtils.openSearchModeSwitcher(window);
+add_task(async function test_first_letter_selection() {
+  info("Test 'E' to cycle through engines starting with 'e'.");
+  let popup = await UrlbarTestUtils.openSearchModeSwitcher(window);
+  let focusedEngine = () =>
+    popup.getRootNode().activeElement?.dataset.engineName;
+  await TestUtils.waitForCondition(
+    () => focusedEngine() == "engine1",
+    "Wait for the first engine to be focused"
+  );
   EventUtils.synthesizeKey("E");
+  Assert.equal(focusedEngine(), "engine2", "First 'E' focuses engine2");
+  EventUtils.synthesizeKey("E");
+  Assert.equal(focusedEngine(), "engine3", "Second 'E' focuses engine3");
+  EventUtils.synthesizeKey("KEY_Enter");
   await UrlbarTestUtils.promiseSearchComplete(window);
   await UrlbarTestUtils.assertSearchMode(window, {
-    engineName: "engine1",
+    engineName: "engine3",
     source: UrlbarShared.RESULT_SOURCE.SEARCH,
     entry: "searchbutton",
   });
@@ -596,4 +614,28 @@ add_task(async function test_accesskeys() {
     "about:preferences#search",
     "Opened search settings"
   );
+});
+
+add_task(async function test_first_letter_selection_after_mouse_open() {
+  info("Open the switcher with the mouse, which leaves focus outside it.");
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({ window, value: "" });
+  let popup = await UrlbarTestUtils.openSearchModeSwitcher(window, () =>
+    EventUtils.synthesizeMouseAtCenter(searchmodeSwitcher, {
+      type: "mousedown",
+    })
+  );
+  EventUtils.synthesizeMouseAtCenter(searchmodeSwitcher, { type: "mouseup" });
+  Assert.ok(
+    !popup.contains(document.activeElement),
+    "Focus is not in the popup"
+  );
+
+  info("Test 'T' to enter search mode for tabs.");
+  EventUtils.synthesizeKey("T");
+  await UrlbarTestUtils.promiseSearchComplete(window);
+  await UrlbarTestUtils.assertSearchMode(window, {
+    source: UrlbarShared.RESULT_SOURCE.TABS,
+    entry: "searchbutton",
+  });
+  await UrlbarTestUtils.exitSearchMode(window);
 });

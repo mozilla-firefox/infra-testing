@@ -49,9 +49,9 @@ SVGRectElement::SVGRectElement(
     already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : SVGRectElementBase(std::move(aNodeInfo)) {}
 
-bool SVGRectElement::IsAttributeMapped(const nsAtom* aAttribute) const {
+bool SVGRectElement::IsNoNamespaceAttrMapped(const nsAtom* aAttribute) const {
   return IsInLengthInfo(aAttribute, sLengthInfo) ||
-         SVGRectElementBase::IsAttributeMapped(aAttribute);
+         SVGRectElementBase::IsNoNamespaceAttrMapped(aAttribute);
 }
 
 namespace SVGT = SVGGeometryProperty::Tags;
@@ -168,8 +168,8 @@ Maybe<Rect> SVGRectElement::GetGeometryBounds(
   return Some(aToBoundsSpace.TransformBounds(rect));
 }
 
-void SVGRectElement::GetAsSimplePath(SimplePath* aSimplePath) {
-  float x, y, width, height, rx, ry;
+void SVGRectElement::GetAsSimpleShape(SimpleShape* aShape) {
+  float x = 0.0f, y = 0.0f, width = 0.0f, height = 0.0f, rx = 0.0f, ry = 0.0f;
 
   DebugOnly<bool> ok =
       SVGGeometryProperty::ResolveAll<SVGT::X, SVGT::Y, SVGT::Width,
@@ -178,19 +178,15 @@ void SVGRectElement::GetAsSimplePath(SimplePath* aSimplePath) {
   MOZ_ASSERT(ok, "SVGGeometryProperty::ResolveAll failed");
 
   if (width <= 0 || height <= 0) {
-    aSimplePath->Reset();
+    aShape->Reset();
     return;
   }
 
-  rx = std::max(rx, 0.0f);
-  ry = std::max(ry, 0.0f);
+  // Same clamping as BuildPath.
+  rx = std::clamp(rx, 0.0f, width / 2);
+  ry = std::clamp(ry, 0.0f, height / 2);
 
-  if (rx != 0 || ry != 0) {
-    aSimplePath->Reset();
-    return;
-  }
-
-  aSimplePath->SetRect(x, y, width, height);
+  aShape->SetRoundedRect(CSSRect(x, y, width, height), CSSSize(rx, ry));
 }
 
 already_AddRefed<Path> SVGRectElement::BuildPath(PathBuilder* aBuilder) {

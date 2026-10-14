@@ -11,72 +11,11 @@ task-defaults:
         using: toolchain-script
         script: build-libunwind.sh
 
-android-aarch64-libunwind-21:
-    description: "android aarch64 libunwind for Clang 21 toolchain build"
-    treeherder:
-        symbol: TA(aarch64-unwind-21)
-    run:
-        clone-with: hg
-        arguments:
-            - build/build-clang/clang-21.json
-        resources:
-            - build/build-clang/clang-21.json
-            - taskcluster/scripts/misc/build-llvm-common.sh
-        toolchain-artifact: public/build/libunwind-aarch64-linux-android.tar.zst
-    fetches:
-        fetch:
-            - clang-21
-        toolchain:
-            - android-aarch64-compiler-rt-21
-            - linux64-clang-21-stage1
-            - linux64-android-ndk-linux-repack
-
-android-arm-libunwind-21:
-    description: "android arm libunwind for Clang 21 toolchain build"
-    treeherder:
-        symbol: TA(arm-unwind-21)
-    run:
-        clone-with: hg
-        arguments:
-            - build/build-clang/clang-21.json
-        resources:
-            - build/build-clang/clang-21.json
-            - taskcluster/scripts/misc/build-llvm-common.sh
-        toolchain-artifact: public/build/libunwind-armv7-linux-android.tar.zst
-    fetches:
-        fetch:
-            - clang-21
-        toolchain:
-            - android-arm-compiler-rt-21
-            - linux64-clang-21-stage1
-            - linux64-android-ndk-linux-repack
-
-android-x64-libunwind-21:
-    description: "android x64 libunwind for Clang 21 toolchain build"
-    treeherder:
-        symbol: TA(x64-unwind-21)
-    run:
-        clone-with: hg
-        arguments:
-            - build/build-clang/clang-21.json
-        resources:
-            - build/build-clang/clang-21.json
-            - taskcluster/scripts/misc/build-llvm-common.sh
-        toolchain-artifact: public/build/libunwind-x86_64-linux-android.tar.zst
-    fetches:
-        fetch:
-            - clang-21
-        toolchain:
-            - android-x64-compiler-rt-21
-            - linux64-clang-21-stage1
-            - linux64-android-ndk-linux-repack
-
 android-aarch64-libunwind-22:
     description: "android aarch64 libunwind for Clang 22 toolchain build"
     treeherder:
-        symbol: TA(aarch64-unwind-22)
+        symbol: TA(unwind-22-aarch64)
     run:
-        clone-with: hg
         arguments:
             - build/build-clang/clang-22.json
         resources:
@@ -94,9 +33,8 @@ android-aarch64-libunwind-22:
 android-arm-libunwind-22:
     description: "android arm libunwind for Clang 22 toolchain build"
     treeherder:
-        symbol: TA(arm-unwind-22)
+        symbol: TA(unwind-22-arm)
     run:
-        clone-with: hg
         arguments:
             - build/build-clang/clang-22.json
         resources:
@@ -114,9 +52,8 @@ android-arm-libunwind-22:
 android-x64-libunwind-22:
     description: "android x64 libunwind for Clang 22 toolchain build"
     treeherder:
-        symbol: TA(x64-unwind-22)
+        symbol: TA(unwind-22-x64)
     run:
-        clone-with: hg
         arguments:
             - build/build-clang/clang-22.json
         resources:
@@ -131,14 +68,70 @@ android-x64-libunwind-22:
             - linux64-clang-22-stage1
             - linux64-android-ndk-linux-repack
 
+android-aarch64-libunwind-23:
+    description: "android aarch64 libunwind for Clang 23 toolchain build"
+    treeherder:
+        symbol: TA(unwind-23-aarch64)
+    run:
+        arguments:
+            - build/build-clang/clang-23.json
+        resources:
+            - build/build-clang/clang-23.json
+            - taskcluster/scripts/misc/build-llvm-common.sh
+        toolchain-artifact: public/build/libunwind-aarch64-linux-android.tar.zst
+    fetches:
+        fetch:
+            - clang-23
+        toolchain:
+            - android-aarch64-compiler-rt-23
+            - linux64-clang-23-stage1
+            - linux64-android-ndk-linux-repack
+
+android-arm-libunwind-23:
+    description: "android arm libunwind for Clang 23 toolchain build"
+    treeherder:
+        symbol: TA(unwind-23-arm)
+    run:
+        arguments:
+            - build/build-clang/clang-23.json
+        resources:
+            - build/build-clang/clang-23.json
+            - taskcluster/scripts/misc/build-llvm-common.sh
+        toolchain-artifact: public/build/libunwind-armv7-linux-android.tar.zst
+    fetches:
+        fetch:
+            - clang-23
+        toolchain:
+            - android-arm-compiler-rt-23
+            - linux64-clang-23-stage1
+            - linux64-android-ndk-linux-repack
+
+android-x64-libunwind-23:
+    description: "android x64 libunwind for Clang 23 toolchain build"
+    treeherder:
+        symbol: TA(unwind-23-x64)
+    run:
+        arguments:
+            - build/build-clang/clang-23.json
+        resources:
+            - build/build-clang/clang-23.json
+            - taskcluster/scripts/misc/build-llvm-common.sh
+        toolchain-artifact: public/build/libunwind-x86_64-linux-android.tar.zst
+    fetches:
+        fetch:
+            - clang-23
+        toolchain:
+            - android-x64-compiler-rt-23
+            - linux64-clang-23-stage1
+            - linux64-android-ndk-linux-repack
+
 android-aarch64-libunwind-trunk:
     description: "android aarch64 libunwind for Clang trunk toolchain build"
     attributes:
         cached_task: false
     treeherder:
-        symbol: TA(aarch64-unwind-trunk)
+        symbol: TA(unwind-trunk-aarch64)
     run:
-        clone-with: hg
         arguments:
             - build/build-clang/clang-trunk.json
         resources:
@@ -158,9 +151,8 @@ android-arm-libunwind-trunk:
     attributes:
         cached_task: false
     treeherder:
-        symbol: TA(arm-unwind-trunk)
+        symbol: TA(unwind-trunk-arm)
     run:
-        clone-with: hg
         arguments:
             - build/build-clang/clang-trunk.json
         resources:
@@ -180,9 +172,8 @@ android-x64-libunwind-trunk:
     attributes:
         cached_task: false
     treeherder:
-        symbol: TA(x64-unwind-trunk)
+        symbol: TA(unwind-trunk-x64)
     run:
-        clone-with: hg
         arguments:
             - build/build-clang/clang-trunk.json
         resources:

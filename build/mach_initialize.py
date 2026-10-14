@@ -176,7 +176,11 @@ def initialize(topsrcdir, args=()):
 
         try:
             repo = mozversioncontrol.get_repository_object(path=topsrcdir)
-        except (mozversioncontrol.InvalidRepoPath, mozversioncontrol.MissingVCSTool):
+        except (
+            mozversioncontrol.InvalidRepoPath,
+            mozversioncontrol.MissingVCSTool,
+            mozversioncontrol.StaleWorkspaceError,
+        ):
             repo = None
         if repo == "SOURCE":
             return False

@@ -38,10 +38,15 @@ enum class SVGBBoxFlag : uint16_t {
   IncludeStrokeGeometry,
   IncludeMarkers,
   IncludeClipped,
+  // Stroke bounds are estimated (faster, conservative but inaccurate).
+  EstimateStrokeBounds,
   // Normally a getBBox call on outer-<svg> should only return the
   // bounds of the elements children. This flag will cause the
   // element's bounds to be returned instead.
   UseFrameBoundsForOuterSVG,
+  // Get the bounds of text content rather than the bounds of the entire
+  // text frame.
+  TextContentBounds,
   // Normally GetBBox will return values that apply CSS Zoom.
   // This flag will cause the unzoomed element's bounds to be returned instead.
   DisregardCSSZoom,

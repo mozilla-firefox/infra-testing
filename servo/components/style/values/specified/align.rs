@@ -219,25 +219,16 @@ impl ContentDistribution {
     }
 
     /// Parse a value for align-content
-    pub fn parse_block<'i>(
-        _: &ParserContext,
-        input: &mut Parser<'i, '_>,
-    ) -> Result<Self, ParseError<'i>> {
+    pub fn parse_block(_: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         Self::parse(input, AxisDirection::Block)
     }
 
     /// Parse a value for justify-content
-    pub fn parse_inline<'i>(
-        _: &ParserContext,
-        input: &mut Parser<'i, '_>,
-    ) -> Result<Self, ParseError<'i>> {
+    pub fn parse_inline(_: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         Self::parse(input, AxisDirection::Inline)
     }
 
-    fn parse<'i, 't>(
-        input: &mut Parser<'i, 't>,
-        axis: AxisDirection,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(input: &mut Parser, axis: AxisDirection) -> Result<Self, ParseError> {
         // NOTE Please also update the `list_keywords` function below
         //      when this function is updated.
 
@@ -250,10 +241,10 @@ impl ContentDistribution {
         }
 
         // Parse <baseline-position>, but only on the block axis.
-        if axis == AxisDirection::Block {
-            if let Ok(value) = input.try_parse(parse_baseline) {
-                return Ok(ContentDistribution::new(value));
-            }
+        if axis == AxisDirection::Block
+            && let Ok(value) = input.try_parse(parse_baseline)
+        {
+            return Ok(ContentDistribution::new(value));
         }
 
         // <content-distribution>
@@ -335,26 +326,17 @@ impl SelfAlignment {
     }
 
     /// Parse self-alignment on the block axis (for align-self)
-    pub fn parse_block<'i, 't>(
-        _: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    pub fn parse_block(_: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         Self::parse(input, AxisDirection::Block)
     }
 
     /// Parse self-alignment on the block axis (for align-self)
-    pub fn parse_inline<'i, 't>(
-        _: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    pub fn parse_inline(_: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         Self::parse(input, AxisDirection::Inline)
     }
 
     /// Parse a self-alignment value on one of the axes.
-    fn parse<'i, 't>(
-        input: &mut Parser<'i, 't>,
-        axis: AxisDirection,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(input: &mut Parser, axis: AxisDirection) -> Result<Self, ParseError> {
         // NOTE Please also update the `list_keywords` function below
         //      when this function is updated.
 
@@ -466,25 +448,16 @@ impl ItemPlacement {
 
 impl ItemPlacement {
     /// Parse a value for align-items
-    pub fn parse_block<'i>(
-        _: &ParserContext,
-        input: &mut Parser<'i, '_>,
-    ) -> Result<Self, ParseError<'i>> {
+    pub fn parse_block(_: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         Self::parse(input, AxisDirection::Block)
     }
 
     /// Parse a value for justify-items
-    pub fn parse_inline<'i>(
-        _: &ParserContext,
-        input: &mut Parser<'i, '_>,
-    ) -> Result<Self, ParseError<'i>> {
+    pub fn parse_inline(_: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         Self::parse(input, AxisDirection::Inline)
     }
 
-    fn parse<'i, 't>(
-        input: &mut Parser<'i, 't>,
-        axis: AxisDirection,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(input: &mut Parser, axis: AxisDirection) -> Result<Self, ParseError> {
         // NOTE Please also update `impl SpecifiedValueInfo` below when
         //      this function is updated.
 
@@ -559,10 +532,7 @@ impl JustifyItems {
 }
 
 impl Parse for JustifyItems {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         ItemPlacement::parse_inline(context, input).map(Self)
     }
 }
@@ -575,9 +545,7 @@ impl SpecifiedValueInfo for JustifyItems {
 }
 
 // auto | normal | stretch
-fn parse_auto_normal_stretch<'i, 't>(
-    input: &mut Parser<'i, 't>,
-) -> Result<AlignFlags, ParseError<'i>> {
+fn parse_auto_normal_stretch(input: &mut Parser) -> Result<AlignFlags, ParseError> {
     // NOTE Please also update the `list_auto_normal_stretch` function
     //      below when this function is updated.
     try_match_ident_ignore_ascii_case! { input,
@@ -592,7 +560,7 @@ fn list_auto_normal_stretch(f: KeywordsCollectFn) {
 }
 
 // normal | stretch
-fn parse_normal_stretch<'i, 't>(input: &mut Parser<'i, 't>) -> Result<AlignFlags, ParseError<'i>> {
+fn parse_normal_stretch(input: &mut Parser) -> Result<AlignFlags, ParseError> {
     // NOTE Please also update the `list_normal_stretch` function below
     //      when this function is updated.
     try_match_ident_ignore_ascii_case! { input,
@@ -606,7 +574,7 @@ fn list_normal_stretch(f: KeywordsCollectFn) {
 }
 
 // <baseline-position>
-fn parse_baseline<'i, 't>(input: &mut Parser<'i, 't>) -> Result<AlignFlags, ParseError<'i>> {
+fn parse_baseline(input: &mut Parser) -> Result<AlignFlags, ParseError> {
     // NOTE Please also update the `list_baseline_keywords` function
     //      below when this function is updated.
     try_match_ident_ignore_ascii_case! { input,
@@ -627,9 +595,7 @@ fn list_baseline_keywords(f: KeywordsCollectFn) {
 }
 
 // <content-distribution>
-fn parse_content_distribution<'i, 't>(
-    input: &mut Parser<'i, 't>,
-) -> Result<AlignFlags, ParseError<'i>> {
+fn parse_content_distribution(input: &mut Parser) -> Result<AlignFlags, ParseError> {
     // NOTE Please also update the `list_content_distribution_keywords`
     //      function below when this function is updated.
     try_match_ident_ignore_ascii_case! { input,
@@ -645,9 +611,7 @@ fn list_content_distribution_keywords(f: KeywordsCollectFn) {
 }
 
 // <overflow-position>
-fn parse_overflow_position<'i, 't>(
-    input: &mut Parser<'i, 't>,
-) -> Result<AlignFlags, ParseError<'i>> {
+fn parse_overflow_position(input: &mut Parser) -> Result<AlignFlags, ParseError> {
     // NOTE Please also update the `list_overflow_position_keywords`
     //      function below when this function is updated.
     try_match_ident_ignore_ascii_case! { input,
@@ -666,11 +630,11 @@ enum AllowAnchorCenter {
 }
 
 // <self-position> | left | right in the inline axis.
-fn parse_self_position<'i, 't>(
-    input: &mut Parser<'i, 't>,
+fn parse_self_position(
+    input: &mut Parser,
     axis: AxisDirection,
     allow_anchor_center: AllowAnchorCenter,
-) -> Result<AlignFlags, ParseError<'i>> {
+) -> Result<AlignFlags, ParseError> {
     // NOTE Please also update the `list_self_position_keywords`
     //      function below when this function is updated.
     Ok(try_match_ident_ignore_ascii_case! { input,
@@ -683,7 +647,12 @@ fn parse_self_position<'i, 't>(
         "self-end" => AlignFlags::SELF_END,
         "left" if axis == AxisDirection::Inline => AlignFlags::LEFT,
         "right" if axis == AxisDirection::Inline => AlignFlags::RIGHT,
-        "anchor-center" if matches!(allow_anchor_center, AllowAnchorCenter::Yes) => AlignFlags::ANCHOR_CENTER,
+        "anchor-center"
+            if matches!(allow_anchor_center, AllowAnchorCenter::Yes)
+                && crate::pref!("layout.css.anchor-positioning.enabled", gecko = true) =>
+        {
+            AlignFlags::ANCHOR_CENTER
+        },
     })
 }
 
@@ -696,17 +665,18 @@ fn list_self_position_keywords(f: KeywordsCollectFn, axis: AxisDirection) {
         "center",
         "self-start",
         "self-end",
-        "anchor-center",
     ]);
+
+    if crate::pref!("layout.css.anchor-positioning.enabled", gecko = true) {
+        f(&["anchor-center"]);
+    }
 
     if axis == AxisDirection::Inline {
         f(&["left", "right"]);
     }
 }
 
-fn parse_left_right_center<'i, 't>(
-    input: &mut Parser<'i, 't>,
-) -> Result<AlignFlags, ParseError<'i>> {
+fn parse_left_right_center(input: &mut Parser) -> Result<AlignFlags, ParseError> {
     // NOTE Please also update the `list_legacy_keywords` function below
     //      when this function is updated.
     Ok(try_match_ident_ignore_ascii_case! { input,
@@ -717,7 +687,7 @@ fn parse_left_right_center<'i, 't>(
 }
 
 // legacy | [ legacy && [ left | right | center ] ]
-fn parse_legacy<'i, 't>(input: &mut Parser<'i, 't>) -> Result<AlignFlags, ParseError<'i>> {
+fn parse_legacy(input: &mut Parser) -> Result<AlignFlags, ParseError> {
     // NOTE Please also update the `list_legacy_keywords` function below
     //      when this function is updated.
     let flags = try_match_ident_ignore_ascii_case! { input,

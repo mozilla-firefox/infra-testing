@@ -118,7 +118,6 @@ class BaselineFrameSlot {
   uint32_t slot() const { return slot_; }
 
   bool operator==(const BaselineFrameSlot& other) const = default;
-  bool operator!=(const BaselineFrameSlot& other) const = default;
 };
 
 // OperandLocation represents the location of an OperandId. The operand is
@@ -782,8 +781,14 @@ class MOZ_RAII CacheIRCompiler {
   // Returns the set of volatile float registers that are live. These
   // registers need to be saved when making non-GC calls with callWithABI.
   FloatRegisterSet liveVolatileFloatRegs() const {
-    return FloatRegisterSet::Intersect(liveFloatRegs_.set(),
-                                       FloatRegisterSet::Volatile());
+    FloatRegisterSet regs = FloatRegisterSet::Intersect(
+        liveFloatRegs_.set(), FloatRegisterSet::Volatile());
+    // If we have already spilled FloatReg0 via AutoScratchFloatRegister,
+    // we don't want/need to spill it again.
+    if (allocator.hasAutoScratchFloatRegisterSpill()) {
+      regs.takeAllocatable(FloatReg0);
+    }
+    return regs;
   }
 
   // Returns the set of volatile registers that are live. These registers need

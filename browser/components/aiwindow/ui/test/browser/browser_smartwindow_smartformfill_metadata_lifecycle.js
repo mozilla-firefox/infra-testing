@@ -70,6 +70,31 @@ function rejectPendingMetadataRequest(mockEngineManager, schemaName, error) {
 }
 
 /**
+ * Waits for the Smart Form Fill row to stop being offered. A row the popup no
+ * longer has an entry for is collapsed rather than removed.
+ *
+ * @param {XULPopupElement} popup Autocomplete popup.
+ *
+ * @returns {Promise<Element | null>} The hidden row, when it is still there.
+ */
+async function waitForHiddenSmartFormFillEntry(popup) {
+  let item = popup.querySelector('[originaltype="smartFormFill"]');
+
+  if (item && !item.collapsed) {
+    await BrowserTestUtils.waitForMutationCondition(
+      popup,
+      { attributes: true, childList: true, subtree: true },
+      () => {
+        item = popup.querySelector('[originaltype="smartFormFill"]');
+        return !item || item.collapsed;
+      }
+    );
+  }
+
+  return item;
+}
+
+/**
  * Fails field classification and waits for the Smart Form Fill row to hide.
  *
  * @param {Window} win AI Window containing the form.
@@ -95,17 +120,7 @@ async function failFieldClassification(win, selector, mockEngineManager) {
     );
   }, "Waiting for Smart Form Fill metadata requests to settle");
 
-  let item = popup.querySelector('[originaltype="smartFormFill"]');
-  if (item && !item.collapsed) {
-    await BrowserTestUtils.waitForMutationCondition(
-      popup,
-      { attributes: true, childList: true, subtree: true },
-      () => {
-        item = popup.querySelector('[originaltype="smartFormFill"]');
-        return !item || item.collapsed;
-      }
-    );
-  }
+  const item = await waitForHiddenSmartFormFillEntry(popup);
 
   return { browser, popup, item };
 }
@@ -137,6 +152,22 @@ describe("Smart Form Fill metadata lifecycle", () => {
     Assert.ok(
       !engine?.runRequests.size,
       "Preparing the form should not start Smart Form Fill model requests"
+    );
+  });
+
+  it("hides the autocomplete entry once the user types in the field", async () => {
+    const { browser, popup } = await openAutocomplete(
+      win,
+      "#email",
+      mockEngineManager
+    );
+
+    await BrowserTestUtils.synthesizeKey("a", {}, browser);
+    const item = await waitForHiddenSmartFormFillEntry(popup);
+
+    Assert.ok(
+      !item || item.collapsed,
+      "A field the user typed in should get no Smart Form Fill entry"
     );
   });
 
@@ -223,6 +254,58 @@ describe("Smart Form Fill metadata lifecycle", () => {
       handledSchemas.has(FIELD_CLASSIFICATION_SCHEMA),
       "The form structure change should trigger a new classification request"
     );
+  });
+
+  it("reclassifies a form after a field is removed", async () => {
+    const { browser } = await failFieldClassification(
+      win,
+      "#email",
+      mockEngineManager
+    );
+    await closeAutocomplete(browser);
+
+    await SpecialPowers.spawn(browser, [], () => {
+      content.document.querySelector("#email").closest("label").remove();
+    });
+
+    await waitForSmartFormFillProvider(browser, "#name", { focus: true });
+
+    const actor =
+      browser.browsingContext.currentWindowGlobal.getActor("SmartFormFill");
+    await TestUtils.waitForCondition(async () => {
+      const formData = await actor.sendQuery("SmartFormFill:GetFocusedForm");
+      return (
+        formData?.fields.length === 1 && formData.fields[0].name === "name"
+      );
+    }, "Waiting for Smart Form Fill to process the field removal");
+    await TestUtils.waitForTick();
+
+    const { browser: autocompleteBrowser, popup } =
+      await openLoadingAutocomplete(win, "#name");
+    let row;
+    const rowUpdated = BrowserTestUtils.waitForMutationCondition(
+      popup.richlistbox,
+      { attributes: true, childList: true, subtree: true },
+      () => {
+        row = popup
+          .querySelector('[originaltype="smartFormFill"]')
+          ?.querySelector("autocomplete-row-item");
+        return row && !row.loading;
+      }
+    );
+
+    const requests = await captureMetadataRequests(mockEngineManager);
+    await rowUpdated;
+    await row.updateComplete;
+
+    const classificationRequest = requests.get(FIELD_CLASSIFICATION_SCHEMA);
+    Assert.deepEqual(
+      classificationRequest.fields.map(field => field.name),
+      ["name"],
+      "The replacement classification should only contain the remaining field"
+    );
+
+    await closeAutocomplete(autocompleteBrowser);
   });
 
   it("retries relevant tabs independently", async () => {
@@ -314,10 +397,7 @@ describe("Smart Form Fill metadata lifecycle", () => {
     await BrowserTestUtils.openNewForegroundTab(win.gBrowser, SOURCE_URL);
     await BrowserTestUtils.switchTab(win.gBrowser, formTab);
 
-    const { browser, popup, item } = await openLoadingAutocomplete(
-      win,
-      "#email"
-    );
+    const { popup, item } = await openLoadingAutocomplete(win, "#email");
     const handledSchemas = new Set();
     let row;
 
@@ -335,18 +415,6 @@ describe("Smart Form Fill metadata lifecycle", () => {
       return handledSchemas.has(RELEVANT_TABS_SCHEMA) && row && !row.loading;
     }, "Waiting for relevant tabs without resolving classification");
     await row.updateComplete;
-
-    const inputEvent = SpecialPowers.spawn(
-      browser,
-      [],
-      () =>
-        new Promise(resolve => {
-          const input = content.document.querySelector("#email");
-          input.addEventListener("input", () => resolve(input.value), {
-            once: true,
-          });
-        })
-    );
 
     EventUtils.synthesizeMouseAtCenter(item, {}, win);
 
@@ -372,10 +440,5 @@ describe("Smart Form Fill metadata lifecycle", () => {
     }, "Waiting for field classification to resolve");
 
     await respondWithGeneratedValues(mockEngineManager);
-    Assert.equal(
-      await inputEvent,
-      "email@email.com",
-      "Autofill should continue after classification resolves"
-    );
   });
 });

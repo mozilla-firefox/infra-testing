@@ -3,12 +3,18 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 const path = require("path");
-const webpack = require("webpack");
-const TerserPlugin = require("terser-webpack-plugin");
-const { ResourceUriPlugin } = require("../../tools/resourceUriPlugin");
-const { MozSrcUriPlugin } = require("../../tools/mozsrcUriPlugin");
 
 const absolute = relPath => path.join(__dirname, relPath);
+
+const nodeModules = process.env.MOZ_NODE_MODULES
+  ? path.resolve(process.env.MOZ_NODE_MODULES)
+  : absolute("node_modules");
+const vendored = name => path.join(nodeModules, ...name.split("/"));
+
+const webpack = require(vendored("webpack"));
+const MinimizerPlugin = require(vendored("minimizer-webpack-plugin"));
+const { ResourceUriPlugin } = require("../../tools/resourceUriPlugin");
+const { MozSrcUriPlugin } = require("../../tools/mozsrcUriPlugin");
 
 const baseConfig = env => ({
   mode: "none",
@@ -17,10 +23,10 @@ const baseConfig = env => ({
     rules: [
       {
         test: /\.jsx?$/,
-        exclude: /node_modules\/(?!@fluent\/).*/,
-        loader: "babel-loader",
+        exclude: /node_modules[\\/]/,
+        loader: vendored("babel-loader"),
         options: {
-          presets: ["@babel/preset-react"],
+          presets: [vendored("@babel/preset-react")],
         },
       },
       {
@@ -33,14 +39,35 @@ const baseConfig = env => ({
   },
   resolve: {
     extensions: [".js", ".jsx", ".mjs"],
-    modules: ["node_modules", "."],
+    modules: [nodeModules, "."],
+  },
+  resolveLoader: {
+    modules: [nodeModules],
   },
 });
+
+class DependencyListPlugin {
+  constructor(outputPath) {
+    this.outputPath = outputPath;
+  }
+
+  apply(compiler) {
+    compiler.hooks.done.tap("DependencyListPlugin", stats => {
+      const deps = [...stats.compilation.fileDependencies].sort();
+      require("fs").appendFileSync(this.outputPath, `${deps.join("\n")}\n`);
+    });
+  }
+}
+
+const dependencyListPlugins = () =>
+  process.env.MOZ_WEBPACK_DEPS
+    ? [new DependencyListPlugin(process.env.MOZ_WEBPACK_DEPS)]
+    : [];
 
 const vendorOptimization = {
   minimize: true,
   minimizer: [
-    new TerserPlugin({
+    new MinimizerPlugin({
       extractComments: false,
       terserOptions: {
         format: {
@@ -78,6 +105,7 @@ module.exports = (env = {}) => {
         new webpack.BannerPlugin(
           `THIS FILE IS AUTO-GENERATED: ${path.basename(__filename)}`
         ),
+        ...dependencyListPlugins(),
       ],
     }),
     // Activity stream bundle (uses vendor as externals)
@@ -137,6 +165,7 @@ module.exports = (env = {}) => {
           `THIS FILE IS AUTO-GENERATED: ${path.basename(__filename)}`
         ),
         new webpack.optimize.ModuleConcatenationPlugin(),
+        ...dependencyListPlugins(),
       ],
     }),
   ];

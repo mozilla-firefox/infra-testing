@@ -236,7 +236,7 @@ Other methods for adding additional arguments are:
 
 ## Running Browsertime on Try
 
-You can run all of our Browsertime pageload tests through `./mach try perf` by selecting the `Pageload` category. We use chimera mode in these tests which means that both cold and warm pageload variants are running at the same time. There are a lot of other tests/categories available as well. Documentation about this tool can be found in {ref}`Mach Try Perf`.
+You can run all of our Browsertime pageload tests through `./mach try perf` by selecting the `Pageload` category. We use chimera mode in these tests which means that both cold and warm pageload variants are running at the same time. There are a lot of other tests/categories available as well. Documentation about this tool can be found in {doc}`mach-try-perf`.
 
 For example, the following will select all `Pageload` categories to run on desktop:
 
@@ -280,6 +280,8 @@ If you want to run the test in CI then you will want to ensure you set the `--ex
 
 Both of these steps are required to satisfy the `_expose_browser_profiler()` {searchfox}`method <mozilla-central/rev/11d085b63cf74b35737d9c036be80434883dd3f6:testing/raptor/raptor/browsertime/base.py#241>` so that the option, {searchfox}`expose_profiler <mozilla-central/rev/11d085b63cf74b35737d9c036be80434883dd3f6:testing/raptor/raptor/browsertime/base.py#383-386>`, is passed into your browsertime script. Finally, it should be as simple as calling the `start()` & `stop()` commands in your {searchfox}`script <mozilla-central/rev/11d085b63cf74b35737d9c036be80434883dd3f6:testing/raptor/browsertime/speedometer3.js#14,30-37,58-65>`.
 
+Interactive tests that use `test_cmds` automatically wrap each `measure.start` and `measure.stop` pair with the exposed profiler when `expose_browser_profiler` is set and profiling is enabled for the run, such as with `--gecko-profile` or the extra profiler run. This produces one profile per measured page; nav-bench uses this mechanism to profile each site and navigation phase separately.
+
 For the gecko profiler, you should also keep in mind these {searchfox}`default parameters <mozilla-central/rev/2e06f92ba068e32a9a7213ee726e8171f91605c7:testing/raptor/raptor/browsertime/base.py#474-495>`, which you may or may not want to change yourself in your tests configuration file.
 
 Likewise, for chrome trace you will want to be aware of {searchfox}`these defaults. <mozilla-central/rev/11d085b63cf74b35737d9c036be80434883dd3f6:testing/raptor/raptor/browsertime/base.py#646-658>`
@@ -291,6 +293,7 @@ Raptor can also support profiling Browsertime tests with the following native (O
 - Simpleperf (Android)
 - Xperf (Windows)
 - Samply (macOS)
+- perf (Linux)
 
 To use native profiling in CI, run `./mach try` with the `--full` flag and select any test with the `-native-profiling` suffix. Currently, the following tests support native profiling:
 

@@ -3,21 +3,20 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use api::{ColorF, FontInstanceFlags, GlyphInstance, RasterSpace};
-use api::units::{LayoutToWorldTransform, DevicePixelScale};
+use api::units::LayoutToWorldTransform;
 use api::units::*;
-use crate::scene_building::{IsVisible};
+use crate::space::SpaceSnapper;
 use glyph_rasterizer::{FontInstance, FontTransform, GlyphKey, SubpixelDirection, FONT_SIZE_LIMIT};
 use crate::intern;
 use crate::internal_types::LayoutPrimitiveInfo;
 use crate::surface::SurfaceInfo;
 use crate::prim_store::PrimitiveScratchBuffer;
-use crate::prim_store::{PrimitiveStore, PrimKeyCommonData, PrimTemplateCommonData};
+use crate::prim_store::{PrimitiveStore, PrimKeyCommonData, PrimTemplate, PrimTemplateCommonData};
 use crate::renderer::{GpuBufferAddress, GpuBufferBuilderF, MAX_VERTEX_TEXTURE_WIDTH};
 use crate::resource_cache::ResourceCache;
 use crate::util::MatrixHelpers;
 use crate::prim_store::{InternablePrimitive, PrimitiveKind};
 use crate::spatial_tree::{SpatialTree, SpatialNodeIndex};
-use std::ops;
 
 use super::storage;
 
@@ -71,34 +70,7 @@ impl TextRunKey {
 
 impl intern::InternDebug for TextRunKey {}
 
-#[cfg_attr(feature = "capture", derive(Serialize))]
-#[cfg_attr(feature = "replay", derive(Deserialize))]
-#[derive(MallocSizeOf)]
-pub struct TextRunTemplate {
-    pub common: PrimTemplateCommonData,
-    pub font: FontInstance,
-    /// Glyph pen positions, each relative to the normalized prim rect origin.
-    /// See [`TextRunKey::glyphs`]. At frame time the normalized local glyph
-    /// position is `prim_rect.min + glyph.point`; `request_resources` then
-    /// transforms and device-snaps each glyph to produce the device-space
-    /// offsets handed to the shader.
-    pub glyphs: Vec<GlyphInstance>,
-    pub shadow: bool,
-    pub requested_raster_space: RasterSpace,
-}
-
-impl ops::Deref for TextRunTemplate {
-    type Target = PrimTemplateCommonData;
-    fn deref(&self) -> &Self::Target {
-        &self.common
-    }
-}
-
-impl ops::DerefMut for TextRunTemplate {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.common
-    }
-}
+pub type TextRunTemplate = PrimTemplate<TextRun>;
 
 impl From<TextRunKey> for TextRunTemplate {
     fn from(item: TextRunKey) -> Self {
@@ -114,17 +86,19 @@ impl From<TextRunKey> for TextRunTemplate {
             })
             .collect();
 
-        TextRunTemplate {
+        PrimTemplate {
             common,
-            font: item.font,
-            glyphs,
-            shadow: item.shadow,
-            requested_raster_space: item.requested_raster_space,
+            kind: TextRun {
+                font: item.font,
+                glyphs,
+                shadow: item.shadow,
+                requested_raster_space: item.requested_raster_space,
+            },
         }
     }
 }
 
-impl TextRunTemplate {
+impl TextRun {
     /// Write the per-instance GPU blocks for this run: the premultiplied
     /// font color followed by the per-glyph offsets (two glyphs packed per
     /// block). The offsets are device-space in device mode and raster-space in
@@ -171,7 +145,10 @@ pub type TextRunDataHandle = intern::Handle<TextRun>;
 pub struct TextRun {
     pub font: FontInstance,
     /// Glyph pen positions, each relative to the normalized prim rect origin.
-    /// See [`TextRunKey::glyphs`].
+    /// See [`TextRunKey::glyphs`]. At frame time the normalized local glyph
+    /// position is `prim_rect.min + glyph.point`; `request_resources` then
+    /// transforms and device-snaps each glyph to produce the device-space
+    /// offsets handed to the shader.
     pub glyphs: Vec<GlyphInstance>,
     pub shadow: bool,
     pub requested_raster_space: RasterSpace,
@@ -185,9 +162,6 @@ impl intern::Internable for TextRun {
 }
 
 impl InternablePrimitive for TextRun {
-    // Text renders in device space; its clips must not snap (bug 2050692).
-    const SNAP_CLIPS: bool = false;
-
     fn into_key(
         self,
         info: &LayoutPrimitiveInfo,
@@ -206,13 +180,6 @@ impl InternablePrimitive for TextRun {
         PrimitiveKind::TextRun {
             data_handle,
         }
-    }
-}
-
-
-impl IsVisible for TextRun {
-    fn is_visible(&self) -> bool {
-        self.font.color.a > 0
     }
 }
 
@@ -235,6 +202,11 @@ pub struct TextRunScratch {
     /// in `PrimitiveHeader.pattern_rect` that `request_resources` used to
     /// compute those offsets.
     pub pattern_rect: LayoutRect,
+    /// The run's clip rect, quantised to the device grid on the axes the glyph
+    /// pen is snapped on (see `snap_bias`). This is the rect the shader clamps
+    /// the glyph quad to: the clamp is a hard, pixel-centre test, so it is only
+    /// lossless if the clip sits on the same grid the glyphs landed on.
+    pub snapped_clip_rect: LayoutRect,
     /// Per-instance GPU buffer address for the color block followed by the
     /// per-glyph offset blocks (two glyphs per block). In device mode these are
     /// glyph pen positions snapped to the device grid, relative to the
@@ -250,9 +222,9 @@ pub struct TextRunScratch {
     pub local_raster: bool,
 }
 
-impl TextRunTemplate {
+impl TextRun {
     /// Build a per-frame `(used_font, raster_scale)` pair for this text run.
-    /// The result is fresh per frame; nothing persists on the template.
+    /// The result is fresh per frame; nothing persists on the run.
     fn compute_font_instance(
         specified_font: &FontInstance,
         surface: &SurfaceInfo,
@@ -405,9 +377,10 @@ impl TextRunTemplate {
         &self,
         prim_spatial_node_index: SpatialNodeIndex,
         low_quality_pinch_zoom: bool,
-        device_pixel_scale: DevicePixelScale,
+        surface: &SurfaceInfo,
         spatial_tree: &SpatialTree,
     ) -> RasterSpace {
+        let device_pixel_scale = surface.device_pixel_scale;
         let prim_spatial_node = spatial_tree.get_spatial_node(prim_spatial_node_index);
         if prim_spatial_node.is_ancestor_or_self_zooming && low_quality_pinch_zoom {
             // In low-quality mode, we set the scale to be 1.0. However, the device-pixel
@@ -429,15 +402,22 @@ impl TextRunTemplate {
             // glyphs jitter as they cross pixel boundaries (bug 637852 - the device
             // text path added in bug 2044211 otherwise misses that policy). Quantize
             // the scale up to the nearest power of 2 (capped at 8) so the glyphs
-            // aren't re-rasterized as the scale sweeps through fractional values,
-            // and undo the device-pixel scale since the picture cache tiles are
-            // raster roots.
-            let root_spatial_node_index = spatial_tree.root_reference_frame_index();
+            // aren't re-rasterized as the scale sweeps through fractional values.
+            //
+            // The scale to quantize is the one the glyphs are composited at: the
+            // prim to raster transform of the surface being drawn into, times that
+            // surface's device pixel scale. `compute_font_instance` multiplies the
+            // local scale returned here by that device pixel scale, so divide it
+            // back out.
             let scale_factors = spatial_tree
-                .get_relative_transform(prim_spatial_node_index, root_spatial_node_index)
+                .get_relative_transform(
+                    prim_spatial_node_index,
+                    surface.raster_spatial_node_index,
+                )
                 .scale_factors();
 
-            let scale = scale_factors.0.max(scale_factors.1).min(8.0).max(1.0);
+            let device_scale = scale_factors.0.max(scale_factors.1) * device_pixel_scale.0;
+            let scale = device_scale.min(8.0).max(1.0);
             let rounded_up = 2.0f32.powf(scale.log2().ceil());
 
             RasterSpace::Local(rounded_up / device_pixel_scale.0)
@@ -454,9 +434,11 @@ impl TextRunTemplate {
     pub fn request_resources(
         &self,
         pattern_rect: LayoutRect,
+        local_clip_rect: LayoutRect,
         transform: &LayoutToWorldTransform,
         surface: &SurfaceInfo,
         spatial_node_index: SpatialNodeIndex,
+        shadow_offset: LayoutVector2D,
         allow_subpixel: bool,
         low_quality_pinch_zoom: bool,
         resource_cache: &mut ResourceCache,
@@ -467,7 +449,7 @@ impl TextRunTemplate {
         let raster_space = self.get_raster_space_for_prim(
             spatial_node_index,
             low_quality_pinch_zoom,
-            surface.device_pixel_scale,
+            surface,
             spatial_tree,
         );
 
@@ -529,6 +511,48 @@ impl TextRunTemplate {
             SubpixelDirection::Mixed => DeviceVector2D::new(0.125, 0.125),
         };
 
+        // Quantise the clip the way the glyphs are quantised, per axis. A 0.5
+        // bias above means the pen is rounded to a whole device pixel on that
+        // axis, so round the clip to nearest there too and the shader's hard
+        // clamp lands on the same grid the glyphs did; a 0.125 bias means the
+        // axis carries a quarter-pixel offset in the glyph key, so the clip has
+        // to stay exact or it cuts sub-pixel positioned ink (bug 2050692).
+        //
+        // Local-raster mode snaps in raster space rather than on the device
+        // grid, so leave its clip alone.
+        //
+        // A bitmap-strike run is really `None` (both axes grid-placed), but that
+        // needs the resolved glyph format, so it is treated as its unlimited
+        // direction here. That only leaves the horizontal clip exact, i.e.
+        // today's behaviour, so it is safe - just not the additional fix a
+        // strike's grid-placed pen would allow (bug 2056856).
+        let (snap_clip_x, snap_clip_y) = if local_raster {
+            (false, false)
+        } else {
+            match subpx_dir {
+                SubpixelDirection::None => (true, true),
+                SubpixelDirection::Horizontal => (false, true),
+                SubpixelDirection::Vertical => (true, false),
+                SubpixelDirection::Mixed => (false, false),
+            }
+        };
+        //
+        // A shadow copy's run moves to a whole number of device pixels from the
+        // shadowed run on the axes its pens snap on, so they snap the same way
+        // (see `SpaceSnapper::set_shadow_offset`).
+        let (pattern_rect, snapped_clip_rect) = if snap_clip_x || snap_clip_y {
+            let mut snapper = SpaceSnapper::new(surface, spatial_tree);
+            snapper.set_target_spatial_node(spatial_node_index, spatial_tree);
+            snapper.set_shadow_offset(shadow_offset);
+            let pattern_rect = match snapper.shadow_snap_adjustment(snap_clip_x, snap_clip_y) {
+                Some(adjustment) => pattern_rect.translate(adjustment),
+                None => pattern_rect,
+            };
+            (pattern_rect, snapper.snap_rect_axes(&local_clip_rect, snap_clip_x, snap_clip_y))
+        } else {
+            (pattern_rect, local_clip_rect)
+        };
+
         // World-space run anchor (device mode only).
         let anchor_world = transform.transform_point2d(pattern_rect.min);
 
@@ -540,6 +564,15 @@ impl TextRunTemplate {
             // `write_vertex` applies the transform.
             let glyph_raster_scale = raster_scale * dps.0;
             glyph_offsets.reserve(self.glyphs.len());
+
+            // As above for a shadow copy, but on the raster grid the pens snap to.
+            let adjust = |v: f32, bias: f32| {
+                if bias == 0.5 { (v * glyph_raster_scale).round() / glyph_raster_scale - v } else { 0.0 }
+            };
+            let pattern_rect = pattern_rect.translate(LayoutVector2D::new(
+                adjust(shadow_offset.x, snap_bias.x),
+                adjust(shadow_offset.y, snap_bias.y),
+            ));
 
             scratch.frame.glyph_keys.extend(self.glyphs.iter().map(|src| {
                 let pos = pattern_rect.min + src.point.to_vector();
@@ -599,6 +632,7 @@ impl TextRunTemplate {
             used_font,
             glyph_keys_range,
             pattern_rect,
+            snapped_clip_rect,
             gpu_address,
             raster_scale,
             local_raster,
@@ -618,6 +652,6 @@ fn test_struct_sizes() {
     // (b) You made a structure larger. This is not necessarily a problem, but should only
     //     be done with care, and after checking if talos performance regresses badly.
     assert_eq!(mem::size_of::<TextRun>(), 80, "TextRun size changed");
-    assert_eq!(mem::size_of::<TextRunTemplate>(), 80, "TextRunTemplate size changed");
-    assert_eq!(mem::size_of::<TextRunKey>(), 80, "TextRunKey size changed");
+    assert_eq!(mem::size_of::<TextRunTemplate>(), 120, "TextRunTemplate size changed");
+    assert_eq!(mem::size_of::<TextRunKey>(), 112, "TextRunKey size changed");
 }

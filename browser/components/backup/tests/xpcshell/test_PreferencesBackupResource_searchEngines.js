@@ -4,7 +4,7 @@ https://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
 const { PreferencesBackupResource } = ChromeUtils.importESModule(
-  "resource:///modules/backup/PreferencesBackupResource.sys.mjs"
+  "moz-src:///browser/components/backup/resources/PreferencesBackupResource.sys.mjs"
 );
 const { SearchTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/SearchTestUtils.sys.mjs"
@@ -31,9 +31,12 @@ const FAKE_PRIVATE_SEARCH_EXTENSION_NAME =
   "Some Private WebExtension Search Engine";
 
 add_setup(async function () {
-  Services.prefs.setBoolPref("browser.search.separatePrivateDefault", true);
   Services.prefs.setBoolPref(
-    "browser.search.separatePrivateDefault.ui.enabled",
+    "browser.search.separatePrivateDefault.enabled",
+    true
+  );
+  Services.prefs.setBoolPref(
+    "browser.search.separatePrivateDefault.featureGate",
     true
   );
 
@@ -42,7 +45,7 @@ add_setup(async function () {
     { identifier: "engine2" },
   ]);
 
-  Services.prefs.setCharPref(SearchUtils.BROWSER_SEARCH_PREF + "region", "US");
+  Services.prefs.setCharPref("browser.search.region", "US");
   Services.locale.availableLocales = ["en-US"];
   Services.locale.requestedLocales = ["en-US"];
 

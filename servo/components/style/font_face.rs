@@ -11,8 +11,9 @@ use crate::error_reporting::ContextualParseError;
 use crate::parser::{Parse, ParserContext};
 use crate::shared_lock::{SharedRwLockReadGuard, ToCssWithGuard};
 use crate::values::computed::FontWeight;
+use crate::values::computed::font::FontFamilyNameSyntax;
 use crate::values::generics::font::FontStyle as GenericFontStyle;
-use crate::values::specified::{url::SpecifiedUrl, Angle};
+use crate::values::specified::{Angle, url::SpecifiedUrl};
 use cssparser::{Parser, RuleBodyParser, SourceLocation};
 use std::fmt::{self, Write};
 use style_traits::{CssStringWriter, CssWriter, ParseError, StyleParseErrorKind, ToCss};
@@ -44,10 +45,7 @@ pub struct SourceList(#[css(iterable)] pub Vec<Source>);
 // because we want to filter out components that parsed as None, then fail if no
 // valid components remain. So we provide our own implementation here.
 impl Parse for SourceList {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         // Parse the comma-separated list, then let filter_map discard any None items.
         let list = input
             .parse_comma_separated(|input| {
@@ -56,10 +54,10 @@ impl Parse for SourceList {
                 Ok(s.ok())
             })?
             .into_iter()
-            .filter_map(|s| s)
+            .flatten()
             .collect::<Vec<Source>>();
         if list.is_empty() {
-            Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
+            Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError))
         } else {
             Ok(SourceList(list))
         }
@@ -121,7 +119,7 @@ bitflags! {
 
 impl FontFaceSourceTechFlags {
     /// Parse a single font-technology keyword and return its flag.
-    pub fn parse_one<'i, 't>(input: &mut Parser<'i, 't>) -> Result<Self, ParseError<'i>> {
+    pub fn parse_one(input: &mut Parser) -> Result<Self, ParseError> {
         Ok(try_match_ident_ignore_ascii_case! { input,
             "features-opentype" => Self::FEATURES_OPENTYPE,
             "features-aat" => Self::FEATURES_AAT,
@@ -139,11 +137,7 @@ impl FontFaceSourceTechFlags {
 }
 
 impl Parse for FontFaceSourceTechFlags {
-    fn parse<'i, 't>(
-        _context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
-        let location = input.current_source_location();
+    fn parse(_context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         // We don't actually care about the return value of parse_comma_separated,
         // because we insert the flags into result as we go.
         let mut result = Self::empty();
@@ -155,7 +149,7 @@ impl Parse for FontFaceSourceTechFlags {
         if !result.is_empty() {
             Ok(result)
         } else {
-            Err(location.new_custom_error(StyleParseErrorKind::UnspecifiedError))
+            Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError))
         }
     }
 }
@@ -308,10 +302,7 @@ pub enum FontDisplay {
 macro_rules! impl_range {
     ($range:ident, $component:ident) => {
         impl Parse for $range {
-            fn parse<'i, 't>(
-                context: &ParserContext,
-                input: &mut Parser<'i, 't>,
-            ) -> Result<Self, ParseError<'i>> {
+            fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
                 let first = $component::parse(context, input)?;
                 let second = input
                     .try_parse(|input| $component::parse(context, input))
@@ -353,11 +344,7 @@ pub struct ComputedFontWeightRange(pub FontWeight, pub FontWeight);
 
 #[inline]
 fn sort_range<T: PartialOrd>(a: T, b: T) -> (T, T) {
-    if a > b {
-        (b, a)
-    } else {
-        (a, b)
-    }
+    if a > b { (b, a) } else { (a, b) }
 }
 
 impl FontWeightRange {
@@ -419,10 +406,7 @@ pub enum FontStyleRange {
 pub struct ComputedFontStyleRange(pub FontStyle, pub FontStyle);
 
 impl Parse for FontStyleRange {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         // We parse 'normal' explicitly here to distinguish it from 'oblique 0deg',
         // because we must not accept a following angle.
         if input
@@ -501,10 +485,9 @@ pub fn parse_font_face_block(
             context,
             descriptors: &mut rule.descriptors,
         };
-        let mut iter = RuleBodyParser::new(input, &mut parser);
-        while let Some(declaration) = iter.next() {
-            if let Err((error, slice)) = declaration {
-                let location = error.location;
+        let iter = RuleBodyParser::new(input, &mut parser);
+        for declaration in iter {
+            if let Err((error, slice, location)) = declaration {
                 let error = ContextualParseError::UnsupportedFontFaceDescriptor(slice, error);
                 context.log_css_error(location, error)
             }
@@ -514,17 +497,16 @@ pub fn parse_font_face_block(
 }
 
 impl Parse for Source {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Source, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Source, ParseError> {
         if input
             .try_parse(|input| input.expect_function_matching("local"))
             .is_ok()
         {
-            return input
-                .parse_nested_block(|input| FamilyName::parse(context, input))
-                .map(Source::Local);
+            let mut family_name =
+                input.parse_nested_block(|input| FamilyName::parse(context, input))?;
+            // Force src:local() names to always serialize as quoted strings.
+            family_name.syntax = FontFamilyNameSyntax::Quoted;
+            return Ok(Source::Local(family_name));
         }
 
         let url = SpecifiedUrl::parse(context, input)?;
@@ -547,9 +529,10 @@ impl Parse for Source {
         };
 
         // Parse optional tech()
-        let tech_flags = if input
-            .try_parse(|input| input.expect_function_matching("tech"))
-            .is_ok()
+        let tech_flags = if crate::pref!("layout.css.font-tech.enabled", gecko = true)
+            && input
+                .try_parse(|input| input.expect_function_matching("tech"))
+                .is_ok()
         {
             input.parse_nested_block(|input| FontFaceSourceTechFlags::parse(context, input))?
         } else {

@@ -2402,7 +2402,7 @@ class PromptFeatureTest {
             feature.start()
             testDispatcher.scheduler.advanceUntilIdle()
 
-            val promptRequest = PromptRequest.Share(ShareData("Title", "Text", null), {}, {}, {})
+            val promptRequest = PromptRequest.Share(ShareData("Title", "Text", null, private = false), {}, {}, {})
             store.dispatch(ContentAction.UpdatePromptRequestAction("custom-tab", promptRequest))
             testDispatcher.scheduler.advanceUntilIdle()
 
@@ -2773,7 +2773,7 @@ class PromptFeatureTest {
 
             val shareRequest =
                 PromptRequest.Share(
-                    ShareData("Title", "Text", null),
+                    ShareData("Title", "Text", null, private = false),
                     onSuccess = { onSuccessCalled = true },
                     onFailure = {},
                     onDismiss = {},
@@ -2812,7 +2812,7 @@ class PromptFeatureTest {
 
             val shareRequest =
                 PromptRequest.Share(
-                    ShareData("Title", "Text", null),
+                    ShareData("Title", "Text", null, private = false),
                     onSuccess = {},
                     onFailure = {},
                     onDismiss = { onDismissCalled = true },
@@ -2851,7 +2851,7 @@ class PromptFeatureTest {
 
             val shareRequest =
                 PromptRequest.Share(
-                    ShareData("Title", "Text", null),
+                    ShareData("Title", "Text", null, private = false),
                     onSuccess = {},
                     onFailure = {},
                     onDismiss = {},
@@ -2904,7 +2904,7 @@ class PromptFeatureTest {
 
             val shareRequest =
                 PromptRequest.Share(
-                    ShareData("Title", "Text", null),
+                    ShareData("Title", "Text", null, private = false),
                     onSuccess = {},
                     onFailure = {},
                     onDismiss = {},
@@ -2950,7 +2950,7 @@ class PromptFeatureTest {
 
             val shareRequest =
                 PromptRequest.Share(
-                    ShareData("Title", "Text", null),
+                    ShareData("Title", "Text", null, private = false),
                     onSuccess = {},
                     onFailure = {},
                     onDismiss = {},
@@ -2992,7 +2992,7 @@ class PromptFeatureTest {
 
             val shareRequest =
                 PromptRequest.Share(
-                    ShareData("Title", "Text", null),
+                    ShareData("Title", "Text", null, private = false),
                     onSuccess = {},
                     onFailure = {},
                     onDismiss = {},
@@ -3159,7 +3159,7 @@ class PromptFeatureTest {
 
             val shareRequest =
                 PromptRequest.Share(
-                    ShareData("Title", "Text", null),
+                    ShareData("Title", "Text", null, private = false),
                     onSuccess = {},
                     onFailure = {},
                     onDismiss = {},

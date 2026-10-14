@@ -7,11 +7,13 @@ Templates provide a way of modifying the task definition of selected tasks.
 They are added to 'try_task_config.json' and processed by the transforms.
 """
 
+import calendar
 import json
 import os
 import pathlib
 import subprocess
 import sys
+import time
 from abc import ABCMeta, abstractmethod
 from argparse import SUPPRESS, Action
 from textwrap import dedent
@@ -21,6 +23,7 @@ import requests
 from mozbuild.base import BuildEnvironmentNotFoundException, MozbuildObject
 from mozbuild.util import set_taskcluster_root_url
 
+from . import push
 from .tasks import resolve_tests_by_suite
 from .util.ssh import get_ssh_user
 
@@ -29,6 +32,68 @@ build = MozbuildObject.from_environment(cwd=str(here))
 
 # Set from mach settings in mach_commands.init()
 SKIP_ARTIFACT_BUILD_CHECK = False
+
+# Suffixes of files that are never compiled, so a patch touching only files
+# with these suffixes can safely be tested with artifact builds.
+NON_COMPILED_SUFFIXES = (
+    "^headers^",
+    ".build",
+    ".cjs",
+    ".css",
+    ".headers",
+    ".html",
+    ".ico",
+    ".js",
+    ".json",
+    ".jsx",
+    ".mjs",
+    ".mn",
+    ".png",
+    ".scss",
+    ".sjs",
+    ".svg",
+    ".toml",
+    ".ts",
+    ".tsx",
+    ".xhtml",
+)
+
+# `./mach try` is often left unattended, so the artifact build prompt below
+# only blocks for this long before falling back to not using artifact builds.
+ARTIFACT_PROMPT_TIMEOUT = 30
+
+
+def prompt_with_timeout(message, timeout):
+    """Ask a question on stdin, waiting at most `timeout` seconds for an answer.
+
+    Returns the answer, or None if stdin isn't interactive or nothing was
+    entered in time. Callers should then fall back to a default, so that
+    scripted and unattended pushes are never blocked on an answer.
+    """
+    if not sys.stdin or not sys.stdin.isatty():
+        return None
+
+    print(message, end="", flush=True)
+
+    if sys.platform == "win32":
+        import msvcrt
+
+        deadline = time.monotonic() + timeout
+        while not msvcrt.kbhit():
+            if time.monotonic() > deadline:
+                print()
+                return None
+            time.sleep(0.05)
+    else:
+        # `select` can wait on stdin on POSIX platforms, but on Windows it only
+        # supports sockets, hence the `msvcrt` polling above.
+        import select
+
+        if not select.select([sys.stdin], [], [], timeout)[0]:
+            print()
+            return None
+
+    return sys.stdin.readline().strip()
 
 
 class ParameterConfig:
@@ -66,6 +131,36 @@ class TargetTasksMethod(ParameterConfig):
     def get_parameters(self, target_tasks_method: str, **kwargs):
         if target_tasks_method:
             return {"target_tasks_method": target_tasks_method}
+
+
+class PushDate(ParameterConfig):
+    arguments = [
+        [
+            ["--pushdate"],
+            {
+                "default": None,
+                "help": "Override the build date (format: YYYYMMDDHHMMSS) used for this try push.",
+            },
+        ],
+    ]
+
+    def get_parameters(self, pushdate: str, **kwargs):
+        if pushdate is not None:
+            try:
+                build_date = int(
+                    calendar.timegm(time.strptime(pushdate, "%Y%m%d%H%M%S"))
+                )
+            except ValueError:
+                print(
+                    f"error: --pushdate must be in YYYYMMDDHHMMSS format, got: {pushdate}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            return {
+                "build_date": build_date,
+                "moz_build_date": pushdate,
+                "pushdate": build_date,
+            }
 
 
 class TryConfig(ParameterConfig):
@@ -106,6 +201,17 @@ class Artifact(TryConfig):
         except BuildEnvironmentNotFoundException:
             return False
 
+    @classmethod
+    def is_non_compiled_patch(cls):
+        try:
+            changed_files = list(push.vcs.get_outgoing_files())
+        except Exception:
+            return False
+
+        return bool(changed_files) and all(
+            f.endswith(NON_COMPILED_SUFFIXES) for f in changed_files
+        )
+
     def try_config(self, artifact, no_artifact, **kwargs):
         if artifact:
             return {"use-artifact-builds": True, "disable-pgo": True}
@@ -121,6 +227,25 @@ class Artifact(TryConfig):
         if self.is_artifact_build():
             print("Artifact builds enabled, pass --no-artifact to disable")
             return {"use-artifact-builds": True, "disable-pgo": True}
+
+        if self.is_non_compiled_patch():
+            while True:
+                answer = prompt_with_timeout(
+                    "This patch only touches files that don't require a "
+                    "compiled build (JS/TS/TOML/...). Use artifact builds? "
+                    f"[Y/n] (no answer within {ARTIFACT_PROMPT_TIMEOUT}s "
+                    "means 'n'): ",
+                    ARTIFACT_PROMPT_TIMEOUT,
+                )
+                if answer is None:
+                    print("No answer, not using artifact builds.")
+                    break
+                answer = answer.lower()
+                if answer in ("", "y", "yes"):
+                    return {"use-artifact-builds": True, "disable-pgo": True}
+                if answer in ("n", "no"):
+                    break
+                print(f"Invalid answer: '{answer}'")
 
 
 class Pernosco(TryConfig):
@@ -745,7 +870,7 @@ class BuildCar(ParameterConfig):
     CUSTOM_CAR_LABELS = [
         "toolchain-linux64-custom-car",
         "toolchain-win64-custom-car",
-        "toolchain-macosx-arm64-custom-car",
+        "toolchain-macosx64-aarch64-custom-car",
         "toolchain-android-custom-car",
     ]
 
@@ -878,6 +1003,7 @@ all_task_configs = {
     "gecko-profile": GeckoProfile,
     "new-test-config": NewConfig,
     "path": Path,
+    "pushdate": PushDate,
     "test-tag": Tag,
     "pernosco": Pernosco,
     "rebuild": Rebuild,

@@ -41,6 +41,7 @@ class RenderBufferTextureHost;
 class RenderTextureHostSWGL;
 class RenderTextureHostWrapper;
 class RenderDMABUFTextureHost;
+class RenderWaylandTextureHost;
 
 void ActivateBindAndTexParameteri(gl::GLContext* aGL, GLenum aActiveTexture,
                                   GLenum aBindTarget, GLuint aBindTexture);
@@ -168,6 +169,10 @@ class RenderTextureHost {
     return nullptr;
   }
 
+  virtual RenderWaylandTextureHost* AsRenderWaylandTextureHost() {
+    return nullptr;
+  }
+
   virtual void Destroy();
 
   virtual void SetIsSoftwareDecodedVideo() {
@@ -187,6 +192,8 @@ class RenderTextureHost {
 
   virtual RefPtr<RenderTextureHostUsageInfo> GetTextureHostUsageInfo(
       const MutexAutoLock& aProofOfMapLock);
+
+  virtual void SetReadFenceFd(UniqueFileHandle&& aFenceFd) {}
 
   void SetDestroyedCallback(std::function<void()>&& aDestroyedCallback) {
     MOZ_ASSERT(!mDestroyedCallback);

@@ -145,7 +145,10 @@ add_task(async function run_test() {
     dbConnection.close();
   }
 
-  // Reload profile.
+  // Reload profile. Reading the database drops the invalid cookies, but the
+  // removals are written out in batches, so wait for them to land before
+  // inspecting the file.
+  const invalidCookiesRemoved = new _promise_observer("cookie-saved-on-disk");
   await promise_load_profile();
 
   // Check the number of unpartitioned cookies is correct, and we only have
@@ -176,7 +179,11 @@ add_task(async function run_test() {
     Assert.equal(cookie.value, "good");
   }
 
+  await promise_close_profile();
+  await promise_load_profile();
+
   // Ensure the invalid cookies is gone in the DB.
+  await invalidCookiesRemoved;
   {
     const dbConnection = Services.storage.openDatabase(
       do_get_cookie_file(profile)

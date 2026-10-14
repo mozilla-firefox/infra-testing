@@ -5,10 +5,10 @@
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = XPCOMUtils.declareLazy({
-  IPPExceptionsManager:
-    "moz-src:///toolkit/components/ipprotection/IPPExceptionsManager.sys.mjs",
   IPPPrincipalRules:
-    "moz-src:///toolkit/components/ipprotection/IPPExceptionsManager.sys.mjs",
+    "moz-src:///toolkit/components/ipprotection/IPPSiteRuleManager.sys.mjs",
+  IPPSiteRuleManager:
+    "moz-src:///toolkit/components/ipprotection/IPPSiteRuleManager.sys.mjs",
   ProxyService: {
     service: "@mozilla.org/network/protocol-proxy-service;1",
     iid: Ci.nsIProtocolProxyService,
@@ -24,6 +24,8 @@ const isXpcshell = Services.env.exists("XPCSHELL_TEST_PROFILE_DIR");
 
 /**
  * The IPP Mode the default behavior of Channels
+ *
+ * @typedef {number} IPPProxyMode
  */
 export const IPPMode = Object.freeze({
   /**
@@ -42,6 +44,16 @@ export const IPPMode = Object.freeze({
    * Tunnel No requests by default.
    */
   MODE_INCLUSION: 3,
+
+  from(value) {
+    return Object.values(IPPMode).includes(value) ? value : IPPMode.MODE_FULL;
+  },
+
+  getDefault() {
+    return IPPMode.from(
+      Services.prefs.getIntPref(MODE_PREF, IPPMode.MODE_FULL)
+    );
+  },
 });
 
 const TRACKING_FLAGS =
@@ -58,7 +70,7 @@ const TRACKING_FLAGS =
  * Depending on IPPMode - it will proxy the request unless a rule is attached to the Destination.
  *
  * The include/exclude classification of a request's principal is delegated to
- * IPPExceptionsManager (see IPPExceptionsManager.sys.mjs); shouldProxy only
+ * IPPSiteRuleManager (see IPPSiteRuleManager.sys.mjs); shouldProxy only
  * handles channel-object concerns (system-channel early-out, DoH/TRR bypass)
  * and the channel -> principal selection.
  *
@@ -71,15 +83,6 @@ export class IPPChannelFilter {
    */
   static create() {
     return new IPPChannelFilter();
-  }
-
-  /**
-   * Sets the IPP Mode.
-   *
-   * @param {IPPMode} [mode] - the new mode
-   */
-  static setMode(mode) {
-    Services.prefs.setIntPref(MODE_PREF, mode);
   }
 
   /**
@@ -203,15 +206,6 @@ export class IPPChannelFilter {
     this.#processPendingChannels();
   }
 
-  constructor() {
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "mode",
-      MODE_PREF,
-      IPPMode.MODE_FULL
-    );
-  }
-
   /**
    * This method (which is required by the nsIProtocolProxyService interface)
    * is called to apply proxy filter rules for the given URI and proxy object
@@ -272,7 +266,7 @@ export class IPPChannelFilter {
     }
 
     const principal = this.#principalForChannel(channel);
-    const rule = lazy.IPPExceptionsManager.getPrincipalRule(principal);
+    const rule = lazy.IPPSiteRuleManager.getRule(principal);
     if (rule === lazy.IPPPrincipalRules.INCLUDED) {
       return true;
     }
@@ -439,6 +433,9 @@ export class IPPChannelFilter {
       }
     }
   }
+
+  /** @type {IPPProxyMode} Set by IPPProxyManager. */
+  mode = IPPMode.MODE_FULL;
 
   /**
    * Returns true if this filter is active.

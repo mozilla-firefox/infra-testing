@@ -6,15 +6,15 @@
 
 use crate::derives::*;
 use crate::parser::{Parse, ParserContext};
-use crate::values::animated::{lists, Animate, Procedure};
+use crate::values::CSSFloat;
+use crate::values::animated::{Animate, Procedure, lists};
 use crate::values::distance::{ComputeSquaredDistance, SquaredDistance};
 use crate::values::generics::basic_shape::GenericShapeCommand;
 use crate::values::generics::basic_shape::{
-    ArcRadii, ArcSize, ArcSweep, AxisEndPoint, AxisPosition, CommandEndPoint, ControlPoint,
-    ControlReference, CoordinatePair, RelativeControlPoint,
+    ArcRadii, ArcSize, ArcSweep, AxisEndPoint, CommandEndPoint, ControlPoint, ControlReference,
+    CoordinatePair, RelativeControlPoint,
 };
 use crate::values::generics::position::GenericPosition;
-use crate::values::CSSFloat;
 use cssparser::Parser;
 use std::fmt::{self, Write};
 use std::iter::{Cloned, Peekable};
@@ -86,17 +86,13 @@ impl SVGPathData {
     // invalid and causes the entire path() to be invalid, so we use allow_empty to decide
     // whether we should allow it.
     // https://drafts.csswg.org/css-shapes-1/#typedef-basic-shape
-    pub fn parse<'i, 't>(
-        input: &mut Parser<'i, 't>,
-        allow_empty: AllowEmpty,
-    ) -> Result<Self, ParseError<'i>> {
-        let location = input.current_source_location();
+    pub fn parse(input: &mut Parser, allow_empty: AllowEmpty) -> Result<Self, ParseError> {
         let path_string = input.expect_string()?.as_ref();
         let (path, ok) = Self::parse_bytes(path_string.as_bytes());
         if !ok || (allow_empty == AllowEmpty::No && path.0.is_empty()) {
-            return Err(location.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+            return Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError));
         }
-        return Ok(path);
+        Ok(path)
     }
 
     /// As above, but just parsing the raw byte stream.
@@ -150,10 +146,7 @@ impl ToCss for SVGPathData {
 }
 
 impl Parse for SVGPathData {
-    fn parse<'i, 't>(
-        _context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(_context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         // Note that the EBNF allows the path data string in the d property to be empty, so we
         // don't reject empty SVG path data.
         // https://svgwg.org/svg2-draft/single-page.html#paths-PathDataBNF
@@ -198,7 +191,7 @@ pub type SVGPathPosition = GenericPosition<CSSFloat, CSSFloat>;
 /// points of the Bézier curve in the spec.
 ///
 /// https://www.w3.org/TR/SVG11/paths.html#PathData
-pub type PathCommand = GenericShapeCommand<CSSFloat, SVGPathPosition, CSSFloat>;
+pub type PathCommand = GenericShapeCommand<CSSFloat, CSSFloat, SVGPathPosition, CSSFloat>;
 
 /// For internal SVGPath normalization.
 #[allow(missing_docs)]
@@ -564,15 +557,13 @@ impl CommandEndPoint<SVGPathPosition, CSSFloat> {
     }
 }
 
-impl AxisEndPoint<CSSFloat> {
+impl AxisEndPoint<CSSFloat, CSSFloat> {
     /// Converts possibly relative end point into absolutely positioned type.
-    pub fn to_abs(self, base: CSSFloat) -> AxisEndPoint<CSSFloat> {
+    pub fn to_abs(self, base: CSSFloat) -> AxisEndPoint<CSSFloat, CSSFloat> {
         // Consume self value.
         match self {
             AxisEndPoint::ToPosition(_) => self,
-            AxisEndPoint::ByCoordinate(coord) => {
-                AxisEndPoint::ToPosition(AxisPosition::LengthPercent(coord + base))
-            },
+            AxisEndPoint::ByCoordinate(coord) => AxisEndPoint::ToPosition(coord + base),
         }
     }
 }
@@ -659,15 +650,11 @@ impl From<CoordPair> for SVGPathPosition {
     }
 }
 
-impl From<AxisEndPoint<CSSFloat>> for CSSFloat {
+impl From<AxisEndPoint<CSSFloat, CSSFloat>> for CSSFloat {
     #[inline]
-    fn from(p: AxisEndPoint<CSSFloat>) -> Self {
+    fn from(p: AxisEndPoint<CSSFloat, CSSFloat>) -> Self {
         match p {
-            AxisEndPoint::ToPosition(AxisPosition::LengthPercent(a)) => a,
-            AxisEndPoint::ToPosition(AxisPosition::Keyword(_)) => {
-                unreachable!("Invalid state: SVG path commands cannot contain a keyword.")
-            },
-            AxisEndPoint::ByCoordinate(a) => a,
+            AxisEndPoint::ToPosition(a) | AxisEndPoint::ByCoordinate(a) => a,
         }
     }
 }
@@ -725,7 +712,14 @@ impl<'a> PathParser<'a> {
     fn new(bytes: &'a [u8]) -> Self {
         PathParser {
             chars: bytes.iter().cloned().peekable(),
-            path: Vec::new(),
+            // Preallocate space for an estimated number of commands, based on
+            // the length of our byte stream.  For this preallocation, we
+            // heuristically assume that our path's commands will be around
+            // 32 bytes long each, on average. (This estimate doesn't have to
+            // be exact; and to the extent that it's wrong, we'd rather have it
+            // be an over-estimate, so that our reserved capacity will tend to
+            // be an under-estimate, so that we're not greedily wasting space.)
+            path: Vec::with_capacity(bytes.len() / 32),
         }
     }
 
@@ -738,7 +732,7 @@ impl<'a> PathParser<'a> {
         // Handle other commands.
         loop {
             skip_wsp(&mut self.chars);
-            if self.chars.peek().map_or(true, |&m| m == b'M' || m == b'm') {
+            if self.chars.peek().is_none_or(|&m| m == b'M' || m == b'm') {
                 break;
             }
 
@@ -785,8 +779,7 @@ impl<'a> PathParser<'a> {
         self.path.push(PathCommand::Move { point });
 
         // End of string or the next character is a possible new command.
-        if !skip_wsp(&mut self.chars) || self.chars.peek().map_or(true, |c| c.is_ascii_alphabetic())
-        {
+        if !skip_wsp(&mut self.chars) || self.chars.peek().is_none_or(|c| c.is_ascii_alphabetic()) {
             return Ok(());
         }
         skip_comma_wsp(&mut self.chars);
@@ -981,15 +974,15 @@ fn parse_control_point_rel(
 /// Parse a number that describes the absolutely positioned axis end point.
 fn parse_axis_end_abs(
     iter: &mut Peekable<Cloned<slice::Iter<u8>>>,
-) -> Result<AxisEndPoint<f32>, ()> {
+) -> Result<AxisEndPoint<f32, f32>, ()> {
     let value = parse_number(iter)?;
-    Ok(AxisEndPoint::ToPosition(AxisPosition::LengthPercent(value)))
+    Ok(AxisEndPoint::ToPosition(value))
 }
 
 /// Parse a number that describes the relatively positioned axis end point.
 fn parse_axis_end_rel(
     iter: &mut Peekable<Cloned<slice::Iter<u8>>>,
-) -> Result<AxisEndPoint<f32>, ()> {
+) -> Result<AxisEndPoint<f32, f32>, ()> {
     let value = parse_number(iter)?;
     Ok(AxisEndPoint::ByCoordinate(value))
 }
@@ -1014,7 +1007,7 @@ fn parse_number(iter: &mut Peekable<Cloned<slice::Iter<u8>>>) -> Result<CSSFloat
     // 1. Check optional sign.
     let sign = if iter
         .peek()
-        .map_or(false, |&sign| sign == b'+' || sign == b'-')
+        .is_some_and(|&sign| sign == b'+' || sign == b'-')
     {
         if iter.next().unwrap() == b'-' {
             -1.
@@ -1027,17 +1020,17 @@ fn parse_number(iter: &mut Peekable<Cloned<slice::Iter<u8>>>) -> Result<CSSFloat
 
     // 2. Check integer part.
     let mut integral_part: f64 = 0.;
-    let got_dot = if !iter.peek().map_or(false, |&n| n == b'.') {
+    let got_dot = if iter.peek().is_none_or(|&n| n != b'.') {
         // If the first digit in integer part is neither a dot nor a digit, this is not a number.
-        if iter.peek().map_or(true, |n| !n.is_ascii_digit()) {
+        if iter.peek().is_none_or(|n| !n.is_ascii_digit()) {
             return Err(());
         }
 
-        while iter.peek().map_or(false, |n| n.is_ascii_digit()) {
+        while iter.peek().is_some_and(|n| n.is_ascii_digit()) {
             integral_part = integral_part * 10. + (iter.next().unwrap() - b'0') as f64;
         }
 
-        iter.peek().map_or(false, |&n| n == b'.')
+        iter.peek().is_some_and(|&n| n == b'.')
     } else {
         true
     };
@@ -1048,12 +1041,12 @@ fn parse_number(iter: &mut Peekable<Cloned<slice::Iter<u8>>>) -> Result<CSSFloat
         // Consume '.'.
         iter.next();
         // If the first digit in fractional part is not a digit, this is not a number.
-        if iter.peek().map_or(true, |n| !n.is_ascii_digit()) {
+        if iter.peek().is_none_or(|n| !n.is_ascii_digit()) {
             return Err(());
         }
 
         let mut factor = 0.1;
-        while iter.peek().map_or(false, |n| n.is_ascii_digit()) {
+        while iter.peek().is_some_and(|n| n.is_ascii_digit()) {
             fractional_part += (iter.next().unwrap() - b'0') as f64 * factor;
             factor *= 0.1;
         }
@@ -1063,12 +1056,12 @@ fn parse_number(iter: &mut Peekable<Cloned<slice::Iter<u8>>>) -> Result<CSSFloat
 
     // 4. Check exp part. The segment name of SVG Path doesn't include 'E' or 'e', so it's ok to
     //    treat the numbers after 'E' or 'e' are in the exponential part.
-    if iter.peek().map_or(false, |&exp| exp == b'E' || exp == b'e') {
+    if iter.peek().is_some_and(|&exp| exp == b'E' || exp == b'e') {
         // Consume 'E' or 'e'.
         iter.next();
         let exp_sign = if iter
             .peek()
-            .map_or(false, |&sign| sign == b'+' || sign == b'-')
+            .is_some_and(|&sign| sign == b'+' || sign == b'-')
         {
             if iter.next().unwrap() == b'-' {
                 -1.
@@ -1080,7 +1073,7 @@ fn parse_number(iter: &mut Peekable<Cloned<slice::Iter<u8>>>) -> Result<CSSFloat
         };
 
         let mut exp: f64 = 0.;
-        while iter.peek().map_or(false, |n| n.is_ascii_digit()) {
+        while iter.peek().is_some_and(|n| n.is_ascii_digit()) {
             exp = exp * 10. + (iter.next().unwrap() - b'0') as f64;
         }
 
@@ -1101,7 +1094,7 @@ fn skip_wsp(iter: &mut Peekable<Cloned<slice::Iter<u8>>>) -> bool {
     //       However, SVG 2 has one extra whitespace: \u{C}.
     //       Therefore, we follow the newest spec for the definition of whitespace,
     //       i.e. \u{9}, \u{20}, \u{A}, \u{C}, \u{D}.
-    while iter.peek().map_or(false, |c| c.is_ascii_whitespace()) {
+    while iter.peek().is_some_and(|c| c.is_ascii_whitespace()) {
         iter.next();
     }
     iter.peek().is_some()

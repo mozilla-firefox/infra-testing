@@ -165,12 +165,6 @@ class SessionControlInteractorTest {
     }
 
     @Test
-    fun onRecentTabShowAllClicked() {
-        interactor.onRecentTabShowAllClicked()
-        verify { recentTabController.handleRecentTabShowAllClicked() }
-    }
-
-    @Test
     fun `WHEN recent synced tab is clicked THEN the tab is handled`() {
         val tab: RecentSyncedTab = mockk()
         interactor.onRecentSyncedTabClicked(tab)

@@ -3,15 +3,80 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Build a prefilled Bugzilla enter_bug.cgi URL for a good-first-bug.
+"""Open a prefilled Bugzilla enter_bug.cgi form for a good-first-bug.
 
-There is no MCP tool to create Bugzilla bugs: the user submits each bug by
-clicking the generated URL.
+There is no MCP tool to create Bugzilla bugs: the user submits each bug from the
+form this opens in their browser.
+
+A prefilled form carries the whole bug body percent-encoded in its query string,
+which puts the URL past the length at which a terminal stops linkifying it (2413
+and 2635 characters for two ordinary good-first-bugs). Pasting one into a chat
+reply then gives the reader an unclickable wall of `%20` -- hence opening it here
+rather than printing it. Shortening the bug body is not the answer: a
+good-first-bug has to be self-sufficient. `--print-url` is the fallback for a
+headless host.
 """
 
 import argparse
+import configparser
+import json
+import os
 import sys
+import urllib.error
+import urllib.request
+import webbrowser
 from urllib.parse import urlencode
+
+BUGZILLA = "https://bugzilla.mozilla.org"
+BUGZILLA_HOST = "bugzilla.mozilla.org"
+
+# python-bugzilla's own search order, hardcoded on every platform.
+BUGZILLARC_PATHS = (
+    "/etc/bugzillarc",
+    "~/.bugzillarc",
+    "~/.config/python-bugzilla/bugzillarc",
+)
+
+
+ASK = (
+    "Ask the filer for their Bugzilla account email, which "
+    f"{BUGZILLA}/userprefs.cgi shows, and pass it with --mentor. Never "
+    "substitute another address for it."
+)
+
+
+def resolve_mentor():
+    """The filer's Bugzilla account email, from their API key.
+
+    Never replace this with an address from elsewhere: a Bugzilla account
+    often uses one of its own (a `+bmo` alias is common).
+    """
+    config = configparser.ConfigParser()
+    try:
+        config.read([os.path.expanduser(path) for path in BUGZILLARC_PATHS])
+    except configparser.Error as error:
+        raise SystemExit(f"Unreadable bugzillarc ({error}). {ASK}")
+    # Only a key the file ties to this host: a bugzillarc commonly describes
+    # some other Bugzilla, and [DEFAULT] alone does not say which.
+    if not config.has_option(BUGZILLA_HOST, "api_key"):
+        raise SystemExit(
+            "No Bugzilla API key for "
+            + BUGZILLA_HOST
+            + " in "
+            + ", ".join(BUGZILLARC_PATHS)
+            + f". {ASK}"
+        )
+    key = config.get(BUGZILLA_HOST, "api_key")
+    request = urllib.request.Request(
+        f"{BUGZILLA}/rest/whoami", headers={"X-BUGZILLA-API-KEY": key}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.load(response)["name"]
+    except urllib.error.URLError as error:
+        raise SystemExit(
+            f"Could not read the account behind the API key ({error}). {ASK}"
+        )
 
 
 def build_url(
@@ -56,21 +121,36 @@ def main(argv=None):
     parser.add_argument("--lang")
     parser.add_argument(
         "--mentor",
-        help="Email of the mentor (typically the bug filer) to prefill the bug_mentor field.",
+        help="Bugzilla account email of the mentor, for the bug_mentors field. "
+        "Defaults to the owner of the API key in the bugzillarc.",
+    )
+    parser.add_argument(
+        "--print-url",
+        action="store_true",
+        help="Print the URL instead of opening it. For a headless host; the "
+        "URL is long enough that a terminal will not linkify it.",
     )
     args = parser.parse_args(argv)
-    print(
-        build_url(
-            args.title,
-            args.comment,
-            product=args.product,
-            component=args.component,
-            tracker=args.tracker,
-            keywords=args.keywords,
-            lang=args.lang,
-            mentor=args.mentor,
-        )
+    mentor = args.mentor if args.mentor is not None else resolve_mentor()
+    url = build_url(
+        args.title,
+        args.comment,
+        product=args.product,
+        component=args.component,
+        tracker=args.tracker,
+        keywords=args.keywords,
+        lang=args.lang,
+        mentor=mentor,
     )
+    if args.print_url:
+        print(url)
+        return 0
+    if webbrowser.open(url):
+        print(f"Opened a prefilled form ({len(url)} chars): {args.title}")
+        return 0
+    print("No browser to open; falling back to the URL:", file=sys.stderr)
+    print(url)
+    return 0
 
 
 if __name__ == "__main__":

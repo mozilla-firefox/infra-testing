@@ -19,6 +19,7 @@ import mozilla.components.support.test.mock
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.mock
@@ -79,7 +80,7 @@ class EngineSessionTest {
         session.notifyInternalObservers { onMediaFullscreenChanged(true, mediaSessionElementMetadata) }
         session.notifyInternalObservers { onCrash() }
         session.notifyInternalObservers { onLoadRequest("https://www.mozilla.org", true, true) }
-        session.notifyInternalObservers { onLaunchIntentRequest("https://www.mozilla.org", null, null, null) }
+        session.notifyInternalObservers { onLaunchIntentRequest("https://www.mozilla.org", null, null, null, null) }
         session.notifyInternalObservers { onProcessKilled() }
         session.notifyInternalObservers { onShowDynamicToolbar() }
 
@@ -114,7 +115,7 @@ class EngineSessionTest {
         verify(observer).onMediaFullscreenChanged(true, mediaSessionElementMetadata)
         verify(observer).onCrash()
         verify(observer).onLoadRequest("https://www.mozilla.org", true, true)
-        verify(observer).onLaunchIntentRequest("https://www.mozilla.org", null, null, null)
+        verify(observer).onLaunchIntentRequest("https://www.mozilla.org", null, null, null, null)
         verify(observer).onProcessKilled()
         verify(observer).onShowDynamicToolbar()
         verifyNoMoreInteractions(observer)
@@ -152,7 +153,7 @@ class EngineSessionTest {
         session.notifyInternalObservers { onWindowRequest(windowRequest) }
         session.notifyInternalObservers { onCrash() }
         session.notifyInternalObservers { onLoadRequest("https://www.mozilla.org", true, true) }
-        session.notifyInternalObservers { onLaunchIntentRequest("https://www.mozilla.org", null, null, null) }
+        session.notifyInternalObservers { onLaunchIntentRequest("https://www.mozilla.org", null, null, null, null) }
         session.notifyInternalObservers { onShowDynamicToolbar() }
         session.unregister(observer)
 
@@ -189,7 +190,7 @@ class EngineSessionTest {
         session.notifyInternalObservers { onMediaFullscreenChanged(true, mediaSessionElementMetadata) }
         session.notifyInternalObservers { onCrash() }
         session.notifyInternalObservers { onLoadRequest("https://www.mozilla.org", true, true) }
-        session.notifyInternalObservers { onLaunchIntentRequest("https://www.firefox.com", null, null, null) }
+        session.notifyInternalObservers { onLaunchIntentRequest("https://www.firefox.com", null, null, null, null) }
         session.notifyInternalObservers { onShowDynamicToolbar() }
 
         verify(observer).onScrollChange(1234, 4321)
@@ -211,7 +212,7 @@ class EngineSessionTest {
         verify(observer).onWindowRequest(windowRequest)
         verify(observer).onCrash()
         verify(observer).onLoadRequest("https://www.mozilla.org", true, true)
-        verify(observer).onLaunchIntentRequest("https://www.mozilla.org", null, null, null)
+        verify(observer).onLaunchIntentRequest("https://www.mozilla.org", null, null, null, null)
         verify(observer).onShowDynamicToolbar()
         verify(observer, never()).onScrollChange(2345, 5432)
         verify(observer, never()).onLocationChange("https://www.firefox.com", false)
@@ -239,7 +240,7 @@ class EngineSessionTest {
         verify(observer, never()).onMediaMuteChanged(true)
         verify(observer, never()).onMediaFullscreenChanged(true, mediaSessionElementMetadata)
         verify(observer, never()).onLoadRequest("https://www.mozilla.org", false, true)
-        verify(observer, never()).onLaunchIntentRequest("https://www.firefox.com", null, null, null)
+        verify(observer, never()).onLaunchIntentRequest("https://www.firefox.com", null, null, null, null)
         verifyNoMoreInteractions(observer)
     }
 
@@ -899,6 +900,29 @@ class EngineSessionTest {
     }
 
     @Test
+    fun `tracking protection policies carry the expected fingerprinting protection`() {
+        val strict = TrackingProtectionPolicy.strict()
+        assertEquals(true, strict.fingerprintingProtection)
+        assertEquals(true, strict.fingerprintingProtectionPrivateBrowsing)
+
+        val recommended = TrackingProtectionPolicy.recommended()
+        assertEquals(false, recommended.fingerprintingProtection)
+        assertEquals(true, recommended.fingerprintingProtectionPrivateBrowsing)
+
+        val custom =
+            TrackingProtectionPolicy.select(
+                fingerprintingProtection = true,
+                fingerprintingProtectionPrivateBrowsing = false,
+            )
+        assertEquals(true, custom.fingerprintingProtection)
+        assertEquals(false, custom.fingerprintingProtectionPrivateBrowsing)
+
+        val unset = TrackingProtectionPolicy.select()
+        assertNull(unset.fingerprintingProtection)
+        assertNull(unset.fingerprintingProtectionPrivateBrowsing)
+    }
+
+    @Test
     fun `TrackingSessionPolicies retain all expected fields during privacy transformations`() {
         val strict = TrackingProtectionPolicy.strict()
         val default = TrackingProtectionPolicy.recommended()
@@ -970,7 +994,7 @@ class EngineSessionTest {
         observer.onWindowRequest(windowRequest)
         observer.onCrash()
         observer.onLoadRequest("https://www.mozilla.org", true, true)
-        observer.onLaunchIntentRequest("https://www.mozilla.org", null, null, null)
+        observer.onLaunchIntentRequest("https://www.mozilla.org", null, null, null, null)
         observer.onProcessKilled()
         observer.onShowDynamicToolbar()
     }
@@ -1017,6 +1041,12 @@ open class DummyEngineSession : EngineSession() {
 
     override fun checkForPdfViewer(
         onResult: (Boolean) -> Unit,
+        onException: (Throwable) -> Unit,
+    ) {}
+
+    override fun addSignatureToPdf(
+        text: String,
+        onResult: () -> Unit,
         onException: (Throwable) -> Unit,
     ) {}
 

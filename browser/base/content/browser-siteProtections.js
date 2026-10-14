@@ -136,6 +136,17 @@ class ProtectionCategory {
   }
 
   /**
+   * The title of the category's subview. Child classes whose title depends on
+   * more than the blocking state may override this.
+   *
+   * @param {boolean} blocking - Whether the category is blocking.
+   * @returns {string} - The l10n id of the title.
+   */
+  subViewTitleL10nId(blocking) {
+    return this.l10nKeys.title[blocking ? "blocking" : "not-blocking"];
+  }
+
+  /**
    * Update the category item state in the main view of the protections panel.
    * Determines whether the category is set to block trackers.
    *
@@ -936,48 +947,67 @@ let ThirdPartyCookies =
         return;
       }
 
-      let l10nId;
-      let siteException = gProtectionsHandler.hasException;
+      let l10nId = this.subViewTitleL10nId(!gProtectionsHandler.hasException);
+      if (!l10nId) {
+        return;
+      }
+
       switch (this.behaviorPref) {
         case Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN:
-          l10nId = siteException
-            ? "protections-not-blocking-cookies-third-party"
-            : "protections-blocking-cookies-third-party";
           this.subViewHeading.hidden = true;
           if (this.subViewHeading.nextSibling.nodeName == "toolbarseparator") {
             this.subViewHeading.nextSibling.hidden = true;
           }
           break;
         case Ci.nsICookieService.BEHAVIOR_REJECT:
-          l10nId = siteException
-            ? "protections-not-blocking-cookies-all"
-            : "protections-blocking-cookies-all";
           this.subViewHeading.hidden = true;
           if (this.subViewHeading.nextSibling.nodeName == "toolbarseparator") {
             this.subViewHeading.nextSibling.hidden = true;
           }
           break;
         case Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN:
-          l10nId = "protections-blocking-cookies-unvisited";
           this.subViewHeading.hidden = true;
           if (this.subViewHeading.nextSibling.nodeName == "toolbarseparator") {
             this.subViewHeading.nextSibling.hidden = true;
           }
           break;
-        case Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER:
-        case Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN:
-          l10nId = siteException
-            ? "protections-not-blocking-cross-site-tracking-cookies"
-            : "protections-blocking-cookies-trackers";
-          break;
-        default:
-          console.error(
-            `Error: Unknown cookieBehavior pref when updating subview: ${this.behaviorPref}`
-          );
-          return;
       }
 
       document.l10n.setAttributes(this.subView, l10nId);
+    }
+
+    /**
+     * The title depends on which cookies the user chose to block, not only on
+     * whether they are being blocked.
+     *
+     * @param {boolean} blocking - Whether the category is blocking.
+     * @returns {?string} - The l10n id of the title, null for an unknown
+     *   cookie behavior.
+     */
+    subViewTitleL10nId(blocking) {
+      switch (this.behaviorPref) {
+        case Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN:
+          return blocking
+            ? "protections-blocking-cookies-third-party"
+            : "protections-not-blocking-cookies-third-party";
+        case Ci.nsICookieService.BEHAVIOR_REJECT:
+          return blocking
+            ? "protections-blocking-cookies-all"
+            : "protections-not-blocking-cookies-all";
+        case Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN:
+          return "protections-blocking-cookies-unvisited";
+        case Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER:
+        case Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN:
+          return blocking
+            ? "protections-blocking-cookies-trackers"
+            : "protections-not-blocking-cross-site-tracking-cookies";
+        case Ci.nsICookieService.BEHAVIOR_ACCEPT:
+          return "protections-not-blocking-cross-site-tracking-cookies";
+      }
+      console.error(
+        `Error: Unknown cookieBehavior pref when updating subview: ${this.behaviorPref}`
+      );
+      return null;
     }
 
     _getExceptionState(origin) {
@@ -1293,7 +1323,10 @@ var gProtectionsHandler = {
       displayName: "TikTok",
     },
     {
-      matchPatterns: ["https://platform.twitter.com/*"],
+      matchPatterns: [
+        "https://platform.twitter.com/*",
+        "https://platform.x.com/*",
+      ],
       shimId: "TwitterEmbed",
       displayName: "X",
     },
@@ -1303,12 +1336,6 @@ var gProtectionsHandler = {
       displayName: "Disqus",
     },
   ],
-
-  /**
-   * Keeps track of if a smartblock toggle has been clicked since the panel was opened. Resets
-   * everytime the panel is closed. Used for telemetry purposes.
-   */
-  _hasClickedSmartBlockEmbedToggle: false,
 
   /**
    * Keeps track of what was responsible for opening the protections panel popup. Used for
@@ -1762,21 +1789,12 @@ var gProtectionsHandler = {
       window.removeEventListener("focus", this, true);
       this._protectionsPopupTPSwitch.removeEventListener("toggle", this);
 
-      // Record close telemetry, don't record for toasts
-      if (!event.target.hasAttribute("toast")) {
-        Glean.securityUiProtectionspopup.closeProtectionsPopup.record({
-          openingReason: this._protectionsPopupOpeningReason,
-          smartblockToggleClicked: this._hasClickedSmartBlockEmbedToggle,
-        });
-      }
-
       if (this._protectionsPopupToggleDelayTimer) {
         clearTimeout(this._protectionsPopupToggleDelayTimer);
         this._enablePopupToggles();
         delete this._protectionsPopupToggleDelayTimer;
       }
 
-      this._hasClickedSmartBlockEmbedToggle = false;
       this._protectionsPopupOpeningReason = null;
     }
   },
@@ -2421,13 +2439,6 @@ var gProtectionsHandler = {
         } else {
           this._sendReblockMessageToSmartblock(shimId);
         }
-
-        Glean.securityUiProtectionspopup.clickSmartblockembedsToggle.record({
-          isBlock: !newToggleState,
-          openingReason: this._protectionsPopupOpeningReason,
-        });
-
-        this._hasClickedSmartBlockEmbedToggle = true;
       });
 
       this._protectionsPopupSmartblockToggleContainer.insertAdjacentElement(

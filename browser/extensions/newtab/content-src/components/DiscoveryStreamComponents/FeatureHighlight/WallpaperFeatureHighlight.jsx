@@ -4,7 +4,7 @@
 
 import React, { useCallback } from "react";
 import { useSelector } from "react-redux";
-import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
+import { actionTypes as at } from "common/Actions.mjs";
 import { WALLPAPER_CATEGORIES } from "content-src/lib/constants.mjs";
 import { FeatureHighlight } from "./FeatureHighlight";
 
@@ -51,7 +51,6 @@ export function WallpaperFeatureHighlight({
         type: at.SHOW_PERSONALIZE,
         data: { wallpaperCategory: category },
       });
-      dispatch(ac.UserEvent({ event: "SHOW_PERSONALIZE" }));
       handleClick(elementId);
       onDismiss();
     },
@@ -130,35 +129,35 @@ export function WallpaperFeatureHighlight({
               />
             </picture>
             <div className="wallpaper-feature-highlight-copy">
-              {!isNova && messageData.content?.cardTitle ? (
+              {messageData.content?.cardTitle ? (
                 <p className="title">{messageData.content.cardTitle}</p>
               ) : (
                 <p
                   className="title"
                   data-l10n-id={
-                    isNova
+                    messageData.content.title ||
+                    (isNova
                       ? novaTitleL10nId
-                      : messageData.content.title ||
-                        "newtab-new-user-custom-wallpaper-title"
+                      : "newtab-new-user-custom-wallpaper-title")
                   }
                 />
               )}
-              {!isNova && messageData.content?.cardMessage ? (
+              {messageData.content?.cardMessage ? (
                 <p className="subtitle">{messageData.content.cardMessage}</p>
               ) : (
                 <p
                   className="subtitle"
                   data-l10n-id={
-                    isNova
+                    messageData.content.subtitle ||
+                    (isNova
                       ? novaSubtitleL10nId
-                      : messageData.content.subtitle ||
-                        "newtab-new-user-custom-wallpaper-subtitle"
+                      : "newtab-new-user-custom-wallpaper-subtitle")
                   }
                 />
               )}
             </div>
             <span className="button-wrapper">
-              {!isNova && messageData.content?.cardCta ? (
+              {messageData.content?.cardCta ? (
                 <moz-button
                   type={isNova ? "primary" : "default"}
                   onClick={() => onToggleClick("open-customize-menu")}
@@ -169,10 +168,10 @@ export function WallpaperFeatureHighlight({
                   type={isNova ? "primary" : "default"}
                   onClick={() => onToggleClick("open-customize-menu")}
                   data-l10n-id={
-                    isNova
+                    messageData.content.cta ||
+                    (isNova
                       ? novaCtaL10nId
-                      : messageData.content.cta ||
-                        "newtab-new-user-custom-wallpaper-cta"
+                      : "newtab-new-user-custom-wallpaper-cta")
                   }
                 />
               )}

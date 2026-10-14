@@ -11,6 +11,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "moz-src:///browser/components/urlbar/ActionsProviderQuickActions.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   DevToolsShim: "chrome://devtools-startup/content/DevToolsShim.sys.mjs",
+  ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
   ResetProfile: "resource://gre/modules/ResetProfile.sys.mjs",
   ScreenshotsUtils:
     "moz-src:///browser/components/screenshots/ScreenshotsUtils.sys.mjs",
@@ -32,8 +33,9 @@ let openUrlFun = url => (_queryContext, controller) =>
   openUrl(url, controller.browserWindow);
 let openUrl = (url, window) => {
   if (url.startsWith("about:")) {
-    window.switchToTabHavingURI(Services.io.newURI(url), true, {
-      ignoreFragment: "whenComparing",
+    let uri = Services.io.newURI(url);
+    window.switchToTabHavingURI(uri, true, {
+      ignoreFragment: uri.hasRef ? "whenComparingAndReplace" : "whenComparing",
     });
   } else {
     window.gBrowser.addTab(url, {
@@ -111,6 +113,8 @@ const DEFAULT_ACTIONS = {
     icon: "chrome://global/skin/icons/highlights.svg",
     label: "quickactions-manageai",
     onPick: openUrlFun("about:preferences#ai"),
+    isUnsupported: () =>
+      !Services.prefs.getBoolPref("browser.preferences.aiControls", false),
   },
   downloads: {
     l10nCommands: ["quickactions-cmd-downloads"],
@@ -336,6 +340,7 @@ const DEFAULT_ACTIONS = {
     l10nCommands: ["quickactions-cmd-labs"],
     icon: "chrome://global/skin/icons/experiments.svg",
     label: "quickactions-labs",
+    isUnsupported: () => !lazy.ExperimentAPI.labsEnabled,
     onPick: openUrlFun("about:preferences#experimental"),
   },
 };

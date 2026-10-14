@@ -63,16 +63,21 @@ void
 PK11_DestroyContext(PK11Context *context, PRBool freeit)
 {
     pk11_CloseSession(context->slot, context->session, context->ownSession);
-    /* initialize the critical fields of the context */
-    if (context->savedData != NULL)
+    if (context->savedData != NULL) {
         PORT_Free(context->savedData);
-    if (context->key)
-        PK11_FreeSymKey(context->key);
-    if (context->param && context->param != &pk11_null_params)
+    }
+    PK11_FreeSymKey(context->key);
+    if (context->param && context->param != &pk11_null_params) {
         SECITEM_FreeItem(context->param, PR_TRUE);
-    if (context->sessionLock)
+    }
+    if (context->sessionLock) {
         PR_DestroyLock(context->sessionLock);
+    }
     PK11_FreeSlot(context->slot);
+    /* With freeit == PR_FALSE the caller keeps the struct, so zero it out.
+     * This clears the dangling pointers and marks the context uninitialized
+     * (note that CK_INVALID_HANDLE is 0). */
+    PORT_Memset(context, 0, sizeof(*context));
     if (freeit)
         PORT_Free(context);
 }
@@ -775,23 +780,6 @@ PK11_RestoreContext(PK11Context *cx, unsigned char *save, int len)
         }
     }
     return rv;
-}
-
-/*
- * This is  to get FIPS compliance until we can convert
- * libjar to use PK11_ hashing functions. It returns PR_FALSE
- * if we can't get a PK11 Context.
- */
-PRBool
-PK11_HashOK(SECOidTag algID)
-{
-    PK11Context *cx;
-
-    cx = PK11_CreateDigestContext(algID);
-    if (cx == NULL)
-        return PR_FALSE;
-    PK11_DestroyContext(cx, PR_TRUE);
-    return PR_TRUE;
 }
 
 /*

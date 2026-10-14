@@ -1,9 +1,8 @@
 [DEFAULT]
 head = "head.js head_native_messaging.js head_telemetry.js"
 firefox-appdir = "browser"
-skip-if = [
-  "appname == 'thunderbird'",
-  "os == 'android'",
+run-if = [
+  "os != 'android' && appname != 'thunderbird'",
 ]
 subprocess = true
 support-files = ["data/**"]
@@ -20,9 +19,6 @@ requesttimeoutfactor = 3  # Slow on Windows and macOS aarch64
 run-sequentially = [
   "os == 'win'", # almost perma-fail in parallel on Windows
   "os == 'mac'", # frequent timeouts on Mac
-]
-skip-if = [
-  "tsan", # Unreasonably slow, bug 1612707
 ]
 
 ["test_ext_native_messaging_portal.js"]
@@ -43,5 +39,11 @@ run-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
 ]
 tags = "portal"
+
+["test_ext_native_messaging_proxy_real.js"]
+environment = ["GTK_USE_PORTAL=1"]
+run-if = [
+  "os == 'linux' && os_version == '26.04' && arch == 'x86_64'",
+]
 
 ["test_ext_native_messaging_unresponsive.js"]

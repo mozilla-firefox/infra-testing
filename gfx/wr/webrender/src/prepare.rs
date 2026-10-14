@@ -35,7 +35,7 @@
 //! - Push potentially multiple commands to command buffers.
 //!
 
-use api::{ColorF, DebugFlags, ExtendMode, ExternalImageData, ExternalImageType, GradientStop, ImageBufferKind};
+use api::{ColorF, DebugFlags, ExtendMode, ExternalImageData, ExternalImageType, GradientStop, ImageBufferKind, PrimitiveFlags};
 use crate::border_image::prepare_border_image_nine_patch;
 use crate::pattern::cutout::Cutout;
 use crate::render_task_graph::RenderTaskId;
@@ -44,7 +44,7 @@ use crate::util::MaxRect;
 use crate::box_shadow::prepare_box_shadow;
 
 use crate::pattern::gradient::linear_gradient_pattern;
-use crate::pattern::{Pattern, PatternBuilder, PatternBuilderContext, PatternBuilderState};
+use crate::pattern::{Pattern, PatternBuilder, PatternBuilderState};
 use crate::prim_store::gradient::{decompose_axis_aligned_gradient, linear_gradient_decomposes};
 use crate::segment::EdgeMask;
 use api::units::*;
@@ -52,7 +52,7 @@ use euclid::Scale;
 use crate::composite::CompositorSurfaceKind;
 use crate::command_buffer::{CommandBufferIndex, PrimitiveCommand};
 
-use crate::clip::ClipNodeRange;
+use crate::clip::{ClipDataStore, ClipNodeRange};
 use crate::pattern::image::ImagePattern;
 
 use crate::pattern::yuv::YuvPattern;
@@ -66,13 +66,14 @@ use crate::frame_builder::{FrameBuildingContext, FrameBuildingState, PictureCont
 use crate::gpu_types::UvRectKind;
 
 use crate::internal_types::{FastHashMap, PlaneSplitAnchor};
-use crate::picture::{ClusterFlags, PictureScratch};
-use crate::picture::{PrimitiveList, PrimitiveCluster};
+use crate::picture::PictureScratch;
 use crate::surface::{SubpixelMode, SurfaceIndex};
 use crate::tile_cache::{SliceId, TileCacheInstance};
 use crate::prim_store::*;
 use crate::quad::{self, QuadDescriptor, QuadTransformState};
+use crate::quad_clip::QuadClipStack;
 use crate::render_backend::DataStores;
+use crate::scene_debug::{HighlightMode, SceneDebugOverride};
 
 
 use crate::render_task::{EmptyTask, RenderTask, RenderTaskKind};
@@ -100,12 +101,12 @@ pub fn prepare_picture(
     // memoized: take_context's only None path (invisible picture) is a cheap,
     // side-effect-free query that is stable within a frame, so re-consulting it
     // on a repeat visit is fine and avoids caching an invalid handle.
-    if let Some(handle) = frame_state.picture_scratch_handles[pic_index.0] {
+    if let Some(handle) = frame_state.picture_scratch_handles[pic_index.0 as usize] {
         return Some(handle);
     }
 
-    let pic = &mut store.pictures[pic_index.0];
-    let Some((pic_context, mut pic_state, mut prim_list, scratch_handle)) = pic.take_context(
+    let pic = &mut store.pictures[pic_index.0 as usize];
+    let Some((pic_context, mut pic_state, scratch_handle)) = pic.take_context(
         pic_index,
         surface_index,
         subpixel_mode,
@@ -118,12 +119,11 @@ pub fn prepare_picture(
         return None;
     };
 
-    frame_state.picture_scratch_handles[pic_index.0] = Some(scratch_handle);
+    frame_state.picture_scratch_handles[pic_index.0 as usize] = Some(scratch_handle);
     frame_state.num_pictures += 1;
 
     prepare_primitives(
         store,
-        &mut prim_list,
         &pic_context,
         &mut pic_state,
         frame_context,
@@ -134,10 +134,8 @@ pub fn prepare_picture(
         prim_instances,
     );
 
-    // Restore the dependencies (borrow check dance)
-    store.pictures[pic_context.pic_index.0].restore_context(
+    store.pictures[pic_context.pic_index.0 as usize].restore_context(
         pic_context.pic_index,
-        prim_list,
         pic_context,
         frame_context,
         frame_state,
@@ -149,7 +147,6 @@ pub fn prepare_picture(
 
 fn prepare_primitives(
     store: &mut PrimitiveStore,
-    prim_list: &mut PrimitiveList,
     pic_context: &PictureContext,
     pic_state: &mut PictureState,
     frame_context: &FrameBuildingContext,
@@ -163,98 +160,93 @@ fn prepare_primitives(
     let mut cmd_buffer_targets = Vec::new();
 
     let mut quad_transform = QuadTransformState::new();
+    let mut quad_clips = QuadClipStack::new();
 
-    for cluster in &mut prim_list.clusters {
-        if !cluster.flags.contains(ClusterFlags::IS_VISIBLE) {
-            continue;
-        }
-        tracy_rs::profile_scope!("cluster");
-        frame_state.num_visited_primitives += cluster.prim_range().len() as u32;
+    let device_pixel_scale = frame_state.surfaces[pic_context.surface_index.0].device_pixel_scale;
 
-        pic_state.map_local_to_pic.set_target_spatial_node(
-            cluster.spatial_node_index,
-            frame_context.spatial_tree,
-        );
+    let draw_range = scratch.frame.picture_draw_range(pic_context.pic_index);
+    frame_state.num_visited_primitives += draw_range.len() as u32;
 
-        let device_pixel_scale = frame_state.surfaces[pic_context.surface_index.0].device_pixel_scale;
+    for position in draw_range {
+        let draw_index = scratch.frame.picture_draw(position);
+        let draw = scratch.frame.draw(draw_index);
+        let prim_instance_index = draw.prim_instance_index.0 as usize;
+        let spatial_node_index = draw.spatial_node_index;
+
         quad_transform.set(
-            cluster.spatial_node_index,
+            spatial_node_index,
             pic_context.raster_spatial_node_index,
             frame_context.spatial_tree,
             device_pixel_scale,
         );
 
-        for prim_instance_index in cluster.prim_range() {
-            // Primitives the visibility pass culled have no draw at all.
-            let Some(draw_index) = scratch
-                .frame
-                .draw_index_for_instance(PrimitiveInstanceIndex(prim_instance_index as u32))
-            else {
-                continue;
-            };
+        if frame_state.surface_builder.get_cmd_buffer_targets_for_prim(
+            draw,
+            &mut cmd_buffer_targets,
+        ) {
+            let plane_split_anchor = PlaneSplitAnchor::new(
+                spatial_node_index,
+                draw_index,
+            );
 
-            if frame_state.surface_builder.get_cmd_buffer_targets_for_prim(
-                scratch.frame.draw(draw_index),
-                &mut cmd_buffer_targets,
-            ) {
-                let plane_split_anchor = PlaneSplitAnchor::new(
-                    cluster.spatial_node_index,
-                    draw_index,
-                );
+            prepare_prim_for_render(
+                store,
+                prim_instance_index,
+                draw_index,
+                spatial_node_index,
+                &mut quad_transform,
+                &mut quad_clips,
+                pic_context,
+                pic_state,
+                frame_context,
+                frame_state,
+                plane_split_anchor,
+                data_stores,
+                scratch,
+                tile_caches,
+                prim_instances,
+                &cmd_buffer_targets,
+            );
 
-                prepare_prim_for_render(
-                    store,
-                    prim_instance_index,
-                    draw_index,
-                    cluster,
-                    &mut quad_transform,
-                    pic_context,
-                    pic_state,
-                    frame_context,
-                    frame_state,
-                    plane_split_anchor,
-                    data_stores,
-                    scratch,
-                    tile_caches,
-                    prim_instances,
-                    &cmd_buffer_targets,
-                );
-
-                frame_state.num_visible_primitives += 1;
-                frame_state.num_cmd_targets += cmd_buffer_targets.len() as u32;
-                continue;
-            }
-
-            // A draw that reached no command buffer is simply never referenced
-            // by one, so there is nothing to clear here.
+            frame_state.num_visible_primitives += 1;
+            frame_state.num_cmd_targets += cmd_buffer_targets.len() as u32;
         }
+
+        // A draw that reached no command buffer is simply never referenced
+        // by one, so there is nothing to clear here.
     }
 }
 
 /// Returns the texture sampler kind used by a YUV image's planes, which selects
-/// the matching ps_quad_yuv shader variant. All planes are expected to share the
-/// same kind. Texture-cache backed images (raw/blob/buffer) are always Texture2D.
+/// the matching ps_quad_yuv shader variant. Texture-cache backed images
+/// (raw/blob/buffer) are always Texture2D. Returns None if the planes do not all
+/// share the same kind: every plane is sampled through the one sampler type of
+/// the selected shader variant, so such an image cannot be drawn.
 fn yuv_planes_sampler_kind(
     yuv_image_data: &crate::prim_store::image::YuvImageData,
     resource_cache: &crate::resource_cache::ResourceCache,
-) -> ImageBufferKind {
+) -> Option<ImageBufferKind> {
     let plane_count = yuv_image_data.format.get_plane_num();
+    let mut sampler_kind = None;
     for key in &yuv_image_data.yuv_key[.. plane_count] {
-        if let Some(ExternalImageData { image_type: ExternalImageType::TextureHandle(kind), .. }) =
-            resource_cache.get_image_properties(*key).and_then(|props| props.external_image)
-        {
-            return kind;
+        let kind = match resource_cache.get_image_properties(*key).and_then(|props| props.external_image) {
+            Some(ExternalImageData { image_type: ExternalImageType::TextureHandle(kind), .. }) => kind,
+            _ => ImageBufferKind::Texture2D,
+        };
+        if *sampler_kind.get_or_insert(kind) != kind {
+            return None;
         }
     }
-    ImageBufferKind::Texture2D
+    sampler_kind
 }
 
 fn prepare_prim_for_render(
     store: &mut PrimitiveStore,
     prim_instance_index: usize,
     draw_index: PrimitiveDrawIndex,
-    cluster: &mut PrimitiveCluster,
+    prim_spatial_node_index: SpatialNodeIndex,
     mut quad_transform: &mut QuadTransformState,
+    quad_clips: &mut QuadClipStack,
     pic_context: &PictureContext,
     pic_state: &mut PictureState,
     frame_context: &FrameBuildingContext,
@@ -267,6 +259,67 @@ fn prepare_prim_for_render(
     targets: &[CommandBufferIndex],
 ) {
     tracy_rs::profile_scope!("prepare_prim_for_render");
+
+    match frame_context.debug_override.highlight(prim_instance_index) {
+        Some(HighlightMode::Replace) => {
+            // Stand in for the primitive with a solid quad covering its
+            // clipped local rect. Pictures are not prepared at all, so their
+            // content is not rendered either.
+            let prim_info = *scratch.frame.draw(draw_index);
+            let coverage_rect = prim_info.clip_chain.local_coverage_rect;
+            if coverage_rect.is_empty() {
+                return;
+            }
+
+            frame_state.clip_store.fill_quad_clips(
+                quad_clips,
+                &prim_info.clip_chain,
+                &frame_state.surfaces[pic_context.surface_index.0],
+                &data_stores.clip,
+            );
+
+            quad::prepare_quad(
+                &SceneDebugOverride::HIGHLIGHT_COLOR,
+                &QuadDescriptor {
+                    pattern_rect: coverage_rect,
+                    bounds: coverage_rect,
+                    aligned_aa_edges: EdgeMask::empty(),
+                    transformed_aa_edges: EdgeMask::all(),
+                },
+                &None,
+                quad_clips,
+                quad_transform,
+                frame_context.spatial_tree,
+                targets,
+                frame_state,
+                scratch,
+            );
+
+            return;
+        }
+        Some(HighlightMode::Overlay) => {
+            // Outline only, so the primitive's own content stays visible
+            // underneath. Debug items are drawn directly onto the framebuffer,
+            // so the rect is projected from the primitive's local space to
+            // world space (the root node's space, in device pixels).
+            let local_rect = scratch.frame.draw(draw_index).clip_chain.local_coverage_rect;
+            let world_rect = frame_context
+                .spatial_tree
+                .get_world_transform(prim_spatial_node_index)
+                .into_transform()
+                .outer_transformed_box2d(&local_rect);
+
+            if let Some(world_rect) = world_rect {
+                scratch.push_debug_rect(
+                    world_rect.cast_unit(),
+                    2,
+                    SceneDebugOverride::HIGHLIGHT_COLOR,
+                    ColorF::TRANSPARENT,
+                );
+            }
+        }
+        None => {}
+    }
 
     // If we have dependencies, we need to prepare them first, in order
     // to know the actual rect of this primitive.
@@ -294,37 +347,16 @@ fn prepare_prim_for_render(
             KindScratchHandle::Picture(scratch_handle);
 
         is_passthrough = store
-            .pictures[pic_index.0]
+            .pictures[pic_index.0 as usize]
             .composite_mode
             .is_none();
     }
 
     let prim_instance = &mut prim_instances[prim_instance_index];
-    let mut use_legacy_path = true;
     if !is_passthrough {
-        match &prim_instance.kind {
-            PrimitiveKind::Rectangle { .. }
-            | PrimitiveKind::RadialGradient { .. }
-            | PrimitiveKind::ConicGradient { .. }
-            | PrimitiveKind::LinearGradient { .. }
-            | PrimitiveKind::Image { .. }
-            | PrimitiveKind::NormalBorder { .. }
-            | PrimitiveKind::ImageBorder { .. }
-            | PrimitiveKind::LineDecoration { .. }
-            | PrimitiveKind::BackdropRender { .. }
-            | PrimitiveKind::BoxShadow { .. }
-            => {
-                use_legacy_path = false;
-            }
-            _ => {}
-        };
-
-        // In the new quad rendering path, want to skip the entry point to
-        // `update_clip_task` as that does old-style segmenting and mask
-        // generation.
-        let should_update_clip_task = match &mut prim_instance.kind {
-            PrimitiveKind::Picture { .. } => false,
-            _ => use_legacy_path,
+        let should_update_clip_task = match &prim_instance.kind {
+            PrimitiveKind::TextRun { .. } => true,
+            _ => false,
         };
 
         if should_update_clip_task {
@@ -339,12 +371,12 @@ fn prepare_prim_for_render(
             if !update_clip_task(
                 draw_index,
                 prim_rect,
-                cluster.spatial_node_index,
+                prim_spatial_node_index,
                 pic_context.raster_spatial_node_index,
                 pic_context,
                 frame_context,
                 frame_state,
-                data_stores,
+                &data_stores.clip,
                 scratch,
             ) {
                 return;
@@ -352,13 +384,19 @@ fn prepare_prim_for_render(
         }
     }
 
-    let prim_spatial_node_index = cluster.spatial_node_index;
     let device_pixel_scale = frame_state.surfaces[pic_context.surface_index.0].device_pixel_scale;
     // Snapshot of the per-frame draw header for this prim. Copy is fine here
     // because the only field this function writes (clip_task_index, in the
     // segmented-clip path) isn't read again in this function — and the other
     // fields (state, clip_chain) aren't written by it.
     let prim_info = *scratch.frame.draw(draw_index);
+
+    frame_state.clip_store.fill_quad_clips(
+        quad_clips,
+        &prim_info.clip_chain,
+        &frame_state.surfaces[pic_context.surface_index.0],
+        &data_stores.clip,
+    );
 
     match &mut prim_instance.kind {
         PrimitiveKind::BoxShadow { data_handle, .. } => {
@@ -369,8 +407,8 @@ fn prepare_prim_for_render(
             prepare_box_shadow(
                 &prim_data.kind,
                 &prim_data.common,
-                &prim_instance.unsnapped_pattern_rect,
-                &prim_info.clip_chain,
+                &prim_data.common.prim_rect,
+                quad_clips,
                 &mut quad_transform,
                 frame_context,
                 pic_context,
@@ -378,9 +416,7 @@ fn prepare_prim_for_render(
                 scratch,
                 prim_spatial_node_index,
                 device_pixel_scale,
-                draw_index,
                 targets,
-                data_stores,
             );
 
             return;
@@ -392,8 +428,7 @@ fn prepare_prim_for_render(
 
             let task = prim_data.kind.prepare(
                 prim_info.snapped_pattern_rect.size(),
-                prim_spatial_node_index,
-                frame_context,
+                quad_transform.scale_factors(),
                 frame_state,
             );
 
@@ -416,14 +451,11 @@ fn prepare_prim_for_render(
                     },
                     stretch_size,
                     LayoutSize::zero(),
-                    draw_index,
                     &None,
-                    &prim_info.clip_chain,
+                    quad_clips,
                     quad_transform,
-                    frame_context,
-                    pic_context,
+                    frame_context.spatial_tree,
                     targets,
-                    &data_stores.clip,
                     frame_state,
                     scratch,
                 );
@@ -436,14 +468,11 @@ fn prepare_prim_for_render(
                         aligned_aa_edges: prim_data.common.aligned_aa_edges,
                         transformed_aa_edges: prim_data.common.transformed_aa_edges,
                     },
-                    draw_index,
                     &None,
-                    &prim_info.clip_chain,
+                    quad_clips,
                     quad_transform,
-                    frame_context,
-                    pic_context,
+                    frame_context.spatial_tree,
                     targets,
-                    &data_stores.clip,
                     frame_state,
                     scratch,
                 );
@@ -471,7 +500,7 @@ fn prepare_prim_for_render(
             // positions in the template are stored relative to it. Use the
             // unsnapped rect so the anchor matches what the shader receives in
             // `PrimitiveHeader.local_rect`.
-            let pattern_rect = prim_instance.unsnapped_pattern_rect;
+            let pattern_rect = prim_data.common.prim_rect;
 
             let surface = &frame_state.surfaces[pic_context.surface_index.0];
 
@@ -504,11 +533,13 @@ fn prepare_prim_for_render(
                 }
             };
 
-            let text_run_handle = prim_data.request_resources(
+            let text_run_handle = prim_data.kind.request_resources(
                 pattern_rect,
+                prim_info.clip_chain.local_clip_rect,
                 &transform.to_transform().with_destination::<_>(),
                 surface,
                 prim_spatial_node_index,
+                pic_context.shadow_offset,
                 allow_subpixel,
                 frame_context.fb_config.low_quality_pinch_zoom,
                 frame_state.resource_cache,
@@ -533,15 +564,11 @@ fn prepare_prim_for_render(
                     aligned_aa_edges,
                     transformed_aa_edges,
                 },
-                &prim_info.clip_chain,
-                prim_spatial_node_index,
-                device_pixel_scale,
-                draw_index,
+                quad_clips,
                 quad_transform,
+                !prim_data.common.flags.contains(PrimitiveFlags::ANTIALISED),
                 frame_context,
-                pic_context,
                 targets,
-                &data_stores.clip,
                 frame_state,
                 scratch,
             );
@@ -577,13 +604,10 @@ fn prepare_prim_for_render(
                     aligned_aa_edges,
                     transformed_aa_edges,
                 },
-                draw_index,
-                &prim_info.clip_chain,
+                quad_clips,
                 quad_transform,
                 frame_context,
-                pic_context,
                 targets,
-                &data_stores.clip,
                 frame_state,
                 scratch,
             );
@@ -605,14 +629,11 @@ fn prepare_prim_for_render(
                     aligned_aa_edges: prim_data.common.aligned_aa_edges,
                     transformed_aa_edges: prim_data.common.transformed_aa_edges,
                 },
-                draw_index,
                 &None,
-                &prim_info.clip_chain,
+                quad_clips,
                 quad_transform,
-                frame_context,
-                pic_context,
+                frame_context.spatial_tree,
                 targets,
-                &data_stores.clip,
                 frame_state,
                 scratch,
             );
@@ -634,20 +655,22 @@ fn prepare_prim_for_render(
                         aligned_aa_edges: common_data.aligned_aa_edges,
                         transformed_aa_edges: common_data.transformed_aa_edges,
                     },
-                    draw_index,
                     &None,
-                    &prim_info.clip_chain,
+                    quad_clips,
                     quad_transform,
-                    frame_context,
-                    pic_context,
+                    frame_context.spatial_tree,
                     targets,
-                    &data_stores.clip,
                     frame_state,
                     scratch,
                 );
 
                 return;
             }
+
+            let sampler_kind = match yuv_planes_sampler_kind(yuv_image_data, frame_state.resource_cache) {
+                Some(sampler_kind) => sampler_kind,
+                None => return,
+            };
 
             // Non-composited: draw the YUV image directly through the quad path.
             let planes = yuv_image_data.update(
@@ -660,7 +683,7 @@ fn prepare_prim_for_render(
                 format: yuv_image_data.format,
                 color_space: yuv_image_data.color_space.with_range(yuv_image_data.color_range),
                 channel_bit_depth: yuv_image_data.color_depth.bit_depth(),
-                sampler_kind: yuv_planes_sampler_kind(yuv_image_data, frame_state.resource_cache),
+                sampler_kind,
             };
 
             quad::prepare_quad(
@@ -671,14 +694,11 @@ fn prepare_prim_for_render(
                     aligned_aa_edges: common_data.aligned_aa_edges,
                     transformed_aa_edges: common_data.transformed_aa_edges,
                 },
-                draw_index,
                 &None,
-                &prim_info.clip_chain,
+                quad_clips,
                 quad_transform,
-                frame_context,
-                pic_context,
+                frame_context.spatial_tree,
                 targets,
-                &data_stores.clip,
                 frame_state,
                 scratch,
             );
@@ -703,14 +723,11 @@ fn prepare_prim_for_render(
                         aligned_aa_edges: common_data.aligned_aa_edges,
                         transformed_aa_edges: common_data.transformed_aa_edges,
                     },
-                    draw_index,
                     &None,
-                    &prim_info.clip_chain,
+                    quad_clips,
                     quad_transform,
-                    frame_context,
-                    pic_context,
+                    frame_context.spatial_tree,
                     targets,
-                    &data_stores.clip,
                     frame_state,
                     scratch,
                 );
@@ -722,13 +739,11 @@ fn prepare_prim_for_render(
                 &prim_rect,
                 common_data,
                 image_data,
-                &prim_info.clip_chain,
-                draw_index,
+                &prim_info.clip_chain.local_coverage_rect,
+                quad_clips,
                 quad_transform,
                 frame_context,
-                pic_context,
                 targets,
-                &data_stores.clip,
                 frame_state,
                 scratch,
             );
@@ -755,13 +770,10 @@ fn prepare_prim_for_render(
                         transformed_aa_edges: prim_data.common.transformed_aa_edges,
                     },
                     stretch_size,
-                    draw_index,
-                    &prim_info.clip_chain,
+                    quad_clips,
                     quad_transform,
-                    frame_context,
-                    pic_context,
+                    frame_context.spatial_tree,
                     targets,
-                    &data_stores.clip,
                     frame_state,
                     scratch,
                 );
@@ -818,17 +830,14 @@ fn prepare_prim_for_render(
                             &QuadDescriptor {
                                 pattern_rect: *seg_rect,
                                 bounds: *seg_rect,
-                                aligned_aa_edges: EdgeMask::empty(),
-                                transformed_aa_edges: edge_aa_mask,
+                                aligned_aa_edges: prim_data.common.aligned_aa_edges & edge_aa_mask,
+                                transformed_aa_edges: prim_data.common.transformed_aa_edges & edge_aa_mask,
                             },
-                            draw_index,
                             &None,
-                            &prim_info.clip_chain,
+                            quad_clips,
                             quad_transform,
-                            frame_context,
-                            pic_context,
+                            frame_context.spatial_tree,
                             targets,
-                            &data_stores.clip,
                             frame_state,
                             scratch,
                         );
@@ -842,10 +851,8 @@ fn prepare_prim_for_render(
                 && frame_state.resource_cache.texture_cache.allocated_color_bytes() < 10_000_000;
             if should_cache {
                 let surface = &frame_state.surfaces[pic_context.surface_index.0];
-                let clipped_surface_rect = surface.get_surface_rect(
-                    &prim_info.clip_chain.pic_coverage_rect,
-                    frame_context.spatial_tree,
-                );
+                let clipped_surface_rect = surface
+                    .get_surface_rect(&prim_info.clip_chain.pic_coverage_rect);
 
                 should_cache = if let Some(rect) = clipped_surface_rect {
                     rect.width() < 512 && rect.height() < 512
@@ -858,8 +865,7 @@ fn prepare_prim_for_render(
                 quad::cache_key(
                     data_handle.uid(),
                     quad_transform,
-                    &prim_info.clip_chain,
-                    frame_state.clip_store,
+                    quad_clips,
                 )
             } else {
                 None
@@ -876,14 +882,11 @@ fn prepare_prim_for_render(
                 },
                 stretch_size,
                 prim_data.tile_spacing,
-                draw_index,
                 &cache_key,
-                &prim_info.clip_chain,
+                quad_clips,
                 quad_transform,
-                frame_context,
-                pic_context,
+                frame_context.spatial_tree,
                 targets,
-                &data_stores.clip,
                 frame_state,
                 scratch,
             );
@@ -910,13 +913,10 @@ fn prepare_prim_for_render(
                         transformed_aa_edges: prim_data.common.transformed_aa_edges,
                     },
                     stretch_size,
-                    draw_index,
-                    &prim_info.clip_chain,
+                    quad_clips,
                     quad_transform,
-                    frame_context,
-                    pic_context,
+                    frame_context.spatial_tree,
                     targets,
-                    &data_stores.clip,
                     frame_state,
                     scratch,
                 );
@@ -933,14 +933,11 @@ fn prepare_prim_for_render(
                 },
                 stretch_size,
                 prim_data.tile_spacing,
-                draw_index,
                 &None,
-                &prim_info.clip_chain,
+                quad_clips,
                 quad_transform,
-                frame_context,
-                pic_context,
+                frame_context.spatial_tree,
                 targets,
-                &data_stores.clip,
                 frame_state,
                 scratch,
             );
@@ -966,13 +963,10 @@ fn prepare_prim_for_render(
                         transformed_aa_edges: prim_data.common.transformed_aa_edges,
                     },
                     stretch_size,
-                    draw_index,
-                    &prim_info.clip_chain,
+                    quad_clips,
                     quad_transform,
-                    frame_context,
-                    pic_context,
+                    frame_context.spatial_tree,
                     targets,
-                    &data_stores.clip,
                     frame_state,
                     scratch,
                 );
@@ -989,10 +983,8 @@ fn prepare_prim_for_render(
                 && frame_state.resource_cache.texture_cache.allocated_color_bytes() < 30_000_000;
             if should_cache {
                 let surface = &frame_state.surfaces[pic_context.surface_index.0];
-                let clipped_surface_rect = surface.get_surface_rect(
-                    &prim_info.clip_chain.pic_coverage_rect,
-                    frame_context.spatial_tree,
-                );
+                let clipped_surface_rect = surface
+                    .get_surface_rect(&prim_info.clip_chain.pic_coverage_rect);
 
                 should_cache = if let Some(rect) = clipped_surface_rect {
                     rect.width() < 4096 && rect.height() < 4096
@@ -1005,8 +997,7 @@ fn prepare_prim_for_render(
                 quad::cache_key(
                     data_handle.uid(),
                     quad_transform,
-                    &prim_info.clip_chain,
-                    frame_state.clip_store,
+                    quad_clips,
                 )
             } else {
                 None
@@ -1023,14 +1014,11 @@ fn prepare_prim_for_render(
                 },
                 stretch_size,
                 prim_data.tile_spacing,
-                draw_index,
                 &cache_key,
-                &prim_info.clip_chain,
+                quad_clips,
                 quad_transform,
-                frame_context,
-                pic_context,
+                frame_context.spatial_tree,
                 targets,
-                &data_stores.clip,
                 frame_state,
                 scratch,
             );
@@ -1039,7 +1027,7 @@ fn prepare_prim_for_render(
         PrimitiveKind::Picture { pic_index, .. } => {
             tracy_rs::profile_scope!("Picture");
             let pic_scratch_handle = prim_info.kind_scratch.unwrap_picture();
-            let pic = &mut store.pictures[pic_index.0];
+            let pic = &mut store.pictures[pic_index.0 as usize];
 
             let Some(raster_config) = &pic.raster_config else {
                 return;
@@ -1048,9 +1036,7 @@ fn prepare_prim_for_render(
             let clip_task_index = prepare_picture_primitive(
                 pic,
                 raster_config,
-                draw_index,
                 prim_spatial_node_index,
-                &prim_info.clip_chain,
                 frame_context,
                 frame_state,
                 scratch,
@@ -1075,9 +1061,9 @@ fn prepare_prim_for_render(
             frame_state.surface_builder.register_resolve_source();
 
             if frame_context.debug_flags.contains(DebugFlags::HIGHLIGHT_BACKDROP_FILTERS) {
-                if let Some(world_rect) = pic_state.map_pic_to_vis.map(&prim_info.clip_chain.pic_coverage_rect) {
+                if let Some(device_rect) = pic_state.map_pic_to_device.map(&prim_info.clip_chain.pic_coverage_rect) {
                     scratch.push_debug_rect(
-                        world_rect.cast_unit(),
+                        device_rect,
                         2,
                         crate::debug_colors::MAGENTA,
                         ColorF::TRANSPARENT,
@@ -1182,14 +1168,11 @@ fn prepare_prim_for_render(
                             aligned_aa_edges,
                             transformed_aa_edges,
                         },
-                        draw_index,
                         &None,
-                        &prim_info.clip_chain,
+                        quad_clips,
                         quad_transform,
-                        frame_context,
-                        pic_context,
+                        frame_context.spatial_tree,
                         targets,
-                        &data_stores.clip,
                         frame_state,
                         scratch,
                     );
@@ -1210,8 +1193,13 @@ fn prepare_prim_for_render(
             panic!("bug: invalid vis state");
         }
         DrawState::Visible { .. } => {
+            // The kinds that reach here (text runs, backdrop captures) have no
+            // tighter footprint on hand than the primitive's coverage rect.
+            let device_rect = frame_state.surfaces[pic_context.surface_index.0]
+                .map_to_device_rect(&prim_info.clip_chain.pic_coverage_rect);
+
             frame_state.push_prim(
-                &PrimitiveCommand::simple(draw_index),
+                &PrimitiveCommand::simple(draw_index, device_rect),
                 prim_spatial_node_index,
                 targets,
             );
@@ -1229,7 +1217,7 @@ fn add_clip_mask_render_task(
     prim_spatial_node_index: SpatialNodeIndex,
     raster_spatial_node_index: SpatialNodeIndex,
     device_pixel_scale: DevicePixelScale,
-    data_stores: &DataStores,
+    clips: &ClipDataStore,
     frame_context: &FrameBuildingContext,
     frame_state: &mut FrameBuildingState,
 ) -> RenderTaskId {
@@ -1246,16 +1234,21 @@ fn add_clip_mask_render_task(
 
     let task_rect = device_rect.to_f32();
 
-    quad::prepare_clip_range(
+    let mut quad_clips = QuadClipStack::new();
+    frame_state.clip_store.fill_quad_clips_from_range(
+        &mut quad_clips,
         clip_node_range,
+        clips,
+    );
+
+    quad::prepare_clip_range(
+        &quad_clips,
         clip_task_id,
         &task_rect,
         &prim_local_rect,
         prim_spatial_node_index,
         raster_spatial_node_index,
         device_pixel_scale,
-        &data_stores.clip,
-        frame_state.clip_store,
         frame_context.spatial_tree,
         frame_state.rg_builder,
         &mut frame_state.frame_gpu_data.f32,
@@ -1273,7 +1266,7 @@ pub fn update_clip_task(
     pic_context: &PictureContext,
     frame_context: &FrameBuildingContext,
     frame_state: &mut FrameBuildingState,
-    data_stores: &DataStores,
+    clips: &ClipDataStore,
     scratch: &mut PrimitiveScratchBuffer,
 ) -> bool {
     let device_pixel_scale = frame_state.surfaces[pic_context.surface_index.0].device_pixel_scale;
@@ -1282,10 +1275,9 @@ pub fn update_clip_task(
         // Get a minimal device space rect, clipped to the screen that we
         // need to allocate for the clip mask, as well as interpolated
         // snap offsets.
-        let unadjusted_device_rect = match frame_state.surfaces[pic_context.surface_index.0].get_surface_rect(
-            &scratch.frame.draw(draw_index).clip_chain.pic_coverage_rect,
-            frame_context.spatial_tree,
-        ) {
+        let unadjusted_device_rect = match frame_state.surfaces[pic_context.surface_index.0]
+            .get_surface_rect(&scratch.frame.draw(draw_index).clip_chain.pic_coverage_rect)
+        {
             Some(rect) => rect,
             None => return false,
         };
@@ -1307,7 +1299,7 @@ pub fn update_clip_task(
             prim_spatial_node_index,
             root_spatial_node_index,
             device_pixel_scale,
-            data_stores,
+            clips,
             frame_context,
             frame_state,
         );
@@ -1350,23 +1342,20 @@ fn adjust_mask_scale_for_max_size(device_rect: DeviceIntRect, device_pixel_scale
 /// stop colors (in segment-local coords); `build` translates start/end into
 /// the prim's spatial-node space by adding `ctx.prim_origin`.
 struct LinearGradientSegmentPattern {
-    start: LayoutPoint,
-    end: LayoutPoint,
+    start: LayoutVector2D,
+    end: LayoutVector2D,
     stops: [GradientStop; 2],
 }
 
 impl PatternBuilder for LinearGradientSegmentPattern {
     fn build(
         &self,
-        _sub_rect: Option<DeviceRect>,
-        offset: LayoutVector2D,
-        ctx: &PatternBuilderContext,
+        pattern_rect: &LayoutRect,
         state: &mut PatternBuilderState,
     ) -> Pattern {
-        let prim_offset = offset + ctx.prim_origin.to_vector();
         linear_gradient_pattern(
-            self.start + prim_offset,
-            self.end + prim_offset,
+            pattern_rect.min + self.start,
+            pattern_rect.min + self.end,
             ExtendMode::Clamp,
             &self.stops,
             state.frame_gpu_data,

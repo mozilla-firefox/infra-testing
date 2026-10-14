@@ -36,6 +36,8 @@ support-files = [
   "html_json-malformed-test-page.html",
   "html_json-text-mime-test-page.html",
   "html_json-xssi-protection.html",
+  "html_jsonl-post-test-page.html",
+  "html_jsonl-test-page.html",
   "html_jsonp-test-page.html",
   "html_maps-test-page.html",
   "html_module-script-cache.html",
@@ -71,6 +73,8 @@ support-files = [
   "html_stylesheet-cache.html",
   "js_worker-test.js",
   "js_worker-test2.js",
+  "jsonl_text_plain.jsonl",
+  "jsonl_text_plain.jsonl^headers^",
   "network-overrides-test-helpers.js",
   "sjs_content-type-test-server.sjs",
   "sjs_cors-test-server.sjs",
@@ -129,9 +133,6 @@ support-files = [
 ["browser_net_block-context.js"]
 
 ["browser_net_block-csp.js"]
-fail-if = [
-  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
-]
 
 ["browser_net_block-draganddrop.js"]
 
@@ -140,15 +141,14 @@ fail-if = [
 ["browser_net_block-pattern.js"]
 
 ["browser_net_block-serviceworker.js"]
-skip-if = [
-  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1980084
-]
 
 ["browser_net_block.js"]
 
 ["browser_net_brotli.js"]
 
 ["browser_net_cache_details.js"]
+
+["browser_net_cache_details_revalidated.js"]
 
 ["browser_net_cache_svg_size.js"]
 
@@ -248,10 +248,6 @@ fail-if = [
 ["browser_net_domain-not-found.js"]
 
 ["browser_net_duration-sort.js"]
-skip-if = [
-  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && !opt", # Bug 2021427 Frequent delays on windows non-opt builds
-  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && !opt", # Bug 2021427 Frequent delays on windows non-opt builds
-]
 
 ["browser_net_duration.js"]
 
@@ -264,9 +260,6 @@ skip-if = [
 ["browser_net_fission_switch_target.js"]
 
 ["browser_net_fonts.js"]
-fail-if = [
-  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
-]
 
 ["browser_net_footer-summary.js"]
 
@@ -302,9 +295,6 @@ fail-if = [
 ["browser_net_headers_sorted.js"]
 
 ["browser_net_html-preview.js"]
-fail-if = [
-  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
-]
 
 ["browser_net_image-tooltip.js"]
 
@@ -335,6 +325,10 @@ fail-if = [
 ["browser_net_json_custom_mime.js"]
 
 ["browser_net_json_text_mime.js"]
+
+["browser_net_jsonl-request.js"]
+
+["browser_net_jsonl.js"]
 
 ["browser_net_jsonp.js"]
 

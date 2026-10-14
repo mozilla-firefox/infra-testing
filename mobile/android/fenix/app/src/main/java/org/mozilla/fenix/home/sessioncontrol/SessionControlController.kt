@@ -220,7 +220,7 @@ class DefaultSessionControlController(
     override fun handleCollectionShareTabsClicked(collection: TabCollection) {
         showShareFragment(
             collection.title,
-            collection.tabs.map { ShareData(url = it.url, title = it.title) },
+            collection.tabs.map { ShareData(url = it.url, title = it.title, private = false) },
         )
         Collections.shared.record(NoExtras())
     }

@@ -20,7 +20,6 @@ struct FFmpegVulkanVideoDecoder {
   VkDevice mDevice = VK_NULL_HANDLE;
   uint32_t mQueueFamilyIndex = 0;
   uint32_t mCopyQueueCount = 0;
-  bool mCopyQueueIsDedicatedTransfer = false;
   std::atomic<uint32_t> mCopyQueueRoundRobin{0};
   nsTArray<VkQueue> mCopyQueue;
   nsTArray<VkCommandPool> mCopyCmdPool;
@@ -51,8 +50,6 @@ struct FFmpegVulkanVideoDecoder {
   // Function pointers - device query (instance-level)
   PFN_vkGetDeviceProcAddr mGetDeviceProcAddr = nullptr;
   PFN_vkGetPhysicalDeviceProperties mGetPhysicalDeviceProperties = nullptr;
-  PFN_vkGetPhysicalDeviceQueueFamilyProperties
-      mGetPhysicalDeviceQueueFamilyProperties = nullptr;
   PFN_vkGetPhysicalDeviceMemoryProperties mGetPhysicalDeviceMemoryProperties =
       nullptr;
   PFN_vkGetPhysicalDeviceFormatProperties2 mGetPhysicalDeviceFormatProperties2 =
@@ -118,7 +115,8 @@ struct FFmpegVulkanVideoDecoder {
   nsTArray<PFN_vkVoidFunction> mDeviceFunctions;
   void InitDrmModifiers(VkPhysicalDevice aPhysDev, VkFormat aFormatForModifiers,
                         const nsTArray<uint64_t>* aCompositorMods = nullptr,
-                        VkImageUsageFlags aImageUsages = 0);
+                        VkImageUsageFlags aImageUsages = 0,
+                        AVCodecID aCodecID = AV_CODEC_ID_NONE);
   bool SelectVulkanDecoderPhysicalDevice(
       const StaticMutexAutoLock& aProofOfLock, const nsCString& aRendererNode);
   bool VulkanCanDecodeFormat(AVCodecID aCodecID, unsigned aAvcodecVersion,
@@ -127,6 +125,7 @@ struct FFmpegVulkanVideoDecoder {
                              gfx::ColorDepth aColorDepth) const;
   uint32_t mNegotiatedCompositorDecoderVendorID = 0;
   uint32_t mNegotiatedCompositorDecoderDeviceID = 0;
+  uint32_t mVulkanDriverVersion = 0;
   char mNegotiatedVulkanDeviceName[VK_MAX_PHYSICAL_DEVICE_NAME_SIZE] = {
       '\0',
   };
@@ -142,6 +141,7 @@ struct FFmpegVulkanVideoDecoder {
   bool InitCtx(VkDevice aDevice, VkPhysicalDevice aPhysDev,
                PFN_vkGetInstanceProcAddr aGetProcAddr, VkInstance aInstance,
                uint64_t aGeneration, uint32_t aCopyQueueFamilyIndex,
+               uint32_t aCopyQueueCount,
                VkDeviceQueueCreateFlags aQueueCreateFlags);
   MediaResult InitCopyRingBuffer(uint32_t aWidth, uint32_t aHeight,
                                  AVPixelFormat aSwFormat,

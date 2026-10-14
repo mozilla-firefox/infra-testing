@@ -23,9 +23,24 @@ transforms:
 
 task-defaults:
     run-on-repo-type: [hg]
+    priority:
+        by-project:
+            autoland: high
+            mozilla-central: medium
+            default: null
     attributes:
         retrigger: true
-    use-python: system
+    use-python:
+        by-test-platform:
+            # android-hw tasks are driven by the host's script.py wrapper,
+            # which imports mozdevice from the host environment; a fetched CI
+            # Python would shadow the host Python on PATH and break that import.
+            android-hw.*: system
+            # Fetched CI python is x86_64; under Rosetta it forces the universal
+            # mac Firefox onto its x86_64 slice and hits a Rosetta hang.  Keep mac
+            # on the native system python until there's an arm64 fetched python.
+            macosx.*: system
+            default: default
     use-uv: true
     worker-type:
         by-test-platform:
@@ -51,18 +66,30 @@ task-defaults:
                 default: []
         toolchain:
             by-test-platform:
-                win.*:
+                win.*-64.*:
                     - win64-node
                     - win32-minidump-stackwalk
                     - win32-fix-stacks
+                    - win64-samply
+                    - profiler-node-tools
+                win.*32.*:
+                    - win32-node
+                    - win32-minidump-stackwalk
+                    - win32-fix-stacks
+                    - win32-samply
+                    - profiler-node-tools
                 macosx.*-64.*:
                     - macosx64-node
                     - macosx64-minidump-stackwalk
                     - macosx64-fix-stacks
+                    - macosx64-samply
+                    - profiler-node-tools
                 macosx.*-aarch64.*:
                     - macosx64-aarch64-node
                     - macosx64-aarch64-minidump-stackwalk
                     - macosx64-aarch64-fix-stacks
+                    - macosx64-aarch64-samply
+                    - profiler-node-tools
                 android-em-14.*:
                     - android34-system-image-x86_64-linux
                     - android34-avd-x86_64-linux
@@ -70,14 +97,22 @@ task-defaults:
                     - linux64-minidump-stackwalk
                     - linux64-fix-stacks
                     - linux64-hostutils
+                    - linux64-node
+                    - linux64-samply
+                    - profiler-node-tools
                 android-hw.*:
                     - linux64-minidump-stackwalk
                     - linux64-fix-stacks
                     - linux64-hostutils
+                    - linux64-node
+                    - linux64-samply
+                    - profiler-node-tools
                 default:
                     - linux64-node
                     - linux64-minidump-stackwalk
                     - linux64-fix-stacks
+                    - linux64-samply
+                    - profiler-node-tools
     suite:
         category: mochitest
     target:
@@ -91,10 +126,8 @@ task-defaults:
                 by-test-platform:
                     linux.*64/debug: 1
                     default: 2
-            default:
-                by-test-platform:
-                    android-em.*/debug-isolated-process: 2
-                    default: default
+            geckoview-isolated-process: 2
+            default: default
     mozharness:
         requires-signed-builds:
             by-test-platform:
@@ -141,6 +174,7 @@ tasks:
             - http3
             - http2
             - geckoview-fission-isolate-high-value
+            - geckoview-isolated-process
             - inc-origin-init
         run-on-projects:
             by-variant:
@@ -162,7 +196,6 @@ tasks:
                         macosx.*64(-shippable)?(-qr)?/.*: ['trunk']
                         windows11-64-24h2(-shippable)?(-qr)?/.*: ['trunk']
                         linux.*64-ccov/opt: ['mozilla-central']
-                        android-em.*/debug-isolated-process: ['trunk']
                         android-em.*: ['trunk']
                         default: []
                 aab+no-fission:
@@ -185,7 +218,6 @@ tasks:
                         default: []
                 no-fission:
                     by-test-platform:
-                        android-em.*/debug-isolated-process: []
                         android.*: built-projects
                         linux2404-64/debug: ['mozilla-central']
                         linux2404-64-asan/opt: ['mozilla-central']
@@ -201,13 +233,15 @@ tasks:
                         default: []
                 geckoview-fission-isolate-high-value:
                     by-test-platform:
-                        android-em.*/debug-isolated-process: ['trunk']
                         android-em.*: built-projects
+                        default: []
+                geckoview-isolated-process:
+                    by-test-platform:
+                        android-em.*/debug: built-projects
                         default: []
                 inc-origin-init: []
                 default:
                     by-test-platform:
-                        android-em.*/debug-isolated-process: ['trunk']
                         android.*: built-projects
                         # Compositor shutdown assertion in DisconnectApzcTreeManager
                         # on headless macOS aarch64 VM workers (Bug 2039987 family);
@@ -268,22 +302,32 @@ tasks:
                         - linux64-node
                         - linux64-minidump-stackwalk
                         - linux64-fix-stacks
+                        - linux64-samply
+                        - profiler-node-tools
                     macosx.*-64.*:
                         - macosx64-node
                         - macosx64-minidump-stackwalk
                         - macosx64-fix-stacks
+                        - macosx64-samply
+                        - profiler-node-tools
                     macosx.*-aarch64.*:
                         - macosx64-aarch64-node
                         - macosx64-aarch64-minidump-stackwalk
                         - macosx64-aarch64-fix-stacks
+                        - macosx64-aarch64-samply
+                        - profiler-node-tools
                     win.*-64.*:
                         - win64-node
                         - win32-minidump-stackwalk
                         - win32-fix-stacks
+                        - win64-samply
+                        - profiler-node-tools
                     win.*32.*:
                         - win32-node
                         - win32-minidump-stackwalk
                         - win32-fix-stacks
+                        - win32-samply
+                        - profiler-node-tools
                     android-em-14.*:
                         - android34-system-image-x86_64-linux
                         - android34-avd-x86_64-linux
@@ -291,6 +335,8 @@ tasks:
                         - linux64-node
                         - linux64-minidump-stackwalk
                         - linux64-hostutils
+                        - linux64-samply
+                        - profiler-node-tools
 
     mochitest-a11y:
         description: "Mochitest a11y run"
@@ -412,7 +458,7 @@ tasks:
                         .*-artifact.*: []
                         .*-asan.*: []
                         .*-ccov.*: []
-                        macosx1[45].*64(-shippable)?(-qr)?/opt: ['mozilla-central']
+                        macosx1[45].*64(-shippable)?(-qr)?/opt: ['autoland', 'mozilla-central']
                         windows11.*-64.*(-shippable)?/opt: ['autoland', 'mozilla-central']
                         default: []
                 webrender-sw+urlbar-ipc:
@@ -532,6 +578,17 @@ tasks:
             name: mochitest-browser-a11y
         treeherder-symbol: M(ba)
         schedules-component: mochitest-browser-a11y
+        use-python:
+            by-test-platform:
+                # The linux ATK tests (accessible/tests/browser/atk/a11y_setup.py)
+                # borrow pyatspi/gi from the system Python; a fetched CI Python
+                # can't load those. Windows uses comtypes (pip) and Mac doesn't
+                # run the python runner, so only linux needs the system Python.
+                linux.*: system
+                # Keep mac on the native system python (fetched python is x86_64
+                # and hits a Rosetta hang on the universal mac build).
+                macosx.*: system
+                default: default
         loopback-video: true
         run-on-projects:
             by-test-platform:
@@ -809,22 +866,32 @@ tasks:
                         - linux64-node
                         - linux64-minidump-stackwalk
                         - linux64-fix-stacks
+                        - linux64-samply
+                        - profiler-node-tools
                     macosx.*-64.*:
                         - macosx64-node
                         - macosx64-minidump-stackwalk
                         - macosx64-fix-stacks
+                        - macosx64-samply
+                        - profiler-node-tools
                     macosx.*-aarch64.*:
                         - macosx64-aarch64-node
                         - macosx64-aarch64-minidump-stackwalk
                         - macosx64-aarch64-fix-stacks
+                        - macosx64-aarch64-samply
+                        - profiler-node-tools
                     win.*-64.*:
                         - win64-node
                         - win32-minidump-stackwalk
                         - win32-fix-stacks
+                        - win64-samply
+                        - profiler-node-tools
                     win.*32.*:
                         - win32-node
                         - win32-minidump-stackwalk
                         - win32-fix-stacks
+                        - win32-samply
+                        - profiler-node-tools
                     android-em-14.*:
                         - android34-system-image-x86_64-linux
                         - android34-avd-x86_64-linux
@@ -832,6 +899,8 @@ tasks:
                         - linux64-node
                         - linux64-minidump-stackwalk
                         - linux64-hostutils
+                        - linux64-samply
+                        - profiler-node-tools
 
 
     mochitest-devtools-chrome-failures:
@@ -898,17 +967,13 @@ tasks:
                         default: []
                 no-fission:
                     by-test-platform:
-                        android-em.*/debug-isolated-process: []
                         linux.*64-ccov/opt: []
                         .*-tsan/opt: []
                         .*-wayland.*: []
                         linux.*: ['mozilla-central']  # linux opt/debug/asan
                         android.*: built-projects
                         default: []
-                default:
-                    by-test-platform:
-                        android-em.*/debug-isolated-process: []
-                        default: built-projects
+                default: built-projects
         virtualization: virtual-with-gpu
         tier:
             by-variant:
@@ -916,10 +981,8 @@ tasks:
                     by-test-platform:
                         linux.*64.*: 2
                         default: default
-                default:
-                    by-test-platform:
-                        android-em.*/debug-isolated-process: 3
-                        default: default
+                geckoview-isolated-process: 3
+                default: default
         mozharness:
             mochitest-flavor: plain
             extra-options:
@@ -975,6 +1038,32 @@ tasks:
                 linux.*64-tsan/opt: xlarge-noscratch  # runs out of memory using 8GB of memory
                 default: default
 
+    mochitest-speech-recognition:
+        description: "Mochitest speech recognition (parakeet) run"
+        suite:
+            name: mochitest-speech-recognition
+        treeherder-symbol: M(sr)
+        schedules-component: mochitest-plain
+        loopback-video: true
+        run-on-projects:
+            by-test-platform:
+                # ASR is impractical on debug and instrumented builds; opt only.
+                android.*: []
+                .*-asan.*: []
+                .*-tsan.*: []
+                .*-ccov.*: []
+                .*/debug: []
+                default: built-projects
+        tier: default
+        max-run-time: 1800
+        instance-size: default
+        allow-software-gl-layers: false
+        virtualization: virtual
+        fetches:
+            fetch:
+                - parakeet-eou-120m
+                - parakeet-nemotron-0.6b
+
     mochitest-media:
         description: "Mochitest media run"
         treeherder-symbol: M(mda)
@@ -994,8 +1083,13 @@ tasks:
             - webrender-sw
             - wmf-media-engine
             - msix
+            - geckoview-isolated-process
         run-on-projects:
             by-variant:
+                geckoview-isolated-process:
+                    by-test-platform:
+                        android-em.*/debug: built-projects
+                        default: []
                 socketprocess+no-fission:
                     by-test-platform:
                         .*hw-ref.*: []
@@ -1042,7 +1136,6 @@ tasks:
                         .*hw-ref.*: []
                         android-hw-.*-arm7.*/(?:debug)?: ['trunk', 'mozilla-beta', 'mozilla-release']
                         android-em-14.*/debug: []  # Bug 1984064
-                        android-em.*/debug-isolated-process: []
                         android.*: built-projects
                         linux2404-64/.*: ['mozilla-central']
                         linux2404-64-shippable/opt: ['mozilla-central']
@@ -1069,7 +1162,6 @@ tasks:
                     by-test-platform:
                         .*hw-ref.*: []
                         android-hw.*/opt: []
-                        android-em.*/debug-isolated-process: []
                         android-em-14.*/debug: []  # Bug 1984064
                         android.*: built-projects
                         linux.*-asan/opt: []
@@ -1125,19 +1217,16 @@ tasks:
                     by-test-platform:
                         linux.*64.*: 2
                         default: default
+                geckoview-isolated-process: 2
                 default:
                     by-test-platform:
                         .*-ccov.*: 2
-                        android-em.*/debug-isolated-process: 2
                         android-em.*: 1
                         android-hw.*: 1
                         default: default
         worker-type:
             by-variant:
-                media-gpu:
-                    by-test-platform:
-                        linux.*: t-linux-talos-1804
-                        default: default
+                media-gpu: default
                 default:
                     by-test-platform:
                         windows11.*-asan/.*: win11-64-25h2-large

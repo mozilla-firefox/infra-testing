@@ -108,6 +108,10 @@ async function runManageTabsFlow(state, toolHandler) {
     return gatheredResult.earlyResult;
   }
 
+  if (toolHandler.action === GROUP_TABS) {
+    offerChatTab(gatheredResult, state.conversation);
+  }
+
   if (
     state.askConfirmation ||
     shouldRequireUserConfirmation(
@@ -123,6 +127,11 @@ async function runManageTabsFlow(state, toolHandler) {
     // Keep token -> permanentKey on the chrome side until the user confirms;
     // the map can't ride through the confirmation actor round-trip.
     lazy.ToolUI.registerTabKeys(state.toolCallId, gatheredResult.tabKeyByToken);
+    // ToolUI records the matching `browser_action_complete` after user confirmation.
+    state.conversation.stashPendingBrowserActionTelemetry(
+      state.toolCallId,
+      state.baseTelemetryInfo
+    );
     return {
       toolResult: {
         description: `The following tabs were found. User confirmation is required to ${toolHandler.verb} them.`,
@@ -181,6 +190,40 @@ async function runManageTabsFlow(state, toolHandler) {
       },
     },
   };
+}
+
+/**
+ * Adds the chat tab to the tabs the confirmation card offers, so the user can
+ * see that it is going into the group and can untick it.
+ *
+ * It is deliberately kept out of matchedTabs, which decides whether a card is
+ * shown at all, and out of the summary sent to the model, which is never told
+ * about chrome: URLs.
+ *
+ * @param {object} gathered - Result of gatherTabs, updated in place
+ * @param {ChatConversation} conversation - Conversation the request came from
+ */
+function offerChatTab(gathered, conversation) {
+  const chatTab = lazy.ToolUI.findChatTab(conversation?.id);
+  if (!chatTab) {
+    return;
+  }
+
+  const token = Services.uuid.generateUUID().toString();
+  gathered.tabKeyByToken.set(token, chatTab.permanentKey);
+  gathered.tabs.push({
+    token,
+    url: chatTab.linkedBrowser?.currentURI?.spec ?? "",
+    title: sanitizeUntrustedContent(chatTab.label),
+    userContextId: chatTab.userContextId,
+    pinned: chatTab.pinned,
+    selected: chatTab.documentGlobal?.gBrowser?.selectedTab === chatTab,
+    iconSrc: "",
+    checked: true,
+    // Lets createTabGroup tell this row apart from the tabs the user asked
+    // for, so it can avoid making a group out of the chat tab alone.
+    isChatTab: true,
+  });
 }
 
 async function gatherTabs(validUrls, baseTelemetryInfo) {
@@ -270,12 +313,10 @@ const closeTabsToolHandler = {
 
     const closedCount = closedTabs.filter(tab => tab.closed).length;
     const failedCount = closedTabs.length - closedCount;
-    let telemetryResult = "success";
-    if (failedCount && closedCount === 0) {
-      telemetryResult = "error";
-    } else if (failedCount) {
-      telemetryResult = "partial_success";
-    }
+    const telemetryResult = lazy.ToolUITelemetry.browserActionResult(
+      closedCount,
+      closedTabs.length
+    );
 
     return {
       description: failedCount
@@ -363,12 +404,10 @@ function makeGroupTabsToolHandler(rawLabel) {
 
       const groupedCount = groupedTabs.filter(tab => tab.grouped).length;
       const failedCount = groupedTabs.length - groupedCount;
-      let telemetryResult = "success";
-      if (failedCount && groupedCount === 0) {
-        telemetryResult = "error";
-      } else if (failedCount) {
-        telemetryResult = "partial_success";
-      }
+      const telemetryResult = lazy.ToolUITelemetry.browserActionResult(
+        groupedCount,
+        groupedTabs.length
+      );
 
       return {
         description: failedCount

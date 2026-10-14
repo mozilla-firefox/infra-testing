@@ -20,7 +20,13 @@
  * @property {string} [contextPageUrl] - Current page URL to seed the agent with
  * @property {object} conversation - The active ChatConversation
  * @property {ChromeWindow} [window] - The browser window
+ * @property {boolean} [isFullPage] - True when the smart window is in full page mode
  */
+
+import {
+  AGENT_COMMANDS,
+  parseAgentCommand,
+} from "chrome://browser/content/aiwindow/modules/AgentCommands.mjs";
 
 const lazy = {};
 
@@ -76,10 +82,6 @@ export const AGENT_UPDATE_TYPES = Object.freeze({
   PAUSE_WATCH: "pause-watch",
   CHECK_WATCH: "check-watch",
   SAVE_WATCH_DRAFT: "save-watch-draft",
-});
-
-export const AGENT_COMMANDS = Object.freeze({
-  WATCH: "watch",
 });
 
 // Default cadence for a newly created monitor
@@ -140,7 +142,8 @@ export class AgentUI {
   };
 
   /**
-   *  New agents register their smartbar commands here
+   *  New agents register their smartbar commands here, keyed by the ids
+   *  declared in AgentCommands.mjs
    *
    * @private
    */
@@ -152,30 +155,42 @@ export class AgentUI {
    * Handles the monitor create card for the current page
    *
    * @param {AgentCommandContext} context
-   * @param {string} context.text - The command argument text, with the `/monitor` prefix stripped
+   * @param {string} context.text - The command argument text, with the `/watch` prefix stripped
    * @param {string} [context.contextPageUrl] - Url of the page the command was issued from
    * @param {Conversation} context.conversation - The conversation the command was submitted in
    */
-  static async #handleMonitorCommand({ text, contextPageUrl, conversation }) {
+  static async #handleMonitorCommand({
+    text,
+    contextPageUrl,
+    conversation,
+    isFullPage,
+  }) {
     if (!conversation) {
       return;
     }
     const { prompt: condition, raw } = text;
-    const url = contextPageUrl || "";
+    let url = contextPageUrl || "";
     if (raw) {
       const userMessage = conversation.addUserMessage(raw);
       conversation.emit("chat-conversation:message-update", userMessage);
     }
 
     if (!lazy.isAllowedWatchUrl(url)) {
-      conversation.addAssistantWithL10nMessage(
-        "smartwindow-agent-monitor-page-not-watchable"
-      );
-      return;
+      // Full page mode isn't tied to a page, so it will fail as a
+      // "watchable" page, however we still want an empty card to
+      // display in full page mode.
+      if (!isFullPage) {
+        conversation.addAssistantWithL10nMessage(
+          "smartwindow-agent-monitor-page-not-watchable"
+        );
+        return;
+      }
+      url = "";
     }
 
     const monitors = await lazy.MonitorAgent.listMonitors();
-    if (monitors.length >= lazy.TOTAL_NUM_MONITORS) {
+    const activeCount = monitors.filter(monitor => monitor.enabled).length;
+    if (activeCount >= lazy.TOTAL_NUM_MONITORS) {
       conversation.addAssistantWithL10nMessage(
         "smartwindow-agent-monitor-limit-reached",
         { count: lazy.TOTAL_NUM_MONITORS },
@@ -232,13 +247,15 @@ export class AgentUI {
     const watchUrlTitles = await lazy.MonitorUIUtils.resolveWatchUrlTitles(
       args.watchUrls
     );
-    message.content.body = "";
-    message.content.l10nId = "smartwindow-agent-monitor-watching";
-    message.content.l10nArgs = {
-      monitorName,
-      schedule: this.#formatScheduleSummary(updateData?.schedule),
-    };
-    message.content.link = { l10nName: "tasks", href: TASKS_PAGE_URL };
+    this.#setMessageL10n(
+      message,
+      "smartwindow-agent-monitor-watching",
+      {
+        monitorName,
+        schedule: this.#formatScheduleSummary(updateData?.schedule),
+      },
+      { l10nName: "tasks", href: TASKS_PAGE_URL }
+    );
     message.toolUIDraft = null;
     message.toolUIData = {
       ...message.toolUIData,
@@ -282,13 +299,16 @@ export class AgentUI {
   }
 
   /**
-   * Dismisses the "create" card without persisting anything
+   * Dismisses the "create" card without persisting anything, replacing the
+   * setup prompt with a cancellation acknowledgement
    *
    * @param {AgentHandlerContext} context
    * @returns {Promise<boolean>}
    */
   static async #handleCancelMonitor({ message, conversation }) {
+    // TODO - https://bugzilla.mozilla.org/show_bug.cgi?id=2071986 update model with status
     message.toolUIDraft = null;
+    this.#setMessageL10n(message, "smartwindow-agent-monitor-canceled");
     await conversation.updateToolUI(message, null, null);
     return true;
   }
@@ -400,10 +420,9 @@ export class AgentUI {
     const monitorName =
       agent.monitorName ||
       lazy.l10n.formatValueSync("smartwindow-agent-monitor-default-name");
-    message.content.body = "";
-    message.content.l10nId = "smartwindow-agent-monitor-deleted";
-    message.content.l10nArgs = { monitorName };
-    message.content.link = null;
+    this.#setMessageL10n(message, "smartwindow-agent-monitor-deleted", {
+      monitorName,
+    });
 
     // User confirmed and deletion succeeded, remove the card
     await conversation.updateToolUI(message, null, null);
@@ -584,6 +603,22 @@ export class AgentUI {
   }
 
   /**
+   * Replaces a message's rendered text with a localized agent message
+   *
+   * @param {object} message - The message whose text is being replaced
+   * @param {string} l10nId - Fluent id of the replacement text
+   * @param {?object} [l10nArgs] - Fluent args for the replacement text
+   * @param {?{l10nName: string, href: string}} [link] - Link embedded in the text
+   * @private
+   */
+  static #setMessageL10n(message, l10nId, l10nArgs = null, link = null) {
+    message.content.body = "";
+    message.content.l10nId = l10nId;
+    message.content.l10nArgs = l10nArgs;
+    message.content.link = link;
+  }
+
+  /**
    * Builds a card status chip for a monitor state
    *
    * @param {"watching"|"paused"} kind
@@ -680,29 +715,6 @@ export class AgentUI {
   }
 
   /**
-   * Parses a leading command keyword from chat classified smartbar input as an
-   * interim stand in for the "/" command palette
-   *
-   * @param {string} value - Raw chat input
-   * @returns {?{command: string, prompt: string, raw: string}} The lowercased
-   *  command keyword, the text following the command, and the raw chat input,
-   *  or null when there is no leading command
-   * @private
-   */
-  static #parseCommand(value) {
-    const raw = String(value ?? "").trim();
-    const match = /^\/(\w+)\b\s*(.*)$/s.exec(raw);
-    if (!match) {
-      return null;
-    }
-    return {
-      command: match[1].toLowerCase(),
-      prompt: match[2].trim(),
-      raw,
-    };
-  }
-
-  /**
    * Routes a smartbar submission to an agent when it is an agent command
 
    * @param {object} context
@@ -711,6 +723,7 @@ export class AgentUI {
    * @param {string} [context.contextPageUrl] - Current page URL to seed the agent
    * @param {object} context.conversation - The active ChatConversation
    * @param {ChromeWindow} [context.window] - The browser window
+   * @param {boolean} [context.isFullPage] - True when the smart window is in full page mode
    * @returns {boolean} True when the input was recognized and handled as a command
    */
   static tryHandleCommand({
@@ -719,6 +732,7 @@ export class AgentUI {
     contextPageUrl,
     conversation,
     window,
+    isFullPage = false,
   }) {
     if (
       !lazy.MonitorUIUtils.isMonitorRegionSupported() ||
@@ -728,12 +742,12 @@ export class AgentUI {
     }
 
     // An explicit command from the palette takes priority
-    const parsed = this.#parseCommand(value);
+    const parsed = parseAgentCommand(value);
     const parsedCommand = command
       ? {
           command,
           prompt: parsed?.prompt ?? "",
-          raw: String(value ?? "").trim(),
+          raw: value.trim(),
         }
       : parsed;
 
@@ -752,6 +766,7 @@ export class AgentUI {
       contextPageUrl,
       conversation,
       window,
+      isFullPage,
     });
 
     return true;

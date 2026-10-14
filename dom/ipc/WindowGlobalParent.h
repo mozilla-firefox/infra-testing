@@ -35,6 +35,11 @@ class nsFrameLoader;
 
 namespace mozilla {
 
+namespace a11y {
+class DocAccessibleParent;
+class PDocAccessibleParent;
+}  // namespace a11y
+
 namespace gfx {
 class CrossProcessPaint;
 }  // namespace gfx
@@ -84,15 +89,16 @@ class WindowGlobalParent final : public WindowContext,
     return GetByInnerWindowId(aInnerWindowId);
   }
 
+  static WindowGlobalParent* Cast(WindowContext* aContext);
+
   // The same as the corresponding methods on `WindowContext`, except that the
   // return types are already cast to their parent-process type variants, such
   // as `WindowGlobalParent` or `CanonicalBrowsingContext`.
   WindowGlobalParent* GetParentWindowContext() {
-    return static_cast<WindowGlobalParent*>(
-        WindowContext::GetParentWindowContext());
+    return Cast(WindowContext::GetParentWindowContext());
   }
   WindowGlobalParent* TopWindowContext() {
-    return static_cast<WindowGlobalParent*>(WindowContext::TopWindowContext());
+    return Cast(WindowContext::TopWindowContext());
   }
   CanonicalBrowsingContext* GetBrowsingContext() const {
     return CanonicalBrowsingContext::Cast(WindowContext::GetBrowsingContext());
@@ -114,11 +120,11 @@ class WindowGlobalParent final : public WindowContext,
   already_AddRefed<JSWindowActorParent> GetExistingActor(
       const nsACString& aName);
 
-  // Get this actor's manager if it is not an in-process actor. Returns
-  // |nullptr| if the actor has been torn down, or is in-process.
+  // Get this actor's manager if it is not an in-process actor.
+  // Returns |nullptr| if the actor is in-process.
   BrowserParent* GetBrowserParent() const;
 
-  ContentParent* GetContentParent();
+  ContentParent* GetContentParent() const;
 
   // The principal of this WindowGlobal. This value will not change over the
   // lifetime of the WindowGlobal object, even to reflect changes in
@@ -210,6 +216,14 @@ class WindowGlobalParent final : public WindowContext,
   // be called after setting the Manager actor.
   void Init() final;
 
+  // `Init` for a WindowGlobalParent whose initializer `aSource` authored. The
+  // object must have been constructed with the fields this process derived
+  // (see `ComputeInitialFields`); `aRequested` are the fields `aSource` sent.
+  // Reconciles the two and corrects `aSource` where its values were refused.
+  // Must be called after binding to `aSource`.
+  void InitFromContentProcess(const FieldValues& aRequested,
+                              ContentParent* aSource);
+
   nsIGlobalObject* GetParentObject();
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
@@ -265,7 +279,7 @@ class WindowGlobalParent final : public WindowContext,
   void AddSecurityState(uint32_t aStateFlags);
   uint32_t GetSecurityFlags() { return mSecurityState; }
 
-  const nsACString& GetRemoteType() const override;
+  const RemoteType& GetRemoteType() const override;
   void GetRemoteType(nsACString& aRemoteType) const;
 
   void NotifySessionStoreUpdatesComplete(Element* aEmbedder);
@@ -302,6 +316,7 @@ class WindowGlobalParent final : public WindowContext,
   mozilla::ipc::IProtocol* AsNativeActor() override { return this; }
 
   // IPC messages
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   mozilla::ipc::IPCResult RecvLoadURI(
       const MaybeDiscarded<dom::BrowsingContext>& aTargetBC,
       nsDocShellLoadState* aLoadState, bool aSetNavigating);
@@ -393,6 +408,7 @@ class WindowGlobalParent final : public WindowContext,
   mozilla::ipc::IPCResult RecvAddCertException(
       bool aTemporary, AddCertExceptionResolver&& aResolver);
 
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   mozilla::ipc::IPCResult RecvReloadWithHttpsOnlyException();
 
   mozilla::ipc::IPCResult RecvGetStorageAccessPermission(
@@ -424,6 +440,14 @@ class WindowGlobalParent final : public WindowContext,
   already_AddRefed<dom::PDigitalCredentialParent>
   AllocPDigitalCredentialParent();
 
+#ifdef ACCESSIBILITY
+  already_AddRefed<a11y::PDocAccessibleParent> AllocPDocAccessibleParent(
+      const uint64_t&, const bool&);
+  mozilla::ipc::IPCResult RecvPDocAccessibleConstructor(
+      a11y::PDocAccessibleParent* aDoc, const uint64_t& aParentID,
+      const bool& aIsPrintDoc) override;
+#endif
+
   // Spec: https://wicg.github.io/nav-speculation/prefetch.html#prefetch-record
   already_AddRefed<dom::PPrefetchRecordParent> AllocPPrefetchRecordParent(
       const dom::SpeculativePrefetchArgs& aArgs);
@@ -441,12 +465,13 @@ class WindowGlobalParent final : public WindowContext,
   // https://wicg.github.io/nav-speculation/prefetch.html#find-a-matching-complete-prefetch-record
   dom::PrefetchRecordParent* FindMatchingPrefetchRecord(nsIURI* aURI);
 
-  // "Wait for a matching prefetch record": async wait; resolves when a match
-  // completes or timeout expires.
+  // "Wait for a matching prefetch record": returns null if no ongoing
+  // prefetch could match aURI, otherwise a promise that resolves when a match
+  // completes (or with nullptr when none can, or when
+  // dom.speculation_rules.wait_timeout_ms expires).
   // Spec:
   // https://wicg.github.io/nav-speculation/prefetch.html#wait-for-a-matching-prefetch-record
-  RefPtr<PrefetchMatchPromise> WaitForMatchingPrefetchRecord(
-      nsIURI* aURI, TimeDuration aTimeout);
+  RefPtr<PrefetchMatchPromise> WaitForMatchingPrefetchRecord(nsIURI* aURI);
 
   // Whether some ongoing prefetch record could still become a matching
   // prefetch record for aURI once it completes. Used by

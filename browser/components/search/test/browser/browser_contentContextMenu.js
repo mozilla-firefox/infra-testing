@@ -5,8 +5,11 @@
 add_task(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["browser.search.separatePrivateDefault", true],
-      ["browser.search.separatePrivateDefault.ui.enabled", true],
+      ["browser.search.separatePrivateDefault.enabled", true],
+      ["browser.search.separatePrivateDefault.featureGate", true],
+      // Right-clicking text selects the word under the cursor on macOS, which
+      // would add a selection to the cases here that expect none.
+      ["ui.mouse.right_click.select_under_cursor", false],
     ],
   });
 

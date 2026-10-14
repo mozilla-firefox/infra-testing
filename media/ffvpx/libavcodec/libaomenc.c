@@ -70,6 +70,13 @@ struct FrameListData {
     struct FrameListData *next;
 };
 
+struct ColorConfig {
+    enum AVColorPrimaries color_primaries;
+    enum AVColorTransferCharacteristic color_trc;
+    enum AVColorSpace colorspace;
+    enum AVColorRange color_range;
+};
+
 typedef struct AOMEncoderContext {
     AVClass *class;
     AVBSFContext *bsf;
@@ -85,6 +92,7 @@ typedef struct AOMEncoderContext {
     int arnr_strength;
     int aq_mode;
     int lag_in_frames;
+    int has_submitted_frame;
     int error_resilient;
     int crf;
     int static_thresh;
@@ -139,6 +147,7 @@ typedef struct AOMEncoderContext {
     int enable_diff_wtd_comp;
     int enable_dist_wtd_comp;
     int enable_dual_filter;
+    struct ColorConfig color_config;
     AVDictionary *svc_parameters;
     AVDictionary *aom_params;
 } AOMContext;
@@ -375,6 +384,51 @@ static int add_hdr_plus(AVCodecContext *avctx, struct aom_image *img, const AVFr
     return 0;
 }
 
+static int add_hdr_smpte2094_app5(AVCodecContext *avctx, struct aom_image *img,
+                                  const AVFrame *frame)
+{
+    AVFrameSideData *side_data =
+        av_frame_get_side_data(frame, AV_FRAME_DATA_DYNAMIC_HDR_SMPTE_2094_APP5);
+    if (!side_data)
+        return 0;
+
+    size_t payload_size;
+    AVDynamicHDRSmpte2094App5 *hdr = (AVDynamicHDRSmpte2094App5 *)side_data->buf->data;
+    int res = av_dynamic_hdr_smpte2094_app5_to_t35(hdr, NULL, &payload_size);
+    if (res < 0) {
+        log_encoder_error(avctx, "Error finding the size of HDR SMPTE-2094-50");
+        return res;
+    }
+
+    uint8_t *hdr_buf;
+    // Extra bytes for the country code, provider code, provider oriented code.
+    const size_t hdr_buf_size = payload_size + 5;
+    hdr_buf = av_malloc(hdr_buf_size);
+    if (!hdr_buf)
+        return AVERROR(ENOMEM);
+
+    uint8_t *payload = hdr_buf;
+    bytestream_put_byte(&payload, ITU_T_T35_COUNTRY_CODE_US);
+    bytestream_put_be16(&payload, ITU_T_T35_PROVIDER_CODE_SMPTE);
+    bytestream_put_be16(&payload, 0x0001); // provider_oriented_code
+
+    res = av_dynamic_hdr_smpte2094_app5_to_t35(hdr, &payload, &payload_size);
+    if (res < 0) {
+        av_free(hdr_buf);
+        log_encoder_error(avctx, "Error encoding HDR SMPTE-2094-50 from side data");
+        return res;
+    }
+
+    res = aom_img_add_metadata(img, OBU_METADATA_TYPE_ITUT_T35,
+                               hdr_buf, hdr_buf_size, AOM_MIF_ANY_FRAME);
+    av_free(hdr_buf);
+    if (res < 0) {
+        log_encoder_error(avctx, "Error adding HDR SMPTE-2094-50 to aom_img");
+        return res;
+    }
+    return 0;
+}
+
 #if defined(AOM_CTRL_AV1E_GET_NUM_OPERATING_POINTS) && \
     defined(AOM_CTRL_AV1E_GET_SEQ_LEVEL_IDX) && \
     defined(AOM_CTRL_AV1E_GET_TARGET_SEQ_LEVEL_IDX)
@@ -515,7 +569,7 @@ static int set_pix_fmt(AVCodecContext *avctx, aom_codec_caps_t codec_caps,
     switch (avctx->pix_fmt) {
     case AV_PIX_FMT_GRAY8:
         enccfg->monochrome = 1;
-        /* Fall-through */
+        av_fallthrough;
     case AV_PIX_FMT_YUV420P:
         enccfg->g_profile = AV_PROFILE_AV1_MAIN;
         *img_fmt = AOM_IMG_FMT_I420;
@@ -532,7 +586,7 @@ static int set_pix_fmt(AVCodecContext *avctx, aom_codec_caps_t codec_caps,
     case AV_PIX_FMT_GRAY10:
     case AV_PIX_FMT_GRAY12:
         enccfg->monochrome = 1;
-        /* Fall-through */
+        av_fallthrough;
     case AV_PIX_FMT_YUV420P10:
     case AV_PIX_FMT_YUV420P12:
         if (codec_caps & AOM_CODEC_CAP_HIGHBITDEPTH) {
@@ -571,20 +625,66 @@ static int set_pix_fmt(AVCodecContext *avctx, aom_codec_caps_t codec_caps,
     return AVERROR_INVALIDDATA;
 }
 
-static void set_color_range(AVCodecContext *avctx)
+static int set_color_range(AVCodecContext *avctx, enum AVColorRange color_range)
 {
     aom_color_range_t aom_cr;
-    switch (avctx->color_range) {
+    switch (color_range) {
     case AVCOL_RANGE_UNSPECIFIED:
     case AVCOL_RANGE_MPEG:       aom_cr = AOM_CR_STUDIO_RANGE; break;
     case AVCOL_RANGE_JPEG:       aom_cr = AOM_CR_FULL_RANGE;   break;
     default:
         av_log(avctx, AV_LOG_WARNING, "Unsupported color range (%d)\n",
-               avctx->color_range);
-        return;
+               color_range);
+        return AVERROR(EINVAL);
     }
 
-    codecctl_int(avctx, AV1E_SET_COLOR_RANGE, aom_cr);
+    return codecctl_int(avctx, AV1E_SET_COLOR_RANGE, aom_cr);
+}
+
+static int set_color_config(AVCodecContext *avctx,
+                            const struct ColorConfig *config)
+{
+    AOMContext *ctx = avctx->priv_data;
+    struct ColorConfig *curcfg = &ctx->color_config;
+    int res;
+
+    res = codecctl_int(avctx, AV1E_SET_COLOR_PRIMARIES,
+                       config->color_primaries);
+    if (res < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Failed to set color primaries to %d\n",
+               config->color_primaries);
+        return res;
+    }
+    curcfg->color_primaries = config->color_primaries;
+
+    res = codecctl_int(avctx, AV1E_SET_TRANSFER_CHARACTERISTICS,
+                       config->color_trc);
+    if (res < 0) {
+        av_log(avctx, AV_LOG_ERROR,
+               "Failed to set color transfer characteristics to %d\n",
+               config->color_trc);
+        return res;
+    }
+    curcfg->color_trc = config->color_trc;
+
+    res = codecctl_int(avctx, AV1E_SET_MATRIX_COEFFICIENTS,
+                       config->colorspace);
+    if (res < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Failed to set color space to %d\n",
+               config->colorspace);
+        return res;
+    }
+    curcfg->colorspace = config->colorspace;
+
+    res = set_color_range(avctx, config->color_range);
+    if (res < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Failed to set color range to %d\n",
+               config->color_range);
+        return res;
+    }
+    curcfg->color_range = config->color_range;
+
+    return 0;
 }
 
 static int count_uniform_tiling(int dim, int sb_size, int tiles_log2)
@@ -964,6 +1064,8 @@ static av_cold int aom_init(AVCodecContext *avctx,
         enccfg.kf_mode = AOM_KF_DISABLED;
     }
 
+    ctx->lag_in_frames = enccfg.g_lag_in_frames;
+
     /* Construct Encoder Context */
     res = aom_codec_enc_init(&ctx->encoder, iface, &enccfg, flags);
     if (res != AOM_CODEC_OK) {
@@ -988,20 +1090,29 @@ static av_cold int aom_init(AVCodecContext *avctx,
     if (ctx->tune >= 0)
         codecctl_int(avctx, AOME_SET_TUNING, ctx->tune);
 
-    if (desc->flags & AV_PIX_FMT_FLAG_RGB) {
-        codecctl_int(avctx, AV1E_SET_COLOR_PRIMARIES, AVCOL_PRI_BT709);
-        codecctl_int(avctx, AV1E_SET_MATRIX_COEFFICIENTS, AVCOL_SPC_RGB);
-        codecctl_int(avctx, AV1E_SET_TRANSFER_CHARACTERISTICS, AVCOL_TRC_IEC61966_2_1);
-    } else {
-        codecctl_int(avctx, AV1E_SET_COLOR_PRIMARIES, avctx->color_primaries);
-        codecctl_int(avctx, AV1E_SET_MATRIX_COEFFICIENTS, avctx->colorspace);
-        codecctl_int(avctx, AV1E_SET_TRANSFER_CHARACTERISTICS, avctx->color_trc);
-    }
+    struct ColorConfig colorcfg;
+    if (desc->flags & AV_PIX_FMT_FLAG_RGB)
+        colorcfg = (struct ColorConfig) {
+            .color_primaries = AVCOL_PRI_BT709,
+            .color_trc       = AVCOL_TRC_IEC61966_2_1,
+            .colorspace      = AVCOL_SPC_RGB,
+            .color_range     = avctx->color_range,
+        };
+    else
+        colorcfg = (struct ColorConfig) {
+            .color_primaries = avctx->color_primaries,
+            .color_trc       = avctx->color_trc,
+            .colorspace      = avctx->colorspace,
+            .color_range     = avctx->color_range,
+        };
+    // Ignore the return value to follow the convention of other codecctl_int()
+    // calls.
+    set_color_config(avctx, &colorcfg);
+
     if (ctx->aq_mode >= 0)
         codecctl_int(avctx, AV1E_SET_AQ_MODE, ctx->aq_mode);
     if (ctx->frame_parallel >= 0)
         codecctl_int(avctx, AV1E_SET_FRAME_PARALLEL_DECODING, ctx->frame_parallel);
-    set_color_range(avctx);
 
     codecctl_int(avctx, AV1E_SET_SUPERBLOCK_SIZE, ctx->superblock_size);
     if (ctx->uniform_tiles) {
@@ -1364,12 +1475,38 @@ static int aom_encode(AVCodecContext *avctx, AVPacket *pkt,
             duration = 1;
         }
 
+        const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(avctx->pix_fmt);
+        if (!(desc->flags & AV_PIX_FMT_FLAG_RGB)) {
+            const struct ColorConfig *curcfg = &ctx->color_config;
+            const struct ColorConfig newcfg = {
+                .color_primaries = frame->color_primaries,
+                .color_trc       = frame->color_trc,
+                .colorspace      = frame->colorspace,
+                .color_range     = frame->color_range,
+            };
+            if (newcfg.color_primaries != curcfg->color_primaries ||
+                newcfg.color_trc != curcfg->color_trc ||
+                newcfg.colorspace != curcfg->colorspace ||
+                newcfg.color_range != curcfg->color_range) {
+                if (ctx->has_submitted_frame && ctx->lag_in_frames != 0) {
+                    av_log(avctx, AV_LOG_WARNING,
+                           "Ignoring color metadata change with lookahead enabled\n");
+                } else {
+                    res = set_color_config(avctx, &newcfg);
+                    if (res < 0)
+                        return res;
+                }
+            }
+        }
+
         switch (frame->color_range) {
-        case AVCOL_RANGE_MPEG:
-            rawimg->range = AOM_CR_STUDIO_RANGE;
-            break;
         case AVCOL_RANGE_JPEG:
             rawimg->range = AOM_CR_FULL_RANGE;
+            break;
+        case AVCOL_RANGE_UNSPECIFIED:
+        case AVCOL_RANGE_MPEG:
+        default:
+            rawimg->range = AOM_CR_STUDIO_RANGE;
             break;
         }
 
@@ -1418,6 +1555,10 @@ static int aom_encode(AVCodecContext *avctx, AVPacket *pkt,
         res = add_hdr_plus(avctx, rawimg, frame);
         if (res < 0)
             return res;
+
+        res = add_hdr_smpte2094_app5(avctx, rawimg, frame);
+        if (res < 0)
+            return res;
     }
 
     res = aom_codec_encode(&ctx->encoder, rawimg, timestamp, duration, flags);
@@ -1425,6 +1566,8 @@ static int aom_encode(AVCodecContext *avctx, AVPacket *pkt,
         log_encoder_error(avctx, "Error encoding frame");
         return AVERROR_INVALIDDATA;
     }
+    if (frame)
+        ctx->has_submitted_frame = 1;
     coded_size = queue_frames(avctx, pkt);
     if (coded_size < 0)
         return coded_size;
@@ -1668,7 +1811,7 @@ static const AVClass class_aom = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-FFCodec ff_libaom_av1_encoder = {
+const FFCodec ff_libaom_av1_encoder = {
     .p.name         = "libaom-av1",
     CODEC_LONG_NAME("libaom AV1"),
     .p.type         = AVMEDIA_TYPE_VIDEO,

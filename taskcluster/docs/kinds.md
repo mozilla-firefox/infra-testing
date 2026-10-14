@@ -89,12 +89,12 @@ across distros, install methods, channels, locales, and architectures.
 The nightly l10n kind repacks a shippable build (from the same source code)
 in order to provide localized versions of the same source.
 
-## shippable-l10n-signing
+## l10n-signing
 
-The shippable l10n signing kind takes artifacts from the shippable-l10n kind and
+The l10n signing kind takes artifacts from the shippable-l10n and l10n kinds and
 passes them to signing servers to have their contents signed appropriately, based
-on an appropriate signing format. One signing job is created for each shippable-l10n
-job (usually chunked).
+on an appropriate signing format. One signing job is created for each upstream l10n
+job (the shippable-l10n jobs are usually chunked; the l10n jobs are not).
 
 ## shippable-l10n-mac-signing
 
@@ -120,6 +120,10 @@ Source-tests are tasks that run directly from the Gecko source. This can include
 unit tests, source-code analysis, or measurement work. While source-test tasks run from
 a source checkout, it is still possible for them to depend on a build artifact, though
 often they do not.
+
+## source-test-appservices
+
+Copies of source-test tasks that build application-services in tree.
 
 ## code-review
 
@@ -154,11 +158,6 @@ Valgrind tasks produce builds instrumented by valgrind.
 ## searchfox
 
 Searchfox builds generate C++ index data for Searchfox.
-
-## static-analysis-autotest
-
-Static analysis autotest utility in order to be sure that there is no regression
-when upgrading utilities that impact static-analysis.
 
 ## toolchain
 
@@ -858,13 +857,25 @@ used for verifying third party Rust code is consistent.
 
 Build android-components.
 
+## build-components-appservices
+
+Copies of build-components tasks that build application-services in tree.
+
 ## build-bundle
 
 Build Focus, Klar, and Fenix android app bundles.
 
+## build-bundle-appservices
+
+Copies of build-bundle tasks that build application-services in tree.
+
 ## build-apk
 
 Build Focus, Klar, and Fenix apks.
+
+## build-apk-appservices
+
+Copies of build-apk tasks that build application-services in tree.
 
 ## build-samples-browser
 
@@ -882,17 +893,33 @@ Sign Focus, Klar, and Fenix android app bundles.
 
 Sign Focus, Klar, and Fenix apks.
 
+## signing-apk-appservices
+
+Sign the apks built by build-apk-appservices.
+
 ## test-components
 
 Test android-components
+
+## test-components-appservices
+
+Copies of test-components tasks that build application-services in tree.
 
 ## test-apk
 
 Test Focus, Klar, and Fenix apks.
 
+## test-apk-appservices
+
+Copies of test-apk tasks that build application-services in tree.
+
 ## ui-test-apk
 
 User interface tests for Focus, Klar, and Fenix apks.
+
+## ui-test-apk-appservices
+
+User interface tests for the apks signed by signing-apk-appservices.
 
 ## android-browsertime
 
@@ -914,13 +941,11 @@ A beetmover task for android components.
 
 A beetmover task for android APKs and AABs.
 
-## push-apks
+## push-android
 
-Push Focus and Fenix APKs to the Samsung Galaxy Store.
-
-## push-bundle
-
-Push Focus and Fenix AABs to Google Play.
+Push Focus, Klar and Fenix to the Android app stores: AABs to Google Play,
+Focus and Fenix APKs to the Samsung Galaxy Store, Fenix APKs to the Huawei
+AppGallery, and the Fenix universal APK to the vivo App Store.
 
 ## android-l10n
 

@@ -593,7 +593,6 @@ class TaggedSlotOffset {
   bool isFixedSlot() const { return bits_ & IsFixedSlotFlag; }
 
   bool operator==(const TaggedSlotOffset& other) const = default;
-  bool operator!=(const TaggedSlotOffset& other) const = default;
 };
 
 enum class CanReuseShape {
@@ -662,6 +661,49 @@ inline uint32_t NumNativeObjectUsedFixedSlotsForTracing(
   uint32_t minSlots =
       NativeObjectSmallSlotSpanForTracing(shapeFlags, slotsHeader);
   return std::min(nfixed, minSlots);
+}
+
+inline size_t NativeObjectSlotSpanForTracing(Shape* shape,
+                                             Shape::ImmutableFlags shapeFlags,
+                                             HeapSlot* slots) {
+  ObjectSlots* slotsHeader = ObjectSlots::fromSlots(slots);
+
+  Shape::Kind kind = Shape::kindFromImmutableFlags(shapeFlags);
+  if (kind == Shape::Kind::Dictionary) {
+    return slotsHeader->dictionarySlotSpanForTracing();
+  }
+
+  MOZ_ASSERT(shape->isShared());
+  uint32_t span = SharedShape::smallSlotSpanFromImmutableFlags(shapeFlags);
+  if (MOZ_LIKELY(span < Shape::SMALL_SLOTSPAN_MAX)) {
+    return span;
+  }
+
+  // Get the class. The base shape and class pointer are immutable so these
+  // reads do not need to be atomic.
+  const JSClass* clasp = shape->getObjectClass();
+
+  // For shared shapes the prop map is immutable so this doesn't need to be
+  // atomic.
+  SharedPropMap* propMap = shape->asShared().propMap();
+
+  uint32_t propMapLength = shapeFlags & Shape::MAP_LENGTH_MASK;
+
+  // The data read by SharedPropMap::lastUsedSlot is immutable so this doesn't
+  // need to be atomic.
+  return SharedPropMap::slotSpan(clasp, propMap, propMapLength);
+}
+
+inline size_t NumNativeObjectUsedDynamicSlotsForTracing(Shape* shape,
+                                                        HeapSlot* slots) {
+  Shape::ImmutableFlags shapeFlags = shape->immutableFlagsForTracing();
+  uint32_t nfixed = NumNativeObjectFixedSlots(shapeFlags);
+  uint32_t nslots = NativeObjectSlotSpanForTracing(shape, shapeFlags, slots);
+  if (nslots < nfixed) {
+    return 0;
+  }
+
+  return nslots - nfixed;
 }
 
 inline bool IsNativeObjectDynamicSlots(HeapSlot* slots) {
@@ -2186,6 +2228,8 @@ inline void TraceBufferSlot(JSTracer* trc, NativeObject* obj, uint32_t slot,
     obj->setSlot(slot, PrivateValue(buffer));
   }
 }
+
+bool PreserveAnyUnpreservedWrapper(JSContext* cx, Handle<NativeObject*> obj);
 
 }  // namespace js
 

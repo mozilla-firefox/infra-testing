@@ -285,6 +285,7 @@ static inline void* MapMemory(size_t length) {
   return MapInternal<commit, retry>(nullptr, length);
 }
 
+#ifdef JS_64BIT
 /*
  * Attempts to map memory at the given address, but allows the system
  * to return a different address that may still be suitable.
@@ -298,6 +299,7 @@ static inline void* MapMemoryAtFuzzy(void* desired, size_t length) {
   // returned address might not match the requested address.
   return MapInternal<commit>(desired, length);
 }
+#endif
 
 /*
  * Attempts to map memory at the given address, returning nullptr if
@@ -530,6 +532,30 @@ void MapStack(size_t stackSize) {
     MOZ_CRASH("(old kernel) interfering mapping exists");
   }
 #endif
+}
+
+void* MapAlignedPagesAsStack(size_t length, size_t alignment,
+                             StallAndRetry stallAndRetry) {
+  void* region = MapAlignedPages(length, alignment, stallAndRetry);
+  if (!region) {
+    return nullptr;
+  }
+
+#ifdef __OpenBSD__
+  // OpenBSD kills the process if the stack pointer points into memory not
+  // mapped with MAP_STACK. That flag can only be set at mmap() time, so remap
+  // the region in place. The pages are freshly mapped and untouched, so
+  // discarding their contents here is fine.
+  void* result = MozTaggedAnonymousMmap(
+      region, length, int(PageAccess::ReadWrite),
+      MAP_PRIVATE | MAP_ANON | MAP_FIXED | MAP_STACK, -1, 0, "js-gc-stack");
+  if (result != region) {
+    UnmapPages(region, length);
+    return nullptr;
+  }
+#endif
+
+  return region;
 }
 
 void CheckMemorySubsystemOnShutDown() {

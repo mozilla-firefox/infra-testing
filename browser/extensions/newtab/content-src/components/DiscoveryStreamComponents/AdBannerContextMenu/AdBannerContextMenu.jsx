@@ -105,7 +105,11 @@ export function AdBannerContextMenu({
           iconsrc="chrome://global/skin/icons/more.svg"
           menuId={menuId}
         />
-        <panel-list id={menuId} ref={panelListRef}>
+        <panel-list
+          className="panel-list-no-icons"
+          id={menuId}
+          ref={panelListRef}
+        >
           <PanelListItems options={options} />
         </panel-list>
       </div>

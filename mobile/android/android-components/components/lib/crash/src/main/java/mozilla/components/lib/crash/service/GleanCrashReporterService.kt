@@ -5,6 +5,7 @@
 package mozilla.components.lib.crash.service
 
 import android.content.Context
+import android.os.Build
 import androidx.annotation.VisibleForTesting
 import java.io.File
 import java.io.FileOutputStream
@@ -44,6 +45,7 @@ class GleanCrashReporterService(
     private val appChannel: String? = null,
     private val appVersion: String? = null,
     private val appBuildId: String? = null,
+    private val serverEndpoint: String? = null,
     private val isUploadEnabled: Boolean = true,
 ) : CrashTelemetryService {
     companion object {
@@ -222,6 +224,11 @@ class GleanCrashReporterService(
 
     private fun setCommonPingFields(extras: MutableMap<String, JsonElement>, crash: Crash) {
         extras.setIfAbsent(Annotation.CrashTime) { JsonPrimitive((crash.timestamp / 1000).toString()) }
+        // CrashEventID and platform info may already be present for native crashes
+        extras.setIfAbsent(Annotation.CrashEventID) { JsonPrimitive(crash.uuid) }
+        extras.setIfAbsent(Annotation.OS) { JsonPrimitive("Android") }
+        extras.setIfAbsent(Annotation.OSVersion) { JsonPrimitive("${Build.VERSION.SDK_INT}") }
+        extras.setIfAbsent(Annotation.CPUArchitecture) { JsonPrimitive(Crash.CPU_ARCH) }
     }
 
     override fun record(crash: Crash.UncaughtExceptionCrash) {
@@ -239,13 +246,19 @@ class GleanCrashReporterService(
             appBuildId?.let { extras[Annotation.BuildID] = JsonPrimitive(it) }
             extras[Annotation.JavaException] = JsonPrimitive(crash.throwable.getStacktraceAsJsonString())
             extras[Annotation.CrashType] = JsonPrimitive("uncaught exception")
-            extras[Annotation.CrashEventID] = JsonPrimitive(crash.uuid)
 
             sendCrashPing(Json.encodeToString(extras))
         }
     }
 
-    private fun getNativeCrashTools() = NativeCrashTools.load(context, appBuildId, appVersion, isUploadEnabled)
+    private fun getNativeCrashTools() =
+        NativeCrashTools.load(
+            context,
+            appBuildId,
+            appVersion,
+            serverEndpoint = serverEndpoint,
+            pingUploadEnabled = isUploadEnabled,
+        )
 
     private fun getExtrasJson(path: String): JsonObject? {
         val extrasFile = File(path)
@@ -318,8 +331,6 @@ class GleanCrashReporterService(
             extras.setIfAbsent(Annotation.CrashType) {
                 JsonPrimitive("${if (!crash.isFatal) "non-" else ""}fatal native crash")
             }
-            // CrashEventID should only be absent if there is no extras file
-            extras.setIfAbsent(Annotation.CrashEventID) { JsonPrimitive(crash.uuid) }
 
             sendCrashPing(Json.encodeToString(extras))
         }

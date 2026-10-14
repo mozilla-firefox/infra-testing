@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -22,13 +23,15 @@ import mozilla.components.concept.engine.Engine
 import mozilla.components.concept.engine.ipprotection.IPProtectionDelegate
 import mozilla.components.concept.engine.ipprotection.IPProtectionHandler
 import mozilla.components.concept.engine.ipprotection.ServiceState
-import mozilla.components.feature.ipprotection.IPProtectionFxaAuthFlow.Companion.SCOPE_IPPROTECTION
 import mozilla.components.feature.ipprotection.auth.IPProtectionAuthProvider
+import mozilla.components.feature.ipprotection.auth.fxa.IPProtectionFxaAuthFlow.Companion.SCOPE_IPPROTECTION
+import mozilla.components.feature.ipprotection.store.ActivationOperation
 import mozilla.components.feature.ipprotection.store.IPProtectionAction
 import mozilla.components.feature.ipprotection.store.IPProtectionStore
 import mozilla.components.feature.ipprotection.store.InternalAction
 import mozilla.components.feature.ipprotection.store.state.AccountStatus
 import mozilla.components.feature.ipprotection.store.state.EligibilityStatus
+import mozilla.components.feature.ipprotection.store.state.LocationListUpdateState
 import mozilla.components.feature.ipprotection.store.state.PendingActivationRequest
 import mozilla.components.lib.state.ext.flow
 import mozilla.components.lib.state.ext.flowScoped
@@ -40,7 +43,9 @@ import mozilla.components.support.base.log.logger.Logger
  * Feature that coordinates the IP protection proxy service. It observes [IPProtectionStore] for eligibility and account
  * state changes, registers with the [Engine] and forwards activate/deactivate requests back to the [Engine].
  *
- * See [IPProtectionFxaAuthFlow] and [IPProtectionStorageSynchronizer] helpers that complement this feature.
+ * See [mozilla.components.feature.ipprotection.auth.fxa.IPProtectionFxaAuthFlow] and
+ * [mozilla.components.feature.ipprotection.storage.IPProtectionStorageSynchronizer] helpers that complement this
+ * feature.
  *
  * Call [initialize] once at startup to begin observing. The feature manages its own lifecycle internally and does not
  * need to be stopped.
@@ -69,6 +74,9 @@ class IPProtectionFeature(
         }
         mainScope.launch {
             observeAccount(store, mainDispatcher)
+        }
+        mainScope.launch {
+            observeLocationUpdates(store, mainDispatcher)
         }
     }
 
@@ -108,7 +116,7 @@ class IPProtectionFeature(
                         }
 
                         EligibilityStatus.Unknown -> {
-                            // no-op, initializing
+                            // no-op, initializing or no region set.
                         }
                     }
                 }
@@ -153,6 +161,24 @@ class IPProtectionFeature(
                         AccountStatus.AwaitingAuthorization,
                         AccountStatus.EnrolledAndEntitled -> {
                             // no-op when we are in transient states.
+                        }
+                    }
+                }
+        }
+    }
+
+    private fun observeLocationUpdates(store: IPProtectionStore, mainDispatcher: CoroutineDispatcher) {
+        store.flowScoped(dispatcher = mainDispatcher) { flow ->
+            flow
+                .map { it.serviceStatus to it.locationState.updateState }
+                .distinctUntilChanged()
+                .filter { (service, update) ->
+                    service == ServiceState.Ready && update == LocationListUpdateState.Requested
+                }
+                .collect {
+                    handler?.updateCountryList { error ->
+                        if (error != null) {
+                            store.dispatch(IPProtectionAction.LocationUpdateFailed(error))
                         }
                     }
                 }
@@ -205,8 +231,6 @@ class IPProtectionFeature(
                 // as a side effect, the init call triggers `IPProtectionController#onServiceStateChanged`
                 // that can trigger the account manager that leads to `AuthProvider#getToken`.
                 init()
-
-                updateCountryList()
             }
         }
 
@@ -224,19 +248,36 @@ class IPProtectionFeature(
                 .distinctUntilChanged()
                 .filterNotNull()
                 .collect { activationState ->
-                    val onResult: (Throwable?) -> Unit = { err ->
-                        if (err != null) {
-                            store.dispatch(IPProtectionAction.ToggleFailed(err))
+                    when (activationState) {
+                        is PendingActivationRequest.Activate -> {
+                            handler?.activate(
+                                countryCode = activationState.selectedLocationCode,
+                                onResult = { err -> handleActivationResult(activationState, err) },
+                            )
                         }
-                    }
-                    if (activationState is PendingActivationRequest.Activate) {
-                        handler?.activate(
-                            countryCode = activationState.selectedLocationCode,
-                            onResult = onResult,
-                        )
-                    } else {
-                        handler?.deactivate(onResult)
+                        is PendingActivationRequest.Deactivate -> {
+                            handler?.deactivate { err -> handleActivationResult(activationState, err) }
+                        }
                     }
                 }
         }
+
+    // A pending request is normally cleared when the engine reports the new proxy state. Changing country while
+    // the VPN is on does not change that state, so no report arrives and nothing else would clear it.
+    private fun handleActivationResult(request: PendingActivationRequest, error: Throwable?) {
+        when (request) {
+            is PendingActivationRequest.Activate -> {
+                when {
+                    error == null -> store.dispatch(IPProtectionAction.ActivationRequestCompleted(request))
+                    request.isLocationSwitch -> store.dispatch(IPProtectionAction.LocationSwitchFailed(error))
+                    else -> store.dispatch(IPProtectionAction.ToggleFailed(ActivationOperation.Activate, error))
+                }
+            }
+            is PendingActivationRequest.Deactivate -> {
+                if (error != null) {
+                    store.dispatch(IPProtectionAction.ToggleFailed(ActivationOperation.Deactivate, error))
+                }
+            }
+        }
+    }
 }

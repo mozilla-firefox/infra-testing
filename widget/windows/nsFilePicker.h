@@ -91,7 +91,8 @@ class nsFilePicker final : public nsBaseWinFilePicker {
   virtual void InitNative(nsIWidget* aParent, const nsAString& aTitle) override;
   void GetFilterListArray(nsString& aFilterList);
 
-  NS_IMETHOD Open(nsIFilePickerShownCallback* aCallback) override;
+  MOZ_CAN_RUN_SCRIPT NS_IMETHOD
+  Open(nsIFilePickerShownCallback* aCallback) override;
 
  private:
   using Unit = mozilla::Ok;
@@ -101,9 +102,7 @@ class nsFilePicker final : public nsBaseWinFilePicker {
       const nsString& aInitialDir);
 
   void ClearFiles();
-  using ContentAnalysisResponse =
-      mozilla::MozPromise<nsCOMArray<nsIFile>, nsresult, true>;
-  RefPtr<ContentAnalysisResponse> CheckContentAnalysisService();
+  nsCOMArray<nsIFile> GetSelectedFilesOrFolder();
 
  protected:
   void RememberLastUsedDirectory();

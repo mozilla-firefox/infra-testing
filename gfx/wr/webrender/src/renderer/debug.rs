@@ -11,12 +11,11 @@ use crate::composite::{NativeSurfaceId, NativeTileId};
 use crate::debug_colors;
 use crate::debug_font_data;
 use crate::debug_item::DebugItem;
-use crate::device::{Device, Program, Texture, TextureSlot, VertexDescriptor, ShaderError, VAO};
-use crate::device::{DrawTarget, ReadTarget, TextureFlags};
+use crate::device::{BlendMode, Buffer, BufferKind, Device, Program, Texture, TextureSlot, VertexArray, VertexDescriptor, ShaderError};
+use crate::device::{DrawTarget, LoadOp, ReadTarget, RenderPassDescriptor, TextureFlags};
 use crate::device::{TextureFilter, VertexAttribute, VertexAttributeKind, VertexUsageHint};
 use euclid::{rect, Point2D, Rect, Size2D, Transform3D, default};
 use crate::internal_types::{RenderTargetInfo, Swizzle};
-use std::f32;
 
 use super::{PipelineInfo, TextureResolver};
 
@@ -102,14 +101,19 @@ pub struct DebugRenderer {
     font_vertices: Vec<DebugFontVertex>,
     font_indices: Vec<u32>,
     font_program: Program,
-    font_vao: VAO,
+    font_vao: VertexArray,
+    font_vertex_buffer: Buffer,
+    font_index_buffer: Buffer,
     font_texture: Texture,
 
     tri_vertices: Vec<DebugColorVertex>,
     tri_indices: Vec<u32>,
-    tri_vao: VAO,
+    tri_vao: VertexArray,
+    tri_vertex_buffer: Buffer,
+    tri_index_buffer: Buffer,
     line_vertices: Vec<DebugColorVertex>,
-    line_vao: VAO,
+    line_vao: VertexArray,
+    line_vertex_buffer: Buffer,
     color_program: Program,
 }
 
@@ -119,19 +123,24 @@ impl DebugRenderer {
             "debug_font",
             &[],
             &DESC_FONT,
+            &[("sColor0", DebugSampler::Font.into())],
         )?;
-        device.bind_program(&font_program);
-        device.bind_shader_samplers(&font_program, &[("sColor0", DebugSampler::Font)]);
 
         let color_program = device.create_program_linked(
             "debug_color",
             &[],
             &DESC_COLOR,
+            &[],
         )?;
 
-        let font_vao = device.create_vao(&DESC_FONT, 1);
-        let line_vao = device.create_vao(&DESC_COLOR, 1);
-        let tri_vao = device.create_vao(&DESC_COLOR, 1);
+        let font_vertex_buffer = device.create_buffer(BufferKind::Vertex);
+        let font_index_buffer = device.create_buffer(BufferKind::Index);
+        let font_vao = device.create_vertex_array(&DESC_FONT, &font_vertex_buffer, None, Some(&font_index_buffer), 1);
+        let line_vertex_buffer = device.create_buffer(BufferKind::Vertex);
+        let line_vao = device.create_vertex_array(&DESC_COLOR, &line_vertex_buffer, None, None, 1);
+        let tri_vertex_buffer = device.create_buffer(BufferKind::Vertex);
+        let tri_index_buffer = device.create_buffer(BufferKind::Index);
+        let tri_vao = device.create_vertex_array(&DESC_COLOR, &tri_vertex_buffer, None, Some(&tri_index_buffer), 1);
 
         let font_texture = device.create_texture(
             ImageBufferKind::Texture2D,
@@ -151,12 +160,17 @@ impl DebugRenderer {
             font_indices: Vec::new(),
             line_vertices: Vec::new(),
             tri_vao,
+            tri_vertex_buffer,
+            tri_index_buffer,
             tri_vertices: Vec::new(),
             tri_indices: Vec::new(),
             font_program,
             color_program,
             font_vao,
+            font_vertex_buffer,
+            font_index_buffer,
             line_vao,
+            line_vertex_buffer,
             font_texture,
         })
     }
@@ -165,9 +179,14 @@ impl DebugRenderer {
         device.delete_texture(self.font_texture);
         device.delete_program(self.font_program);
         device.delete_program(self.color_program);
-        device.delete_vao(self.tri_vao);
-        device.delete_vao(self.line_vao);
-        device.delete_vao(self.font_vao);
+        device.delete_vertex_array(self.tri_vao);
+        device.delete_vertex_array(self.line_vao);
+        device.delete_vertex_array(self.font_vao);
+        device.delete_buffer(self.tri_vertex_buffer);
+        device.delete_buffer(self.tri_index_buffer);
+        device.delete_buffer(self.line_vertex_buffer);
+        device.delete_buffer(self.font_vertex_buffer);
+        device.delete_buffer(self.font_index_buffer);
     }
 
     pub fn line_height(&self) -> f32 {
@@ -321,9 +340,8 @@ impl DebugRenderer {
         surface_origin_is_top_left: bool,
     ) {
         if let Some(viewport_size) = viewport_size {
-            device.disable_depth();
-            device.set_blend(true);
-            device.set_blend_mode_premultiplied_alpha();
+            device.set_depth_test(None);
+            device.set_blend_mode(BlendMode::PremultipliedAlpha);
 
             let (bottom, top) = if surface_origin_is_top_left {
                 (0.0, viewport_size.height as f32 * scale)
@@ -344,13 +362,9 @@ impl DebugRenderer {
             if !self.tri_vertices.is_empty() {
                 device.bind_program(&self.color_program);
                 device.set_uniforms(&self.color_program, &projection);
-                device.bind_vao(&self.tri_vao);
-                device.update_vao_indices(&self.tri_vao, &self.tri_indices, VertexUsageHint::Dynamic);
-                device.update_vao_main_vertices(
-                    &self.tri_vao,
-                    &self.tri_vertices,
-                    VertexUsageHint::Dynamic,
-                );
+                device.bind_vertex_array(&self.tri_vao);
+                device.write_buffer(&mut self.tri_index_buffer, &self.tri_indices, VertexUsageHint::Dynamic);
+                device.write_buffer(&mut self.tri_vertex_buffer, &self.tri_vertices, VertexUsageHint::Dynamic);
                 device.draw_triangles_u32(0, self.tri_indices.len() as i32);
             }
 
@@ -358,12 +372,8 @@ impl DebugRenderer {
             if !self.line_vertices.is_empty() {
                 device.bind_program(&self.color_program);
                 device.set_uniforms(&self.color_program, &projection);
-                device.bind_vao(&self.line_vao);
-                device.update_vao_main_vertices(
-                    &self.line_vao,
-                    &self.line_vertices,
-                    VertexUsageHint::Dynamic,
-                );
+                device.bind_vertex_array(&self.line_vao);
+                device.write_buffer(&mut self.line_vertex_buffer, &self.line_vertices, VertexUsageHint::Dynamic);
                 device.draw_nonindexed_lines(0, self.line_vertices.len() as i32);
             }
 
@@ -372,13 +382,9 @@ impl DebugRenderer {
                 device.bind_program(&self.font_program);
                 device.set_uniforms(&self.font_program, &projection);
                 device.bind_texture(DebugSampler::Font, &self.font_texture, Swizzle::default());
-                device.bind_vao(&self.font_vao);
-                device.update_vao_indices(&self.font_vao, &self.font_indices, VertexUsageHint::Dynamic);
-                device.update_vao_main_vertices(
-                    &self.font_vao,
-                    &self.font_vertices,
-                    VertexUsageHint::Dynamic,
-                );
+                device.bind_vertex_array(&self.font_vao);
+                device.write_buffer(&mut self.font_index_buffer, &self.font_indices, VertexUsageHint::Dynamic);
+                device.write_buffer(&mut self.font_vertex_buffer, &self.font_vertices, VertexUsageHint::Dynamic);
                 device.draw_triangles_u32(0, self.font_indices.len() as i32);
             }
         }
@@ -458,7 +464,6 @@ impl DebugOverlayState {
 /// Update the state of any debug / profiler overlays. This is currently only needed
 /// when running with the native compositor enabled.
 pub fn update_debug_overlay(
-    device: &mut Device,
     compositor_config: &mut CompositorConfig,
     compositor_kind: CompositorKind,
     state: &mut DebugOverlayState,
@@ -487,7 +492,7 @@ pub fn update_debug_overlay(
         // the size has changed.
         if let Some(current_size) = state.current_size {
             if !state.is_enabled || current_size != framebuffer_size {
-                compositor.destroy_surface(device, NativeSurfaceId::DEBUG_OVERLAY);
+                compositor.destroy_surface(NativeSurfaceId::DEBUG_OVERLAY);
                 state.current_size = None;
             }
         }
@@ -495,16 +500,11 @@ pub fn update_debug_overlay(
         // Allocate a new surface, if we need it and there isn't one.
         if state.is_enabled && state.current_size.is_none() {
             compositor.create_surface(
-                device,
                 NativeSurfaceId::DEBUG_OVERLAY,
-                DeviceIntPoint::zero(),
                 framebuffer_size,
                 false,
             );
-            compositor.create_tile(
-                device,
-                NativeTileId::DEBUG_OVERLAY,
-            );
+            compositor.create_tile(NativeTileId::DEBUG_OVERLAY);
             state.current_size = Some(framebuffer_size);
         }
     }
@@ -527,13 +527,11 @@ pub fn bind_debug_overlay(
 
                 // Ensure old surface is invalidated before binding
                 compositor.invalidate_tile(
-                    device,
                     NativeTileId::DEBUG_OVERLAY,
                     DeviceIntRect::from_size(surface_size),
                 );
                 // Bind the native surface
                 let surface_info = compositor.bind(
-                    device,
                     NativeTileId::DEBUG_OVERLAY,
                     DeviceIntRect::from_size(surface_size),
                     DeviceIntRect::from_size(surface_size),
@@ -542,17 +540,16 @@ pub fn bind_debug_overlay(
                 // Bind the native surface to current FBO target
                 let draw_target = DrawTarget::NativeSurface {
                     offset: surface_info.origin,
-                    external_fbo_id: surface_info.fbo_id,
+                    handle: surface_info.handle,
                     dimensions: surface_size,
                 };
-                device.bind_draw_target(draw_target);
-
                 // When native compositing, clear the debug overlay each frame.
-                device.clear_target(
-                    Some([0.0, 0.0, 0.0, 0.0]),
-                    None, // debug renderer does not use depth
-                    None,
-                );
+                device.begin_render_pass(&RenderPassDescriptor {
+                    target: draw_target,
+                    render_area: None,
+                    color_load: LoadOp::Clear([0.0, 0.0, 0.0, 0.0]),
+                    depth_load: LoadOp::DontCare,
+                });
 
                 Some(draw_target)
             }
@@ -560,19 +557,28 @@ pub fn bind_debug_overlay(
                 let compositor = compositor_config.layer_compositor().unwrap();
                 compositor.bind_layer(state.layer_index, &[]);
 
-                device.clear_target(
-                    Some([0.0, 0.0, 0.0, 0.0]),
-                    None, // debug renderer does not use depth
-                    None,
-                );
+                let draw_target = DrawTarget::new_default(device_size, device.surface_origin_is_top_left());
+                device.begin_render_pass(&RenderPassDescriptor {
+                    target: draw_target,
+                    render_area: None,
+                    color_load: LoadOp::Clear([0.0, 0.0, 0.0, 0.0]),
+                    depth_load: LoadOp::DontCare,
+                });
 
-                Some(DrawTarget::new_default(device_size, device.surface_origin_is_top_left()))
+                Some(draw_target)
             }
             CompositorKind::Draw { .. } => {
-                // If we're not using the native compositor, then the default
-                // frame buffer is already bound. Create a DrawTarget for it and
-                // return it.
-                Some(DrawTarget::new_default(device_size, device.surface_origin_is_top_left()))
+                // If we're not using the native compositor, the overlay is drawn
+                // over the frame in the default frame buffer.
+                let draw_target = DrawTarget::new_default(device_size, device.surface_origin_is_top_left());
+                device.begin_render_pass(&RenderPassDescriptor {
+                    target: draw_target,
+                    render_area: None,
+                    color_load: LoadOp::Load,
+                    depth_load: LoadOp::DontCare,
+                });
+
+                Some(draw_target)
             }
         }
     } else {
@@ -582,7 +588,6 @@ pub fn bind_debug_overlay(
 
 /// Unbind the draw target for debug / profiler overlays, if required.
 pub fn unbind_debug_overlay(
-    device: &mut Device,
     compositor_config: &mut CompositorConfig,
     compositor_kind: CompositorKind,
     state: &DebugOverlayState,
@@ -593,14 +598,13 @@ pub fn unbind_debug_overlay(
             CompositorKind::Native { .. } => {
                 let compositor = compositor_config.compositor().unwrap();
                 // Unbind the draw target and add it to the visual tree to be composited
-                compositor.unbind(device);
+                compositor.unbind();
 
                 let clip_rect = DeviceIntRect::from_size(
                     state.current_size.unwrap(),
                 );
 
                 compositor.add_surface(
-                    device,
                     NativeSurfaceId::DEBUG_OVERLAY,
                     CompositorSurfaceTransform::identity(),
                     clip_rect,
@@ -886,10 +890,10 @@ fn do_debug_blit(
         // Draw the info tag.
         let tag_rect = rect(x, tag_y, size, tag_height).to_box2d();
         let tag_color = select_color(texture);
-        device.clear_target(
+        device.clear_rect(
+            draw_target.to_framebuffer_rect(tag_rect),
             Some(tag_color),
             None,
-            Some(draw_target.to_framebuffer_rect(tag_rect)),
         );
 
         // Draw the dimensions onto the tag.
@@ -989,7 +993,7 @@ pub fn draw_window_visibility_debug(
     let y: f32 = 40.0;
 
     if let CompositorConfig::Native { ref mut compositor, .. } = *compositor_config {
-        let visibility = compositor.get_window_visibility(device);
+        let visibility = compositor.get_window_visibility();
         let color = if visibility.is_fully_occluded {
             ColorU::new(255, 0, 0, 255)
 

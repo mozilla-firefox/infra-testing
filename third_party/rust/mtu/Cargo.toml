@@ -22,7 +22,6 @@ autoexamples = false
 autotests = false
 autobenches = false
 description = "Obtain the local network interface MTU towards a given IP address."
-homepage = "https://github.com/mozilla/neqo/"
 readme = "README.md"
 keywords = [
     "mozilla",
@@ -63,7 +62,7 @@ version = "1.1"
 default-features = false
 
 [build-dependencies.cfg_aliases]
-version = "0.2"
+version = "0.2.2"
 default-features = false
 
 [target."cfg(windows)".dependencies.windows]
@@ -76,9 +75,13 @@ features = [
 ]
 default-features = false
 
+[lints.cargo]
+non_kebab_case_bins = "allow"
+
 [lints.clippy]
 allow_attributes = "warn"
 allow_attributes_without_reason = "warn"
+assert_is_empty = "allow"
 cfg_not_test = "warn"
 clone_on_ref_ptr = "warn"
 create_dir = "warn"

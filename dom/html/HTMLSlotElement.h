@@ -67,7 +67,7 @@ class HTMLSlotElement final : public nsGenericHTMLElement {
     mInSignalSlotList = false;
   }
 
-  void FireSlotChangeEvent();
+  MOZ_CAN_RUN_SCRIPT void FireSlotChangeEvent();
 
   void RemoveManuallyAssignedNode(nsIContent&);
 

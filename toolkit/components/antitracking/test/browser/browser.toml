@@ -50,10 +50,10 @@ support-files = [
   "blobPartitionPage.html",
   "raptor.jpg",
   "!/browser/modules/test/browser/head.js",
-  "!/browser/base/content/test/general/head.js",
-  "!/browser/base/content/test/protectionsUI/cookieServer.sjs",
-  "!/browser/base/content/test/protectionsUI/trackingPage.html",
-  "!/browser/base/content/test/protectionsUI/trackingAPI.js",
+  "!/browser/base/content/test/browser-general/head.js",
+  "!/browser/base/content/test/browser-protectionsUI/cookieServer.sjs",
+  "!/browser/base/content/test/browser-protectionsUI/trackingPage.html",
+  "!/browser/base/content/test/browser-protectionsUI/trackingAPI.js",
   "!/toolkit/content/tests/browser/common/mockTransfer.js",
 ]
 
@@ -121,6 +121,8 @@ support-files= [
 
 ["browser_onModifyRequestNotificationForTrackingResources.js"]
 
+["browser_openerAfterUserInteractionHeuristic.js"]
+
 ["browser_partitionKey_XSLT.js"]
 support-files= [
   "file_xslt.xml",
@@ -163,9 +165,6 @@ support-files = ["localStorageEvents.html"]
 ["browser_partitionedLockManager.js"]
 
 ["browser_partitionedMessaging.js"]
-skip-if = [
-  "true", # Bug 1588241
-]
 
 ["browser_partitionedServiceWorkers.js"]
 skip-if = [
@@ -241,16 +240,10 @@ support-files = [
   "!/browser/components/originattributes/test/browser/file_thirdPartyChild.worker.xhr.html",
   "!/browser/components/originattributes/test/browser/file_thirdPartyChild.xhr.html",
 ]
-skip-if = [
-  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug", # Bug 1775745
-]
 
 ["browser_staticPartition_network.js"]
 
 ["browser_staticPartition_saveAs.js"]
-skip-if = [
-  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
-]
 support-files = [
   "file_saveAsImage.sjs",
   "file_saveAsVideo.sjs",
@@ -354,9 +347,6 @@ skip-if = [
 support-files = ["file_stripping.html"]
 
 ["browser_urlQueryStringStripping_allowList.js"]
-support-files = ["file_stripping.html"]
-
-["browser_urlQueryStringStripping_nimbus.js"]
 support-files = ["file_stripping.html"]
 
 ["browser_urlQueryStringStripping_pbmode.js"]

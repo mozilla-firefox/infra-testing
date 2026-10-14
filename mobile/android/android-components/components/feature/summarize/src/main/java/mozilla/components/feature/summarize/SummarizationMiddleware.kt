@@ -116,6 +116,7 @@ class SummarizationMiddleware(
             SummarizationCompleted,
             is SummarizationRequested,
             is SummarizeSettingsActionWrapper,
+            is SummaryFeedbackProvided,
             is ViewDismissed -> Unit
         }
 

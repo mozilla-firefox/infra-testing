@@ -368,7 +368,7 @@ class HttpChannelChild final : public PHttpChannelChild,
   bool mEverHadBgChildAtAsyncOpen = false;
   bool mEverHadBgChildAtConnectParent = false;
   bool mCreateBackgroundChannelFailed = false;
-  bool mBgInitFailCallbackTriggered = false;
+  Atomic<bool, Relaxed> mBgInitFailCallbackTriggered{false};
   bool mCanSendAtCancel = false;
   // State of the HttpBackgroundChannelChild's event queue during destruction.
   enum BckChildQueueStatus {

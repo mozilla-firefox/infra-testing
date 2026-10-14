@@ -22,14 +22,18 @@ linux64-gn:
     treeherder:
         symbol: TL(gn)
     run:
-        clone-with: hg
         script: build-gn-linux.sh
+    fetches:
+        toolchain:
+            - linux64-clang-toolchain
+            # gn is built as C++23, which needs a more recent libstdc++ than
+            # the one in linux64-toolchain-sysroot.
+            - linux64-toolchain-sysroot-gcc11
 
 macosx64-gn:
     treeherder:
         symbol: TM(gn)
     run:
-        clone-with: hg
         script: build-gn-macosx.sh
     fetches:
         toolchain:
@@ -38,7 +42,7 @@ macosx64-gn:
 
 macosx64-aarch64-gn:
     treeherder:
-        symbol: TM(gn-aarch64)
+        symbol: TMA64(gn)
     run:
         script: build-gn-macosx.sh
         arguments:
@@ -55,7 +59,6 @@ win64-gn:
     worker:
         max-run-time: 3600
     run:
-        clone-with: hg
         script: build-gn-win64.sh
     fetches:
         fetch:

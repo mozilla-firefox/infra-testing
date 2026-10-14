@@ -318,7 +318,6 @@ struct SFTKSessionStr {
     SFTKSession *prev;
     CK_SESSION_HANDLE handle;
     int refCount; /* protected by SFTK_SESSION_LOCK(slot, handle) */
-    PRLock *objectLock;
     int objectIDCount;
     CK_SESSION_INFO info;
     CK_NOTIFY notify;
@@ -328,6 +327,7 @@ struct SFTKSessionStr {
     SFTKSessionContext *enc_context;
     SFTKSessionContext *hash_context;
     PRBool lastOpWasFIPS;
+    /* protected by slot->objectLock, see below */
     SFTKObjectList *objects[1];
 };
 
@@ -337,8 +337,20 @@ struct SFTKSessionStr {
  * The array of sessionLock's protect the session hash table (head[])
  * as well as the reference count of session objects in that bucket
  * (head[]->refCount),  objectLock protects all elements of the slot's
- * object hash tables (sessObjHashTable[] and tokObjHashTable), and
- * sessionObjectHandleCount.
+ * object hash tables (sessObjHashTable[] and tokObjHashTable),
+ * sessionObjectHandleCount, and the per-session object lists
+ * (SFTKSession.objects[] and SFTKSessionObject.sessionList/session) of
+ * every session on this slot.
+ *
+ * The per-session object lists deliberately do NOT have a per-session lock.
+ * Object handles are slot-global, so sftk_DeleteObject() can be asked to
+ * unlink an object from a session other than the caller's, on which it holds
+ * no reference; a lock owned by that session could be destroyed underneath
+ * it (bug 2061391). Using the slot's lock -- which outlives every session on
+ * the slot -- also keeps the two queues atomic with respect to each other,
+ * giving the invariant that a session object is on its owning session's list
+ * if and only if it is in sessObjHashTable[].
+ *
  * slotLock protects password, needLogin, isLoggedIn, ssoLoggedIn,
  * sessionCount, and rwSessionCount.
  * pwCheckLock serializes the key database password checks in
@@ -516,7 +528,7 @@ struct SFTKItemTemplateStr {
 
 /* slot helper macros */
 #define sftk_SlotFromSession(sp) ((sp)->slot)
-#define sftk_isToken(id) (((id)&SFTK_TOKEN_MASK) == SFTK_TOKEN_MAGIC)
+#define sftk_isToken(id) (((id) & SFTK_TOKEN_MASK) == SFTK_TOKEN_MAGIC)
 
 /* Type tag values for SFTKObject.type */
 #define SFTK_SESSION_OBJECT_TYPE 0xFFFFFFFFU
@@ -535,7 +547,7 @@ struct SFTKItemTemplateStr {
 
 /* queueing helper macros */
 #define sftk_hash(value, size) \
-    ((PRUint32)((value)*SHMULTIPLIER) & (size - 1))
+    ((PRUint32)((value) * SHMULTIPLIER) & (size - 1))
 #define sftkqueue_add(element, id, head, hash_size) \
     {                                               \
         int tmp = sftk_hash(id, hash_size);         \
@@ -801,7 +813,6 @@ extern void sftk_ReferenceObject(SFTKObject *object);
 extern SFTKObject *sftk_ObjectFromHandle(CK_OBJECT_HANDLE handle,
                                          SFTKSession *session);
 extern CK_OBJECT_HANDLE sftk_getNextHandle(SFTKSlot *slot);
-extern void sftk_AddSlotObject(SFTKSlot *slot, SFTKObject *object);
 extern void sftk_AddObject(SFTKSession *session, SFTKObject *object);
 /* clear out all the existing object ID to database key mappings.
  * used to reinit a token */

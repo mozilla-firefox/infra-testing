@@ -93,6 +93,43 @@ var data = [
       encodeURIComponent("whatever://this/is/a@b/test.html")
     ),
   },
+  {
+    // Quoted strings should be searched, not navigated (bug 2070768).
+    wrong: '".local/bin"',
+    fixed: kSearchEngineURL.replace(
+      "{searchTerms}",
+      encodeURIComponent('".local/bin"')
+    ),
+    allowKeyword: true,
+    // The leading " lands in the host (accepted by the URL parser per bug
+    // 1815926); the trailing " in the path is percent-encoded as %22.
+    fixedSpec: 'http://".local/bin%22',
+    keywordAsSent: '".local/bin"',
+  },
+  {
+    // Consecutive dots in the host are collapsed; the result should still
+    // be searched rather than navigated.
+    wrong: '"..local/bin"',
+    fixed: kSearchEngineURL.replace(
+      "{searchTerms}",
+      encodeURIComponent('"..local/bin"')
+    ),
+    allowKeyword: true,
+    // fixupConsecutiveDotsHost collapses "..local to ".local.
+    fixedSpec: 'http://".local/bin%22',
+    keywordAsSent: '"..local/bin"',
+  },
+  {
+    // Wildcard-prefixed hostnames should be searched, not navigated.
+    wrong: "*.example.com",
+    fixed: kSearchEngineURL.replace(
+      "{searchTerms}",
+      encodeURIComponent("*.example.com")
+    ),
+    allowKeyword: true,
+    fixedSpec: "http://*.example.com/",
+    keywordAsSent: "*.example.com",
+  },
 ];
 
 var extProtocolSvc = Cc[
@@ -113,9 +150,12 @@ add_setup(async () => {
   await addTestEngines();
 
   Services.prefs.setBoolPref("keyword.enabled", true);
-  Services.prefs.setBoolPref("browser.search.separatePrivateDefault", true);
   Services.prefs.setBoolPref(
-    "browser.search.separatePrivateDefault.ui.enabled",
+    "browser.search.separatePrivateDefault.enabled",
+    true
+  );
+  Services.prefs.setBoolPref(
+    "browser.search.separatePrivateDefault.featureGate",
     true
   );
 
@@ -137,7 +177,60 @@ add_task(function test_fix_unknown_schemes() {
     if (item.inPrivateBrowsing) {
       flags |= Services.uriFixup.FIXUP_FLAG_PRIVATE_CONTEXT;
     }
-    let { preferredURI } = Services.uriFixup.getFixupURIInfo(item.wrong, flags);
-    Assert.equal(preferredURI.spec, item.fixed);
+    if (item.allowKeyword) {
+      flags |= Services.uriFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP;
+    }
+    let info = Services.uriFixup.getFixupURIInfo(item.wrong, flags);
+    Assert.equal(info.preferredURI.spec, item.fixed);
+    if (item.fixedSpec) {
+      Assert.equal(
+        info.fixedURI.spec,
+        item.fixedSpec,
+        "fixedURI should be the http-fixed URI"
+      );
+      Assert.equal(
+        info.keywordAsSent,
+        item.keywordAsSent,
+        "keywordAsSent should be the original input"
+      );
+    }
   }
+});
+
+// FIXUP_FLAG_FORCE_KEYWORD_LOOKUP overrides keyword.enabled for a caller whose
+// input is expected to be a search string rather than an address.
+add_task(function test_force_keyword_lookup() {
+  Services.prefs.setBoolPref("keyword.enabled", false);
+  registerCleanupFunction(() => {
+    Services.prefs.clearUserPref("keyword.enabled");
+  });
+
+  let flags =
+    Services.uriFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS |
+    Services.uriFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP;
+  let forced =
+    Services.uriFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS |
+    Services.uriFixup.FIXUP_FLAG_FORCE_KEYWORD_LOOKUP;
+  let scheme = "whatever://this/is/a/test.html";
+
+  Assert.equal(
+    Services.uriFixup.getFixupURIInfo("firefox", flags).preferredURI.spec,
+    "http://firefox/",
+    "A keyword is a host with keyword.enabled off"
+  );
+  Assert.equal(
+    Services.uriFixup.getFixupURIInfo("firefox", forced).preferredURI.spec,
+    kSearchEngineURL.replace("{searchTerms}", "firefox"),
+    "A keyword is a search when the lookup is forced"
+  );
+  Assert.equal(
+    Services.uriFixup.getFixupURIInfo(scheme, flags).preferredURI.spec,
+    scheme,
+    "An unknown scheme is left alone with keyword.enabled off"
+  );
+  Assert.equal(
+    Services.uriFixup.getFixupURIInfo(scheme, forced).preferredURI.spec,
+    kSearchEngineURL.replace("{searchTerms}", encodeURIComponent(scheme)),
+    "An unknown scheme is a search when the lookup is forced"
+  );
 });

@@ -188,7 +188,7 @@ class LIRGeneratorShared {
   inline LBoxDefinition tempBox();
   inline LDefinition tempFloat32();
   inline LDefinition tempDouble();
-#ifdef ENABLE_WASM_SIMD
+#ifdef ENABLE_JIT_SIMD
   inline LDefinition tempSimd128();
 #endif
   inline LDefinition tempCopy(MDefinition* input, uint32_t reusedInput);
@@ -368,6 +368,14 @@ class LIRGeneratorShared {
 
   inline void lowerConstantDouble(double d, MInstruction* mir);
   inline void lowerConstantFloat32(float f, MInstruction* mir);
+
+  // Lower the Int32 |op| as a single instruction that shifts one operand by a
+  // constant, if that operand is a shift deferred by lowerForShift. Returns
+  // false if |mir| still needs lowering.
+  bool lowerForALUWithShiftedOperand(JSOp op, MBinaryInstruction* mir,
+                                     MDefinition* lhs, MDefinition* rhs) {
+    return false;
+  }
 
   bool canSpecializeWasmCompareAndSelect(MCompare::CompareType compTy,
                                          MIRType insTy);

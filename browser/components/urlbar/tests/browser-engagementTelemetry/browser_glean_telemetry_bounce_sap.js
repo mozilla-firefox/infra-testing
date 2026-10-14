@@ -96,8 +96,9 @@ add_task(async function urlbar_newtab() {
 
 add_task(async function urlbar() {
   await doUrlbarTest({
-    trigger: win => doSecondEngagementAndNavigateBack(win, "urlbar"),
-    assert: () => assertBounceTelemetry([{ sap: "urlbar" }, { sap: "urlbar" }]),
+    trigger: win => doSecondEngagementAndNavigateBack(win, "urlbar_newtab"),
+    assert: () =>
+      assertBounceTelemetry([{ sap: "urlbar_newtab" }, { sap: "urlbar" }]),
   });
 });
 
@@ -109,12 +110,9 @@ add_task(async function searchbar() {
   });
 });
 
-// A handoff session searches in engine search mode, where pressing Enter loads
-// the engine's search URL directly without picking a result, and only picking a
-// result starts tracking a bounce.
 add_task(async function handoff() {
   await doHandoffTest({
-    trigger: win => doEngagementAndNavigateBack(win, () => doClick()),
+    trigger: win => doEngagementAndNavigateBack(win, () => doEnter({}, win)),
     assert: () => assertBounceTelemetry([{ sap: "handoff" }]),
   });
 });

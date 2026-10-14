@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import { html, ifDefined } from "chrome://global/content/vendor/lit.all.mjs";
-import MozInputText from "chrome://global/content/elements/moz-input-text.mjs";
+import { MozInputText } from "chrome://global/content/elements/moz-input-text.mjs";
 
 /**
  * Username input for the save/update password doorhanger. Wraps a XUL
@@ -21,6 +21,7 @@ import MozInputText from "chrome://global/content/elements/moz-input-text.mjs";
  * @property {string} maxRows - The maxrows attribute forwarded to the inner input.
  * @property {string} maxDropmarkerRows - The maxdropmarkerrows attribute forwarded to the inner input.
  * @property {boolean} showDropmarker - When true, shows the autocomplete dropdown arrow inside the input.
+ * @property {string} title - The title attribute, mapped onto the inner input.
  */
 class LoginDoorhangerUsernameField extends MozInputText {
   static properties = {
@@ -89,6 +90,7 @@ class LoginDoorhangerUsernameField extends MozInputText {
           aria-description=${ifDefined(
             this.hasDescription ? undefined : this.ariaDescription
           )}
+          title=${ifDefined(this.title)}
           autocompletesearch=${ifDefined(this.autocompleteSearch)}
           autocompletepopup=${ifDefined(this.autocompletePopup)}
           maxrows=${ifDefined(this.maxRows)}

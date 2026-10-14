@@ -7,6 +7,7 @@
 //!
 //! [position]: https://drafts.csswg.org/css-backgrounds-3/#position
 
+use crate::Atom;
 use crate::derives::*;
 use crate::logical_geometry::{LogicalAxis, LogicalSide, PhysicalSide, WritingMode};
 use crate::parser::{Parse, ParserContext};
@@ -26,13 +27,11 @@ use crate::values::specified::align::AlignFlags;
 use crate::values::specified::percentage::NoCalcPercentage;
 use crate::values::specified::{AllowQuirks, Integer, LengthPercentage, NonNegativeNumber};
 use crate::values::{AtomIdent, DashedIdent};
-use crate::Atom;
-use cssparser::{match_ignore_ascii_case, Parser};
+use cssparser::Parser;
+use hashbrown::hash_map::Entry;
 use num_traits::FromPrimitive;
-use selectors::parser::SelectorParseErrorKind;
 use servo_arc::Arc;
-use smallvec::{smallvec, SmallVec};
-use std::collections::hash_map::Entry;
+use smallvec::{SmallVec, smallvec};
 use std::fmt::{self, Write};
 use style_traits::arc_slice::ArcSlice;
 use style_traits::values::specified::AllowedNumericType;
@@ -110,13 +109,10 @@ pub enum VerticalPositionKeyword {
 }
 
 impl Parse for Position {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         let position = Self::parse_three_value_quirky(context, input, AllowQuirks::No)?;
         if position.is_three_value_syntax() {
-            return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+            return Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError));
         }
         Ok(position)
     }
@@ -124,11 +120,11 @@ impl Parse for Position {
 
 impl Position {
     /// Parses a `<bg-position>`, with quirks.
-    pub fn parse_three_value_quirky<'i, 't>(
+    pub fn parse_three_value_quirky(
         context: &ParserContext,
-        input: &mut Parser<'i, 't>,
+        input: &mut Parser,
         allow_quirks: AllowQuirks,
-    ) -> Result<Self, ParseError<'i>> {
+    ) -> Result<Self, ParseError> {
         match input.try_parse(|i| PositionComponent::parse_quirky(context, i, allow_quirks)) {
             Ok(x_pos @ PositionComponent::Center) => {
                 if let Ok(y_pos) =
@@ -224,18 +220,12 @@ impl ToCss for Position {
         W: Write,
     {
         match (&self.horizontal, &self.vertical) {
-            (
-                x_pos @ &PositionComponent::Side(_, Some(_)),
-                &PositionComponent::Length(ref y_lp),
-            ) => {
+            (x_pos @ &PositionComponent::Side(_, Some(_)), PositionComponent::Length(y_lp)) => {
                 x_pos.to_css(dest)?;
                 dest.write_str(" top ")?;
                 y_lp.to_css(dest)
             },
-            (
-                &PositionComponent::Length(ref x_lp),
-                y_pos @ &PositionComponent::Side(_, Some(_)),
-            ) => {
+            (PositionComponent::Length(x_lp), y_pos @ &PositionComponent::Side(_, Some(_))) => {
                 dest.write_str("left ")?;
                 x_lp.to_css(dest)?;
                 dest.write_char(' ')?;
@@ -251,21 +241,18 @@ impl ToCss for Position {
 }
 
 impl<S: Parse> Parse for PositionComponent<S> {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         Self::parse_quirky(context, input, AllowQuirks::No)
     }
 }
 
 impl<S: Parse> PositionComponent<S> {
     /// Parses a component of a CSS position, with quirks.
-    pub fn parse_quirky<'i, 't>(
+    pub fn parse_quirky(
         context: &ParserContext,
-        input: &mut Parser<'i, 't>,
+        input: &mut Parser,
         allow_quirks: AllowQuirks,
-    ) -> Result<Self, ParseError<'i>> {
+    ) -> Result<Self, ParseError> {
         if input
             .try_parse(|i| i.expect_ident_matching("center"))
             .is_ok()
@@ -384,19 +371,14 @@ impl AnchorNameIdent {
 }
 
 impl Parse for AnchorNameIdent {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
-        let location = input.current_source_location();
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         let first = input.expect_ident()?;
         if first.eq_ignore_ascii_case("none") {
             return Ok(Self::none());
         }
         // The common case is probably just to have a single anchor name, so
         // space for four on the stack should be plenty.
-        let mut idents: SmallVec<[DashedIdent; 4]> =
-            smallvec![DashedIdent::from_ident(location, first,)?];
+        let mut idents: SmallVec<[DashedIdent; 4]> = smallvec![DashedIdent::from_ident(first,)?];
         while input.try_parse(|input| input.expect_comma()).is_ok() {
             idents.push(DashedIdent::parse(context, input)?);
         }
@@ -436,6 +418,7 @@ impl AnchorName {
 #[repr(transparent)]
 #[css(comma)]
 #[typed(todo_derive_fields)]
+#[value_info(other_values = "all")]
 pub struct ScopedNameList(
     /// `none | all | <dashed-ident>#`
     #[css(iterable, if_empty = "none")]
@@ -466,11 +449,7 @@ impl ScopedNameList {
 }
 
 impl Parse for ScopedNameList {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
-        let location = input.current_source_location();
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         let first = input.expect_ident()?;
         if first.eq_ignore_ascii_case("none") {
             return Ok(Self::none());
@@ -481,7 +460,7 @@ impl Parse for ScopedNameList {
         // Authors using more than a handful of anchored elements is likely
         // uncommon, so we only pre-allocate for 8 on the stack here.
         let mut idents = SmallVec::<[AtomIdent; 8]>::new();
-        idents.push(AtomIdent::new(DashedIdent::from_ident(location, first)?.0));
+        idents.push(AtomIdent::new(DashedIdent::from_ident(first)?.0));
         while input.try_parse(|input| input.expect_comma()).is_ok() {
             idents.push(AtomIdent::new(DashedIdent::parse(context, input)?.0));
         }
@@ -610,16 +589,13 @@ pub struct PositionTryFallbacksTryTactic(
 );
 
 impl Parse for PositionTryFallbacksTryTactic {
-    fn parse<'i, 't>(
-        _context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(_context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         let mut result = ThinVec::with_capacity(5);
         // Collect up to 5 keywords, disallowing duplicates.
         for _ in 0..5 {
             if let Ok(kw) = input.try_parse(PositionTryFallbacksTryTacticKeyword::parse) {
                 if result.contains(&kw) {
-                    return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+                    return Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError));
                 }
                 result.push(kw);
             } else {
@@ -627,7 +603,7 @@ impl Parse for PositionTryFallbacksTryTactic {
             }
         }
         if result.is_empty() {
-            return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+            return Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError));
         }
         Ok(Self(result))
     }
@@ -669,37 +645,33 @@ pub struct DashedIdentAndOrTryTactic {
 }
 
 impl Parse for DashedIdentAndOrTryTactic {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         let mut result = Self {
             ident: DashedIdent::empty(),
             try_tactic: PositionTryFallbacksTryTactic::default(),
         };
 
         loop {
-            if result.ident.is_empty() {
-                if let Ok(ident) = input.try_parse(|i| DashedIdent::parse(context, i)) {
-                    result.ident = ident;
-                    continue;
-                }
+            if result.ident.is_empty()
+                && let Ok(ident) = input.try_parse(|i| DashedIdent::parse(context, i))
+            {
+                result.ident = ident;
+                continue;
             }
-            if result.try_tactic.is_empty() {
-                if let Ok(try_tactic) =
+            if result.try_tactic.is_empty()
+                && let Ok(try_tactic) =
                     input.try_parse(|i| PositionTryFallbacksTryTactic::parse(context, i))
-                {
-                    result.try_tactic = try_tactic;
-                    continue;
-                }
+            {
+                result.try_tactic = try_tactic;
+                continue;
             }
             break;
         }
 
         if result.ident.is_empty() && result.try_tactic.is_empty() {
-            return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+            return Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError));
         }
-        return Ok(result);
+        Ok(result)
     }
 }
 
@@ -769,10 +741,7 @@ impl PositionTryFallbacksList {
 }
 
 impl Parse for PositionTryFallbacksList {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         if input.try_parse(|i| i.expect_ident_matching("none")).is_ok() {
             return Ok(Self::none());
         }
@@ -1343,10 +1312,10 @@ impl PositionArea {
     }
 
     /// Parses a <position-area> without allowing `none`.
-    pub fn parse_except_none<'i, 't>(
+    pub fn parse_except_none(
         context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+        input: &mut Parser,
+    ) -> Result<Self, ParseError> {
         Self::parse_internal(context, input, /*allow_none*/ false)
     }
 
@@ -1372,25 +1341,23 @@ impl PositionArea {
         first
     }
 
-    fn parse_internal<'i, 't>(
+    fn parse_internal(
         _: &ParserContext,
-        input: &mut Parser<'i, 't>,
+        input: &mut Parser,
         allow_none: bool,
-    ) -> Result<Self, ParseError<'i>> {
-        let mut location = input.current_source_location();
+    ) -> Result<Self, ParseError> {
         let mut first = PositionAreaKeyword::parse(input)?;
         if first.is_none() {
             if allow_none {
                 return Ok(Self::none());
             }
-            return Err(location.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+            return Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError));
         }
 
-        location = input.current_source_location();
         let second = input.try_parse(PositionAreaKeyword::parse);
         if let Ok(PositionAreaKeyword::None) = second {
             // `none` is only allowed as a single value
-            return Err(location.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+            return Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError));
         }
         let mut second = second.unwrap_or(PositionAreaKeyword::None);
         if second.is_none() {
@@ -1405,7 +1372,7 @@ impl PositionArea {
         let pair_type = Self { first, second }.get_type();
         if pair_type == PositionAreaType::None {
             // Mismatched types or what not.
-            return Err(location.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+            return Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError));
         }
         // For types that have a canonical order, remove 'span-all' (the default behavior;
         // unnecessary for keyword pairs with a known order).
@@ -1531,10 +1498,7 @@ impl PositionArea {
 }
 
 impl Parse for PositionArea {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         Self::parse_internal(context, input, /* allow_none = */ true)
     }
 }
@@ -1643,152 +1607,10 @@ impl ToCss for GridAutoFlow {
     }
 }
 
-#[repr(u8)]
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    MallocSizeOf,
-    PartialEq,
-    SpecifiedValueInfo,
-    ToComputedValue,
-    ToCss,
-    ToResolvedValue,
-    ToShmem,
-)]
-/// Masonry auto-placement algorithm packing.
-pub enum MasonryPlacement {
-    /// Place the item in the track(s) with the smallest extent so far.
-    Pack,
-    /// Place the item after the last item, from start to end.
-    Next,
-}
-
-#[repr(u8)]
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    MallocSizeOf,
-    PartialEq,
-    SpecifiedValueInfo,
-    ToComputedValue,
-    ToCss,
-    ToResolvedValue,
-    ToShmem,
-)]
-/// Masonry auto-placement algorithm item sorting option.
-pub enum MasonryItemOrder {
-    /// Place all items with a definite placement before auto-placed items.
-    DefiniteFirst,
-    /// Place items in `order-modified document order`.
-    Ordered,
-}
-
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    MallocSizeOf,
-    PartialEq,
-    SpecifiedValueInfo,
-    ToComputedValue,
-    ToCss,
-    ToResolvedValue,
-    ToShmem,
-    ToTyped,
-)]
-#[repr(C)]
-#[typed(todo_derive_fields)]
-/// Controls how the Masonry layout algorithm works
-/// specifying exactly how auto-placed items get flowed in the masonry axis.
-pub struct MasonryAutoFlow {
-    /// Specify how to pick a auto-placement track.
-    #[css(contextual_skip_if = "is_pack_with_non_default_order")]
-    pub placement: MasonryPlacement,
-    /// Specify how to pick an item to place.
-    #[css(skip_if = "is_item_order_definite_first")]
-    pub order: MasonryItemOrder,
-}
-
-#[inline]
-fn is_pack_with_non_default_order(placement: &MasonryPlacement, order: &MasonryItemOrder) -> bool {
-    *placement == MasonryPlacement::Pack && *order != MasonryItemOrder::DefiniteFirst
-}
-
-#[inline]
-fn is_item_order_definite_first(order: &MasonryItemOrder) -> bool {
-    *order == MasonryItemOrder::DefiniteFirst
-}
-
-impl MasonryAutoFlow {
-    #[inline]
-    /// Get initial `masonry-auto-flow` value.
-    pub fn initial() -> MasonryAutoFlow {
-        MasonryAutoFlow {
-            placement: MasonryPlacement::Pack,
-            order: MasonryItemOrder::DefiniteFirst,
-        }
-    }
-}
-
-impl Parse for MasonryAutoFlow {
-    /// [ definite-first | ordered ] || [ pack | next ]
-    fn parse<'i, 't>(
-        _context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<MasonryAutoFlow, ParseError<'i>> {
-        let mut value = MasonryAutoFlow::initial();
-        let mut got_placement = false;
-        let mut got_order = false;
-        while !input.is_exhausted() {
-            let location = input.current_source_location();
-            let ident = input.expect_ident()?;
-            let success = match_ignore_ascii_case! { &ident,
-                "pack" if !got_placement => {
-                    got_placement = true;
-                    true
-                },
-                "next" if !got_placement => {
-                    value.placement = MasonryPlacement::Next;
-                    got_placement = true;
-                    true
-                },
-                "definite-first" if !got_order => {
-                    got_order = true;
-                    true
-                },
-                "ordered" if !got_order => {
-                    value.order = MasonryItemOrder::Ordered;
-                    got_order = true;
-                    true
-                },
-                _ => false
-            };
-            if !success {
-                return Err(location
-                    .new_custom_error(SelectorParseErrorKind::UnexpectedIdent(ident.clone())));
-            }
-        }
-
-        if got_placement || got_order {
-            Ok(value)
-        } else {
-            Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
-        }
-    }
-}
-
 /// Whether the `balance` value of `flex-wrap` is enabled.
 #[inline]
 fn flex_wrap_balance_enabled() -> bool {
-    #[cfg(feature = "servo")]
-    return static_prefs::pref!("layout.flexbox.balance");
-    #[cfg(not(feature = "servo"))]
-    return false;
+    crate::pref!("layout.flexbox.balance", gecko = false)
 }
 
 /// The specified and computed value of the `flex-wrap` property:
@@ -1887,13 +1709,10 @@ pub struct TemplateAreasParser {
 
 impl TemplateAreasParser {
     /// Parse a single string.
-    pub fn try_parse_string<'i>(
-        &mut self,
-        input: &mut Parser<'i, '_>,
-    ) -> Result<(), ParseError<'i>> {
+    pub fn try_parse_string(&mut self, input: &mut Parser) -> Result<(), ParseError> {
         input.try_parse(|input| {
             self.parse_string(input.expect_string()?)
-                .map_err(|()| input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
+                .map_err(|()| ParseError::custom(StyleParseErrorKind::UnspecifiedError))
         })
     }
 
@@ -1912,10 +1731,10 @@ impl TemplateAreasParser {
                 simplified_string.push_str(token);
                 Atom::from(token)
             } else {
-                if let Some(index) = current_area_index.take() {
-                    if self.areas[index].columns.end != column {
-                        return Err(());
-                    }
+                if let Some(index) = current_area_index.take()
+                    && self.areas[index].columns.end != column
+                {
+                    return Err(());
                 }
                 simplified_string.push('.');
                 continue;
@@ -1966,11 +1785,11 @@ impl TemplateAreasParser {
             // https://github.com/w3c/csswg-drafts/issues/5110
             return Err(());
         }
-        if let Some(index) = current_area_index {
-            if self.areas[index].columns.end != column + 1 {
-                debug_assert_ne!(self.areas[index].rows.start, self.row);
-                return Err(());
-            }
+        if let Some(index) = current_area_index
+            && self.areas[index].columns.end != column + 1
+        {
+            debug_assert_ne!(self.areas[index].rows.start, self.row);
+            return Err(());
         }
         if self.row == 1 {
             self.width = column;
@@ -2004,12 +1823,9 @@ impl TemplateAreas {
 }
 
 impl Parse for TemplateAreas {
-    fn parse<'i, 't>(
-        _: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(_: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         Self::parse_internal(input)
-            .map_err(|()| input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
+            .map_err(|()| ParseError::custom(StyleParseErrorKind::UnspecifiedError))
     }
 }
 
@@ -2029,10 +1845,7 @@ impl Parse for TemplateAreas {
 pub struct TemplateAreasArc(#[ignore_malloc_size_of = "Arc"] pub Arc<TemplateAreas>);
 
 impl Parse for TemplateAreasArc {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         let parsed = TemplateAreas::parse(context, input)?;
         Ok(TemplateAreasArc(Arc::new(parsed)))
     }
@@ -2107,11 +1920,11 @@ impl<'a> Iterator for TemplateAreasTokenizer<'a> {
 }
 
 fn is_name_code_point(c: char) -> bool {
-    c >= 'A' && c <= 'Z'
-        || c >= 'a' && c <= 'z'
+    c.is_ascii_uppercase()
+        || c.is_ascii_lowercase()
         || c >= '\u{80}'
         || c == '_'
-        || c >= '0' && c <= '9'
+        || c.is_ascii_digit()
         || c == '-'
 }
 
@@ -2157,14 +1970,10 @@ pub type ZIndex = GenericZIndex<Integer>;
 pub type AspectRatio = GenericAspectRatio<NonNegativeNumber>;
 
 impl Parse for AspectRatio {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         use crate::values::generics::position::PreferredRatio;
         use crate::values::specified::Ratio;
 
-        let location = input.current_source_location();
         let mut auto = input.try_parse(|i| i.expect_ident_matching("auto"));
         let ratio = input.try_parse(|i| Ratio::parse(context, i));
         if auto.is_err() {
@@ -2172,7 +1981,7 @@ impl Parse for AspectRatio {
         }
 
         if auto.is_err() && ratio.is_err() {
-            return Err(location.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+            return Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError));
         }
 
         Ok(AspectRatio {
@@ -2207,25 +2016,29 @@ impl Inset {
     /// Parses an inset type, allowing the unitless length quirk.
     /// <https://quirks.spec.whatwg.org/#the-unitless-length-quirk>
     #[inline]
-    pub fn parse_quirky<'i, 't>(
+    pub fn parse_quirky(
         context: &ParserContext,
-        input: &mut Parser<'i, 't>,
+        input: &mut Parser,
         allow_quirks: AllowQuirks,
-    ) -> Result<Self, ParseError<'i>> {
+    ) -> Result<Self, ParseError> {
         if let Ok(l) = input.try_parse(|i| LengthPercentage::parse_quirky(context, i, allow_quirks))
         {
             return Ok(Self::LengthPercentage(l));
         }
-        if input.try_parse(|i| i.expect_ident_matching("auto")).is_ok() {
-            return Ok(Self::Auto);
-        }
+        match input.try_parse(|i| i.expect_ident_matching("auto")) {
+            Ok(_) => return Ok(Self::Auto),
+            Err(e) if !crate::pref!("layout.css.anchor-positioning.enabled", gecko = true) => {
+                return Err(e.into());
+            },
+            Err(_) => (),
+        };
         Self::parse_anchor_functions_quirky(context, input, allow_quirks)
     }
 
-    fn parse_as_anchor_function_fallback<'i, 't>(
+    fn parse_as_anchor_function_fallback(
         context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+        input: &mut Parser,
+    ) -> Result<Self, ParseError> {
         if let Ok(l) =
             input.try_parse(|i| LengthPercentage::parse_quirky(context, i, AllowQuirks::No))
         {
@@ -2234,11 +2047,15 @@ impl Inset {
         Self::parse_anchor_functions_quirky(context, input, AllowQuirks::No)
     }
 
-    fn parse_anchor_functions_quirky<'i, 't>(
+    fn parse_anchor_functions_quirky(
         context: &ParserContext,
-        input: &mut Parser<'i, 't>,
+        input: &mut Parser,
         allow_quirks: AllowQuirks,
-    ) -> Result<Self, ParseError<'i>> {
+    ) -> Result<Self, ParseError> {
+        debug_assert!(
+            crate::pref!("layout.css.anchor-positioning.enabled", gecko = true),
+            "How are we parsing with pref off?"
+        );
         if let Ok(inner) = input.try_parse(|i| AnchorFunction::parse(context, i)) {
             return Ok(Self::AnchorFunction(Box::new(inner)));
         }
@@ -2254,10 +2071,7 @@ impl Inset {
 }
 
 impl Parse for Inset {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         Self::parse_quirky(context, input, AllowQuirks::No)
     }
 }
@@ -2266,10 +2080,10 @@ impl Parse for Inset {
 pub type AnchorFunction = GenericAnchorFunction<specified::Percentage, Inset>;
 
 impl Parse for AnchorFunction {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
+        if !crate::pref!("layout.css.anchor-positioning.enabled", gecko = true) {
+            return Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError));
+        }
         input.expect_function_matching("anchor")?;
         input.parse_nested_block(|i| {
             let target_element = i.try_parse(|i| DashedIdent::parse(context, i)).ok();
@@ -2294,4 +2108,90 @@ impl Parse for AnchorFunction {
             })
         })
     }
+}
+
+/// https://drafts.csswg.org/css-flexbox/#flex-direction-property
+#[allow(missing_docs)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Deserialize,
+    Eq,
+    FromPrimitive,
+    Hash,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    Serialize,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+    ToTyped,
+)]
+#[repr(u8)]
+pub enum FlexDirection {
+    Row,
+    RowReverse,
+    Column,
+    ColumnReverse,
+}
+
+/// https://drafts.csswg.org/css-ui/#propdef-box-sizing
+#[allow(missing_docs)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Deserialize,
+    Eq,
+    FromPrimitive,
+    Hash,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    Serialize,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+    ToTyped,
+)]
+#[repr(u8)]
+pub enum BoxSizing {
+    ContentBox,
+    BorderBox,
+}
+
+/// https://drafts.csswg.org/css-images/#propdef-object-fit
+#[allow(missing_docs)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Deserialize,
+    Eq,
+    FromPrimitive,
+    Hash,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    Serialize,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+    ToTyped,
+)]
+#[repr(u8)]
+pub enum ObjectFit {
+    Fill,
+    Contain,
+    Cover,
+    None,
+    ScaleDown,
 }

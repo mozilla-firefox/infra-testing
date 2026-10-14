@@ -145,7 +145,12 @@ class nsCSSPropertyIDSet {
   }
 
   bool IsSubsetOf(const nsCSSPropertyIDSet& aOther) const {
-    return this->Intersect(aOther).Equals(*this);
+    for (size_t i = 0; i < std::size(mProperties); ++i) {
+      if (mProperties[i] & ~aOther.mProperties[i]) {
+        return false;
+      }
+    }
+    return true;
   }
 
   // Returns a new nsCSSPropertyIDSet with all properties that are both in
@@ -208,6 +213,11 @@ class nsCSSPropertyIDSet {
           mChunk(aOther.mChunk),
           mBit(aOther.mBit) {}
 
+    Iterator() = delete;
+    Iterator(const Iterator&) = delete;
+    Iterator& operator=(const Iterator&) = delete;
+    Iterator& operator=(const Iterator&&) = delete;
+
     static Iterator BeginIterator(const nsCSSPropertyIDSet& aPropertySet) {
       Iterator result(aPropertySet);
 
@@ -264,11 +274,6 @@ class nsCSSPropertyIDSet {
    private:
     explicit Iterator(const nsCSSPropertyIDSet& aPropertySet)
         : mPropertySet(aPropertySet) {}
-
-    Iterator() = delete;
-    Iterator(const Iterator&) = delete;
-    Iterator& operator=(const Iterator&) = delete;
-    Iterator& operator=(const Iterator&&) = delete;
 
     const nsCSSPropertyIDSet& mPropertySet;
     size_t mChunk = 0;

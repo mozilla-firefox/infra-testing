@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_SpeechGrammar_h
-#define mozilla_dom_SpeechGrammar_h
+#ifndef DOM_MEDIA_WEBSPEECH_RECOGNITION_SPEECHGRAMMAR_H_
+#define DOM_MEDIA_WEBSPEECH_RECOGNITION_SPEECHGRAMMAR_H_
 
 #include "js/TypeDecls.h"
 #include "nsCOMPtr.h"
@@ -38,9 +38,9 @@ class SpeechGrammar final : public nsISupports, public nsWrapperCache {
     return Constructor(aGlobal);
   }
 
-  void GetSrc(nsString& aRetVal, ErrorResult& aRv) const;
+  void GetSrc(nsString& aRetVal) const;
 
-  void SetSrc(const nsAString& aArg, ErrorResult& aRv);
+  void SetSrc(const nsAString& aArg);
 
   float GetWeight(ErrorResult& aRv) const;
 
@@ -57,4 +57,4 @@ class SpeechGrammar final : public nsISupports, public nsWrapperCache {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif
+#endif  // DOM_MEDIA_WEBSPEECH_RECOGNITION_SPEECHGRAMMAR_H_

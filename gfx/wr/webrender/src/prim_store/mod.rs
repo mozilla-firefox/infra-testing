@@ -5,7 +5,7 @@
 use api::ColorF;
 use api::{ImageRendering, LineOrientation, PrimitiveFlags};
 use api::units::*;
-use crate::clip::ClipLeafId;
+use crate::clip::ClipNodeId;
 use crate::render_backend::DataStores;
 use crate::space::SnapRounding;
 use crate::quad::QuadTileClassifier;
@@ -13,16 +13,16 @@ use crate::renderer::GpuBufferHandle;
 use crate::segment::EdgeMask;
 use crate::debug_item::{DebugItem, DebugMessage};
 use crate::debug_colors;
-use glyph_rasterizer::{GlyphKey, SubpixelDirection};
+use glyph_rasterizer::GlyphKey;
 use crate::gpu_types::QuadSegment;
 use crate::intern;
 use crate::picture::{PictureInstance, PictureScratch};
 use crate::render_task_graph::RenderTaskId;
 use crate::resource_cache::ImageProperties;
-use std::{hash, u32, usize};
 use crate::util::Recycler;
 use crate::internal_types::{FastHashSet, LayoutPrimitiveInfo};
 use crate::visibility::{PrimitiveDrawHeader, PrimitiveDrawIndex};
+use std::ops;
 
 pub mod backdrop;
 pub mod borders;
@@ -99,96 +99,19 @@ impl ClipTaskIndex {
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, MallocSizeOf, Ord, PartialOrd)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
-pub struct PictureIndex(pub usize);
+pub struct PictureIndex(pub u32);
 
 impl PictureIndex {
-    pub const INVALID: PictureIndex = PictureIndex(!0);
-}
-
-#[cfg_attr(feature = "capture", derive(Serialize))]
-#[cfg_attr(feature = "replay", derive(Deserialize))]
-#[derive(Copy, Debug, Clone, MallocSizeOf, PartialEq)]
-pub struct RectKey {
-    pub x0: f32,
-    pub y0: f32,
-    pub x1: f32,
-    pub y1: f32,
-}
-
-impl RectKey {
-    pub fn intersects(&self, other: &Self) -> bool {
-        self.x0 < other.x1
-            && other.x0 < self.x1
-            && self.y0 < other.y1
-            && other.y0 < self.y1
-    }
-}
-
-impl Eq for RectKey {}
-
-impl hash::Hash for RectKey {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        self.x0.to_bits().hash(state);
-        self.y0.to_bits().hash(state);
-        self.x1.to_bits().hash(state);
-        self.y1.to_bits().hash(state);
-    }
-}
-
-impl From<RectKey> for LayoutRect {
-    fn from(key: RectKey) -> LayoutRect {
-        LayoutRect {
-            min: LayoutPoint::new(key.x0, key.y0),
-            max: LayoutPoint::new(key.x1, key.y1),
-        }
-    }
-}
-
-impl From<RectKey> for WorldRect {
-    fn from(key: RectKey) -> WorldRect {
-        WorldRect {
-            min: WorldPoint::new(key.x0, key.y0),
-            max: WorldPoint::new(key.x1, key.y1),
-        }
-    }
-}
-
-impl From<LayoutRect> for RectKey {
-    fn from(rect: LayoutRect) -> RectKey {
-        RectKey {
-            x0: rect.min.x,
-            y0: rect.min.y,
-            x1: rect.max.x,
-            y1: rect.max.y,
-        }
-    }
-}
-
-impl From<PictureRect> for RectKey {
-    fn from(rect: PictureRect) -> RectKey {
-        RectKey {
-            x0: rect.min.x,
-            y0: rect.min.y,
-            x1: rect.max.x,
-            y1: rect.max.y,
-        }
-    }
-}
-
-impl From<WorldRect> for RectKey {
-    fn from(rect: WorldRect) -> RectKey {
-        RectKey {
-            x0: rect.min.x,
-            y0: rect.min.y,
-            x1: rect.max.x,
-            y1: rect.max.y,
-        }
-    }
+    pub const INVALID: PictureIndex = PictureIndex(u32::MAX);
 }
 
 // `PolygonKey` now lives in `webrender_api` so builder-side interning keys can
 // reference it. Re-exported here to keep existing references working.
 pub use api::key_types::PolygonKey;
+
+// `RectKey` now lives in `webrender_api` so builder-side interning keys can
+// reference it. Re-exported here to keep existing references working.
+pub use api::key_types::RectKey;
 
 // `SideOffsetsKey`, `SizeKey`, `PointKey` and `VectorKey` now live in
 // `webrender_api` so builder-side interning keys can reference them. Re-exported
@@ -205,6 +128,8 @@ impl From<&LayoutPrimitiveInfo> for PrimKeyCommonData {
             flags: info.flags,
             aligned_aa_edges: info.aligned_aa_edges,
             transformed_aa_edges: info.transformed_aa_edges,
+            prim_rect: info.rect.into(),
+            local_clip_rect: info.clip_rect.into(),
         }
     }
 }
@@ -222,6 +147,12 @@ pub struct PrimTemplateCommonData {
     pub flags: PrimitiveFlags,
     pub aligned_aa_edges: EdgeMask,
     pub transformed_aa_edges: EdgeMask,
+    /// Local-space rect of the primitive, as authored by the display list (not
+    /// snapped to the device pixel grid). See `PrimKeyCommonData::prim_rect`.
+    pub prim_rect: LayoutRect,
+    /// The primitive's own local clip rect, unsnapped. See
+    /// `PrimKeyCommonData::local_clip_rect`.
+    pub local_clip_rect: LayoutRect,
 }
 
 impl PrimTemplateCommonData {
@@ -230,6 +161,8 @@ impl PrimTemplateCommonData {
             flags: common.flags,
             aligned_aa_edges: common.aligned_aa_edges,
             transformed_aa_edges: common.transformed_aa_edges,
+            prim_rect: common.prim_rect.into(),
+            local_clip_rect: common.local_clip_rect.into(),
         }
     }
 }
@@ -333,6 +266,24 @@ pub enum PrimitiveKind {
 }
 
 impl PrimitiveKind {
+    /// Whether this primitive snaps its geometry and clips to the device pixel
+    /// grid.
+    ///
+    /// False only for device-space content: a text run is rasterized at an
+    /// exact sub-pixel position, so rounding its clips would shave the edge
+    /// glyph (bug 2050692). Everything else - including pictures, whose
+    /// image-mask clips must stay aligned with the mask they rasterize to -
+    /// snaps.
+    ///
+    /// Derived rather than stored: it is a property of the primitive type, so
+    /// storing it per instance or per interned template would just repeat the
+    /// same bit across every entry.
+    pub fn snaps(&self) -> bool {
+        !matches!(self, PrimitiveKind::TextRun { .. })
+    }
+}
+
+impl PrimitiveKind {
     pub fn as_pic(&self) -> PictureIndex {
         match self {
             PrimitiveKind::Picture { pic_index, .. } => *pic_index,
@@ -359,97 +310,90 @@ pub struct PrimitiveInstance {
     /// can be found.
     pub kind: PrimitiveKind,
 
-    /// All information and state related to clip(s) for this primitive
-    pub clip_leaf_id: ClipLeafId,
-
-    /// Local-space rect of the primitive (origin + size), as authored by the
-    /// display list (not snapped to the device pixel grid). Carries both the
-    /// position and the per-instance size; the latter used to live on
-    /// `PrimTemplateCommonData.prim_size` but is per-instance now so that the
-    /// intern key can deduplicate across differently-sized instances of the
-    /// same prim shape.
-    pub unsnapped_pattern_rect: LayoutRect,
+    /// Where this primitive's clip chain starts in the clip tree. Walking from
+    /// here up to the current clip root gives the clips that apply to it.
+    pub clip_node_id: ClipNodeId,
 }
 
 /// How a primitive's clips round to the device pixel grid. Distinct from how
-/// the prim's own rect rounds (see `SnapPolicy::rect`): a text run rounds its
-/// rect out on both axes but its clips out only on the non-sub-pixel axis, and
-/// a surface rounds its rect out but leaves its clips exact.
+/// the prim's own rect rounds (see `SnapPolicy::rect`): a device-space prim
+/// rounds its rect out but leaves its clips exact.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum ClipSnap {
-    /// Snap every clip edge to the nearest device pixel. Used by prims that
-    /// snap their whole geometry to the grid (`snaps`).
+    /// Snap every clip edge to the nearest device pixel, except for the clips
+    /// marked as anti-aliased (see `ClipTreeNode::anti_aliased`). Used by
+    /// prims that snap their geometry to the grid (`snaps`), and by
+    /// anti-aliased prims.
     Nearest,
-    /// Leave clip edges exact. Used by device-space surfaces, whose clips must
-    /// stay at the sub-pixel position matching their contents (bug 2050692).
+    /// Leave clip edges exact. Used by device-space prims (text runs and
+    /// surfaces), whose clips must stay at the sub-pixel position matching their
+    /// contents (bug 2050692).
     Exact,
-    /// Device-space text run: round out on the non-sub-pixel axis, keep the
-    /// sub-pixel axis exact (bug 2055145 / bug 2050692). `RoundOut` when the run
-    /// has no sub-pixel positioning.
-    Text(SnapRounding),
 }
 
 /// The device-grid snapping policy for one primitive: how its own bounding rect
 /// rounds, and how its clips round. These are separate axes - e.g. a line
-/// decoration is `{ rect: Line, clip: Nearest }`, a text run is
-/// `{ rect: RoundOut, clip: Text(..) }`, a surface is `{ rect: RoundOut, clip:
-/// Exact }`.
+/// decoration is `{ rect: Line, clip: Nearest }`, while a text run or a surface
+/// is `{ rect: RoundOut, clip: Exact }`.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct SnapPolicy {
     pub rect: SnapRounding,
     pub clip: ClipSnap,
 }
 
+impl SnapPolicy {
+    /// How the prim's own local clip rect rounds. It is part of the prim's
+    /// geometry, so it is left exact when the prim's rect is.
+    pub fn local_clip(&self) -> ClipSnap {
+        match self.rect {
+            SnapRounding::Exact => ClipSnap::Exact,
+            _ => self.clip,
+        }
+    }
+}
+
 impl PrimitiveInstance {
     pub fn new(
         kind: PrimitiveKind,
-        clip_leaf_id: ClipLeafId,
-        unsnapped_pattern_rect: LayoutRect,
+        clip_node_id: ClipNodeId,
     ) -> Self {
         PrimitiveInstance {
             kind,
-            clip_leaf_id,
-            unsnapped_pattern_rect,
+            clip_node_id,
         }
     }
 
     /// How this prim rounds to the device pixel grid: its own rect and its
     /// clips (see `SnapPolicy`).
     ///
-    /// `snaps` is the prim's snap policy, taken from its clip leaf: `false` for
-    /// a device-space prim (text run or surface) that stays at exact sub-pixel
-    /// positions and only needs a conservative, grid-aligned footprint. A
-    /// decoration line snaps its thickness specially so it can't vanish or
-    /// double with scale (bug 1783779); everything else snaps to the nearest
-    /// pixel.
+    /// An anti-aliased prim does not snap its rect or its own local clip rect,
+    /// but snaps the clips of its clip chain like other prims, except for the
+    /// anti-aliased ones. This takes precedence over everything below.
     ///
-    /// The two rounding axes differ for device-space prims: a text run rounds
-    /// its clip *out* on the non-sub-pixel axis so a grid-snapped glyph row is
-    /// never shaved by a fractional clip edge (bug 2055145), while keeping the
-    /// sub-pixel axis exact so the clip keeps matching the glyph's exact
-    /// sub-pixel position (bug 2050692); a surface leaves its clips exact. Both
-    /// keep a `RoundOut` bounding rect. The sub-pixel axis comes from the run's
-    /// own font, so clip code stays agnostic to `subpx_dir`.
-    pub fn snap_policy(&self, snaps: bool, data_stores: &DataStores) -> SnapPolicy {
-        if !snaps {
-            let clip = if let PrimitiveKind::TextRun { data_handle, .. } = self.kind {
-                ClipSnap::Text(match data_stores.text_run[data_handle].font.get_subpx_dir() {
-                    SubpixelDirection::Horizontal =>
-                        SnapRounding::RoundOutNonSubpx { subpx_horizontal: true },
-                    SubpixelDirection::Vertical =>
-                        SnapRounding::RoundOutNonSubpx { subpx_horizontal: false },
-                    SubpixelDirection::None |
-                    SubpixelDirection::Mixed => SnapRounding::RoundOut,
-                })
-            } else {
-                ClipSnap::Exact
-            };
-            return SnapPolicy { rect: SnapRounding::RoundOut, clip };
+    /// A device-space prim (see `PrimitiveKind::snaps`) stays at exact
+    /// sub-pixel positions and only needs a conservative, grid-aligned
+    /// footprint. A decoration line snaps its thickness specially so it can't
+    /// vanish or double with scale (bug 1783779); everything else snaps to the
+    /// nearest pixel.
+    ///
+    /// The two rounding axes differ for a device-space prim: its bounding rect
+    /// rounds out (a conservative, grid-aligned footprint for surface / cluster
+    /// allocation) while its clips stay exact, at the sub-pixel position
+    /// matching its contents (bug 2050692).
+    pub fn snap_policy(&self, data_stores: &DataStores) -> SnapPolicy {
+        if data_stores.prim_has_anti_aliasing(self) {
+            return SnapPolicy { rect: SnapRounding::Exact, clip: ClipSnap::Nearest };
+        }
+        if !self.kind.snaps() {
+            return SnapPolicy { rect: SnapRounding::RoundOut, clip: ClipSnap::Exact };
         }
         let rect = match self.kind {
             PrimitiveKind::LineDecoration { data_handle, .. } => SnapRounding::Line {
                 horizontal: data_stores.line_decoration[data_handle].kind.orientation
                     == LineOrientation::Horizontal,
+            },
+            PrimitiveKind::NormalBorder { data_handle, .. } => SnapRounding::BorderInner {
+                widths: data_stores.normal_border[data_handle].kind.widths,
             },
             _ => SnapRounding::Nearest,
         };
@@ -519,17 +463,24 @@ pub struct PrimitiveFrameScratch {
     /// size, and an entry existing at all means it was written this frame.
     ///
     /// Deliberately private: reach entries through `draw`/`draw_mut`, keyed by
-    /// `PrimitiveDrawIndex`. Use `draw_index_for_instance` to go from a
-    /// primitive instance to its draw, and `PrimitiveDrawHeader`'s
-    /// `prim_instance_index` to go back.
+    /// `PrimitiveDrawIndex`, or through a picture's draws with
+    /// `picture_draw_range`. `PrimitiveDrawHeader`'s `prim_instance_index` goes
+    /// from a draw back to its instance.
     draws: Vec<PrimitiveDrawHeader>,
 
-    /// Maps a primitive instance to the draw pushed for it this frame, or
-    /// `PrimitiveDrawIndex::INVALID` when the instance produced no draw (it was
-    /// culled, or its cluster was not visited). Exists because the visibility
-    /// and prepare passes both walk primitive instances; it becomes redundant
-    /// once they iterate draws directly.
-    instance_to_draw: Vec<PrimitiveDrawIndex>,
+    /// The draws of every visited picture's own primitives, in cluster order.
+    /// Each picture's draws are contiguous; `picture_draw_ranges` locates them.
+    picture_draws: Vec<PrimitiveDrawIndex>,
+
+    /// For each picture, the range of `picture_draws` holding its draws. Empty
+    /// for pictures the visibility pass did not visit.
+    picture_draw_ranges: Vec<ops::Range<u32>>,
+
+    /// Draws of the pictures the visibility pass is currently inside. Child
+    /// pictures are visited in the middle of their parent's primitives, so each
+    /// picture's draws are collected here and moved to `picture_draws` when its
+    /// visit ends.
+    pending_picture_draws: Vec<PrimitiveDrawIndex>,
 
     /// Per-frame scratch for Picture primitives. Holds the picture's
     /// primary/secondary render task ids and any per-composite-mode
@@ -570,7 +521,9 @@ impl Default for PrimitiveFrameScratch {
     fn default() -> Self {
         PrimitiveFrameScratch {
             draws: Vec::new(),
-            instance_to_draw: Vec::new(),
+            picture_draws: Vec::new(),
+            picture_draw_ranges: Vec::new(),
+            pending_picture_draws: Vec::new(),
             pictures: storage::Storage::new(0),
             text_runs: storage::Storage::new(0),
             glyph_keys: GlyphKeyStorage::new(0),
@@ -584,23 +537,50 @@ impl Default for PrimitiveFrameScratch {
 }
 
 impl PrimitiveFrameScratch {
-    /// Prepare the draw storage for a new frame over a scene with `prim_count`
-    /// primitive instances.
-    pub fn reset_draws(&mut self, prim_count: usize) {
+    /// Prepare the draw storage for a new frame over a scene with
+    /// `picture_count` pictures.
+    pub fn reset_draws(&mut self, picture_count: usize) {
         self.draws.clear();
-        self.instance_to_draw.clear();
-        self.instance_to_draw.resize(prim_count, PrimitiveDrawIndex::INVALID);
+        self.picture_draws.clear();
+        self.picture_draw_ranges.clear();
+        self.picture_draw_ranges.resize(picture_count, 0 .. 0);
+        debug_assert!(self.pending_picture_draws.is_empty());
+    }
+
+    /// Start collecting the draws of a picture's own primitives. Returns the
+    /// token to hand back to `end_picture_draws` when the picture's visit ends.
+    pub fn begin_picture_draws(&self) -> usize {
+        self.pending_picture_draws.len()
+    }
+
+    /// Finish collecting a picture's draws, begun by the `begin_picture_draws`
+    /// call that returned `start`.
+    pub fn end_picture_draws(&mut self, pic_index: PictureIndex, start: usize) {
+        let first = self.picture_draws.len() as u32;
+        self.picture_draws.extend(self.pending_picture_draws.drain(start ..));
+        let end = self.picture_draws.len() as u32;
+        self.picture_draw_ranges[pic_index.0 as usize] = first .. end;
+    }
+
+    /// The range of `picture_draw` positions holding a picture's draws.
+    pub fn picture_draw_range(&self, pic_index: PictureIndex) -> ops::Range<u32> {
+        self.picture_draw_ranges[pic_index.0 as usize].clone()
+    }
+
+    /// The draw at a position returned by `picture_draw_range`.
+    pub fn picture_draw(&self, position: u32) -> PrimitiveDrawIndex {
+        self.picture_draws[position as usize]
     }
 
     /// Record a draw for the primitive instance named by the header, and return
-    /// its index. Called once per drawn primitive by the visibility pass.
+    /// its index. An instance may be drawn more than once in a frame.
     pub fn push_draw(&mut self, header: PrimitiveDrawHeader) -> PrimitiveDrawIndex {
         let prim_instance_index = header.prim_instance_index;
         debug_assert!(prim_instance_index.0 != PrimitiveInstanceIndex::INVALID.0);
 
         let draw_index = PrimitiveDrawIndex::from_u32(self.draws.len() as u32);
         self.draws.push(header);
-        self.instance_to_draw[prim_instance_index.0 as usize] = draw_index;
+        self.pending_picture_draws.push(draw_index);
 
         draw_index
     }
@@ -623,18 +603,9 @@ impl PrimitiveFrameScratch {
         }
     }
 
-    /// The draw pushed for a primitive instance this frame, if any.
-    pub fn draw_index_for_instance(
-        &self,
-        prim_instance_index: PrimitiveInstanceIndex,
-    ) -> Option<PrimitiveDrawIndex> {
-        let draw_index = self.instance_to_draw[prim_instance_index.0 as usize];
-
-        if draw_index == PrimitiveDrawIndex::INVALID {
-            None
-        } else {
-            Some(draw_index)
-        }
+    /// Every draw pushed this frame.
+    pub fn draws(&self) -> &[PrimitiveDrawHeader] {
+        &self.draws
     }
 
     /// The draw header for a draw index, as carried by the command stream and
@@ -647,21 +618,11 @@ impl PrimitiveFrameScratch {
         &mut self.draws[draw_index.0 as usize]
     }
 
-    /// The draw header for a primitive instance, if it produced a draw this
-    /// frame. Convenience for the passes that still walk primitive instances
-    /// rather than draws; goes away once they iterate draws directly.
-    pub fn draw_for_instance(
-        &self,
-        prim_instance_index: PrimitiveInstanceIndex,
-    ) -> Option<&PrimitiveDrawHeader> {
-        self.draw_index_for_instance(prim_instance_index)
-            .map(|draw_index| self.draw(draw_index))
-    }
-
 
     pub fn recycle(&mut self, recycler: &mut Recycler) {
         recycler.recycle_vec(&mut self.draws);
-        recycler.recycle_vec(&mut self.instance_to_draw);
+        recycler.recycle_vec(&mut self.picture_draws);
+        recycler.recycle_vec(&mut self.picture_draw_ranges);
         self.pictures.recycle(recycler);
         self.text_runs.recycle(recycler);
         self.glyph_keys.recycle(recycler);
@@ -913,7 +874,7 @@ impl PrimitiveStore {
     pub fn print_picture_tree(&self, root: PictureIndex) {
         use crate::print_tree::PrintTree;
         let mut pt = PrintTree::new("picture tree");
-        self.pictures[root.0].print(&self.pictures, root, &mut pt);
+        self.pictures[root.0 as usize].print(&self.pictures, root, &mut pt);
     }
 }
 
@@ -926,12 +887,6 @@ impl Default for PrimitiveStore {
 /// Trait for primitives that are directly internable.
 /// see SceneBuilder::add_primitive<P>
 pub trait InternablePrimitive: intern::Internable<InternData = ()> + Sized {
-    /// Whether this primitive snaps its geometry and clips to the device pixel
-    /// grid. Overridden to `false` for device-space content (text runs), whose
-    /// clips must stay at their exact sub-pixel position (bug 2050692). Used
-    /// when building the primitive's clip leaf.
-    const SNAP_CLIPS: bool = true;
-
     /// Build a new key from self with `info`.
     fn into_key(
         self,
@@ -947,6 +902,39 @@ pub trait InternablePrimitive: intern::Internable<InternData = ()> + Sized {
 
 
 #[test]
+fn device_text_runs_do_not_snap_their_clips() {
+    // Regression test for bug 2050692 (Slack channel-name last character cut
+    // off). A device-space text run must resolve its clips UNSNAPPED, or a
+    // fractional clip edge rounds inward onto the device grid and shaves the
+    // last glyph.
+    //
+    // The rendered difference is a sub-pixel clip shift that headless software
+    // rasterization collapses (it only bites once the compositor anti-aliases
+    // the clip edge, e.g. Windows at a fractional device scale), so it cannot
+    // be guarded by a reftest - hence this unit test on the policy itself.
+    use crate::intern::Handle;
+
+    assert!(
+        !PrimitiveKind::TextRun { data_handle: Handle::INVALID }.snaps(),
+        "device-space text must not snap its clips (bug 2050692)",
+    );
+
+    // Everything else snaps, including pictures - an image-mask clip has to
+    // stay aligned with the mask it rasterizes to.
+    assert!(
+        PrimitiveKind::Rectangle { data_handle: Handle::INVALID }.snaps(),
+        "a snapping primitive must snap its clips",
+    );
+    assert!(
+        PrimitiveKind::Picture {
+            data_handle: Handle::INVALID,
+            pic_index: PictureIndex::INVALID,
+        }.snaps(),
+        "a picture must snap its clips so image-mask clips stay aligned",
+    );
+}
+
+#[test]
 #[cfg(target_pointer_width = "64")]
 fn test_struct_sizes() {
     use std::mem;
@@ -956,6 +944,7 @@ fn test_struct_sizes() {
     //     test expectations and move on.
     // (b) You made a structure larger. This is not necessarily a problem, but should only
     //     be done with care, and after checking if talos performance regresses badly.
-    assert_eq!(mem::size_of::<PrimitiveInstance>(), 48, "PrimitiveInstance size changed");
-    assert_eq!(mem::size_of::<PrimitiveKind>(), 24, "PrimitiveKind size changed");
+    assert_eq!(mem::size_of::<PrimitiveInstance>(), 20, "PrimitiveInstance size changed");
+    assert_eq!(mem::size_of::<PrimitiveKind>(), 16, "PrimitiveKind size changed");
 }
+

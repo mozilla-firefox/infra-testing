@@ -129,9 +129,8 @@ nsresult WorkletModuleLoader::CompileJavaScriptOrWasmModule(
 #ifdef NIGHTLY_BUILD
   if (aRequest->HasWasmMimeTypeEssence()) {
     MOZ_ASSERT(aRequest->IsWasmBytes());
-    JS::Rooted<JSObject*> moduleReq(aCx, aRequest->mModuleRequestObj);
     JSObject* wasmModule;
-    if (moduleReq && JS::ModuleRequestIsSourcePhase(aCx, moduleReq)) {
+    if (aRequest->IsSourcePhaseRequest(aCx)) {
       wasmModule =
           JS::CompileWasmModuleAsSource(aCx, aOptions, aRequest->WasmBytes());
     } else {
@@ -202,7 +201,7 @@ nsresult WorkletModuleLoader::CreateTextModule(
                                           aRequest->mLoadContext.get());
   NS_ENSURE_SUCCESS(rv, rv);
 
-  auto compile = [&](auto& source) {
+  auto compile = [&](auto& source) -> JSObject* {
     using T = decltype(source);
     static_assert(std::is_same_v<T, JS::SourceText<char16_t>&> ||
                   std::is_same_v<T, JS::SourceText<Utf8Unit>&>);
@@ -213,6 +212,9 @@ nsresult WorkletModuleLoader::CreateTextModule(
                                   JS::UTF8Chars(source.get(), source.length()));
     } else {
       str = JS_NewUCStringCopyN(aCx, source.get(), source.length());
+    }
+    if (!str) {
+      return nullptr;
     }
 
     JS::Rooted<JS::Value> defaultExport(aCx, JS::StringValue(str));

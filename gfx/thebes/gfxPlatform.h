@@ -6,6 +6,7 @@
 #define GFX_PLATFORM_H
 
 #include "GfxInfoCollector.h"
+#include "X11UndefineNone.h"
 #include "gfxSkipChars.h"
 #include "gfxTelemetry.h"
 #include "gfxTypes.h"
@@ -248,29 +249,6 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
    */
   static already_AddRefed<DrawTarget> CreateDrawTargetForSurface(
       gfxASurface* aSurface, const mozilla::gfx::IntSize& aSize);
-
-  /*
-   * Creates a SourceSurface for a gfxASurface. This function does no caching,
-   * so the caller should cache the gfxASurface if it will be used frequently.
-   * The returned surface keeps a reference to aTarget, so it is OK to keep the
-   * surface, even if aTarget changes.
-   * aTarget should not keep a reference to the returned surface because that
-   * will cause a cycle.
-   *
-   * This function is static so that it can be accessed from outside the main
-   * process.
-   *
-   * aIsPlugin is used to tell the backend that they can optimize this surface
-   * specifically because it's used for a plugin. This is mostly for Skia.
-   */
-  static already_AddRefed<SourceSurface> GetSourceSurfaceForSurface(
-      RefPtr<mozilla::gfx::DrawTarget> aTarget, gfxASurface* aSurface,
-      bool aIsPlugin = false);
-
-  static void ClearSourceSurfaceForSurface(gfxASurface* aSurface);
-
-  static already_AddRefed<DataSourceSurface> GetWrappedDataSourceSurface(
-      gfxASurface* aSurface);
 
   already_AddRefed<DrawTarget> CreateOffscreenContentDrawTarget(
       const mozilla::gfx::IntSize& aSize, mozilla::gfx::SurfaceFormat aFormat,
@@ -969,7 +947,7 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
 
   static void InitOpenGLConfig();
 
-  static void VideoDecodingFailedChangedCallback(const char* aPref, void*);
+  static void HardwareVideoFailedChangedCallback(const char* aPref, void*);
 
   static void HWDRMFailedChangedCallback(const char* aPref, void*);
 
@@ -987,7 +965,7 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   void InitGPUProcessPrefs();
   virtual void InitPlatformGPUProcessPrefs() {}
   virtual void InitPlatformHardwareVideoConfig() {}
-  virtual void InitPlatformHardwarDRMConfig() {}
+  virtual void InitPlatformHardwareDRMConfig() {}
 
   // Gather telemetry data about the Gfx Platform and send it
   static void ReportTelemetry();

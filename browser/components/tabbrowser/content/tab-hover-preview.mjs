@@ -5,14 +5,14 @@
 var { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const lazy = {};
-ChromeUtils.defineESModuleGetters(lazy, {
+const lazy = XPCOMUtils.declareLazy({
   ContextualIdentityService:
     "moz-src:///toolkit/components/contextualidentity/ContextualIdentityService.sys.mjs",
   PageWireframes:
     "moz-src:///browser/components/sessionstore/PageWireframes.sys.mjs",
   SponsorProtection:
     "moz-src:///browser/components/newtab/SponsorProtection.sys.mjs",
+  Tabbrowser: "moz-src:///browser/components/tabbrowser/Tabbrowser.sys.mjs",
   TabNotes: "moz-src:///browser/components/tabnotes/TabNotes.sys.mjs",
 });
 
@@ -89,8 +89,8 @@ export default class TabHoverPanelSet {
       const target = event.target.closest?.("tab, .tab-group-label");
       if (
         target &&
-        (this.#win.gBrowser.isTab(target) ||
-          this.#win.gBrowser.isTabGroupLabel(target))
+        (lazy.Tabbrowser.isTab(target) ||
+          lazy.Tabbrowser.isTabGroupLabel(target))
       ) {
         this.deactivate(null, { force: true });
       }
@@ -112,14 +112,14 @@ export default class TabHoverPanelSet {
       return;
     }
 
-    if (this.#win.gBrowser.isTab(tabOrGroup)) {
+    if (lazy.Tabbrowser.isTab(tabOrGroup)) {
       // Don't activate tab preview if hovering over the note icon
       if (tabOrGroup._noteIconHover) {
         return;
       }
       this.#setActivePanel(this.tabPanel);
       this.tabPanel.activate(tabOrGroup);
-    } else if (this.#win.gBrowser.isTabGroup(tabOrGroup)) {
+    } else if (lazy.Tabbrowser.isTabGroup(tabOrGroup)) {
       if (!tabOrGroup.collapsed) {
         return;
       }
@@ -141,7 +141,7 @@ export default class TabHoverPanelSet {
    * Panels linger briefly to allow the mouse to travel between the anchor and
    * panel; passing `force` skips that delay.
    *
-   * @param {MozTabbrowserTab|MozTabbrowserTabGroup|null} tabOrGroup - The tab or group to activate the panel on.
+   * @param {MozTabbrowserTab|MozTabbrowserTabGroup|null} [tabOrGroup] - The tab or group to activate the panel on.
    * @param {bool} [options.force] - If true, force immediate deactivation of the panels.
    */
   deactivate(tabOrGroup, { force = false } = {}) {
@@ -149,12 +149,12 @@ export default class TabHoverPanelSet {
       return;
     }
 
-    if (this.#win.gBrowser.isTab(tabOrGroup) || !tabOrGroup) {
+    if (lazy.Tabbrowser.isTab(tabOrGroup) || !tabOrGroup) {
       this.tabPanel.deactivate(tabOrGroup, { force });
       this.tabNotePanel.deactivate(tabOrGroup, { force });
     }
 
-    if (this.#win.gBrowser.isTabGroup(tabOrGroup) || !tabOrGroup) {
+    if (lazy.Tabbrowser.isTabGroup(tabOrGroup) || !tabOrGroup) {
       this.tabGroupPanel.deactivate({ force });
     }
   }
@@ -248,6 +248,19 @@ export default class TabHoverPanelSet {
     // opener must be cleared after all panels have been hidden.
     this.panelOpener.reset();
     this.#activePanel = null;
+  }
+
+  /**
+   * Whether the given node is one of the hover preview panels managed here,
+   * as opposed to an unrelated panel or menupopup.
+   *
+   * @param {Node} node
+   * @returns {boolean}
+   */
+  isHoverPanel(node) {
+    return [this.tabPanel, this.tabGroupPanel, this.tabNotePanel].some(
+      panel => panel.panelElement == node
+    );
   }
 
   shouldActivate() {
@@ -666,7 +679,7 @@ class TabPanel extends HoverPanel {
 
     this.#updateContainerIndicator();
 
-    if (this.win.gBrowser.showPidAndActiveness) {
+    if (lazy.Tabbrowser.prefs.showPidAndActiveness) {
       this.panelElement.querySelector(".tab-preview-pid").textContent =
         this.#displayPids;
       this.panelElement.querySelector(".tab-preview-activeness").textContent =
@@ -1201,7 +1214,7 @@ class TabPreviewPanelTimedFunction {
   /** @type {function(): void | null} */
   #target;
 
-  /** @type {TabPanel} */
+  /** @type {HoverPanel} */
   #from;
 
   constructor(zeroDelayTime, win) {
@@ -1241,7 +1254,7 @@ class TabPreviewPanelTimedFunction {
    *
    * @param {function(): void | null} target
    *   The function to execute
-   * @param {TabPanel} from
+   * @param {HoverPanel} from
    *   The calling panel
    */
   execute(target, from) {
@@ -1268,7 +1281,7 @@ class TabPreviewPanelTimedFunction {
    * Clear the timer, if it is active, for example when a user moves off a panel.
    * This has the effect of suppressing the delayed function execution.
    *
-   * @param {TabPanel} from
+   * @param {HoverPanel} from
    *   The calling panel. This must be the same as the panel that most recently
    *   called `execute`. If it is not, the call will be ignored. This is
    *   necessary to prevent, e.g., the tab hover panel from inadvertently

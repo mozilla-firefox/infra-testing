@@ -124,12 +124,6 @@ impl CascadeOrigin {
         }
     }
 
-    /// Returns whether this is an "author" origin (in the "simplified" sense of the word).
-    #[inline]
-    pub fn is_author_origin(self) -> bool {
-        self > Self::User
-    }
-
     /// Select a lock guard for this origin.
     #[inline]
     pub fn guard<'a>(&self, guards: &'a StylesheetGuards<'a>) -> &'a SharedRwLockReadGuard<'a> {
@@ -283,7 +277,7 @@ impl CascadeLevel {
     /// Returns an author normal cascade level with the given shadow cascade order.
     #[inline]
     pub fn author_normal(shadow_cascade_order: ShadowCascadeOrder) -> Self {
-        let abs = (shadow_cascade_order.0.abs() as u8) << Self::CASCADE_ORDER_SHIFT;
+        let abs = shadow_cascade_order.0.unsigned_abs() << Self::CASCADE_ORDER_SHIFT;
         let mut result = Self::new(CascadeOrigin::Author);
         result |= Self::from_bits_truncate(abs);
         result.set(Self::CASCADE_ORDER_SIGN, shadow_cascade_order.0 < 0);

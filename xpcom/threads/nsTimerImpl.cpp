@@ -4,6 +4,8 @@
 
 #include "nsTimerImpl.h"
 
+#include <algorithm>
+#include <bit>
 #include <utility>
 
 #include "TimerThread.h"
@@ -15,6 +17,7 @@
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticMutex.h"
+#include "mozilla/StaticPrefs_timer.h"
 #include "mozilla/Try.h"
 #include "nsThreadManager.h"
 #include "nsThreadUtils.h"
@@ -391,6 +394,21 @@ nsTimerImpl::nsTimerImpl(nsITimer* aTimer, nsIEventTarget* aTarget)
   // XXX some code creates timers during xpcom shutdown, when threads are no
   // longer available, so we cannot turn this on yet.
   // MOZ_ASSERT(mEventTarget);
+}
+
+TimeDuration nsTimerImpl::AcceptableFiringDelay() const {
+  if (!IsSlack() && !IsLowPriority()) {
+    return TimeDuration::Zero();
+  }
+  // We use a fraction of the delay to determine our tolerance.
+  constexpr int64_t slackDivider = 8;
+  static_assert(std::has_single_bit(static_cast<uint64_t>(slackDivider)),
+                "division must be a shift");
+  const TimeDuration minDelay = TimeDuration::FromMilliseconds(
+      mozilla::StaticPrefs::timer_minimum_firing_delay_tolerance_ms());
+  const TimeDuration maxDelay = TimeDuration::FromMilliseconds(
+      mozilla::StaticPrefs::timer_maximum_firing_delay_tolerance_ms());
+  return std::clamp(mDelay / slackDivider, minDelay, maxDelay);
 }
 
 // static

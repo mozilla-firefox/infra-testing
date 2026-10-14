@@ -101,7 +101,7 @@ void HTMLObjectElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
   AfterMaybeChangeAttr(aNamespaceID, aName, aNotify);
 
   if (aName == nsGkAtoms::data) {
-    RefreshFeaturePolicy();
+    RefreshPermissionsPolicy();
   }
 
   return nsGenericHTMLFormControlElement::AfterSetAttr(
@@ -220,8 +220,8 @@ void HTMLObjectElement::MapAttributesIntoRule(
   MapCommonAttributesInto(aBuilder);
 }
 
-NS_IMETHODIMP_(bool)
-HTMLObjectElement::IsAttributeMapped(const nsAtom* aAttribute) const {
+bool HTMLObjectElement::IsNoNamespaceAttrMapped(
+    const nsAtom* aAttribute) const {
   static const MappedAttributeEntry* const map[] = {
       sCommonAttributeMap,
       sImageMarginSizeAttributeMap,

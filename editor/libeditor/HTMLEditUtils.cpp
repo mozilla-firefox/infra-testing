@@ -4073,11 +4073,11 @@ bool HTMLEditUtils::MaybeCSSSpecificColorValue(const nsAString& aColorValue) {
   if (colorValue.LowerCaseEqualsASCII("transparent")) {
     return true;
   }
-  nscolor color = NS_RGB(0, 0, 0);
   if (colorValue.IsEmpty() || colorValue.First() == '#') {
     return false;
   }
   const NS_ConvertUTF16toUTF8 colorU8(colorValue);
+  StyleAbsoluteColor color;
   if (Servo_ColorNameToRgb(&colorU8, &color)) {
     return false;
   }
@@ -4093,15 +4093,14 @@ bool HTMLEditUtils::MaybeCSSSpecificColorValue(const nsAString& aColorValue) {
 
 static bool ComputeColor(const nsAString& aColorValue, nscolor* aColor,
                          bool* aIsCurrentColor) {
-  return ServoCSSParser::ComputeColor(nullptr, NS_RGB(0, 0, 0),
-                                      NS_ConvertUTF16toUTF8(aColorValue),
-                                      aColor, aIsCurrentColor);
+  return ServoCSSParser::ComputeColor(
+      nullptr, NS_ConvertUTF16toUTF8(aColorValue), aColor, aIsCurrentColor);
 }
 
 static bool ComputeColor(const nsACString& aColorValue, nscolor* aColor,
                          bool* aIsCurrentColor) {
-  return ServoCSSParser::ComputeColor(nullptr, NS_RGB(0, 0, 0), aColorValue,
-                                      aColor, aIsCurrentColor);
+  return ServoCSSParser::ComputeColor(nullptr, aColorValue, aColor,
+                                      aIsCurrentColor);
 }
 
 bool HTMLEditUtils::CanConvertToHTMLColorValue(const nsAString& aColorValue) {
@@ -4321,7 +4320,7 @@ SelectedTableCellScanner::SelectedTableCellScanner(
   mSelectedCellElements.SetCapacity(aRanges.Ranges().Length());
   mSelectedCellElements.AppendElement(*firstSelectedCellElement);
   for (uint32_t i = 1; i < aRanges.Ranges().Length(); i++) {
-    nsRange* range = aRanges.Ranges()[i];
+    dom::Range* range = aRanges.Ranges()[i];
     if (NS_WARN_IF(!range) || NS_WARN_IF(!range->IsPositioned())) {
       continue;  // Shouldn't occur in normal conditions.
     }

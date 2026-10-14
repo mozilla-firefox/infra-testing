@@ -74,7 +74,8 @@ class EditBookmarkFragment : Fragment(), SystemInsetsPaddedFragment {
                                     },
                                     navigateToImportDialog = {},
                                     shareBookmarks = { bookmarks ->
-                                        val shareItems = bookmarks.asShareDataArray().toList()
+                                        val isPrivate = appStore.state.mode.isPrivate
+                                        val shareItems = bookmarks.asShareDataArray(isPrivate).toList()
                                         requireComponents.useCases.shareUseCases.shareItems(
                                             items = shareItems,
                                             source = ShareSource.BOOKMARKS,
@@ -91,7 +92,7 @@ class EditBookmarkFragment : Fragment(), SystemInsetsPaddedFragment {
                                                 navController.nav(
                                                     R.id.bookmarkFragment,
                                                     BookmarkFragmentDirections.actionGlobalShareFragment(
-                                                        data = bookmarks.asShareDataArray()
+                                                        data = bookmarks.asShareDataArray(isPrivate)
                                                     ),
                                                 )
                                             },

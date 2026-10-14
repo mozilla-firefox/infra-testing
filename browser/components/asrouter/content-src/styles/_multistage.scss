@@ -167,13 +167,13 @@ html {
 
       .section-secondary {
         // Swap the wide-layout hero image for the pink hero gradient. Each stop
-        // resolves to the flat #210340 in dark mode (see the smart-window
+        // resolves to the same flat color in dark mode (see the smart-window
         // gradient above for the same per-stop light-dark() pattern).
         background: linear-gradient(
           0deg,
-          light-dark(rgb(252, 245, 240), #210340) 0%,
-          light-dark(rgb(250, 236, 241), #210340) 57%,
-          light-dark(rgb(245, 212, 245), #210340) 100%
+          light-dark(rgb(252, 245, 240), var(--onboarding-dark-backdrop-color)) 0%,
+          light-dark(rgb(250, 236, 241), var(--onboarding-dark-backdrop-color)) 57%,
+          light-dark(rgb(245, 212, 245), var(--onboarding-dark-backdrop-color)) 100%
         );
         height: auto;
         min-height: $small-secondary-section-height;
@@ -255,6 +255,22 @@ html {
   --screen-1-yellow-circle-background-color: var(--color-purple-60);
   --screen-2-yellow-circle-background-color: var(--color-pink-50);
   --message-bar-icon-color: light-dark(var(--color-blue-60), var(--color-blue-20));
+  // Per the design spec sheet the card is translucent white over the page
+  // backdrop in light mode, and --color-violet-80 in dark. The dark value is
+  // #271C48CC, that colour at 80% opacity; there is no Nova token for the
+  // alpha variant.
+  --multi-select-card-background-color: light-dark(color-mix(in srgb, var(--color-white) 30%, transparent), color-mix(in srgb, var(--color-violet-80) 80%, transparent));
+  // The spec sheet asks for the standard card border in both modes.
+  --multi-select-card-border-color: var(--card-border-color);
+  // The notice reads as a lighter panel than the card row it belongs to: the
+  // dark values sample as the card colour at 30% over the screen backdrop, with
+  // a faint violet border. Light values are chosen to keep the same
+  // relationship; design has only specified the dark ones.
+  --multi-select-notice-background-color: light-dark(color-mix(in srgb, var(--color-violet-10) 40%, transparent), color-mix(in srgb, var(--color-violet-80) 30%, transparent));
+  --multi-select-notice-border-color: light-dark(color-mix(in srgb, var(--color-violet-70) 15%, transparent), color-mix(in srgb, var(--color-violet-30) 10%, transparent));
+  --multi-select-notice-icon-color: light-dark(var(--color-violet-70), var(--color-violet-30));
+  --onboarding-dark-backdrop-color: #210340;
+  --center-large-glow-color: light-dark(var(--color-white), var(--onboarding-dark-backdrop-color));
 
   @media (forced-colors: active) {
     --picker-background-color: ButtonFace;
@@ -262,9 +278,14 @@ html {
     --picker-border-color: ButtonText;
     --picker-checked-border-color: var(--picker-border-color);
     --picker-hover-border-color: SelectedItem;
-    --picker-focus-ring-color: CanvasText;
     --picker-checkbox-color: ButtonText;
     --picker-checkbox-hover-color: SelectedItem;
+    --picker-focus-ring-color: CanvasText;
+    --multi-select-card-background-color: ButtonFace;
+    --multi-select-card-border-color: ButtonText;
+    --multi-select-notice-background-color: ButtonFace;
+    --multi-select-notice-border-color: ButtonText;
+    --multi-select-notice-icon-color: ButtonText;
   }
 
   font-family: system-ui;
@@ -313,154 +334,6 @@ html {
     transform: rotateY(180deg);
   }
 
-  &:has([pos='split'][fullscreen]) {
-    min-height: 100vh;
-    height: auto;
-    display: flex;
-    flex-direction: column;
-  }
-
-  &:has([pos='center-large'][fullscreen]) {
-    .section-main {
-      height: 90%;
-      width: 90%;
-      margin: auto;
-
-      .main-content {
-        box-shadow: none;
-
-        > .secondary-buttons-top-container,
-        > .secondary-cta.top {
-          position: static;
-          align-self: flex-end;
-          padding-block: var(--space-large);
-          padding-inline-end: var(--space-xxlarge);
-        }
-
-        .secondary-buttons-top-container .secondary-cta.top {
-          padding-inline-end: 0;
-        }
-
-        @media not (prefers-contrast) {
-          border: 1px solid var(--border-color-deemphasized);
-          backdrop-filter: blur(8px);
-          background-color: light-dark(
-            color-mix(in srgb, var(--color-black) 5%, transparent),
-            color-mix(in srgb, var(--color-black) 20%, transparent)
-          );
-        }
-
-        .main-content-inner {
-          width: 50%;
-          margin: auto;
-          justify-content: center;
-
-          @media (width <= 720px) {
-            width: 80%;
-          }
-        }
-      }
-    }
-
-    .corner-image-container {
-      position: absolute;
-      inset: 0;
-      z-index: 2;
-      pointer-events: none;
-
-      @media (width <= 720px) {
-        display: none;
-      }
-
-      .brand-logo {
-        margin-block: 0;
-      }
-
-      .corner-image {
-        position: absolute;
-
-        &.bottom-left {
-          bottom: -10px;
-          left: 20px;
-        }
-
-        &.bottom-right {
-          bottom: -10px;
-          right: 20px;
-        }
-
-        &.top-left {
-          top: -10px;
-          left: 20px;
-        }
-
-        &.top-right {
-          top: -10px;
-          right: 20px;
-        }
-      }
-    }
-
-    &:has(theme-picker) {
-      .content-tile {
-        margin-inline: auto;
-      }
-    }
-  }
-
-  .section-main {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    width: $main-section-width;
-    flex-shrink: 0;
-  }
-
-  .section-main:not(.embedded-migration) {
-    position: relative;
-  }
-
-  .main-content {
-    background-color: var(--background-color-canvas);
-    // Fallback value can be removed after Nova has reached release
-    border-radius: var(--border-radius-xlarge, 16px);
-    box-shadow: 0 2px 14px 0 rgba(0, 0, 0, 20%);
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    padding: 0;
-    transition: var(--transition);
-    z-index: 1;
-    box-sizing: border-box;
-
-    @media (prefers-contrast){
-      border: 1px solid var(--text-color)
-    }
-
-    &.no-steps {
-      padding-bottom: 48px;
-    }
-
-    .main-content-inner {
-      display: flex;
-      flex-direction: column;
-      flex-grow: 1;
-      justify-content: space-around;
-    }
-  }
-
-  // Handle conditional display of steps indicator
-  // Don't show when there's only one screen
-  .main-content .no-steps {
-    .main-content {
-      padding-bottom: 48px;
-    }
-
-    .steps {
-      display: none;
-    }
-  }
-
   @mixin arrow-icon-styles {
     .arrow-icon {
       -moz-context-properties: fill;
@@ -482,6 +355,7 @@ html {
 
   @mixin secondary-cta-styles {
     background-color: var(--button-background-color);
+    color: var(--button-text-color);
     border: var(--button-border);
     line-height: 12px;
     font-size: 0.72em;
@@ -519,6 +393,381 @@ html {
       @media (prefers-contrast) {
         text-decoration: none;
       }
+    }
+  }
+
+  &:has([pos='split'][fullscreen]) {
+    min-height: 100vh;
+    height: auto;
+    display: flex;
+    flex-direction: column;
+  }
+
+  &:has([pos='center-large'][fullscreen]) {
+    .section-main {
+      height: 90%;
+      width: 90%;
+      margin: auto;
+
+      .main-content {
+        box-shadow: none;
+        justify-content: center;
+        // Prevent the blurred "glow" on the child component
+        // from getting clipped and creating a sharp border
+        // at smaller screen sizes
+        overflow: visible;
+
+        > .secondary-buttons-top-container,
+        > .secondary-cta.top {
+          position: static;
+          align-self: flex-end;
+          padding-block: var(--space-large);
+          padding-inline-end: var(--space-xxlarge);
+        }
+
+        .secondary-buttons-top-container .secondary-cta.top {
+          padding-inline-end: 0;
+        }
+
+        @media not (prefers-contrast) {
+          background-color: transparent;
+        }
+
+        .main-content-inner {
+          width: 50%;
+          margin: auto;
+          // Size to content instead of stretching to fill .main-content, so the
+          // glow behind it hugs the rendered content's actual height instead of
+          // the full card.
+          flex-grow: 0;
+          justify-content: center;
+
+          @media (width <= 720px) {
+            width: 80%;
+          }
+
+          @media not (prefers-contrast) {
+            &::before {
+              content: '';
+              position: absolute;
+              inset-inline: -100px;
+              margin: auto;
+              z-index: -1;
+              width: calc(50% + 200px);
+              height: calc(50% + 120px);
+              border-radius: 50%;
+              background-color: var(--center-large-glow-color);
+              filter: blur(70px);
+              pointer-events: none;
+            }
+          }
+
+          .secondary-cta {
+            @include arrow-icon-styles;
+
+            .secondary {
+              @include secondary-cta-styles;
+
+              color: var(--button-text-color);
+              border: none;
+            }
+          }
+        }
+      }
+    }
+
+    .corner-image-container {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+
+      @media (width <= 720px) {
+        display: none;
+      }
+
+      .brand-logo {
+        margin-block: 0;
+      }
+
+      .corner-image {
+        position: absolute;
+
+        // The message sets --corner-image-entrance-* inline, which no media
+        // query could override, so the entrance rules read these instead. Under
+        // reduced motion they keep their no-op values and every entrance type
+        // collapses to a plain fade.
+        --entrance-distance: 0px;
+        --entrance-scale: 1;
+        --entrance-duration: var(--corner-image-entrance-duration, 0.6s);
+        --entrance-delay: var(--corner-image-entrance-delay, 0s);
+
+        @media (prefers-reduced-motion: no-preference) {
+          --entrance-distance: var(--corner-image-entrance-distance, 60px);
+          --entrance-scale: 0.85;
+        }
+
+        // Animate the longhands rather than 'transform', which a message can
+        // set inline through 'corner_image.style' to mirror an illustration.
+        &:not(.entrance-none) {
+          transition-property: opacity, translate, scale;
+          transition-duration: var(--entrance-duration);
+          transition-delay: var(--entrance-delay);
+        }
+
+        &.bottom-left {
+          --entrance-block: var(--entrance-distance);
+          --entrance-inline: calc(-1 * var(--entrance-distance));
+
+          bottom: -10px;
+          left: 20px;
+        }
+
+        &.bottom-right {
+          --entrance-block: var(--entrance-distance);
+          --entrance-inline: var(--entrance-distance);
+
+          bottom: -10px;
+          right: 20px;
+        }
+
+        &.top-left {
+          --entrance-block: calc(-1 * var(--entrance-distance));
+          --entrance-inline: calc(-1 * var(--entrance-distance));
+
+          top: -10px;
+          left: 20px;
+        }
+
+        &.top-right {
+          --entrance-block: calc(-1 * var(--entrance-distance));
+          --entrance-inline: var(--entrance-distance);
+
+          top: -10px;
+          right: 20px;
+        }
+      }
+    }
+
+    &:has(theme-picker) {
+      .content-tile {
+        margin-inline: auto;
+      }
+    }
+
+    &:has(migration-wizard) {
+      .welcome-text {
+        margin: 0.5em auto;
+        width: 60%;
+      }
+
+      .content-tile {
+        width: 60%;
+        align-self: center;
+      }
+    }
+
+    migration-wizard {
+      &::part(deck) {
+        width: 100%;
+      }
+
+      &::part(page-selection),
+      &::part(page-progress) {
+        align-items: center;
+      }
+
+      &::part(profile-selector) {
+        border-radius: var(--border-radius-medium);
+        border: 1px solid var(--card-border-color);
+        background: var(--multi-select-card-background-color);
+        width: -moz-available;
+      }
+
+      &::part(profile-name) {
+        text-transform: unset;
+      }
+
+      &::part(resource-selection-details) {
+        border-radius: var(--border-radius-medium);
+        border: 1px solid var(--card-border-color);
+        background: var(--multi-select-card-background-color);
+        width: -moz-available;
+        margin-block-start: var(--space-large);
+      }
+
+      &::part(resource-type-list) {
+        padding-block-end: var(--space-large);
+      }
+
+      &::part(buttons) {
+        width: 100%;
+        justify-content: center;
+        margin-top: var(--space-xxlarge);
+        // override the margin from -moz-button-group
+        margin-inline-start: calc(-1 * (var(--space-small)));
+      }
+
+      &::part(import-primary),
+      &::part(continue-primary) {
+        width: 100%
+      }
+    }
+
+    #content-tiles-container .content-tile.has-header button.tile-header.link-style {
+      margin-block-end: 6px;
+
+      &:focus-visible {
+        border-radius: var(--border-radius-small);
+      }
+    }
+  }
+
+  .section-main {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    width: $main-section-width;
+    flex-shrink: 0;
+  }
+
+  .section-main:not(.embedded-migration) {
+    position: relative;
+  }
+
+  // Corner image for every layout except fullscreen center-large, which anchors
+  // to the window instead and is styled under
+  // `:has([pos='center-large'][fullscreen])` above. Here the container is a
+  // child of .section-main so the offsets resolve against the card.
+  .section-main:has(> .corner-image-container) {
+    position: relative;
+
+    > .corner-image-container {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+
+      .brand-logo {
+        margin-block: 0;
+        display: block;
+      }
+
+      .corner-image {
+        position: absolute;
+
+        &.bottom-left {
+          bottom: 0;
+          left: 0;
+        }
+
+        &.bottom-right {
+          bottom: 0;
+          right: 0;
+        }
+
+        &.top-left {
+          top: 0;
+          left: 0;
+        }
+
+        &.top-right {
+          top: 0;
+          right: 0;
+        }
+      }
+    }
+  }
+
+  .main-content {
+    background-color: var(--background-color-canvas);
+    // Fallback value can be removed after Nova has reached release
+    border-radius: var(--border-radius-xlarge, 16px);
+    box-shadow: 0 2px 14px 0 rgba(0, 0, 0, 20%);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 0;
+    transition: var(--transition);
+    z-index: 1;
+    box-sizing: border-box;
+
+    @media (prefers-contrast) {
+      border: 1px solid var(--text-color)
+    }
+
+    &.no-steps {
+      padding-bottom: 48px;
+    }
+
+    .main-content-inner {
+      display: flex;
+      flex-direction: column;
+      flex-grow: 1;
+      justify-content: space-around;
+    }
+  }
+
+  // Handle conditional display of steps indicator
+  // Don't show when there's only one screen
+  .main-content .no-steps {
+    .main-content {
+      padding-bottom: 48px;
+    }
+
+    .steps {
+      display: none;
+    }
+  }
+
+  // Row layout shared by the card multi-select designs: the label, and an
+  // optional description beneath it, occupy the inline-start column, while the
+  // checkbox sits on the inline-end edge centred across both rows.
+  @mixin checkbox-end-grid {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    column-gap: var(--space-medium);
+    align-items: center;
+
+    input {
+      grid-column: 2;
+      grid-row: 1 / -1;
+      margin: 0;
+      align-self: center;
+    }
+
+    label {
+      grid-area: 1 / 1;
+      margin: 0;
+      color: var(--text-color);
+    }
+
+    p {
+      grid-area: 2 / 1;
+      margin: var(--space-xxsmall) 0 0;
+      font-size: 13px;
+      font-weight: normal;
+
+      // The same deemphasized pair the rest of this stylesheet uses, which is
+      // also what design specified here. --text-color-deemphasized is
+      // currentColor at 69% and computes noticeably dimmer than the dark value.
+      @media not (prefers-contrast) {
+        color: light-dark(#5B5B66, #CFCFD8);
+      }
+    }
+  }
+
+  // The filled surface the card multi-select designs sit on, applied either to
+  // each item (`select-card`) or to the whole group (`grouped-card`).
+  @mixin multi-select-card-surface {
+    border-radius: var(--border-radius-medium);
+    background-color: var(--multi-select-card-background-color);
+    border: 1px solid var(--multi-select-card-border-color);
+
+    @media (forced-colors: active) {
+      background-color: ButtonFace;
+      border-color: ButtonText;
     }
   }
 
@@ -606,6 +855,46 @@ html {
             box-shadow: -12px -12px 70px 0 light-dark(#E7D9FF, rgba(99, 47, 200, 80%)),
               10px 10px 70px 0 light-dark(#FFD3B7, rgba(255, 138, 87, 80%));
             transition: var(--transition);
+          }
+        }
+      }
+
+      @media (not (prefers-contrast)) and (-moz-pref('browser.privateWindowRedesign.enabled')) {
+        &.PRIVATE_WINDOW_BASICS_SCREEN {
+          // Reduced backdrop opacity
+          background-color: rgba(0, 0, 0, 20%);
+
+          // Private window redesign gradient border
+          &.zap-border {
+            .main-content {
+              background: linear-gradient(95.54deg, #B89CFF 20.68%, #764EDD 79.34%) border-box border-area, image(var(--background-color-box)) padding-box;
+              border: 1px solid transparent;
+            }
+          }
+
+          // Private window redesign gradient shadow with glow scrim
+          &.zap-shadow {
+            .section-main::before {
+              content: '';
+              position: absolute;
+              z-index: -1;
+              inset: 7px;
+              border-radius: 60px;
+              backdrop-filter: blur(100px);
+              box-shadow: -60px -60px 160px 0 rgba(184, 156, 255, 50%),
+                60px 60px 160px 0 rgba(118, 78, 221, 50%);
+              transition: var(--transition);
+            }
+          }
+        }
+      }
+
+      @media (prefers-contrast) and (-moz-pref('browser.privateWindowRedesign.enabled')) {
+        &.PRIVATE_WINDOW_BASICS_SCREEN {
+          &.zap-border {
+            .main-content {
+              border: 1px solid;
+            }
           }
         }
       }
@@ -808,7 +1097,7 @@ html {
       }
     }
 
-    &:not([pos='split'], [pos='center-large']) {
+    &:not([pos='split'], [pos='center-large'], [pos='card-stack']) {
       .secondary-cta {
         .secondary {
           @include text-link-styles;
@@ -855,6 +1144,426 @@ html {
         &:empty {
           margin: 0;
         }
+      }
+    }
+
+    // The card-stack's width comes from the newtab column it renders in, which
+    // depends on the newtab layout rather than the viewport, so for breakpoints
+    // we query the card's own width instead of the viewport's width
+    $card-stack-narrow-width: 640px;
+    $card-stack-stacked-width: 520px;
+
+    @at-root .onboardingContainer:has(> .screen[pos='card-stack']) {
+      container: card-stack / inline-size;
+    }
+
+    // Base layout for the HNT card stack
+    &[pos='card-stack'] {
+      @mixin card-stack-theme($hue, $dark-front: 90, $dark-mid: 70, $dark-back: 80) {
+        --card-stack-color-1: light-dark(var(--color-#{$hue}-0), var(--color-#{$hue}-#{$dark-front}));
+        --card-stack-color-2: light-dark(var(--color-#{$hue}-10), var(--color-#{$hue}-#{$dark-mid}));
+        --card-stack-color-3: light-dark(var(--color-#{$hue}-20), var(--color-#{$hue}-#{$dark-back}));
+        --card-stack-flare: light-dark(var(--color-#{$hue}-10), var(--color-#{$hue}-#{$dark-mid}));
+      }
+
+      @include card-stack-theme(violet);
+
+      $card-stack-theme-hues: (
+        'nova-sun@mozilla.org': yellow,
+        'nova-spark@mozilla.org': orange,
+        'nova-flame@mozilla.org': red,
+        'nova-flare@mozilla.org': pink,
+        'nova-lavender@mozilla.org': purple,
+        'nova-lagoon@mozilla.org': blue,
+        'nova-pine@mozilla.org': green,
+        'nova-tide@mozilla.org': cyan,
+      );
+
+      @each $theme-id, $hue in $card-stack-theme-hues {
+        &[data-theme='#{$theme-id}'] {
+          @include card-stack-theme($hue);
+        }
+      }
+
+      &[data-theme='nova-ash@mozilla.org'] {
+        @include card-stack-theme(gray, 60, 70, 80);
+      }
+
+      &[data-theme='nova-smoke@mozilla.org'] {
+        --card-stack-color-1: light-dark(#FFF9F6, #3B3532); /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+        --card-stack-color-2: light-dark(#FBF4EE, #2F2926); /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+        --card-stack-color-3: light-dark(#E3DBD7, #201B18); /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+        --card-stack-flare: light-dark(#E3DBD7, #3B3532); /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+      }
+
+      --card-stack-secondary-width: 318px; /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+      --card-stack-secondary-height: 150px; /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+      --card-stack-flare-x: calc(var(--card-stack-secondary-width) / 2);
+      --card-stack-border: 1px solid var(--card-border-color); /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+      // Resting offsets of the two cards drawn behind the front one.
+      --card-stack-layer-1-offset: 8px; /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+      --card-stack-layer-2-offset: 16px; /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+      // Keep in sync with CARD_STACK_TRANSITION_OUT_TIME in MultiStageAboutWelcome.jsx.
+      --card-stack-duration: 400ms;
+      // Distances go through --translate so that prefers-reduced-motion,
+      // which zeroes it, collapses the motion to an opacity change.
+      --card-stack-fly-block: calc(2 * var(--translate));
+      --card-stack-slot-shift: var(--card-stack-layer-1-offset);
+
+      @media (prefers-reduced-motion: reduce) {
+        --card-stack-slot-shift: 0px;
+      }
+
+      background-color: color-mix(in srgb, var(--background-color-box) 40%, var(--card-stack-color-1));
+      background-image: radial-gradient(circle 125px at var(--card-stack-flare-x) center, var(--card-stack-flare) 0%, transparent 100%); /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+      background-repeat: no-repeat;
+      border: var(--card-stack-border);
+      border-radius: var(--border-radius-medium);
+      box-sizing: border-box;
+      height: 204px; /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+      min-height: 204px; /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+      position: relative;
+      overflow: visible;
+
+      &:dir(rtl) {
+        background-image: radial-gradient(circle 125px at calc(100% - var(--card-stack-flare-x)) center, var(--card-stack-flare) 0%, transparent 100%); /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+      }
+
+      @container card-stack (width <= #{$card-stack-narrow-width}) {
+        --card-stack-flare-x: calc(var(--card-stack-secondary-width) / 3)
+      }
+
+      @container card-stack (width <= #{$card-stack-stacked-width}) {
+        background-position-y: calc(var(--card-stack-secondary-height) / -2);
+        background-image: radial-gradient(circle 100px at center, var(--card-stack-flare) 0%, transparent 100%);
+      }
+
+      &::before,
+      &::after {
+        content: '';
+        position: absolute;
+        inset-block-start: 0;
+        block-size: 100%;
+        box-sizing: border-box;
+        border: var(--card-stack-border);
+        border-radius: var(--border-radius-medium);
+        z-index: -1;
+      }
+
+      &::before {
+        inset-inline: 18px; /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+        background-color: var(--card-stack-color-2);
+        translate: 0 var(--card-stack-layer-1-offset);
+      }
+
+      &::after {
+        inset-inline: 42px; /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+        background-color: var(--card-stack-color-3);
+        translate: 0 var(--card-stack-layer-2-offset);
+        z-index: -2;
+      }
+
+      @media (prefers-reduced-motion: no-preference) {
+        &::before,
+        &::after {
+          transition: translate 150ms ease;
+        }
+      }
+
+      &:hover::before {
+        translate: 0 12px; /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+      }
+
+      &:hover::after {
+        translate: 0 24px; /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+      }
+
+      @container card-stack (width <= #{$card-stack-stacked-width}) {
+        height: auto;
+        flex-flow: column;
+      }
+
+      .section-secondary,
+      .section-main {
+        height: 100%;
+      }
+
+      .section-secondary {
+        flex: 0 0 auto;
+        width: var(--card-stack-secondary-width);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: transparent;
+        border-start-start-radius: var(--border-radius-medium);
+        border-end-start-radius: var(--border-radius-medium);
+        border-start-end-radius: 0;
+        border-end-end-radius: 0;
+        overflow: hidden;
+
+        @container card-stack (width <= #{$card-stack-narrow-width}) {
+          width: 180px; /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+          margin-inline-start: 12px; /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+        }
+
+        @container card-stack (width <= #{$card-stack-stacked-width}) {
+          height: var(--card-stack-secondary-height);
+          margin-block: 12px; /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+          margin-inline: auto;
+        }
+      }
+
+      .section-main {
+        flex: 1;
+        flex-direction: row;
+        display: block;
+        margin: 0;
+
+        @container card-stack (width <= #{$card-stack-stacked-width}) {
+          width: 100%;
+        }
+
+        .main-content {
+          background-color: transparent;
+          border-start-start-radius: 0;
+          border-end-start-radius: 0;
+          border-start-end-radius: var(--border-radius-medium);
+          border-end-end-radius: var(--border-radius-medium);
+          overflow: hidden;
+          box-shadow: none;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          padding-inline-start: var(--space-xxlarge);
+          padding-inline-end: var(--space-xxlarge);
+          padding-block: var(--space-xxlarge);
+          width: auto;
+
+          .main-content-inner {
+            justify-content: center;
+
+            @container card-stack (width <= #{$card-stack-stacked-width}) {
+              align-items: center;
+            }
+          }
+        }
+      }
+
+      .welcome-text {
+        align-items: flex-start;
+        text-align: start;
+        margin: 0;
+        gap: var(--space-small);
+
+        @container card-stack (width <= #{$card-stack-stacked-width}) {
+          align-items: unset;
+          text-align: unset;
+        }
+
+        h1,
+        h2 {
+          margin: 0;
+          line-height: 1;
+          letter-spacing: normal;
+        }
+
+        h1 {
+          font-size: var(--font-size-heading-medium);
+          font-weight: var(--font-weight-semibold);
+        }
+
+        h2 {
+          font-size: var(--font-size-small);
+          font-weight: var(--font-weight);
+        }
+      }
+
+      .action-buttons {
+        display: flex;
+        align-items: center;
+        flex-direction: row;
+        justify-content: flex-start;
+        gap: var(--space-small);
+        padding: 0;
+        margin-block-start: var(--space-xlarge);
+
+        .primary,
+        .secondary,
+        .additional-cta {
+          font-size: var(--font-size-root);
+          font-weight: var(--font-weight-semibold);
+          line-height: 1;
+        }
+      }
+
+      &[layout='last-card'] {
+        --card-stack-flare-x: 50%;
+        --last-card-image-width: 120px; /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+        --last-card-image-height: 120px; /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+        --last-card-image-margin-inline: var(--space-xlarge);
+        --last-card-image-margin-block: 0 var(--space-medium);
+        --last-card-split-delay: 500ms;
+        --last-card-split-duration: 500ms;
+
+        // The card is too narrow to split the text around the image, so the
+        // image sits above the stacked title and subtitle instead
+        @container card-stack (width <= #{$card-stack-stacked-width}) {
+          height: 300px; /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+          background-position-y: center;
+        }
+
+        .section-secondary {
+          display: none;
+        }
+
+        .section-main .main-content {
+          border-radius: var(--border-radius-medium);
+        }
+
+        .welcome-text {
+          flex-direction: row;
+          align-items: center;
+          align-self: stretch;
+          gap: var(--space-xsmall);
+
+          h1,
+          h2 {
+            flex: 1;
+            font-size: var(--font-size-heading-medium);
+            font-weight: var(--font-weight-semibold);
+          }
+
+          h1 {
+            text-align: end;
+          }
+
+          h2 {
+            text-align: start;
+          }
+
+          @container card-stack (width <= #{$card-stack-stacked-width}) {
+            flex-direction: column;
+            gap: var(--space-small);
+
+            h1,
+            h2 {
+              flex: 0 0 auto;
+              text-align: center;
+            }
+          }
+        }
+
+        .last-card-image {
+          flex: 0 0 auto;
+          width: var(--last-card-image-width);
+          height: var(--last-card-image-height);
+          margin-inline: var(--last-card-image-margin-inline);
+
+          @container card-stack (width <= #{$card-stack-stacked-width}) {
+            order: -1;
+            margin-inline: 0;
+            margin-block: var(--last-card-image-margin-block);
+          }
+
+          .center-image {
+            display: block;
+            width: 100%;
+            height: 100%;
+            margin-block: var(--last-card-picture-margin-block, 0);
+            margin-inline: var(--last-card-picture-margin-inline, 0);
+
+            @container card-stack (width <= #{$card-stack-stacked-width}) {
+              margin: 0;
+            }
+
+            .brand-logo {
+              display: block;
+              width: 100%;
+              height: 100%;
+              margin: 0;
+              object-fit: contain;
+            }
+          }
+        }
+
+        @media (prefers-reduced-motion: no-preference) {
+          // Splits apart the title and subtitle
+          .last-card-image {
+            animation: last-card-split var(--last-card-split-duration) ease var(--last-card-split-delay) both;
+
+            @container card-stack (width <= #{$card-stack-stacked-width}) {
+              animation-name: last-card-split-vertical;
+            }
+
+            // Displays the image when the text split animation is finished
+            .center-image {
+              animation: last-card-image-appear var(--last-card-split-duration) steps(1, jump-end) var(--last-card-split-delay) both;
+            }
+          }
+        }
+      }
+
+      @keyframes card-stack-exit {
+        to {
+          opacity: 0;
+          translate: 0 var(--card-stack-fly-block);
+        }
+      }
+
+      @keyframes card-stack-enter {
+        from {
+          opacity: 0;
+          translate: 0 var(--card-stack-slot-shift);
+        }
+      }
+
+      // Each backing card advances one slot; played in reverse on entry.
+      @keyframes card-stack-layer-1 {
+        to {
+          translate: 0 calc(var(--card-stack-layer-1-offset) - var(--card-stack-slot-shift));
+        }
+      }
+
+      @keyframes card-stack-layer-2 {
+        to {
+          translate: 0 calc(var(--card-stack-layer-2-offset) - var(--card-stack-slot-shift));
+        }
+      }
+    }
+
+    @keyframes last-card-split {
+      from {
+        width: 0;
+        margin-inline: 0;
+      }
+
+      to {
+        width: var(--last-card-image-width);
+        margin-inline: var(--last-card-image-margin-inline);
+      }
+    }
+
+    @keyframes last-card-split-vertical {
+      from {
+        height: 0;
+        margin-block: 0;
+      }
+
+      to {
+        height: var(--last-card-image-height);
+        margin-block: var(--last-card-image-margin-block);
+      }
+    }
+
+    // Using visibility instead of opacity here to prevent the
+    // animation from starting before it is actually visible
+    @keyframes last-card-image-appear {
+      from {
+        visibility: hidden;
+      }
+
+      to {
+        visibility: visible;
       }
     }
 
@@ -1163,6 +1872,7 @@ html {
 
               .indicator {
                 background-color: var(--button-background-color-primary);
+                color: var(--button-text-color-primary);
               }
             }
           }
@@ -1512,10 +2222,12 @@ html {
 
                     &:hover {
                       background-color: var(--button-background-color-hover);
+                      color: var(--button-text-color-hover);
                     }
 
                     &:active {
                       background-color: var(--button-background-color-active);
+                      color: var(--button-text-color-active);
                     }
                   }
                 }
@@ -1601,6 +2313,16 @@ html {
             flex-grow: 1;
             margin: 0;
             display: flex;
+            flex-direction: column;
+            background-color: var(--background-color-canvas);
+
+            > .secondary-buttons-top-container,
+            > .secondary-cta.top {
+              position: static;
+              align-self: flex-end;
+              padding-block: var(--space-small) 0;
+              padding-inline-end: var(--space-small);
+            }
 
             &[hide-secondary-section='responsive'] {
               height: 100%;
@@ -2166,6 +2888,24 @@ html {
     margin: 10px auto;
   }
 
+  .carousel-nav {
+    display: flex;
+    justify-content: center;
+    max-width: 100%;
+    margin-block-end: var(--space-medium);
+
+    @media (forced-colors: none) and (prefers-contrast: no-preference) {
+      moz-segmented-control {
+        --segmented-control-border-color: light-dark(#C7C6CB, #515054);
+      }
+    }
+
+    @media (forced-colors: active) {
+      --button-background-color-primary: ButtonText;
+      --button-text-color-primary: ButtonFace;
+    }
+  }
+
   .sr-only {
     opacity: 0;
     overflow: hidden;
@@ -2257,6 +2997,7 @@ html {
             /* stylelint-disable-next-line */
             border-radius: 8px 8px 0 0;
             background-color: var(--button-background-color-primary);
+            color: var(--button-text-color-primary);
             position: relative;
             right: unset;
             top: unset;
@@ -2325,6 +3066,92 @@ html {
             margin-inline-start: var(--space-small);
             margin-inline-end: 20px;
             text-align: start;
+          }
+        }
+
+        &.carousel-card {
+          align-items: stretch;
+          text-align: start;
+          padding: 0;
+          overflow: hidden;
+          cursor: default;
+          background-color: var(--background-color-canvas);
+          border: 1px solid var(--border-color-interactive);
+
+          &:hover {
+            background-color: var(--background-color-canvas);
+          }
+
+          .icon {
+            width: 100%;
+            min-height: 130px;
+            aspect-ratio: 24 / 9;
+            border-radius: var(--border-radius-small) var(--border-radius-small) 0 0;
+
+            &.has-dark-background {
+              background: var(--single-select-icon-background);
+
+              @media (prefers-color-scheme: dark) {
+                background: var(--single-select-icon-background-dark);
+              }
+            }
+          }
+
+          .text {
+            margin-block: 0;
+            padding-inline: 16px;
+          }
+
+          .label-text {
+            padding-block: 16px 7px;
+            font-size: 17px;
+            font-weight: 590;
+          }
+
+          .body-text {
+            padding-block: 0 7px;
+            font-size: var(--font-size-root);
+            font-weight: 590;
+            color: var(--text-color-deemphasized);
+          }
+
+          .tile-button {
+            align-self: start;
+            margin-inline: 16px;
+            margin-block: 0 16px;
+            padding-inline: 12px;
+            padding-block: 2px;
+            font-size: 11px;
+            font-weight: var(--font-weight-normal);
+            min-height: 24px;
+          }
+
+          &:has(.selected) {
+            outline: 4px solid var(--border-color-selected);
+            border: 0;
+
+            .text {
+              padding-inline: 18px;
+            }
+
+            .label-text {
+              padding-block: 18px 16px;
+              font-size: 22px;
+            }
+
+            .body-text {
+              padding-block: 0 16px;
+            }
+
+            .tile-button {
+              margin-inline: 18px;
+              margin-block: 0 18px;
+              padding-inline: 16px;
+              padding-block: 4px;
+              font-size: var(--font-size-root);
+              font-weight: 590;
+              min-height: 32px;
+            }
           }
         }
       }
@@ -2496,6 +3323,101 @@ html {
         flex-shrink: 0;
       }
     }
+
+    .multi-select-item-group {
+      align-self: stretch;
+      text-align: initial;
+    }
+
+    // Full-width rows, one card per item, with the label on the inline-start
+    // edge and the checkbox on the inline-end edge. The grid places them
+    // visually while leaving the input before its label in the DOM, so the
+    // label association and focus order are unchanged.
+    // Not named "card": the design value becomes a class on the container, and
+    // in-content/common.css — which the Spotlight loads — has a global `.card`
+    // utility that would paint its own background, border and box-shadow here.
+    &.select-card {
+      align-items: stretch;
+      gap: var(--space-medium);
+      // The default container is inset from the content column; card rows are
+      // meant to line up with it.
+      margin-block: 0;
+      margin-inline: 0;
+      padding: 0;
+
+      .checkbox-container.multi-select-item {
+        @include checkbox-end-grid;
+        @include multi-select-card-surface;
+
+        padding: var(--space-xxlarge);
+        font-size: 16px;
+      }
+    }
+
+    // One card wrapping the whole group instead of one per item, for items
+    // that should read as a single unit.
+    &.grouped-card {
+      @include multi-select-card-surface;
+
+      align-items: stretch;
+      gap: var(--space-medium);
+      margin-block: 0;
+      margin-inline: 0;
+      padding: var(--space-xlarge);
+
+      .checkbox-container.multi-select-item {
+        @include checkbox-end-grid;
+      }
+    }
+
+    // Kept in the DOM while empty so that assistive technology announces the
+    // notice when it is revealed. An empty div generates no box of its own.
+    .multi-select-notice-region:not(:empty) {
+      display: block;
+      margin-block-start: var(--space-small);
+    }
+
+    .multi-select-notice {
+      display: flex;
+      align-items: center;
+      gap: var(--space-small);
+      padding: var(--space-large);
+      border: 1px solid var(--multi-select-notice-border-color);
+      border-radius: var(--border-radius-medium);
+      background-color: var(--multi-select-notice-background-color);
+      font-size: 15px;
+
+      @media (prefers-reduced-motion: no-preference) {
+        animation: fadein 0.2s;
+      }
+    }
+
+    .multi-select-notice-icon {
+      flex: 0 0 auto;
+      width: var(--size-item-small);
+      height: var(--size-item-small);
+      background-image: url('chrome://global/skin/icons/info.svg');
+      background-position: center;
+      background-repeat: no-repeat;
+      background-size: contain;
+      -moz-context-properties: fill;
+      fill: var(--multi-select-notice-icon-color);
+    }
+
+    .multi-select-notice-content {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .multi-select-notice-title {
+      margin-block: 0;
+      font-weight: var(--font-weight-bold);
+      color: var(--text-color);
+    }
+
+    .multi-select-notice-subtitle {
+      margin-block: var(--space-xxsmall) 0;
+    }
   }
 
   .textarea-container {
@@ -2542,7 +3464,7 @@ html {
       user-select: none;
       cursor: default;
       text-align: start;
-      border-radius: var(--input-text-border-radius);
+      border-radius: var(--input-border-radius);
     }
   }
 
@@ -2708,10 +3630,42 @@ html {
     }
   }
 
+  // The tiles container is inset from the content column, but the action
+  // buttons are not, so a full-width primary button overhangs the tiles it
+  // sits under. Put the buttons on the same inset when the screen has tiles.
+  // Buttons that size to their label are centred either way, so this only
+  // moves one that was already stretching the full column.
+  .main-content-inner:has(#content-tiles-container) .action-buttons {
+    margin-inline: 48px;
+
+    // The gutter that separates side-by-side buttons would push a lone
+    // full-width button back past the inset.
+    .primary:only-child {
+      margin-inline: 0;
+    }
+  }
+
   #content-tiles-container {
     --tiles-container-border-radius: var(--border-radius-medium);
 
     margin: var(--space-xlarge) 48px;
+
+    // The existing `.legal-paragraph` sizing is scoped to `pos=split` screens,
+    // so a `text` tile would otherwise fall back to the body size. Legal copy
+    // here is --font-size-small, and deliberately not deemphasized: it carries
+    // the terms the user is agreeing to, so it has to read at full strength.
+    .legal-paragraph {
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--text-color);
+    }
+
+    // Shrinks the gap before the primary button when the last tile is a
+    // collapsed link-style header (a single line of text doesn't need the
+    // margin sized for a full card).
+    &:has(> .content-tile:last-child > button.tile-header.link-style[aria-expanded='false']) {
+      margin-block-end: 0;
+    }
 
     .content-tile {
       display: flex;
@@ -2738,6 +3692,11 @@ html {
                 border-top: none;
                 border-radius: 0 0 var(--tiles-container-border-radius) var(--tiles-container-border-radius);
               }
+
+              &.link-style + .tile-content {
+                border: none;
+                border-radius: 0;
+              }
             }
           }
         }
@@ -2759,6 +3718,10 @@ html {
           border-inline-end: 1px solid var(--border-color);
         }
 
+        &.link-style + .tile-content {
+          border-inline: none;
+        }
+
         .header-text-container {
           display: flex;
           flex-direction: column;
@@ -2766,6 +3729,35 @@ html {
           .header-title, .header-subtitle {
             font-weight: normal;
             line-height: 1.5;
+          }
+        }
+
+        &.link-style {
+          background: none;
+          border: none;
+          border-radius: 0;
+          padding: 0;
+          // Shrink to the label and centre it, so the focus ring hugs the text
+          // rather than spanning the content column.
+          width: fit-content;
+          margin: 0 auto;
+          // The shared tile-header rule insets the ring by 12px, which relies
+          // on that button's padding. With no padding it would land on top of
+          // the text instead.
+          outline-offset: var(--space-xxsmall);
+          color: var(--link-color);
+          text-decoration: underline;
+
+          &:hover {
+            color: var(--link-color-hover);
+          }
+
+          &:active {
+            color: var(--link-color-active);
+          }
+
+          .arrow-icon {
+            margin-inline-start: var(--space-xsmall);
           }
         }
       }
@@ -2856,6 +3848,22 @@ html {
           p {
             margin-block: 0.5em 0;
           }
+        }
+
+        &.select-card .checkbox-container.multi-select-item,
+        &.grouped-card .checkbox-container.multi-select-item {
+          label,
+          p {
+            grid-column: 1;
+          }
+        }
+
+        // The default multiselect is inset inside the tiles container. The card
+        // designs are the container's full width instead, so that they line up
+        // with the other tiles and with the action buttons below them.
+        // `grouped-card` keeps the padding as the card's own inner spacing.
+        &.select-card {
+          padding: 0;
         }
       }
     }
@@ -3157,6 +4165,7 @@ html {
         height: 100%;
         margin-inline: -1px;
         background-color: var(--button-background-color-primary);
+        color: var(--button-text-color-primary);
         border: 0;
         border-radius: 0;
         opacity: 1;
@@ -3267,6 +4276,10 @@ html {
         inset-block: 4px;
         inset-inline-start: 0;
         border-inline-start: 1px solid var(--button-border-color);
+      }
+
+      .fxms-multi-stage-submenu {
+        text-align: start;
       }
     }
 
@@ -3458,6 +4471,23 @@ html {
     }
   }
 
+  @mixin card-stack-moves-as-one-piece {
+    .screen[pos='card-stack'] {
+      .section-main,
+      .main-content,
+      .welcome-text,
+      .primary,
+      .secondary,
+      .secondary-cta:not(.top),
+      .cta-link,
+      .additional-cta {
+        opacity: 1;
+        translate: none;
+        transition-delay: 0s;
+      }
+    }
+  }
+
   &.transition-in {
     .noodle {
       opacity: 0;
@@ -3507,7 +4537,35 @@ html {
           opacity: 0.2;
         }
       }
+
+      .corner-image {
+        &.entrance-fade {
+          opacity: 0;
+        }
+
+        &.entrance-slide-block {
+          opacity: 0;
+          translate: 0 var(--entrance-block);
+        }
+
+        &.entrance-slide-inline {
+          opacity: 0;
+          translate: var(--entrance-inline) 0;
+        }
+
+        &.entrance-slide-corner {
+          opacity: 0;
+          translate: var(--entrance-inline) var(--entrance-block);
+        }
+
+        &.entrance-zoom {
+          opacity: 0;
+          scale: var(--entrance-scale);
+        }
+      }
     }
+
+    @include card-stack-moves-as-one-piece;
   }
 
   .system-prompt-spotlight {
@@ -3671,6 +4729,32 @@ html {
         transition-delay: 0.4s;
       }
     }
+
+    // Fade an animated illustration back out, so that it does not sit at full
+    // opacity while the rest of the screen leaves and then pop as the DOM
+    // swaps. The entrance delay is dropped, since the whole out transition is
+    // bounded by TRANSITION_OUT_TIME. The :has() matches the specificity of the
+    // rule declaring the transition, which this needs to come after.
+    &:has([pos='center-large'][fullscreen]) {
+      .corner-image:not(.entrance-none) {
+        opacity: 0;
+        transition-delay: 0s;
+      }
+    }
+
+    @include card-stack-moves-as-one-piece;
+
+    .screen[pos='card-stack'] {
+      animation: card-stack-exit var(--card-stack-duration) ease-in forwards;
+
+      &::before {
+        animation: card-stack-layer-1 var(--card-stack-duration) ease-in forwards;
+      }
+
+      &::after {
+        animation: card-stack-layer-2 var(--card-stack-duration) ease-in forwards;
+      }
+    }
   }
 
   .inline-image,
@@ -3690,6 +4774,7 @@ html {
 
     &::part(deck) {
       font-size: 0.83em;
+      align-items: center;
     }
   }
 

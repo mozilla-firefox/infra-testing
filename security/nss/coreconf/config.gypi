@@ -44,7 +44,7 @@
         }],
         ['OS=="win"', {
           'use_system_zlib%': 0,
-          'nspr_libs%': ['libnspr4.lib', 'libplc4.lib', 'libplds4.lib'],
+          'nspr_libs%': ['nspr4.lib', 'plc4.lib', 'plds4.lib'],
           'zlib_libs%': [],
           #TODO
           'moz_debug_flags%': '',
@@ -112,7 +112,6 @@
     'disable_deprecated_rc2%': 0,
     'disable_dbm%': 1,
     'disable_libpkix%': 1,
-    'disable_kyber%' : 0,
     'disable_werror%': 0,
     'disable_altivec%': 0,
     'disable_crypto_vsx%': 0,
@@ -200,6 +199,12 @@
       [ 'OS=="android"', {
         'libraries': [
           '-llog',
+        ],
+      }],
+      # Without this, NSPR's Windows headers mark PR_* dllimport, breaking a static link.
+      [ 'OS=="win"', {
+        'defines': [
+          '_NSPR_BUILD_',
         ],
       }],
       [ 'fuzz==1', {
@@ -589,6 +594,19 @@
                   },
                 },
               }],
+              [ 'target_arch=="arm64"', {
+                'msvs_configuration_platform': 'ARM64',
+                'msvs_settings': {
+                  'VCCLCompilerTool': {
+                    'PreprocessorDefinitions': [
+                      'WIN64',
+                      '_ARM64_',
+                      '__ARM_FEATURE_CRYPTO',
+                    ],
+                    'AdditionalOptions': [ '/EHsc' ],
+                  },
+                },
+              }],
             ],
           }],
           [ 'disable_dbm==1', {
@@ -614,11 +632,6 @@
           [ 'disable_deprecated_rc2==1', {
             'defines': [
               'NSS_DISABLE_DEPRECATED_RC2',
-            ],
-          }],
-          [ 'disable_kyber==1', {
-            'defines': [
-              'NSS_DISABLE_KYBER',
             ],
           }],
 

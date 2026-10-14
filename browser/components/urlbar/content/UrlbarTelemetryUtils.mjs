@@ -6,13 +6,14 @@ import UrlbarPrefs from "chrome://browser/content/urlbar/UrlbarContentPrefs.mjs"
 import { UrlbarResult } from "chrome://browser/content/urlbar/UrlbarResult.mjs";
 import { UrlbarShared } from "chrome://browser/content/urlbar/UrlbarShared.mjs";
 
-const lazy = typeof ChromeUtils != "undefined" ? {} : null;
+const { XPCOMUtils } =
+  typeof ChromeUtils == "undefined"
+    ? { XPCOMUtils: null }
+    : ChromeUtils.importESModule("resource://gre/modules/XPCOMUtils.sys.mjs");
 
-if (lazy) {
-  ChromeUtils.defineESModuleGetters(lazy, {
-    UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
-  });
-}
+const lazy = XPCOMUtils?.declareLazy({
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
+});
 
 /**
  * @import {SmartbarInput} from "moz-src:///browser/components/urlbar/content/SmartbarInput.mjs"
@@ -75,6 +76,28 @@ export class UrlbarTelemetryUtils {
         : "click";
     }
     return "enter";
+  }
+
+  /**
+   * Collects the modifier keys held during an engagement from its DOM event.
+   *
+   * @param {?(Event)} event
+   *   The DOM event behind the engagement.
+   * @returns {string} Comma separated modifier names. If no modifiers, returns
+   *   empty string.
+   */
+  static modifiersFromEvent(event) {
+    // Only MouseEvent and KeyboardEvent have getModifierState(), so we ignore
+    // other events such as blur, and the null event for paste&go and drop&go.
+    let inputEvent = /** @type {?(MouseEvent|KeyboardEvent)} */ (event);
+    if (typeof inputEvent?.getModifierState != "function") {
+      return "";
+    }
+    let allModifiers = ["Accel", "Alt", "AltGraph", "Shift"];
+    return allModifiers
+      .filter(m => inputEvent.getModifierState(m))
+      .map(m => m.toLowerCase())
+      .join(",");
   }
 
   /**
@@ -209,6 +232,7 @@ export class UrlbarTelemetryUtils {
     return {
       method,
       action,
+      modifiers: this.modifiersFromEvent(event),
       startEventInfo,
       numChars,
       numWords,
@@ -334,19 +358,23 @@ export class UrlbarTelemetryUtils {
    *
    * @param {object} wire
    *   The payload from `recordedEngagementToWire()`.
+   * @param {?UrlbarResult[]} [liveResults]
+   *   The parent's own results, which the shipped ones resolve back to. See
+   *   `UrlbarResult.fromWire()`.
    * @returns {object} The reconstructed data.
    */
-  static recordedEngagementFromWire(wire) {
+  static recordedEngagementFromWire(wire, liveResults = null) {
     return {
       ...wire,
       visibleResults:
-        wire.visibleResults?.map(r => UrlbarResult.fromWire(r)) ?? [],
+        wire.visibleResults?.map(r => UrlbarResult.fromWire(r, liveResults)) ??
+        [],
       internalDetails: {
         ...wire.internalDetails,
         event: null,
         element: null,
         result: wire.internalDetails.result
-          ? UrlbarResult.fromWire(wire.internalDetails.result)
+          ? UrlbarResult.fromWire(wire.internalDetails.result, liveResults)
           : null,
       },
     };
@@ -527,6 +555,9 @@ export class UrlbarTelemetryUtils {
    *   One of engagement / abandonment / disable / bounce.
    * @param {string} data.action
    *   The action behind the engagement (from `actionFromEvent`).
+   * @param {string} [data.modifiers]
+   *   The modifier keys held during the engagement (from
+   *   `modifiersFromEvent`).
    * @param {string} data.interaction
    *   The resolved interaction type (from `getInteractionType`).
    * @param {number} data.numChars
@@ -567,6 +598,7 @@ export class UrlbarTelemetryUtils {
   static buildEventInfo({
     method,
     action,
+    modifiers = "",
     interaction,
     numChars,
     numWords,
@@ -644,6 +676,7 @@ export class UrlbarTelemetryUtils {
               selType === "search_button"
                 ? selType
                 : action,
+            modifiers,
             groups,
             results,
             actions,
@@ -817,6 +850,7 @@ export class UrlbarTelemetryUtils {
     let built = this.buildEventInfo({
       method,
       action: snapshot.action,
+      modifiers: snapshot.modifiers,
       interaction: interactionResult.interaction,
       numChars: snapshot.numChars,
       numWords: snapshot.numWords,

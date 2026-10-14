@@ -253,7 +253,6 @@ void gfxFT2FontBase::InitMetrics() {
   mFUnitsConvFactor = 0.0;
 
   if (MOZ_UNLIKELY(mStyle.AdjustedSizeMustBeZero())) {
-    memset(&mMetrics, 0, sizeof(mMetrics));  // zero initialize
     mSpaceGlyph = GetGlyph(' ');
     return;
   }
@@ -315,6 +314,13 @@ void gfxFT2FontBase::InitMetrics() {
   // size here for later scaling of the metrics.
   mFTSize = FindClosestSize(mFTFace->GetFace(), GetAdjustedSize());
 
+#ifdef MOZ_FONTATIONS
+  if (InitMetricsFromSkrifa()) {
+    InitExtraMetrics(GetAdjustedSize(), 0);
+    return;
+  }
+#endif
+
   // Explicitly lock the face so we can release it early before calling
   // back into Cairo below.
   FT_Face face = LockFTFace();
@@ -344,7 +350,7 @@ void gfxFT2FontBase::InitMetrics() {
     mMetrics.strikeoutOffset = 0.25 * emHeight;
     mMetrics.strikeoutSize = underlineSize;
 
-    SanitizeMetrics(&mMetrics, false);
+    SanitizeMetrics(false);
     UnlockFTFace();
     return;
   }
@@ -495,6 +501,11 @@ void gfxFT2FontBase::InitMetrics() {
   // necessary without recursively locking.
   UnlockFTFace();
 
+  InitExtraMetrics(emHeight, lineHeight);
+}
+
+void gfxFT2FontBase::InitExtraMetrics(gfxFloat aEmHeight,
+                                      gfxFloat aLineHeight) {
   gfxFloat width;
   mSpaceGlyph = GetCharExtents(' ', &width);
   if (mSpaceGlyph) {
@@ -533,7 +544,7 @@ void gfxFT2FontBase::InitMetrics() {
       // CSS 2.1, section 4.3.2 Lengths: "In the cases where it is
       // impossible or impractical to determine the x-height, a value of
       // 0.5em should be used."
-      mMetrics.xHeight = 0.5 * emHeight;
+      mMetrics.xHeight = 0.5 * aEmHeight;
     }
   }
 
@@ -556,11 +567,11 @@ void gfxFT2FontBase::InitMetrics() {
 
   // Make the line height an integer number of pixels so that lines will be
   // equally spaced (rather than just being snapped to pixels, some up and
-  // some down).  Layout calculates line height from the emHeight +
+  // some down).  Layout calculates line height from the aEmHeight +
   // internalLeading + externalLeading, but first each of these is rounded
   // to layout units.  To ensure that the result is an integer number of
   // pixels, round each of the components to pixels.
-  mMetrics.emHeight = floor(emHeight + 0.5);
+  mMetrics.emHeight = floor(aEmHeight + 0.5);
 
   // maxHeight will normally be an integer, but round anyway in case
   // FreeType is configured differently.
@@ -569,7 +580,8 @@ void gfxFT2FontBase::InitMetrics() {
 
   // Text input boxes currently don't work well with lineHeight
   // significantly less than maxHeight (with Verdana, for example).
-  lineHeight = floor(std::max(lineHeight, mMetrics.maxHeight) + 0.5);
+  const gfxFloat lineHeight =
+      floor(std::max(aLineHeight, mMetrics.maxHeight) + 0.5);
   mMetrics.externalLeading =
       lineHeight - mMetrics.internalLeading - mMetrics.emHeight;
 
@@ -579,7 +591,7 @@ void gfxFT2FontBase::InitMetrics() {
       sum > 0.0 ? mMetrics.emAscent * mMetrics.emHeight / sum : 0.0;
   mMetrics.emDescent = mMetrics.emHeight - mMetrics.emAscent;
 
-  SanitizeMetrics(&mMetrics, false);
+  SanitizeMetrics(false);
 
 #if 0
     //    printf("font name: %s %f\n", NS_ConvertUTF16toUTF8(GetName()).get(), GetStyle()->size);
@@ -846,8 +858,8 @@ void gfxFT2FontBase::SetupVarCoords(
   for (unsigned i = 0; i < aMMVar->num_axis; ++i) {
     coords.AppendElement(aMMVar->axis[i].def);
     for (const auto& v : aVariations) {
-      if (aMMVar->axis[i].tag == v.mTag) {
-        FT_Fixed val = v.mValue * 0x10000;
+      if (aMMVar->axis[i].tag == v.tag) {
+        FT_Fixed val = v.value * 0x10000;
         val = std::min(val, aMMVar->axis[i].maximum);
         val = std::max(val, aMMVar->axis[i].minimum);
         coords[i] = val;

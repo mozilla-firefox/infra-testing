@@ -8,6 +8,7 @@ import unittest
 
 import mozpack.path as mozpath
 from mozfile import json
+from mozpack.copier import FileRegistry
 from mozpack.manifests import InstallManifest
 from mozunit import main
 
@@ -713,20 +714,42 @@ class TestRecursiveMakeBackend(BackendTester):
         self.assertEqual(lines, expected)
 
     def test_objdir_files_rename(self):
-        """Ensure OBJDIR_FILES entries install with a copy rule that
-        preserves mode, renaming when a (source, target_basename) tuple
-        is given."""
+        """OBJDIR_FILES entries install through one manifest for the directory
+        and tier, renaming when a (source, target_basename) tuple is given."""
         env = self._consume("objdir-files-rename", RecursiveMakeBackend)
 
+        manifest = "$(topobjdir)/_build_manifests/built/misc"
         backend_path = mozpath.join(env.topobjdir, "backend.mk")
-        backend = open(backend_path).read()
-        # The renamed entry is copied to its new name by a rule that preserves mode.
-        self.assertIn("misc:: $(topobjdir)/_tests/foo/renamed\n", backend)
-        self.assertIn("$(call py_action,install_objdir_file renamed,", backend)
-        self.assertIn(" $(topobjdir)/_tests/foo/renamed)\n", backend)
-        # A plain entry is copied under its own basename, also preserving mode.
-        self.assertIn("misc:: $(topobjdir)/_tests/foo/baz\n", backend)
-        self.assertIn("$(call py_action,install_objdir_file baz,", backend)
+        lines = open(backend_path).read().splitlines()
+        self.assertEqual(lines.count(f"misc:: {manifest}.track"), 1)
+        self.assertEqual(
+            lines.count(
+                f"\t$(call py_action,process_install_manifest misc,"
+                f"--track {manifest}.track $(topobjdir) {manifest})"
+            ),
+            1,
+        )
+        self.assertEqual(
+            [l for l in lines if l.startswith(f"{manifest}.track:")],
+            [
+                f"{manifest}.track: {manifest}",
+                f"{manifest}.track: bar",
+                f"{manifest}.track: baz",
+            ],
+        )
+
+        m = InstallManifest(
+            path=mozpath.join(env.topobjdir, "_build_manifests", "built", "misc")
+        )
+        registry = FileRegistry()
+        m.populate_registry(registry)
+        self.assertEqual(
+            {dest: f.path for dest, f in registry},
+            {
+                "_tests/foo/renamed": mozpath.join(env.topobjdir, "bar"),
+                "_tests/foo/baz": mozpath.join(env.topobjdir, "baz"),
+            },
+        )
 
     def test_resources(self):
         """Ensure RESOURCE_FILES is handled properly."""
@@ -842,6 +865,33 @@ class TestRecursiveMakeBackend(BackendTester):
         self.assertTrue(os.path.isdir(p))
 
         self.assertTrue(os.path.isfile(mozpath.join(p, "Makefile")))
+
+        with open(mozpath.join(env.topobjdir, "root.mk")) as fh:
+            export_dirs = [l for l in fh.readlines() if l.startswith("export_dirs")]
+        self.assertEqual(export_dirs, ["export_dirs := config/makefiles/xpidl\n"])
+
+        with open(mozpath.join(env.topobjdir, "backend.mk")) as fh:
+            lines = fh.readlines()
+        self.assertIn(
+            "NONRECURSIVE_TARGETS_export_xpidl_DIRECTORY = "
+            "$(DEPTH)/config/makefiles/xpidl\n",
+            lines,
+        )
+        self.assertIn("NONRECURSIVE_TARGETS_export_xpidl_TARGETS += xpidl\n", lines)
+
+    def test_xpidl_without_compile_environment(self):
+        env = self._get_environment("xpidl-no-compile", srcdir_name="xpidl")
+        self._consume("xpidl", RecursiveMakeBackend, env=env)
+
+        install_dir = mozpath.join(env.topobjdir, "_build_manifests", "install")
+        self.assertFalse(os.path.exists(mozpath.join(install_dir, "xpidl")))
+        self.assertFalse(
+            os.path.exists(mozpath.join(env.topobjdir, "config/makefiles/xpidl"))
+        )
+
+        with open(mozpath.join(env.topobjdir, "root.mk")) as fh:
+            export_dirs = [l for l in fh.readlines() if l.startswith("export_dirs")]
+        self.assertEqual(export_dirs, ["export_dirs := \n"])
 
     def test_webidl_build_writes_cppsrcs(self):
         """Ensure _handle_webidl_build writes the unified variable into
@@ -1076,6 +1126,19 @@ class TestRecursiveMakeBackend(BackendTester):
         found = [str for str in lines if str.startswith("LOCAL_INCLUDES")]
         self.assertEqual(found, expected)
 
+    def test_objdir_local_includes(self):
+        env = self._consume("objdir-local-includes", RecursiveMakeBackend)
+
+        root_deps_path = mozpath.join(env.topobjdir, "root-deps.mk")
+        lines = [l.strip() for l in open(root_deps_path).readlines()]
+        self.assertIn("consumer/target-objects: producer/pre-compile", lines)
+        self.assertEqual(
+            lines.count("producer/target-objects: producer/pre-compile"), 1
+        )
+        self.assertEqual(
+            [l for l in lines if l.startswith("srcdir-only/target-objects:")], []
+        )
+
     def test_generated_includes(self):
         """Test that GENERATED_INCLUDES are written to backend.mk correctly."""
         env = self._consume("generated_includes", RecursiveMakeBackend)
@@ -1090,6 +1153,22 @@ class TestRecursiveMakeBackend(BackendTester):
 
         found = [str for str in lines if str.startswith("LOCAL_INCLUDES")]
         self.assertEqual(found, expected)
+
+    def test_generated_file_depends_on_rust_archive(self):
+        """Test a generated file depending on a non-default Rust archive."""
+        env = self._consume("generated-file-rust-archive-dep", RecursiveMakeBackend)
+
+        root_deps = [
+            l.strip()
+            for l in open(mozpath.join(env.topobjdir, "root-deps.mk")).readlines()
+        ]
+        self.assertIn("consumer/pre-compile: rust/test-category", root_deps)
+
+        backend_path = mozpath.join(env.topobjdir, "consumer/backend.mk")
+        self.assertIn(
+            "$(DEPTH)/x86_64-unknown-linux-gnu/release/librandom_crate.a",
+            open(backend_path).read(),
+        )
 
     def test_rust_library(self):
         """Test that a Rust library is written to backend.mk correctly."""
@@ -1107,9 +1186,138 @@ class TestRecursiveMakeBackend(BackendTester):
             "RUST_LIBRARY_FILE := x86_64-unknown-linux-gnu/release/libtest_library.a",
             "CARGO_FILE := $(srcdir)/Cargo.toml",
             "CARGO_TARGET_DIR := %s" % env.topobjdir,
+            "RUST_LIBRARY_LTO := 1",
         ]
 
         self.assertEqual(lines, expected)
+
+    def test_rust_library_with_no_lto(self):
+        """Test that a Rust library's LTO opt out keeps RUST_LIBRARY_LTO unset."""
+        env = self._consume("rust-library-no-lto", RecursiveMakeBackend)
+
+        backend_path = mozpath.join(env.topobjdir, "backend.mk")
+        lines = [
+            l.strip()
+            for l in open(backend_path).readlines()[2:]
+            # Strip out computed flags, they're a PITA to test.
+            if not l.startswith("COMPUTED_")
+        ]
+
+        expected = [
+            "RUST_LIBRARY_FILE := x86_64-unknown-linux-gnu/release/libno_lto_library.a",
+            "CARGO_FILE := $(srcdir)/Cargo.toml",
+            "CARGO_TARGET_DIR := %s" % env.topobjdir,
+        ]
+
+        self.assertEqual(lines, expected)
+
+    def test_rust_library_with_cargo_profile(self):
+        """Test that a Rust library's Cargo profile is written to backend.mk."""
+        env = self._consume("rust-library-cargo-profile", RecursiveMakeBackend)
+
+        backend_path = mozpath.join(env.topobjdir, "backend.mk")
+        lines = [
+            l.strip()
+            for l in open(backend_path).readlines()[2:]
+            # Strip out computed flags, they're a PITA to test.
+            if not l.startswith("COMPUTED_")
+        ]
+
+        expected = [
+            "RUST_LIBRARY_FILE := "
+            "x86_64-unknown-linux-gnu/release-custom/libprofile_library.a",
+            "CARGO_FILE := $(srcdir)/Cargo.toml",
+            f"CARGO_TARGET_DIR := {env.topobjdir}",
+            "RUST_LIBRARY_CARGO_PROFILE_SUFFIX := custom",
+        ]
+
+        self.assertEqual(lines, expected)
+
+    def _cargo_spec(self, env, filename):
+        with open(mozpath.join(env.topobjdir, filename)) as fh:
+            return json.load(fh)
+
+    def test_rust_library_command_spec(self):
+        """The Cargo command spec is serialized next to the library."""
+        env = self._consume("rust-library", RecursiveMakeBackend)
+
+        edge = self._cargo_spec(env, ".cargo-library-spec.json")["edge"]
+
+        self.assertEqual(edge["kind"], "library")
+        self.assertEqual(edge["names"], ["libtest_library.a"])
+        self.assertEqual(edge["cargo_profile_suffix"], "")
+        self.assertEqual(edge["cargo_crate_type"], "")
+        self.assertTrue(edge["manifest_path"].endswith("Cargo.toml"))
+        self.assertEqual(edge["working_directory"], mozpath.normsep(env.topobjdir))
+        self.assertIs(edge["lto"], True)
+
+    def test_rust_library_no_lto_command_spec(self):
+        """The LTO opt out reaches the Cargo command spec."""
+        env = self._consume("rust-library-no-lto", RecursiveMakeBackend)
+
+        edge = self._cargo_spec(env, ".cargo-library-spec.json")["edge"]
+        self.assertIs(edge["lto"], False)
+
+    def test_rust_command_spec_carries_configuration(self):
+        """The spec is the action's only input, so it holds the configuration."""
+        from mozbuild.rust_commands import CARGO_CONFIG_KEYS
+
+        env = self._consume("rust-library", RecursiveMakeBackend)
+
+        spec = self._cargo_spec(env, ".cargo-library-spec.json")
+
+        self.assertEqual(spec["topsrcdir"], env.topsrcdir)
+        self.assertEqual(spec["topobjdir"], env.topobjdir)
+        self.assertEqual(
+            spec["config"],
+            {k: env.substs[k] for k in CARGO_CONFIG_KEYS if k in env.substs},
+        )
+        self.assertIn("RUST_TARGET", spec["config"])
+        self.assertNotIn("LIB_SUFFIX", spec["config"])
+
+    def test_rust_megazord_library_command_spec(self):
+        """A library's Cargo profile and crate type reach its Cargo spec."""
+        env = self._consume("rust-megazord-library", RecursiveMakeBackend)
+
+        edge = self._cargo_spec(env, ".cargo-library-spec.json")["edge"]
+
+        self.assertEqual(edge["kind"], "library")
+        self.assertEqual(edge["cargo_profile_suffix"], "megazord")
+        self.assertEqual(edge["cargo_crate_type"], "staticlib")
+
+    def test_rust_megazord_tests_command_spec(self):
+        """A test colocated with a library uses that library's Cargo profile."""
+        env = self._consume("rust-megazord-library", RecursiveMakeBackend)
+
+        edge = self._cargo_spec(env, ".cargo-tests-spec.json")["edge"]
+
+        self.assertEqual(edge["kind"], "test")
+        self.assertEqual(edge["cargo_profile_suffix"], "megazord")
+        self.assertEqual(edge["cargo_crate_type"], "")
+        self.assertEqual(edge["rustflags"], [])
+
+    def test_rust_tests_command_spec(self):
+        """An ordinary test edge carries its package names and no Cargo profile."""
+        env = self._consume("rust-library-flags", RecursiveMakeBackend)
+
+        edge = self._cargo_spec(env, ".cargo-tests-spec.json")["edge"]
+        self.assertEqual(edge["kind"], "test")
+        self.assertEqual(edge["names"], ["flags-tests"])
+        self.assertEqual(edge["cargo_profile_suffix"], "")
+        dist_bin = mozpath.join(env.topobjdir, "dist", "bin")
+        self.assertEqual(edge["rustflags"], ["-C", f"link-arg=-Wl,-rpath,{dist_bin}"])
+
+    def test_rust_library_command_spec_computed_flags(self):
+        """A directory's computed compile and link flags reach the spec."""
+        env = self._consume("rust-library-flags", RecursiveMakeBackend)
+
+        edge = self._cargo_spec(env, ".cargo-library-spec.json")["edge"]
+
+        self.assertIn("-DMOZ_RUST_SPEC_CFLAG", edge["computed_cflags"])
+        self.assertIn("-DMOZ_RUST_SPEC_CFLAG", edge["computed_cxxflags"])
+        self.assertIn("-DMOZ_RUST_SPEC_HOST_CFLAG", edge["computed_host_cflags"])
+        self.assertIn("-DMOZ_RUST_SPEC_HOST_CFLAG", edge["computed_host_cxxflags"])
+        self.assertIn("-Wl,--moz-rust-spec-ldflag", edge["link_flags"])
 
     def test_host_rust_library(self):
         """Test that a Rust library is written to backend.mk correctly."""
@@ -1131,6 +1339,14 @@ class TestRecursiveMakeBackend(BackendTester):
 
         self.assertEqual(lines, expected)
 
+    def test_host_rust_library_command_spec(self):
+        """A host library edge is classified as host in its Cargo spec."""
+        env = self._consume("host-rust-library", RecursiveMakeBackend)
+
+        edge = self._cargo_spec(env, ".cargo-host-library-spec.json")["edge"]
+        self.assertEqual(edge["kind"], "host-library")
+        self.assertEqual(edge["names"], ["libhostrusttool.a"])
+
     def test_host_rust_library_with_features(self):
         """Test that a host Rust library with features is written to backend.mk correctly."""
         env = self._consume("host-rust-library-features", RecursiveMakeBackend)
@@ -1147,7 +1363,6 @@ class TestRecursiveMakeBackend(BackendTester):
             "HOST_RUST_LIBRARY_FILE := x86_64-unknown-linux-gnu/release/libhostrusttool.a",
             "CARGO_FILE := $(srcdir)/Cargo.toml",
             "CARGO_TARGET_DIR := %s" % env.topobjdir,
-            "HOST_RUST_LIBRARY_FEATURES := musthave,cantlivewithout",
         ]
 
         self.assertEqual(lines, expected)
@@ -1168,7 +1383,7 @@ class TestRecursiveMakeBackend(BackendTester):
             "RUST_LIBRARY_FILE := x86_64-unknown-linux-gnu/release/libfeature_library.a",
             "CARGO_FILE := $(srcdir)/Cargo.toml",
             "CARGO_TARGET_DIR := %s" % env.topobjdir,
-            "RUST_LIBRARY_FEATURES := musthave,cantlivewithout",
+            "RUST_LIBRARY_LTO := 1",
         ]
 
         self.assertEqual(lines, expected)
@@ -1190,7 +1405,6 @@ class TestRecursiveMakeBackend(BackendTester):
             f"CARGO_TARGET_DIR := {env.topobjdir}",
             "RUST_PROGRAMS += $(DEPTH)/i686-pc-windows-msvc/release/test-program-features.exe",
             "RUST_CARGO_PROGRAMS += test-program-features",
-            "RUST_PROGRAM_FEATURES := musthave,cantlivewithout",
         ]
 
         self.assertEqual(lines, expected)
@@ -1212,7 +1426,6 @@ class TestRecursiveMakeBackend(BackendTester):
             f"CARGO_TARGET_DIR := {env.topobjdir}",
             "HOST_RUST_PROGRAMS += $(DEPTH)/i686-pc-windows-msvc/release/test-host-program-features.exe",
             "HOST_RUST_CARGO_PROGRAMS += test-host-program-features",
-            "HOST_RUST_PROGRAM_FEATURES := musthave,cantlivewithout",
         ]
 
         self.assertEqual(lines, expected)
@@ -1247,6 +1460,31 @@ class TestRecursiveMakeBackend(BackendTester):
             any(l == "recurse_compile: code/host code/target" for l in lines)
         )
 
+        root_path = mozpath.join(env.topobjdir, "root.mk")
+        with open(root_path) as fh:
+            syms_line = next(
+                (l for l in fh.read().splitlines() if l.startswith("syms_targets :=")),
+                "",
+            )
+        self.assertIn("code/syms", syms_line)
+
+    def test_rust_program_command_specs(self):
+        """Target and host program edges group every program of one kind."""
+        env = self._consume("rust-programs", RecursiveMakeBackend)
+
+        target = self._cargo_spec(env, "code/.cargo-program-spec.json")["edge"]
+        self.assertEqual(target["kind"], "program")
+        self.assertEqual(target["names"], ["target"])
+        self.assertEqual(target["outputs"], ["i686-pc-windows-msvc/release/target.exe"])
+        code = mozpath.normsep(mozpath.join(env.topobjdir, "code"))
+        self.assertEqual(target["rustc_flags"], ["-C", f"link-arg={code}/module.res"])
+
+        host = self._cargo_spec(env, "code/.cargo-host-program-spec.json")["edge"]
+        self.assertEqual(host["kind"], "host-program")
+        self.assertEqual(host["names"], ["host"])
+        self.assertEqual(host["outputs"], ["i686-pc-windows-msvc/release/host.exe"])
+        self.assertEqual(host["rustc_flags"], [])
+
     def test_host_rust_program_output_category(self):
         """Test that a host Rust program with output_category is written correctly."""
         env = self._consume("host-rust-program-output-category", RecursiveMakeBackend)
@@ -1269,6 +1507,30 @@ class TestRecursiveMakeBackend(BackendTester):
         ]
 
         self.assertEqual(lines, expected)
+
+    def test_rust_program_output_category(self):
+        """A Rust program with output_category is excluded from syms_targets."""
+        env = self._consume("rust-program-output-category", RecursiveMakeBackend)
+
+        root_path = mozpath.join(env.topobjdir, "root.mk")
+        with open(root_path) as fh:
+            content = fh.read()
+
+        syms_line = next(
+            (l for l in content.splitlines() if l.startswith("syms_targets :=")),
+            "",
+        )
+
+        self.assertIn("without-output-category/syms", syms_line)
+        self.assertNotIn("with-output-category/syms", syms_line)
+
+        self.assertIn("mixed/syms", syms_line)
+        backend_path = mozpath.join(env.topobjdir, "mixed/backend.mk")
+        with open(backend_path) as fh:
+            lines = [l.strip() for l in fh.readlines()]
+        rust_program = "$(DEPTH)/i686-pc-windows-msvc/release/mixed-rust.exe"
+        self.assertIn(f"RUST_PROGRAMS += {rust_program}", lines)
+        self.assertIn(f"MOZBUILD_NON_DEFAULT_TARGETS += {rust_program}", lines)
 
     def test_final_target(self):
         """Test that FINAL_TARGET is written to backend.mk correctly."""
@@ -1321,6 +1583,33 @@ class TestRecursiveMakeBackend(BackendTester):
         ]
 
         found = [str for str in lines if "DIST_FILES" in str]
+        self.assertEqual(found, expected)
+
+    def test_final_target_files_absolute(self):
+        """Absolute FINAL_TARGET_FILES are installed, and libraries checked."""
+        env = self._get_environment("final-target-files-absolute")
+
+        # The files only need to exist for the moz.build to be read, and *.pdb
+        # is ignored tree-wide, so create them in the objdir rather than
+        # checking them in.
+        so = mozpath.join(env.topobjdir, "libfoo.so")
+        pdb = mozpath.join(env.topobjdir, "libfoo.pdb")
+        for path in (so, pdb):
+            open(path, "a").close()
+
+        self._consume("final-target-files-absolute", RecursiveMakeBackend, env=env)
+
+        backend_path = mozpath.join(env.topobjdir, "backend.mk")
+        lines = [l.strip() for l in open(backend_path).readlines()[2:]]
+
+        expected = [
+            # Debug information is installed, but there is nothing to check.
+            f"$(INSTALL) {pdb} $(DEPTH)/dist/bin/",
+            f"$(INSTALL) {so} $(DEPTH)/dist/bin/",
+            "$(call py_action,check_binary libfoo.so,$(DEPTH)/dist/bin/libfoo.so)",
+        ]
+
+        found = [str for str in lines if "libfoo." in str]
         self.assertEqual(found, expected)
 
     def test_pp_files_extra_deps(self):
@@ -1545,7 +1834,7 @@ class TestRecursiveMakeBackend(BackendTester):
         with open(root_deps_path) as fh:
             lines = [l.strip() for l in fh.readlines()]
 
-        self.assertIn("rust/uniffi-target: archive/target", lines)
+        self.assertIn("rust/uniffi-target: archive/target middle/target-objects", lines)
         self.assertIn("archive/target: archive/target-objects", lines)
 
         backend_path = mozpath.join(env.topobjdir, "archive", "backend.mk")
@@ -1642,6 +1931,34 @@ class TestRecursiveMakeBackend(BackendTester):
             root_content = fh.read()
         self.assertNotIn("generated.plist:", root_content)
 
+        sharedlib_backend = mozpath.join(env.topobjdir, "sharedlib", "backend.mk")
+        with open(sharedlib_backend) as fh:
+            sharedlib_content = fh.read()
+        self.assertIn(
+            "libextra-link-deps-lib.so: generated.rsp",
+            sharedlib_content,
+        )
+        self.assertIn("COMPUTED_LDFLAGS += @generated.rsp", sharedlib_content)
+        # A response file the link reads has to be written before the link, so
+        # its rule belongs to the directory rather than the top level.
+        self.assertIn("generated.rsp:", sharedlib_content)
+        self.assertNotIn("generated.rsp:", root_content)
+
+        # A response file no link reads keeps its rule at the top level, where
+        # a consumer in another directory can still see it.
+        unrelated_backend = mozpath.join(env.topobjdir, "unrelated", "backend.mk")
+        with open(unrelated_backend) as fh:
+            unrelated_content = fh.read()
+        self.assertIn("unrelated.rsp:", root_content)
+        self.assertNotIn("unrelated.rsp:", unrelated_content)
+
+        # nested/deep.rsp and other/deep.rsp share a base name and only the
+        # first is linked against, so the two are told apart by path.
+        self.assertIn("nested/deep.rsp:", sharedlib_content)
+        self.assertNotIn("sharedlib/nested/deep.rsp:", root_content)
+        self.assertNotIn("other/deep.rsp:", sharedlib_content)
+        self.assertIn("sharedlib/other/deep.rsp:", root_content)
+
     def test_shared_library_output_category(self):
         """SharedLibrary with output_category should be excluded from
         syms_targets, since the default %/syms: %/target static pattern in
@@ -1681,6 +1998,35 @@ class TestRecursiveMakeBackend(BackendTester):
                     if line.startswith(prefix)
                 ][0]
                 self.assertEqual(shared_lib, expected_shared_lib)
+
+    def test_licenses_json(self):
+        """LICENSES declarations are aggregated into licenses.json."""
+        env = self._consume("licenses", RecursiveMakeBackend)
+
+        with open(mozpath.join(env.topobjdir, "licenses.json")) as fh:
+            licenses = json.load(fh)["licenses"]
+
+        by_id = {license["id"]: license for license in licenses}
+        self.assertEqual(sorted(by_id), ["MIT", "mylib"])
+
+        mit = by_id["MIT"]
+        self.assertEqual(mit["title"], "MIT License")
+        self.assertEqual(mit["spdx"], "MIT")
+        self.assertFalse(mit["html"])
+        self.assertIn("Permission is hereby granted", mit["text"])
+        # The explicit path plus the path-scoped LICENSED_UNDER entry. The
+        # declaring directory itself is not listed, because paths narrowed it.
+        self.assertEqual(
+            mit["paths"], ["lib/vendor/dep.js", "third_party/rust/byteorder"]
+        )
+
+        mylib = by_id["mylib"]
+        self.assertEqual(mylib["declared_in"], "lib")
+        self.assertEqual(mylib["notice"], "Copyright 2026 Somebody.")
+        self.assertTrue(mylib["html"])
+        self.assertEqual(mylib["paths"], [])
+        self.assertEqual(mylib["acknowledgement"], "Portions are copyright Somebody.")
+        self.assertIsNone(mit["acknowledgement"])
 
 
 if __name__ == "__main__":

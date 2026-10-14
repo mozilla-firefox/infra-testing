@@ -19,30 +19,34 @@ registerCleanupFunction(async () => {
 });
 
 async function mouseOverSidebarToExpand() {
+  // Mouse events during a view transition target the root element.
+  await SidebarController.waitUntilStable();
   // Disable non-test mouse events
   window.windowUtils.disableNonTestMouseEvents(true);
 
-  EventUtils.synthesizeMouse(SidebarController.sidebarContainer, 1, 150, {
-    type: "mousemove",
-  });
-
-  await BrowserTestUtils.waitForMutationCondition(
+  // Stay clear of the launcher splitter, which overlaps the inner edge.
+  const { width } = SidebarController.sidebarContainer.getBoundingClientRect();
+  EventUtils.synthesizeMouse(
     SidebarController.sidebarContainer,
-    { attributes: true },
-    async () => {
-      await SidebarController.waitUntilStable();
-      return (
-        SidebarController.sidebarContainer.hasAttribute(
-          "sidebar-launcher-expanded"
-        ) &&
-        SidebarController.sidebarMain.expanded &&
-        SidebarController._state.launcherExpanded &&
-        window.getComputedStyle(SidebarController.sidebarContainer).position ===
-          "absolute"
-      );
-    },
-    { msg: "The sidebar launcher is expanded" }
+    width / 2,
+    150,
+    {
+      type: "mousemove",
+    }
   );
+
+  await TestUtils.waitForCondition(async () => {
+    await SidebarController.waitUntilStable();
+    return (
+      SidebarController.sidebarContainer.hasAttribute(
+        "sidebar-launcher-expanded"
+      ) &&
+      SidebarController.sidebarMain.expanded &&
+      SidebarController._state.launcherExpanded &&
+      window.getComputedStyle(SidebarController.sidebarContainer).position ===
+        "absolute"
+    );
+  }, "The sidebar launcher is expanded");
 
   info("The sidebar launcher is expanded on mouse over");
 
@@ -50,6 +54,7 @@ async function mouseOverSidebarToExpand() {
 }
 
 async function mouseOutSidebarToCollapse() {
+  await SidebarController.waitUntilStable();
   // Disable non-test mouse events
   window.windowUtils.disableNonTestMouseEvents(true);
 
@@ -57,24 +62,19 @@ async function mouseOutSidebarToCollapse() {
     type: "mousemove",
   });
 
-  await BrowserTestUtils.waitForMutationCondition(
-    SidebarController.sidebarContainer,
-    { attributes: true },
-    async () => {
-      await SidebarController.waitUntilStable();
-      return (
-        !SidebarController.sidebarContainer.hasAttribute(
-          "sidebar-launcher-expanded"
-        ) &&
-        !SidebarController.sidebarMain.expanded &&
-        !SidebarController._state.launcherExpanded &&
-        (novaEnabled ||
-          window.getComputedStyle(SidebarController.sidebarContainer)
-            .position === "relative")
-      );
-    },
-    { msg: "The sidebar launcher is collapsed" }
-  );
+  await TestUtils.waitForCondition(async () => {
+    await SidebarController.waitUntilStable();
+    return (
+      !SidebarController.sidebarContainer.hasAttribute(
+        "sidebar-launcher-expanded"
+      ) &&
+      !SidebarController.sidebarMain.expanded &&
+      !SidebarController._state.launcherExpanded &&
+      (novaEnabled ||
+        window.getComputedStyle(SidebarController.sidebarContainer).position ===
+          "relative")
+    );
+  }, "The sidebar launcher is collapsed");
 
   info("The sidebar launcher is collapsed on mouse out");
 
@@ -256,6 +256,77 @@ add_task(async function test_expand_on_hover_pinned_tabs() {
 
   await mouseOutSidebarToCollapse();
   await SidebarController.toggleExpandOnHover(false);
+  await SidebarController.waitUntilStable();
+});
+
+add_task(async function test_expand_on_hover_pinned_tab_close_button() {
+  await SpecialPowers.pushPrefEnv({
+    set: [[SIDEBAR_VISIBILITY_PREF, "expand-on-hover"]],
+  });
+  await TestUtils.waitForCondition(
+    () => document.documentElement.hasAttribute("sidebar-expand-on-hover"),
+    "Expand on hover is enabled"
+  );
+  await SidebarController.waitUntilStable();
+
+  let unpinnedTab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "data:text/html,<title>unpinned</title>"
+  );
+  let pinnedTabs = [];
+  for (let i = 0; i < 2; i++) {
+    let tab = await BrowserTestUtils.openNewForegroundTab(
+      gBrowser,
+      `data:text/html,<title>pinned ${i + 1}</title>`
+    );
+    gBrowser.pinTab(tab);
+    pinnedTabs.push(tab);
+  }
+  let [unselectedPinnedTab, selectedPinnedTab] = pinnedTabs;
+  is(gBrowser.selectedTab, selectedPinnedTab, "A pinned tab is selected");
+
+  await mouseOverSidebarToExpand();
+  await BrowserTestUtils.waitForMutationCondition(
+    gBrowser.tabContainer,
+    { attributes: true, attributeFilter: ["expanded"] },
+    () => gBrowser.tabContainer.hasAttribute("expanded"),
+    { msg: "The tab container is expanded" }
+  );
+
+  ok(
+    BrowserTestUtils.isHidden(selectedPinnedTab.closeButton),
+    "The selected pinned tab is not showing the close button."
+  );
+
+  window.windowUtils.disableNonTestMouseEvents(true);
+  const hoverTab = (tab, msg) =>
+    TestUtils.waitForCondition(() => {
+      EventUtils.synthesizeMouseAtCenter(tab, { type: "mousemove" });
+      return tab.matches(":hover");
+    }, msg);
+
+  await hoverTab(unselectedPinnedTab, "The unselected pinned tab is hovered");
+  ok(
+    BrowserTestUtils.isHidden(unselectedPinnedTab.closeButton),
+    "The hovered pinned tab is not showing the close button."
+  );
+
+  await hoverTab(unpinnedTab, "The unpinned tab is hovered");
+  ok(
+    BrowserTestUtils.isVisible(unpinnedTab.closeButton),
+    "The hovered unpinned tab is showing the close button."
+  );
+  window.windowUtils.disableNonTestMouseEvents(false);
+
+  await mouseOutSidebarToCollapse();
+  for (let tab of [...pinnedTabs, unpinnedTab]) {
+    BrowserTestUtils.removeTab(tab);
+  }
+  await SpecialPowers.popPrefEnv();
+  await TestUtils.waitForCondition(
+    () => !document.documentElement.hasAttribute("sidebar-expand-on-hover"),
+    "Expand on hover is disabled"
+  );
   await SidebarController.waitUntilStable();
 });
 
@@ -502,4 +573,74 @@ add_task(async function test_density_change_leaves_expanded_launcher_alone() {
   await SidebarController.toggleExpandOnHover(false);
   SidebarController.hide();
   await SidebarController.waitUntilStable();
+});
+
+// The collapsed launcher relies on the tools list shrinking away so that only
+// the overflow chevron remains in view. See bug 2049659.
+add_task(async function test_overflow_chevron_visible_while_collapsed() {
+  await SpecialPowers.pushPrefEnv({
+    set: [[SIDEBAR_VISIBILITY_PREF, "expand-on-hover"]],
+  });
+
+  const main = SidebarController.sidebarMain;
+  main.expanded = false;
+  await main.updateComplete;
+  await waitForRepaint();
+
+  Assert.ok(
+    main.shouldShowOverflowButton,
+    "The collapsed launcher shows the overflow chevron."
+  );
+
+  // isVisible() only reports CSS visibility, so it stays true for a button its
+  // container has clipped out of view. Compare geometry instead.
+  const wrapper = main.buttonsWrapper.getBoundingClientRect();
+  const chevron = main.moreToolsButton.getBoundingClientRect();
+
+  Assert.greater(chevron.height, 0, "The chevron has been laid out.");
+  Assert.lessOrEqual(
+    Math.round(chevron.bottom),
+    Math.round(wrapper.bottom),
+    "The chevron is not clipped below the buttons wrapper."
+  );
+  Assert.greaterOrEqual(
+    Math.round(chevron.top),
+    Math.round(wrapper.top),
+    "The chevron is not clipped above the buttons wrapper."
+  );
+
+  await SpecialPowers.popPrefEnv();
+});
+
+// Disabling expand on hover has to restore the height on the same element it
+// collapsed. See bug 1971922.
+add_task(async function test_tools_height_restored_on_disable() {
+  await SpecialPowers.pushPrefEnv({
+    set: [[SIDEBAR_VISIBILITY_PREF, "expand-on-hover"]],
+  });
+
+  const { sidebarMain: main, _state: state } = SidebarController;
+  main.expanded = false;
+  await main.updateComplete;
+  state.collapsedToolsHeight = 120;
+
+  await SidebarController.toggleExpandOnHover(true);
+  await SidebarController.waitUntilStable();
+  Assert.equal(
+    main.buttonsWrapper.style.height,
+    "0px",
+    "Enabling expand on hover collapses the tools."
+  );
+
+  await SidebarController.toggleExpandOnHover(false);
+  await SidebarController.waitUntilStable();
+  Assert.equal(
+    main.buttonsWrapper.style.height,
+    "120px",
+    "Disabling expand on hover restores the stored height, with units."
+  );
+
+  state.collapsedToolsHeight = undefined;
+  state.updateToolsHeight();
+  await SpecialPowers.popPrefEnv();
 });

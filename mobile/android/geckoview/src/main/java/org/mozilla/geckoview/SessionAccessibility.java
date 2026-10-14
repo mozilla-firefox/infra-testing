@@ -240,8 +240,7 @@ public class SessionAccessibility {
                     ScreenLength.fromVisualViewportHeight(0.8),
                     PanZoomController.SCROLL_BEHAVIOR_AUTO);
           } else {
-            // XXX: It looks like we never call scroll on virtual views.
-            // If we did, we should synthesize a wheel event on it's center coordinate.
+            nativeProvider.changeValueBySteps(virtualViewId, 1.0);
           }
           return true;
         case AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD:
@@ -254,8 +253,7 @@ public class SessionAccessibility {
                     ScreenLength.fromVisualViewportHeight(-0.8),
                     PanZoomController.SCROLL_BEHAVIOR_AUTO);
           } else {
-            // XXX: It looks like we never call scroll on virtual views.
-            // If we did, we should synthesize a wheel event on it's center coordinate.
+            nativeProvider.changeValueBySteps(virtualViewId, -1.0);
           }
           return true;
         case AccessibilityNodeInfo.ACTION_SELECT:
@@ -582,6 +580,17 @@ public class SessionAccessibility {
       return;
     }
 
+    if (eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED
+        && eventData == null
+        && (sourceId == mAccessibilityFocusedNode || sourceId == mFocusedNode)) {
+      // This is a scroll event that signifies a value change of a slider. We know this because
+      // there is no event data like scrollY.
+      // If the slider has focus or accessibility focus send a AccessibilityEvent.TYPE_VIEW_SELECTED
+      // instead.
+      sendEvent(AccessibilityEvent.TYPE_VIEW_SELECTED, sourceId, className, eventData);
+      return;
+    }
+
     final AccessibilityEvent event = AccessibilityEvent.obtain(eventType);
     event.setPackageName(GeckoAppShell.getApplicationContext().getPackageName());
     event.setSource(mView, sourceId);
@@ -610,6 +619,8 @@ public class SessionAccessibility {
       event.setMaxScrollX(eventData.getInt("maxScrollX", -1));
       event.setMaxScrollY(eventData.getInt("maxScrollY", -1));
       event.setChecked((eventData.getInt("flags") & FLAG_CHECKED) != 0);
+      event.setContentChangeTypes(
+          eventData.getInt("contentChangeType", AccessibilityEvent.CONTENT_CHANGE_TYPE_UNDEFINED));
     }
 
     // Update stored state from this event.
@@ -688,6 +699,9 @@ public class SessionAccessibility {
     @WrapForJNI(dispatchTo = "gecko")
     public native void click(int id);
 
+    @WrapForJNI(dispatchTo = "gecko")
+    public native void changeValueBySteps(int id, double steps);
+
     @WrapForJNI(dispatchTo = "current", stubName = "Pivot")
     public native boolean pivotNative(int id, int granularity, boolean forward, boolean inclusive);
 
@@ -755,7 +769,8 @@ public class SessionAccessibility {
         @Nullable final String viewIdResourceName,
         @Nullable final String containerTitle,
         @Nullable final String language,
-        final int inputType) {
+        final int inputType,
+        final int liveRegion) {
       if (mView == null) {
         return;
       }
@@ -779,11 +794,11 @@ public class SessionAccessibility {
       node.setText(addSpansToText(text, language));
 
       final List<String> contentDescription = new ArrayList<String>();
-      if (description != null) {
+      if (description != null && !description.isEmpty()) {
         contentDescription.add(description);
       }
 
-      if (containerTitle != null) {
+      if (containerTitle != null && !containerTitle.isEmpty()) {
         if (Build.VERSION.SDK_INT >= 34) {
           node.setContainerTitle(addSpansToText(containerTitle, language));
         } else {
@@ -793,6 +808,9 @@ public class SessionAccessibility {
       }
 
       node.setContentDescription(addSpansToText(String.join(" ", contentDescription), language));
+
+      // Set live region
+      node.setLiveRegion(liveRegion);
 
       // Add actions
       node.addAction(AccessibilityNodeInfo.ACTION_NEXT_HTML_ELEMENT);
@@ -931,9 +949,20 @@ public class SessionAccessibility {
         final int rangeType,
         final float min,
         final float max,
-        final float current) {
+        final float current,
+        final boolean makeSettable) {
       final RangeInfo rangeInfo = RangeInfo.obtain(rangeType, min, max, current);
       node.setRangeInfo(rangeInfo);
+
+      if (makeSettable) {
+        // Give it extra actions for adjusting its value.
+        if (current > min) {
+          node.addAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD);
+        }
+        if (current < max) {
+          node.addAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD);
+        }
+      }
     }
   }
 }

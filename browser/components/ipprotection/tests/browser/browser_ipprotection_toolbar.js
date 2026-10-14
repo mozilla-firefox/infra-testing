@@ -218,6 +218,40 @@ add_task(async function toolbar_keyboard_activation() {
 });
 
 /**
+ * Tests that a connection kept up for the sites that always use the VPN does
+ * not show the icon as on for a site without an inclusion.
+ */
+add_task(async function toolbar_icon_status_inclusion_mode() {
+  setupService({
+    isReady: true,
+  });
+  IPProtectionService.updateState();
+  await putServerInRemoteSettings();
+
+  let button = document.getElementById(IPProtectionWidget.WIDGET_ID);
+  let { started } = await IPPProxyManager.start(
+    false,
+    false,
+    undefined,
+    IPPMode.MODE_INCLUSION
+  );
+  Assert.ok(started, "Proxy should start in inclusion mode");
+  Assert.ok(
+    !button.classList.contains("ipprotection-on"),
+    "Toolbar icon should not show connected status in inclusion mode"
+  );
+
+  IPPProxyManager.setMode(IPPMode.MODE_FULL);
+  Assert.ok(
+    button.classList.contains("ipprotection-on"),
+    "Toolbar icon should show connected status once widened to full mode"
+  );
+
+  await IPPProxyManager.stop(false);
+  cleanupService();
+});
+
+/**
  * Tests that the toolbar icon in a new window has the previous status.
  */
 add_task(async function toolbar_icon_status_new_window() {
@@ -359,34 +393,6 @@ add_task(async function toolbar_placement_customized() {
     start.area,
     start.position
   );
-});
-
-/**
- * Tests that the toolbar button badge reflects the openedPanelWithLocation pref.
- */
-add_task(async function toolbar_badge_opened_with_location() {
-  const OPENED_WITH_LOCATION_PREF =
-    "browser.ipProtection.openedPanelWithLocation";
-  let button = document.getElementById(IPProtectionWidget.WIDGET_ID);
-
-  await SpecialPowers.pushPrefEnv({
-    set: [[OPENED_WITH_LOCATION_PREF, false]],
-  });
-  Assert.ok(
-    button.hasAttribute("badged"),
-    "Toolbar button should be badged when user has not yet opened the panel with location"
-  );
-
-  await SpecialPowers.pushPrefEnv({ set: [[OPENED_WITH_LOCATION_PREF, true]] });
-  Assert.ok(
-    !button.hasAttribute("badged"),
-    "Toolbar button badge should be removed once the user has opened the panel with location"
-  );
-
-  // Each popPrefEnv unwraps one layer from the stack, restoring the
-  // pref to the value it had before that push
-  await SpecialPowers.popPrefEnv();
-  await SpecialPowers.popPrefEnv();
 });
 
 /**

@@ -21,17 +21,45 @@
           "value": {
             "light": "white",
             "dark": "rgb(66, 65, 77)",
-            "nativeTheme": "{button.background.color.@base}"
+            "nativeTheme": "{button.background.color.@base}",
+            "nova": {
+              "comment": "TODO(bug 2076362): use the ghost button colors once they follow currentColor",
+              "value": {
+                "nativeTheme": "color-mix(in srgb, currentColor 16%, transparent)",
+                "light": "color-mix(in srgb, currentColor 17%, transparent)",
+                "dark": "color-mix(in srgb, currentColor 20%, transparent)",
+                "forcedColors": "{button.background.color.ghost.@base}"
+              }
+            }
           }
         },
         "hover": {
           "value": {
             "light": "{button.background.color.hover}",
-            "dark": "color-mix(in srgb, currentColor 22%, transparent)"
+            "dark": "color-mix(in srgb, currentColor 22%, transparent)",
+            "nova": {
+              "comment": "color-mix with currentColor cannot be expressed in Figma",
+              "value": {
+                "nativeTheme": "color-mix(in srgb, currentColor 22%, transparent)",
+                "default": "{urlbarview.background.color.selected}",
+                "forcedColors": "{button.background.color.ghost.hover}"
+              }
+            }
           }
         },
         "active": {
-          "value": "{button.background.color.active}"
+          "value": {
+            "default": "{button.background.color.active}",
+            "nova": {
+              "comment": "color-mix with currentColor cannot be expressed in Figma",
+              "value": {
+                "nativeTheme": "color-mix(in srgb, currentColor 30%, transparent)",
+                "light": "rgba(117, 102, 159, 0.6)",
+                "dark": "rgba(176, 163, 210, 0.6)",
+                "forcedColors": "{button.background.color.ghost.active}"
+              }
+            }
+          }
         },
         "focus": {
           "value": {
@@ -44,9 +72,39 @@
     "text": {
       "color": {
         "@base": {
-          "value": "inherit"
+          "value": {
+            "default": "inherit",
+            "nova": {
+              "value": {
+                "default": "inherit",
+                "forcedColors": "{button.text.color.ghost.@base}"
+              }
+            }
+          }
         },
         "hover": {
+          "value": {
+            "default": "{urlbar.box.text.color.@base}",
+            "nova": {
+              "value": {
+                "default": "{urlbar.box.text.color.@base}",
+                "forcedColors": "{button.text.color.ghost.hover}"
+              }
+            }
+          }
+        },
+        "active": {
+          "value": {
+            "default": "{urlbar.box.text.color.@base}",
+            "nova": {
+              "value": {
+                "default": "{urlbar.box.text.color.@base}",
+                "forcedColors": "{button.text.color.ghost.active}"
+              }
+            }
+          }
+        },
+        "focus": {
           "value": "{urlbar.box.text.color.@base}"
         }
       }
@@ -58,7 +116,16 @@
         "value": {
           "default": "0.72",
           "nativeTheme": "0.9",
-          "prefersContrast": "1"
+          "prefersContrast": "1",
+          "nova": {
+            "comment": "Figma's HCM maps to forcedColors, but we intentionally use the prefersContrast media query",
+            "value": {
+              "nativeTheme": "0.9",
+              "light": "0.7",
+              "dark": "0.95",
+              "prefersContrast": "1"
+            }
+          }
         }
       }
     }

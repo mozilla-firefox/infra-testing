@@ -397,9 +397,12 @@ add_task(async function test_windows_zoneInformation() {
     return;
   }
 
+  // The file name must differ between the legacy and the non-legacy runs:
+  // both test files share this task and may run in parallel, and this
+  // directory is shared by the whole session.
   let normalTargetFile = await IOUtils.getFile(
     Services.dirsvc.get("LocalAppData", Ci.nsIFile).path,
-    "xpcshell-download-test.txt"
+    `xpcshell-download-test-${gUseLegacySaver ? "legacy" : "core"}.txt`
   );
 
   // The template file name length is more than MAX_PATH characters. The final
@@ -2120,6 +2123,10 @@ add_task(async function test_getSha256Hash() {
     await promiseDownloadStopped(download);
     Assert.ok(download.stopped);
     Assert.equal(32, download.saver.getSha256Hash().length);
+    Assert.equal(
+      download.saver.getSha256HashHex(),
+      "616b8d2d6f4f68c4edd6d1e2fb9f7b383705f314f0358958b7f7a982a5861cb4"
+    );
   }
 });
 

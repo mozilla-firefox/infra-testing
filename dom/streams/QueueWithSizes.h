@@ -23,6 +23,8 @@ struct ValueWithSize : LinkedListElement<ValueWithSize> {
 
   JS::Heap<JS::Value> mValue;
   double mSize = 0.0f;
+
+  void trace(JSTracer* aTrc) { TraceEdge(aTrc, &mValue, "value-with-size"); }
 };
 
 // This type is a little tricky lifetime wise: Despite the fact that we're
@@ -86,11 +88,12 @@ inline void DequeueValue(JSContext* aCx, QueueContainingClass aContainer,
                          ErrorResult& aRv) {
   // Step 1. Implicit via template instantiation.
   // Step 2.
-  MOZ_ASSERT(!aContainer->Queue().isEmpty());
+  MOZ_RELEASE_ASSERT(!aContainer->Queue().isEmpty());
 
   // Step 3+4
   // UniquePtr to ensure memory is freed.
-  UniquePtr<ValueWithSize> valueWithSize(aContainer->Queue().popFirst());
+  JS::Rooted<UniquePtr<ValueWithSize>> valueWithSize(
+      aCx, aContainer->Queue().popFirst());
 
   // Step 5.
   aContainer->SetQueueTotalSize(aContainer->QueueTotalSize() -
@@ -117,7 +120,7 @@ inline void PeekQueueValue(JSContext* aCx, QueueContainingClass aContainer,
   // Step 1. Assert: container has [[queue]] and [[queueTotalSize]] internal
   // slots.
   // Step 2. Assert: container.[[queue]] is not empty.
-  MOZ_ASSERT(!aContainer->Queue().isEmpty());
+  MOZ_RELEASE_ASSERT(!aContainer->Queue().isEmpty());
 
   // Step 3. Let valueWithSize be container.[[queue]][0].
   ValueWithSize* valueWithSize = aContainer->Queue().getFirst();

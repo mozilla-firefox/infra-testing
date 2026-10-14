@@ -28,7 +28,7 @@ class SVGCircleElement final : public SVGCircleElementBase {
       already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo));
 
  public:
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
+  bool IsNoNamespaceAttrMapped(const nsAtom* aAttribute) const override;
 
   // SVGSVGElement methods:
   bool HasValidDimensions() const override;
@@ -38,6 +38,7 @@ class SVGCircleElement final : public SVGCircleElementBase {
       const StrokeOptions& aStrokeOptions, const Matrix& aToBoundsSpace,
       const Matrix* aToNonScalingStrokeSpace = nullptr) override;
   already_AddRefed<Path> BuildPath(PathBuilder* aBuilder) override;
+  void GetAsSimpleShape(SimpleShape* aShape) override;
   bool IsClosedLoop() const override { return true; }
 
   nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;

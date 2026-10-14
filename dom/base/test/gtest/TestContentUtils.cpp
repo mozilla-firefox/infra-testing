@@ -5,11 +5,23 @@
 #include "gtest/gtest.h"
 #include "js/PropertyAndElement.h"  // JS_DefineProperty
 #include "jsapi.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/CycleCollectedJSContext.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/OriginAttributes.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/IPCTransferable.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/SimpleGlobalObject.h"
+#include "nsCOMPtr.h"
+#include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
+#include "nsGkAtoms.h"
+#include "nsITransferable.h"
 #include "nsNetUtil.h"
+#include "nsTArray.h"
 
 using namespace mozilla::dom;
 
@@ -258,4 +270,159 @@ TEST(DOM_Base_ContentUtils, MaybeFixIPv6Host)
     << "Input: '" << testCase.input << "', Expected: '"
     << testCase.expectedOutput << "', Got: '" << host.get() << "'";
   }
+}
+
+// Appends a string-typed item to `aData`. The data payload is irrelevant for
+// flavor-filtering tests, but a valid union member must be set.
+static void AppendStringItem(IPCTransferableData& aData, const char* aFlavor,
+                             const nsAString& aValue) {
+  IPCTransferableDataItem* item = aData.items().AppendElement();
+  item->flavor() = nsCString(aFlavor);
+  item->data() = IPCTransferableDataString{mozilla::ipc::BigBuffer(
+      mozilla::AsBytes(mozilla::Span(aValue.BeginReading(), aValue.Length())))};
+}
+
+static bool TransferableHasFlavor(nsITransferable* aTransferable,
+                                  const char* aFlavor) {
+  nsTArray<nsCString> flavors;
+  EXPECT_TRUE(
+      NS_SUCCEEDED(aTransferable->FlavorsTransferableCanExport(flavors)));
+  return flavors.Contains(nsCString(aFlavor));
+}
+
+static already_AddRefed<nsITransferable> NewTransferable() {
+  nsCOMPtr<nsITransferable> transferable =
+      do_CreateInstance("@mozilla.org/widget/transferable;1");
+  EXPECT_TRUE(transferable);
+  if (transferable) {
+    EXPECT_TRUE(NS_SUCCEEDED(transferable->Init(nullptr)));
+  }
+  return transferable.forget();
+}
+
+// When filtering is requested, kFilePromiseMime is a "file promise" flavor that
+// must be stripped, while ordinary known flavors are kept.
+TEST(DOM_Base_ContentUtils, IPCTransferableDataToTransferable)
+{
+  // On Windows the file-promise flavors are only stripped when
+  // clipboard.imageAsFile.enabled is false (its default). Pin it so the test is
+  // deterministic across platforms.
+  mozilla::Preferences::SetBool("clipboard.imageAsFile.enabled", false);
+
+  IPCTransferableData data;
+  AppendStringItem(data, kTextMime, u"hello"_ns);
+  AppendStringItem(data, kFilePromiseMime, u"promise"_ns);
+  AppendStringItem(data, kFilePromiseURLMime, u"promiseURL"_ns);
+  AppendStringItem(data, kFilePromiseDestFilename, u"promiseDestFilename"_ns);
+  AppendStringItem(data, kFilePromiseDirectoryMime, u"promiseDirectory"_ns);
+
+  nsCOMPtr<nsITransferable> transferable = NewTransferable();
+  ASSERT_TRUE(transferable);
+
+  ASSERT_TRUE(NS_SUCCEEDED(nsContentUtils::IPCTransferableDataToTransferable(
+      data, /* aAddDataFlavor */ true, transferable,
+      /* aFilterUnknownFlavors */ true)));
+
+  EXPECT_TRUE(TransferableHasFlavor(transferable, kTextMime))
+      << "known flavor should be preserved";
+  EXPECT_FALSE(TransferableHasFlavor(transferable, kFilePromiseMime))
+      << "kFilePromiseMime should be stripped when filtering";
+  EXPECT_FALSE(TransferableHasFlavor(transferable, kFilePromiseURLMime))
+      << "kFilePromiseURLMime should be stripped when filtering";
+  EXPECT_FALSE(TransferableHasFlavor(transferable, kFilePromiseDestFilename))
+      << "kFilePromiseDestFilename should be stripped when filtering";
+  EXPECT_FALSE(TransferableHasFlavor(transferable, kFilePromiseDirectoryMime))
+      << "kFilePromiseDirectoryMime should be stripped when filtering";
+
+  transferable = NewTransferable();
+  ASSERT_TRUE(transferable);
+
+  // Test without filtering.
+  ASSERT_TRUE(NS_SUCCEEDED(nsContentUtils::IPCTransferableDataToTransferable(
+      data, /* aAddDataFlavor */ true, transferable,
+      /* aFilterUnknownFlavors */ false)));
+
+  EXPECT_TRUE(TransferableHasFlavor(transferable, kTextMime))
+      << "known flavor should be preserved";
+  EXPECT_TRUE(TransferableHasFlavor(transferable, kFilePromiseMime))
+      << "kFilePromiseMime should be stripped when filtering";
+  EXPECT_TRUE(TransferableHasFlavor(transferable, kFilePromiseURLMime))
+      << "kFilePromiseURLMime should be stripped when filtering";
+  EXPECT_TRUE(TransferableHasFlavor(transferable, kFilePromiseDestFilename))
+      << "kFilePromiseDestFilename should be stripped when filtering";
+  EXPECT_TRUE(TransferableHasFlavor(transferable, kFilePromiseDirectoryMime))
+      << "kFilePromiseDirectoryMime should be stripped when filtering";
+}
+
+namespace {
+
+class SetFlagMicroTask final : public mozilla::MicroTaskRunnable {
+ public:
+  explicit SetFlagMicroTask(bool* aFlag) : mFlag(aFlag) {}
+  MOZ_CAN_RUN_SCRIPT void Run(mozilla::AutoSlowOperation& aAso) override {
+    *mFlag = true;
+  }
+
+ private:
+  bool* const mFlag;
+};
+
+already_AddRefed<Document> CreateWindowlessDocument() {
+  nsCOMPtr<nsIURI> uri;
+  NS_NewURI(getter_AddRefs(uri), "data:text/html,");
+
+  RefPtr<mozilla::BasePrincipal> principal =
+      mozilla::BasePrincipal::CreateContentPrincipal(
+          uri, mozilla::OriginAttributes());
+  MOZ_RELEASE_ASSERT(principal);
+
+  nsCOMPtr<Document> doc;
+  MOZ_ALWAYS_SUCCEEDS(NS_NewDOMDocument(getter_AddRefs(doc),
+                                        u""_ns,   // aNamespaceURI
+                                        u""_ns,   // aQualifiedName
+                                        nullptr,  // aDoctype
+                                        uri, uri, principal,
+                                        LoadedAsData::No,  // aLoadedAsData
+                                        nullptr,           // aEventObject
+                                        DocumentFlavor::HTML));
+  MOZ_RELEASE_ASSERT(doc);
+  return doc.forget();
+}
+
+MOZ_CAN_RUN_SCRIPT_BOUNDARY void AppendEmptyScript(Document* aDocument) {
+  RefPtr<Element> script = aDocument->CreateHTMLElement(nsGkAtoms::script);
+  mozilla::IgnoredErrorResult rv;
+  aDocument->AppendChild(*script, rv);
+  MOZ_RELEASE_ASSERT(!rv.Failed());
+}
+
+MOZ_CAN_RUN_SCRIPT_BOUNDARY void EnterAndLeaveMicroTask() {
+  mozilla::nsAutoMicroTask mt;
+}
+
+}  // namespace
+
+// An empty inline script normally performs a microtask checkpoint, but not in
+// a document without a window, which can't run script.
+TEST(DOM_Base_ContentUtils, EmptyScriptInWindowlessDocumentSkipsCheckpoint)
+{
+  mozilla::CycleCollectedJSContext* ccjs =
+      mozilla::CycleCollectedJSContext::Get();
+  ASSERT_TRUE(ccjs);
+  // Leaving a microtask only performs a checkpoint at the outermost level.
+  ASSERT_EQ(ccjs->MicroTaskLevel(), 0u);
+
+  RefPtr<Document> doc = CreateWindowlessDocument();
+  ASSERT_FALSE(doc->GetInnerWindow());
+
+  bool ran = false;
+  ccjs->DispatchToMicroTask(mozilla::MakeAndAddRef<SetFlagMicroTask>(&ran));
+
+  AppendEmptyScript(doc);
+  EXPECT_FALSE(ran);
+
+  // A plain nsAutoMicroTask does perform the checkpoint, which shows the
+  // microtask really was pending.
+  EnterAndLeaveMicroTask();
+  EXPECT_TRUE(ran);
 }

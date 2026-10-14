@@ -2,14 +2,14 @@
 # A guide to searching crash reports
 
 :::{note}
-Please read the {ref}`documentation about individual crash
-reports <understanding-crash-reports>` before reading
+Please read the [documentation about individual crash
+reports](/contributing/debugging/understanding_crash_reports.md) before reading
 this page.
 :::
 
 The Mozilla [crash-stats](https://crash-stats.mozilla.org/) site
 provides facilities for investigating large numbers of Firefox [crash
-reports](Understandingcrashreports). This guide to
+reports](/contributing/debugging/understanding_crash_reports.md). This guide to
 searching through crash reports may help you locate the crash reports
 that will help you find and fix the Firefox bug you're working on.
 

@@ -22,6 +22,22 @@ namespace mozilla {
 
 using media::TimeUnit;
 
+AudioSinkWrapper::AudioSinkWrapper(AbstractThread* aOwnerThread,
+                                   MediaQueue<AudioData>& aAudioQueue,
+                                   SinkCreator aFunc, double aVolume,
+                                   double aPlaybackRate, bool aPreservesPitch,
+                                   RefPtr<AudioDeviceInfo> aAudioDevice)
+    : mOwnerThread(aOwnerThread),
+      mAsyncInitTaskQueue(CreateAsyncInitTaskQueue()),
+      mSinkCreator(std::move(aFunc)),
+      mReuseStreamOnSeek(StaticPrefs::media_audio_reuse_stream_on_seek()),
+      mAudioDevice(std::move(aAudioDevice)),
+      mParams(aVolume, aPlaybackRate, aPreservesPitch),
+      mAudioQueue(aAudioQueue),
+      mRetrySinkTime(TimeStamp::Now()) {
+  MOZ_ASSERT(mAsyncInitTaskQueue);
+}
+
 AudioSinkWrapper::~AudioSinkWrapper() = default;
 
 void AudioSinkWrapper::DiscardStashedAudioSink() {
@@ -302,6 +318,7 @@ void AudioSinkWrapper::SetVolume(double aVolume) {
 
 void AudioSinkWrapper::SetStreamName(const nsAString& aStreamName) {
   AssertOwnerThread();
+  mParams.mStreamName = aStreamName;
   if (mAudioSink) {
     mAudioSink->SetStreamName(aStreamName);
   }

@@ -15,15 +15,16 @@
 
 import { UrlbarShared } from "chrome://browser/content/urlbar/UrlbarShared.mjs";
 
-const lazy = typeof ChromeUtils != "undefined" ? {} : null;
+const { XPCOMUtils } =
+  typeof ChromeUtils == "undefined"
+    ? { XPCOMUtils: null }
+    : ChromeUtils.importESModule("resource://gre/modules/XPCOMUtils.sys.mjs");
 
-if (lazy) {
-  ChromeUtils.defineESModuleGetters(lazy, {
-    JsonSchemaValidator:
-      "resource://gre/modules/components-utils/JsonSchemaValidator.sys.mjs",
-    UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
-  });
-}
+const lazy = XPCOMUtils?.declareLazy({
+  JsonSchemaValidator:
+    "resource://gre/modules/components-utils/JsonSchemaValidator.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
+});
 
 /**
  * @typedef UrlbarAutofillData
@@ -33,7 +34,7 @@ if (lazy) {
  *   Where to start the selection for the autofill.
  * @property {number} selectionEnd
  *   Where to end the selection for the autofill.
- * @property {string} [type]
+ * @property {"origin" | "url" | "adaptive_url" | "adaptive_origin" | "about"} [type]
  *   The type of the autofill.
  * @property {string} [adaptiveHistoryInput]
  *   The input string associated with this autofill item.
@@ -46,7 +47,7 @@ export class UrlbarResult {
   /**
    * @typedef {{ [name: string]: any }} Payload
    *
-   * @typedef {typeof lazy.UrlbarShared.HIGHLIGHT} HighlightType
+   * @typedef {Values<typeof UrlbarShared.HIGHLIGHT>} HighlightType
    * @typedef {Array<[number, number]>} HighlightIndexes e.g. [[index, length],,]
    * @typedef {Record<string, HighlightType | HighlightIndexes>} Highlights
    */
@@ -68,14 +69,14 @@ export class UrlbarResult {
    * @param {number} [params.resultSpan]
    * @param {number} [params.richSuggestionIconSize]
    * @param {string} [params.richSuggestionIconVariation]
-   * @param {string} [params.rowLabel]
+   * @param {{id: string, args?: L10nArgs}} [params.rowLabel]
    * @param {boolean} [params.showFeedbackMenu]
    * @param {number} [params.suggestedIndex]
    * @param {Payload} [params.payload]
    * @param {Highlights} [params.highlights]
    * @param {boolean} [params.testForceNewContent] Used for test only.
    * @param {boolean} [params.skipPayloadValidation]
-   *   Skips payload schema validation. Set by {@link UrlbarResult.fromWire} when
+   *   Skips payload schema validation. Set by `UrlbarResult.fromWire` when
    *   reconstructing a result that was already validated before serialization;
    *   the wire payload can carry internal fields added after validation.
    */
@@ -161,18 +162,20 @@ export class UrlbarResult {
   }
 
   /**
+   * The index of the row where this result is in the suggestions. This is
+   * updated by UrlbarView when new result sets are displayed.
+   *
    * @type {number}
-   *   The index of the row where this result is in the suggestions. This is
-   *   updated by UrlbarView when new result sets are displayed.
    */
   rowIndex = undefined;
 
   /**
+   * A stable id assigned once when the result is finalized by
+   * UrlbarProvidersManager. Unlike rowIndex it never changes and is
+   * independent of the results' order, so it matches this result to its
+   * context entry and view row across the actor boundary.
+   *
    * @type {number}
-   *   A stable id assigned once when the result is finalized by
-   *   UrlbarProvidersManager. Unlike rowIndex it never changes and is
-   *   independent of the results' order, so it matches this result to its
-   *   context entry and view row across the actor boundary.
    */
   id = undefined;
 
@@ -194,18 +197,38 @@ export class UrlbarResult {
    */
   isSERP = false;
 
+  /**
+   * The kind of result, one of `UrlbarShared.RESULT_TYPE`. It decides which
+   * payload properties the result has and how the view shows it.
+   */
   get type() {
     return this.#type;
   }
 
+  /**
+   * The data the result was derived from, one of `UrlbarShared.RESULT_SOURCE`.
+   * A result derived from several sources uses the most privacy-restricted
+   * one.
+   */
   get source() {
     return this.#source;
   }
 
+  /**
+   * The text to autofill in the input when the result is selected, if any.
+   *
+   * @type {UrlbarAutofillData|undefined}
+   */
   get autofill() {
     return this.#autofill;
   }
 
+  /**
+   * Whether exposure telemetry is recorded for the result, and whether the
+   * result is then shown or hidden. One of `UrlbarShared.EXPOSURE_TELEMETRY`.
+   *
+   * @type {number}
+   */
   get exposureTelemetry() {
     return this.#exposureTelemetry;
   }
@@ -213,26 +236,58 @@ export class UrlbarResult {
     this.#exposureTelemetry = value;
   }
 
+  /**
+   * The group the muxer places the result in, one of
+   * `UrlbarShared.RESULT_GROUP`. Undefined if the muxer picks the group.
+   */
   get group() {
     return this.#group;
   }
 
+  /**
+   * Whether the result is the heuristic result, the one that is picked when
+   * the user presses Enter without selecting a result.
+   *
+   * @type {boolean}
+   */
   get heuristic() {
     return this.#heuristic;
   }
 
+  /**
+   * Whether the view hides the group label above the result's row.
+   *
+   * @type {boolean}
+   */
   get hideRowLabel() {
     return this.#hideRowLabel;
   }
 
+  /**
+   * Whether the result is a best match, which the view shows as a top pick.
+   *
+   * @type {boolean}
+   */
   get isBestMatch() {
     return this.#isBestMatch;
   }
 
+  /**
+   * Whether the view shows the result as a URL row at the bottom of the
+   * results.
+   *
+   * @type {boolean}
+   */
   get isBottomUrlSuggestion() {
     return this.#isBottomUrlSuggestion;
   }
 
+  /**
+   * Whether the view shows the result as a rich suggestion, with a larger
+   * icon and a description. Always true for a tip.
+   *
+   * @type {boolean}
+   */
   get isRichSuggestion() {
     return this.#isRichSuggestion;
   }
@@ -240,6 +295,12 @@ export class UrlbarResult {
     this.#isRichSuggestion = value;
   }
 
+  /**
+   * Whether `suggestedIndex` is relative to the result's group instead of
+   * the entire result set.
+   *
+   * @type {boolean}
+   */
   get isSuggestedIndexRelativeToGroup() {
     return this.#isSuggestedIndexRelativeToGroup;
   }
@@ -247,6 +308,11 @@ export class UrlbarResult {
     this.#isSuggestedIndexRelativeToGroup = value;
   }
 
+  /**
+   * The name of the provider that created the result.
+   *
+   * @type {string}
+   */
   get providerName() {
     return this.#providerName;
   }
@@ -266,14 +332,32 @@ export class UrlbarResult {
     this.#providerType = value;
   }
 
+  /**
+   * The number of rows the result spans in the view. Undefined to use the
+   * default for the result's type, which `UrlbarShared.getSpanForResult`
+   * returns.
+   *
+   * @type {number}
+   */
   get resultSpan() {
     return this.#resultSpan;
   }
 
+  /**
+   * The size in pixels of the rich suggestion icon. 24 for a tip.
+   *
+   * @type {number}
+   */
   get richSuggestionIconSize() {
     return this.#richSuggestionIconSize;
   }
 
+  /**
+   * The variation of the rich suggestion icon, which the view sets as the
+   * row's `icon-variation` attribute for the stylesheet to match.
+   *
+   * @type {string}
+   */
   get richSuggestionIconVariation() {
     return this.#richSuggestionIconVariation;
   }
@@ -281,14 +365,32 @@ export class UrlbarResult {
     this.#richSuggestionIconSize = value;
   }
 
+  /**
+   * The group label to show above the result's row, as a `{ id, args }` l10n
+   * object, overriding the label the view picks.
+   *
+   * @type {object}
+   */
   get rowLabel() {
     return this.#rowLabel;
   }
 
+  /**
+   * Whether the result's menu button is labeled as a feedback menu.
+   *
+   * @type {boolean}
+   */
   get showFeedbackMenu() {
     return this.#showFeedbackMenu;
   }
 
+  /**
+   * A preferred position for the result within the result set, or within its
+   * group if `isSuggestedIndexRelativeToGroup` is true. A negative index
+   * counts from the end. Undefined if the result has none.
+   *
+   * @type {number}
+   */
   get suggestedIndex() {
     return this.#suggestedIndex;
   }
@@ -296,6 +398,10 @@ export class UrlbarResult {
     this.#suggestedIndex = value;
   }
 
+  /**
+   * The result's data. Which properties it holds depends on `type`, and
+   * `UrlbarUtils.RESULT_PAYLOAD_SCHEMA` describes them.
+   */
   get payload() {
     return this.#payload;
   }
@@ -446,6 +552,14 @@ export class UrlbarResult {
    * @returns {object} `payload` if it's valid.
    */
   #validatePayload(payload) {
+    if (!lazy) {
+      // The schemas and the validator live in system modules, out of reach of a
+      // content realm. Skipping this does mean that in a content realm, we will
+      // not validate payloads built directly by the view, such as a dismissal
+      // acknowledge tip. All provider results cross the actor boundary already
+      // validated.
+      return payload;
+    }
     let schema = lazy.UrlbarUtils.getPayloadSchema(this.type);
     if (!schema) {
       throw new Error(`Unrecognized result type: ${this.type}`);
@@ -526,10 +640,28 @@ export class UrlbarResult {
    * Reconstructs a UrlbarResult from the plain object produced by toWire(),
    * e.g. after it has crossed the Urlbar actor boundary.
    *
+   * Structured clone strips data that doesn't survive it (e.g. a Rust
+   * suggestion's UniFFI `Suggestion` class), so a reconstruction is a lossy
+   * object distinct from the one that was serialized. Where the originals are
+   * still around -- the parent's own query results -- pass them as
+   * `liveResults` to get the original back instead, carrying over the
+   * view-assigned `rowIndex` the wire preserves (the original never went
+   * through a view).
+   *
    * @param {object} wire The wire representation from toWire().
-   * @returns {UrlbarResult} The reconstructed result.
+   * @param {?UrlbarResult[]} [liveResults] Results to match `wire` against by id.
+   * @returns {UrlbarResult} The matching result from `liveResults`, else the
+   *   reconstruction.
    */
-  static fromWire(wire) {
+  static fromWire(wire, liveResults = null) {
+    let liveResult = liveResults?.find(r => r.id === wire.id);
+    if (liveResult) {
+      if (wire.rowIndex != null) {
+        liveResult.rowIndex = wire.rowIndex;
+      }
+      return liveResult;
+    }
+
     let result = new UrlbarResult({ ...wire, skipPayloadValidation: true });
     // The following aren't constructor parameters, so re-apply them.
     result.providerType = wire.providerType;

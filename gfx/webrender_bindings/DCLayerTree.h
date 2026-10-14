@@ -34,6 +34,7 @@ struct ID3D11VideoProcessor;
 struct ID3D11VideoProcessorEnumerator;
 struct ID3D11VideoProcessorOutputView;
 struct IDCompositionColorMatrixEffect;
+struct IDCompositionDynamicTexture;
 struct IDCompositionFilterEffect;
 struct IDCompositionTableTransferEffect;
 struct IDCompositionTexture;
@@ -70,10 +71,6 @@ class GLContext;
 }
 
 namespace wr {
-
-// The size of the virtual surface. This is large enough such that we
-// will never render a surface larger than this.
-#define VIRTUAL_SURFACE_SIZE (1024 * 1024)
 
 class DCLayerSurface;
 class DCLayerDCompositionTexture;
@@ -153,7 +150,6 @@ class DCLayerTree {
   void MaybeCommit();
   void WaitForCommitCompletion();
 
-  bool UseCompositor() const;
   bool UseLayerCompositor() const;
   void DisableNativeCompositor();
   bool EnableAsyncScreenshot();
@@ -162,18 +158,11 @@ class DCLayerTree {
   // Interface for wr::Compositor
   void CompositorBeginFrame();
   void CompositorEndFrame();
-  void Bind(wr::NativeTileId aId, wr::DeviceIntPoint* aOffset, uint32_t* aFboId,
-            wr::DeviceIntRect aDirtyRect, wr::DeviceIntRect aValidRect);
-  void Unbind();
-  void CreateSurface(wr::NativeSurfaceId aId, wr::DeviceIntPoint aVirtualOffset,
-                     wr::DeviceIntSize aTileSize, bool aIsOpaque);
   void CreateSwapChainSurface(wr::NativeSurfaceId aId, wr::DeviceIntSize aSize,
                               bool aIsOpaque, bool aNeedsSyncDcompCommit);
   void ResizeSwapChainSurface(wr::NativeSurfaceId aId, wr::DeviceIntSize aSize);
   void CreateExternalSurface(wr::NativeSurfaceId aId, bool aIsOpaque);
   void DestroySurface(NativeSurfaceId aId);
-  void CreateTile(wr::NativeSurfaceId aId, int32_t aX, int32_t aY);
-  void DestroyTile(wr::NativeSurfaceId aId, int32_t aX, int32_t aY);
   void AttachExternalImage(wr::NativeSurfaceId aId,
                            wr::ExternalImageId aExternalImage);
   void AddSurface(wr::NativeSurfaceId aId,
@@ -239,11 +228,7 @@ class DCLayerTree {
   void ReleaseNativeCompositorResources();
   layers::OverlayInfo GetOverlayInfo();
 
-  enum class WebRenderOsCompositorKind {
-    LayerCompositor,
-  };
-
-  Maybe<WebRenderOsCompositorKind> mCompositorKind;
+  bool mUseLayerCompositor = false;
   bool mEnableAsyncScreenshot = false;
   bool mEnableAsyncScreenshotInNextFrame = false;
   int mAsyncScreenshotLastFrameUsed = 0;
@@ -449,9 +434,12 @@ class DCLayerDCompositionTexture : public DCLayerSurface {
     RefPtr<ID3D11Texture2D> mTexture;
     RefPtr<IDCompositionTexture> mDCompositionTexture;
     EGLSurface mEGLSurface;
+    bool mHasBeenPresented = false;
   };
 
   bool AllocateTextures();
+  UniquePtr<TextureHolder> AllocateTexture();
+  void DestroyTexture(UniquePtr<TextureHolder> aHolder);
   void DestroyTextures();
   UniquePtr<TextureHolder> GetNextTexture();
   void UpdateCurrentTexture();
@@ -461,6 +449,10 @@ class DCLayerDCompositionTexture : public DCLayerSurface {
 
   UniquePtr<TextureHolder> mCurrentTextureHolder;
   UniquePtr<TextureHolder> mPresentingTextureHolder;
+
+  // Kept across buffer rotations and resizes. The previous texture stays
+  // displayed until the next successful present replaces it.
+  RefPtr<IDCompositionDynamicTexture> mDCompositionDynamicTexture;
 };
 
 class DCSwapChain : public DCLayerSurface {
@@ -584,8 +576,8 @@ class DCSurfaceVideo : public DCSurface {
   bool CreateVideoSwapChain(DXGI_FORMAT aFormat);
   bool CallVideoProcessorBlt();
   bool ShaderBltSetup();
-  bool ShaderBlt(DXGI_COLOR_SPACE_TYPE inputColorSpace, const RECT& sourceRect,
-                 DXGI_COLOR_SPACE_TYPE outputColorSpace, const RECT& destRect);
+  bool ShaderBlt(const RECT& sourceRect, DXGI_COLOR_SPACE_TYPE outputColorSpace,
+                 const RECT& destRect);
   void ReleaseDecodeSwapChainResources();
 
   RefPtr<ID3D11VideoProcessorOutputView> mOutputView;

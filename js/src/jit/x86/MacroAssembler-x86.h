@@ -401,8 +401,8 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared {
   }
   Condition testPrimitive(Condition cond, Register tag) {
     MOZ_ASSERT(cond == Equal || cond == NotEqual);
-    cmp32(tag, ImmTag(JS::detail::ValueUpperExclPrimitiveTag));
-    return cond == Equal ? Below : AboveOrEqual;
+    cmp32(tag, ImmTag(JSVAL_TAG_OBJECT));
+    return cond == Equal ? NotEqual : Equal;
   }
   Condition testError(Condition cond, Register tag) {
     return testMagic(cond, tag);
@@ -1156,10 +1156,7 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared {
   template <typename T>
   inline void loadUnboxedValue(const T& src, MIRType type, AnyRegister dest);
 
-  // Note: this function clobbers the source register.
   inline void convertUInt32ToDouble(Register src, FloatRegister dest);
-
-  // Note: this function clobbers the source register.
   inline void convertUInt32ToFloat32(Register src, FloatRegister dest);
 
   void incrementInt32Value(const Address& addr) {

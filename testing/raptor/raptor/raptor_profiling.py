@@ -22,6 +22,62 @@ LOG = RaptorLogger(component="raptor-profiling")
 import tempfile
 
 
+def _profile_archive_path(test_config, profile_info, suffix=None):
+    """Build the in-archive path of a profile.
+
+    suffix states the archived profile's own compression, e.g. ".json" for a
+    profile that was symbolicated into plain JSON. When it is None the
+    extension of the collected profile is kept as-is.
+    """
+    test_type = test_config.get("type", "pageload")
+    test_run_type = (
+        "{}-{}".format(test_type, profile_info["type"])
+        if test_type == "pageload"
+        else test_type
+    )
+    folder_name = f"{test_config['name']}-{test_run_type}"
+    iteration = Path(profile_info["path"]).name.split("-")[-1]
+    if suffix is not None:
+        iteration = iteration.split(".", 1)[0] + suffix
+    if test_type == "pageload" and profile_info["type"] == "cold":
+        iteration_type = "browser-cycle"
+    elif profile_info["type"] == "warm":
+        iteration_type = "page-cycle"
+    else:
+        iteration_type = "iteration"
+    profile_name = "-".join([iteration_type, iteration])
+    return os.path.join(folder_name, profile_name)
+
+
+def _profile_archive_paths(test_config, profiles, suffixes=None):
+    if suffixes is None:
+        suffixes = [None] * len(profiles)
+    archive_paths = [
+        _profile_archive_path(test_config, profile_info, suffix)
+        for profile_info, suffix in zip(profiles, suffixes)
+    ]
+    has_collisions = len(set(archive_paths)) != len(archive_paths)
+    used_archive_paths = set()
+    resolved_archive_paths = []
+
+    for profile_info, base_archive_path in zip(profiles, archive_paths):
+        path_in_zip = base_archive_path
+        if has_collisions:
+            folder_name, profile_name = os.path.split(base_archive_path)
+            alias = Path(profile_info["path"]).parent.parent.name
+            path_in_zip = os.path.join(folder_name, alias, profile_name)
+            dedup_index = 2
+            while path_in_zip in used_archive_paths:
+                path_in_zip = os.path.join(
+                    folder_name, f"{alias}-{dedup_index}", profile_name
+                )
+                dedup_index += 1
+        used_archive_paths.add(path_in_zip)
+        resolved_archive_paths.append(path_in_zip)
+
+    return resolved_archive_paths
+
+
 class RaptorProfiling:
     """
     Superclass for handling profling for Firefox and Chrome applications.

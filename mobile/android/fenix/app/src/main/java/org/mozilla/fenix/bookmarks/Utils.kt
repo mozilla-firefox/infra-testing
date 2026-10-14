@@ -83,6 +83,6 @@ fun BookmarkNode.flatNodeList(excludeSubtreeRoot: String?, depth: Int = 0): List
 fun BookmarkNode.inRoots() = enumValues<BookmarkRoot>().any { it.id == guid }
 
 /** Converts a List of [BookmarkItem.Bookmark]s to an Array of [ShareData]. Used for sharing one or more bookmarks */
-internal fun List<BookmarkItem.Bookmark>.asShareDataArray(): Array<ShareData> {
-    return map { ShareData(title = it.title, url = it.url) }.toTypedArray()
+internal fun List<BookmarkItem.Bookmark>.asShareDataArray(private: Boolean): Array<ShareData> {
+    return map { ShareData(title = it.title, url = it.url, private = private) }.toTypedArray()
 }

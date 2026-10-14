@@ -613,6 +613,11 @@ class BaseAssemblerX64 : public BaseAssembler {
   }
 
   void testq_ir(int32_t rhs, RegisterID lhs) {
+    // Note: rhs == -1 sign-extends to the all-ones 64-bit mask.
+    if (rhs == -1) {
+      testq_rr(lhs, lhs);
+      return;
+    }
     // If the mask fits in a 32-bit immediate, we can use testl with a
     // 32-bit subreg.
     if (CAN_ZERO_EXTEND_32_64(rhs)) {
@@ -962,6 +967,20 @@ class BaseAssemblerX64 : public BaseAssembler {
   void immediate64(int64_t imm) {
     spew(currentOffset(), ".quad      %lld", (long long)imm);
     m_formatter.immediate64(imm);
+  }
+
+  // CET Shadow Stack operations:
+
+  void rdsspq_r(RegisterID dst) {
+    spew(currentOffset(), "rdsspq     %s", GPReg64Name(dst));
+    m_formatter.prefix(PRE_REP);
+    m_formatter.twoByteOp64(OP2_RDSSP, dst, GROUP21_OP_RDSSP);
+  }
+
+  void incsspq_r(RegisterID src) {
+    spew(currentOffset(), "incsspq    %s", GPReg64Name(src));
+    m_formatter.prefix(PRE_REP);
+    m_formatter.twoByteOp64(OP2_INCSSP, src, GROUP15_OP_INCSSP);
   }
 
   // SSE operations:

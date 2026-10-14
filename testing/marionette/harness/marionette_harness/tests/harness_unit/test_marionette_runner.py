@@ -183,9 +183,11 @@ def test_build_kwargs_with_address(build_kwargs_using, address):
 def test_build_kwargs_with_binary_or_address(
     expected_driver_args, build_kwargs_using, binary, address
 ):
-    built_kwargs = build_kwargs_using(
-        {"binary": binary, "address": address, "emulator": None}
-    )
+    built_kwargs = build_kwargs_using({
+        "binary": binary,
+        "address": address,
+        "emulator": None,
+    })
     if binary:
         expected_driver_args["bin"] = binary
         if address:
@@ -378,15 +380,17 @@ def test_manifest_basic_args(mock_runner, manifest, monkeypatch):
     assert "mozinfo_key" in kwargs and kwargs["mozinfo_key"] == "mozinfo_val"
 
 
-@pytest.mark.parametrize("test_tags", (None, ["tag", "tag2"]))
+@pytest.mark.parametrize("test_tags", (None, [], ["tag"], ["tag", "tag2"]))
 def test_manifest_with_test_tags(mock_runner, manifest, monkeypatch, test_tags):
     kwargs = get_kwargs_passed_to_manifest(
         mock_runner, manifest, monkeypatch, test_tags=test_tags
     )
-    if test_tags is None:
+    if not test_tags:
         assert kwargs["filters"] == []
     else:
-        assert len(kwargs["filters"]) == 1 and kwargs["filters"][0].tags == test_tags
+        assert len(kwargs["filters"]) == 1
+        assert isinstance(kwargs["filters"][0], manifestparser.filters.tags)
+        assert kwargs["filters"][0].tags == test_tags
 
 
 def test_cleanup_with_manifest(mock_runner, manifest_with_tests, monkeypatch):

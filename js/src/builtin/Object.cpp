@@ -844,7 +844,7 @@ static bool CanAddNewPropertyExcludingProtoFast(PlainObject* obj) {
 }
 
 #ifdef DEBUG
-void PlainObjectAssignCache::assertValid() const {
+void PlainObjectCopyPropsCache::assertValid() const {
   MOZ_ASSERT(emptyToShape_);
   MOZ_ASSERT(fromShape_);
   MOZ_ASSERT(newToShape_);
@@ -877,8 +877,7 @@ void PlainObjectAssignCache::assertValid() const {
   if (fromPlain->getDenseInitializedLength() > 0 || fromPlain->isIndexed()) {
     return true;
   }
-  MOZ_ASSERT(!fromPlain->getClass()->getNewEnumerate());
-  MOZ_ASSERT(!fromPlain->getClass()->getEnumerate());
+  MOZ_ASSERT(!ClassCanHaveExtraEnumeratedProperties(fromPlain->getClass()));
 
   // Empty |from| objects are common, so check for this first.
   if (fromPlain->empty()) {
@@ -893,30 +892,19 @@ void PlainObjectAssignCache::assertValid() const {
 
   const bool toWasEmpty = toPlain->empty();
   if (toWasEmpty) {
-    const PlainObjectAssignCache& cache = cx->realm()->plainObjectAssignCache;
+    const PlainObjectCopyPropsCache& cache =
+        cx->realm()->plainObjectAssignCache;
     SharedShape* newShape = cache.lookup(toPlain->shape(), fromPlain->shape());
     if (newShape) {
       *optimized = true;
-      uint32_t oldSpan = 0;
-      uint32_t newSpan = newShape->slotSpan();
-      if (!toPlain->setShapeAndAddNewSlots(cx, newShape, oldSpan, newSpan)) {
-        return false;
-      }
-      MOZ_ASSERT(fromPlain->slotSpan() == newSpan);
-      for (size_t i = 0; i < newSpan; i++) {
-        toPlain->initSlot(i, fromPlain->getSlot(i));
-      }
-      return true;
+      return CopyPropertiesWithNewShape(cx, toPlain, fromPlain, newShape,
+                                        newShape->slotSpan());
     }
   }
 
   // Get a list of all enumerable |from| properties.
 
   Rooted<PropertyInfoWithKeyVector> props(cx, PropertyInfoWithKeyVector(cx));
-
-#ifdef DEBUG
-  Rooted<Shape*> fromShape(cx, fromPlain->shape());
-#endif
 
   bool hasPropsWithNonDefaultAttrs = false;
   bool hasOnlyEnumerableProps = true;
@@ -957,47 +945,24 @@ void PlainObjectAssignCache::assertValid() const {
   // enumerable/writable/configurable data properties, try to use its shape or
   // property map.
   if (toWasEmpty && !hasPropsWithNonDefaultAttrs) {
-    CanReuseShape canReuse =
-        toPlain->canReuseShapeForNewProperties(fromPlain->shape());
-    if (canReuse != CanReuseShape::NoReuse) {
-      SharedShape* newShape;
-      if (canReuse == CanReuseShape::CanReuseShape) {
-        newShape = fromPlain->sharedShape();
-      } else {
-        // Get a shape with fromPlain's PropMap and ObjectFlags (because we need
-        // the HasEnumerable flag checked in canReuseShapeForNewProperties) and
-        // the other fields (BaseShape, numFixedSlots) unchanged.
-        MOZ_ASSERT(canReuse == CanReuseShape::CanReusePropMap);
-        ObjectFlags objectFlags = fromPlain->sharedShape()->objectFlags();
-        Rooted<SharedPropMap*> map(cx, fromPlain->sharedShape()->propMap());
-        uint32_t mapLength = fromPlain->sharedShape()->propMapLength();
-        BaseShape* base = toPlain->sharedShape()->base();
-        uint32_t nfixed = toPlain->sharedShape()->numFixedSlots();
-        newShape = SharedShape::getPropMapShape(cx, base, nfixed, map,
-                                                mapLength, objectFlags);
-        if (!newShape) {
-          return false;
-        }
-      }
-      uint32_t oldSpan = 0;
-      uint32_t newSpan = props.length();
-      if (!toPlain->setShapeAndAddNewSlots(cx, newShape, oldSpan, newSpan)) {
-        return false;
-      }
-      MOZ_ASSERT(fromPlain->slotSpan() == newSpan);
-      MOZ_ASSERT(toPlain->slotSpan() == newSpan);
-      for (size_t i = 0; i < newSpan; i++) {
-        toPlain->initSlot(i, fromPlain->getSlot(i));
-      }
-      PlainObjectAssignCache& cache = cx->realm()->plainObjectAssignCache;
-      cache.fill(&origToShape->asShared(), fromPlain->sharedShape(), newShape);
+    bool copied;
+    if (!TryCopyPropertiesReusingShapeOrPropMap(cx, toPlain, fromPlain,
+                                                props.length(), &copied)) {
+      return false;
+    }
+    if (copied) {
+      PlainObjectCopyPropsCache& cache = cx->realm()->plainObjectAssignCache;
+      cache.fill(&origToShape->asShared(), fromPlain->sharedShape(),
+                 toPlain->sharedShape());
       return true;
     }
   }
 
   RootedValue propValue(cx);
   RootedId nextKey(cx);
-
+#ifdef DEBUG
+  Rooted<Shape*> fromShape(cx, fromPlain->shape());
+#endif
   for (size_t i = props.length(); i > 0; i--) {
     // Assert |from| still has the same properties.
     MOZ_ASSERT(fromPlain->shape() == fromShape);
@@ -1031,7 +996,7 @@ void PlainObjectAssignCache::assertValid() const {
   // definition order and the slots may contain holes).
   if (toWasEmpty && hasOnlyEnumerableProps && !fromPlain->inDictionaryMode() &&
       !toPlain->inDictionaryMode()) {
-    PlainObjectAssignCache& cache = cx->realm()->plainObjectAssignCache;
+    PlainObjectCopyPropsCache& cache = cx->realm()->plainObjectAssignCache;
     cache.fill(&origToShape->asShared(), fromPlain->sharedShape(),
                toPlain->sharedShape());
   }
@@ -1051,9 +1016,7 @@ static bool TryAssignNative(JSContext* cx, HandleObject to, HandleObject from,
   // properties.
   NativeObject* fromNative = &from->as<NativeObject>();
   if (fromNative->getDenseInitializedLength() > 0 || fromNative->isIndexed() ||
-      fromNative->is<TypedArrayObject>() ||
-      fromNative->getClass()->getNewEnumerate() ||
-      fromNative->getClass()->getEnumerate()) {
+      ClassCanHaveExtraEnumeratedProperties(fromNative->getClass())) {
     return true;
   }
 
@@ -1150,6 +1113,127 @@ static bool AssignSlow(JSContext* cx, HandleObject to, HandleObject from) {
     // Step 4.c.ii.2.
     if (MOZ_UNLIKELY(!SetProperty(cx, to, nextKey, propValue))) {
       return false;
+    }
+  }
+
+  return true;
+}
+
+// ES2027 Draft rev e28783d5fc9dc12b3de905961e2c71410b38a202
+// 7.3.25 CopyDataProperties ( target, source, excludedItems )
+bool js::CopyDataProperties(JSContext* cx, HandleObject target,
+                            HandleValue source, HandleObject excludedItems) {
+  // Step 1.
+  if (source.isNullOrUndefined()) {
+    return true;
+  }
+
+  // Step 2.
+  RootedObject from(cx, ToObject(cx, source));
+  if (!from) {
+    return false;
+  }
+
+  // Fast path for steps 3-4: everything can be copied in native code.
+  if (from->is<NativeObject>() && target->is<PlainObject>() &&
+      (!excludedItems || excludedItems->is<PlainObject>())) {
+    bool optimized;
+    if (!CopyDataPropertiesNative(
+            cx, target.as<PlainObject>(), from.as<NativeObject>(),
+            (excludedItems ? excludedItems.as<PlainObject>() : nullptr),
+            &optimized)) {
+      return false;
+    }
+    if (optimized) {
+      return true;
+    }
+  }
+
+  // Step 3.
+  RootedIdVector keys(cx);
+  if (!GetPropertyKeys(
+          cx, from, JSITER_OWNONLY | JSITER_HIDDEN | JSITER_SYMBOLS, &keys)) {
+    return false;
+  }
+
+  // Step 4.
+  Rooted<NativeObject*> nativeTarget(cx);
+  if (target->is<PlainObject>() && target->as<PlainObject>().isExtensible()) {
+    nativeTarget = &target->as<PlainObject>();
+  }
+
+  // It is possible for two keys to collide during copying in two cases:
+  //     1) The target is non-empty.
+  //     2) A non-JS source enumeration results in duplicate keys.
+  bool keysMayCollide =
+      !from->is<NativeObject>() || !nativeTarget || !nativeTarget->empty();
+
+  RootedId nextKey(cx);
+  RootedValue propValue(cx);
+  for (size_t i = 0, len = keys.length(); i < len; i++) {
+    nextKey = keys[i];
+
+    // Step 4.b.
+    if (excludedItems) {
+      bool found;
+      if (!HasOwnProperty(cx, excludedItems, nextKey, &found)) {
+        return false;
+      }
+      if (found) {
+        continue;
+      }
+    }
+
+    // Steps 4.c.i-ii and 4.c.ii.1.
+    // Faster slow path using a single lookup on dense elements. This single
+    // lookup uses the fact that dense elements are always enumerable data
+    // properties.
+    if (from->is<NativeObject>() &&
+        !ClassCanHaveExtraEnumeratedProperties(from->getClass())) {
+      Handle<NativeObject*> nfrom = from.as<NativeObject>();
+      if (nextKey.isInt() && nfrom->containsDenseElement(nextKey.toInt())) {
+        propValue.set(nfrom->getDenseElement(nextKey.toInt()));
+      } else {
+        mozilla::Maybe<PropertyInfo> prop = nfrom->lookup(cx, nextKey);
+        if (prop.isNothing() || !prop->enumerable()) {
+          continue;
+        }
+        if (prop->isDataProperty()) {
+          propValue = nfrom->getSlot(prop->slot());
+        } else {
+          if (!NativeGetExistingProperty(cx, from, nfrom, nextKey, *prop,
+                                         &propValue)) {
+            return false;
+          }
+        }
+      }
+    } else {
+      // The above lookup is only valid when |from|'s class can't produce extra
+      // enumerated properties such as typed arrays and String objects.
+      bool enumerable;
+      if (!PropertyIsEnumerable(cx, from, nextKey, &enumerable)) {
+        return false;
+      }
+      if (!enumerable) {
+        continue;
+      }
+      if (!GetProperty(cx, from, from, nextKey, &propValue)) {
+        return false;
+      }
+    }
+
+    // Step 4.c.ii.2.
+    if (nativeTarget && !nextKey.isInt() &&
+        (!keysMayCollide || !nativeTarget->contains(cx, nextKey))) {
+      if (!AddDataPropertyToNativeObjectNoHooks(cx, nativeTarget, nextKey,
+                                                propValue)) {
+        return false;
+      }
+    } else {
+      if (!DefineDataProperty(cx, target, nextKey, propValue,
+                              JSPROP_ENUMERATE)) {
+        return false;
+      }
     }
   }
 

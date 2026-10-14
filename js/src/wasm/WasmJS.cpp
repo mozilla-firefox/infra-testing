@@ -32,6 +32,7 @@
 #include "jit/JitOptions.h"
 #include "jit/Simulator.h"
 #include "js/ColumnNumber.h"  // JS::ColumnNumberOneOrigin
+#include "js/Context.h"       // js::AssertHeapIsIdle
 #include "js/ForOfIterator.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/Printf.h"
@@ -46,6 +47,7 @@
 #include "vm/GlobalObject.h"       // js::GlobalObject
 #include "vm/HelperThreadState.h"  // js::PromiseHelperTask
 #include "vm/Interpreter.h"
+#include "vm/JSContext.h"  // CHECK_THREAD
 #include "vm/JSFunction.h"
 #include "vm/PlainObject.h"    // js::PlainObject
 #include "vm/PromiseObject.h"  // js::PromiseObject
@@ -592,12 +594,11 @@ static bool ReportCompileWarnings(JSContext* cx,
 }
 
 // https://webassembly.github.io/esm-integration/js-api/index.html#esm-integration
-bool js::wasm::CompileForESM(JSContext* cx,
-                             const JS::ReadOnlyCompileOptions& options,
-                             const BytecodeSource& bytecodeSource,
-                             MutableHandleObject moduleObj) {
-  // Step 1. Let stableBytes be a copy of the bytes held by the buffer bytes.
-  // (Performed by caller)
+JS_PUBLIC_API JS::SharedWasmCompileArgs JS::BuildCompileArgsForESM(
+    JSContext* cx, const JS::ReadOnlyCompileOptions& options) {
+  MOZ_ASSERT(!cx->zone()->isAtomsZone());
+  AssertHeapIsIdle();
+  CHECK_THREAD(cx);
 
   FeatureOptions featureOptions;
   // Step 4 (reordered). Let builtinSetNames be « "js-string" ».
@@ -606,56 +607,82 @@ bool js::wasm::CompileForESM(JSContext* cx,
   featureOptions.jsStringConstants = true;
   UniqueChars ns = DuplicateString(cx, "wasm:js/string-constants");
   if (!ns) {
-    return false;
+    return nullptr;
   }
   featureOptions.jsStringConstantsNamespace =
       cx->new_<ShareableChars>(std::move(ns));
   if (!featureOptions.jsStringConstantsNamespace) {
-    return false;
+    return nullptr;
   }
 
-  // Step 2. Compile the WebAssembly module stableBytes and store the result
-  //         as module.
   ScriptedCaller scriptedCaller;
   if (options.filename()) {
     scriptedCaller.source = DuplicateString(cx, options.filename().c_str());
     if (!scriptedCaller.source) {
-      return false;
+      return nullptr;
     }
     scriptedCaller.kind = ScriptedCallerKind::Url;
   }
-  SharedCompileArgs compileArgs = CompileArgs::buildAndReport(
-      cx, std::move(scriptedCaller), featureOptions, /* reportOOM */ true);
-  if (!compileArgs) {
-    return false;
+  return CompileArgs::buildAndReport(cx, std::move(scriptedCaller),
+                                     featureOptions, /* reportOOM */ true);
+}
+
+JS_PUBLIC_API JS::ESMCompileResult JS::CompileForESM(
+    const WasmCompileArgs& compileArgs, const uint8_t* bytes, size_t length) {
+  // Step 1. Let stableBytes be a copy of the bytes held by the buffer bytes.
+  // (Performed by caller)
+  BytecodeSource bytecodeSource(bytes, length);
+
+  // Step 2. Compile the WebAssembly module stableBytes and store the result
+  //         as module.
+  ESMCompileResult result;
+  result.module = CompileModule(static_cast<const CompileArgs&>(compileArgs),
+                                BytecodeBufferOrSource(bytecodeSource),
+                                &result.error, &result.warnings, nullptr);
+  if (result.module) {
+    result.status = ESMCompileResult::Status::Success;
+  } else if (result.error) {
+    result.status = ESMCompileResult::Status::Failed;
+  } else {
+    result.status = ESMCompileResult::Status::OutOfMemory;
   }
+  return result;
+}
 
-  UniqueChars error;
-  UniqueCharsVector warnings;
-  SharedModule module =
-      CompileModule(*compileArgs, BytecodeBufferOrSource(bytecodeSource),
-                    &error, &warnings, nullptr);
+JS_PUBLIC_API bool JS::FinishCompileForESM(
+    JSContext* cx, const WasmCompileArgs& compileArgs,
+    const JS::ESMCompileResult& compileResult, MutableHandleObject moduleObj) {
+  MOZ_ASSERT(!cx->zone()->isAtomsZone());
+  AssertHeapIsIdle();
+  CHECK_THREAD(cx);
 
-  if (!ReportCompileWarnings(cx, warnings)) {
+  const Module* module = static_cast<const Module*>(compileResult.module.get());
+
+  if (!ReportCompileWarnings(cx, compileResult.warnings)) {
     return false;
   }
 
   // Step 3. If module is error, throw a CompileError exception.
-  if (!module) {
-    if (!error) {
+  switch (compileResult.status) {
+    case ESMCompileResult::Status::OutOfMemory:
       JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
                                JSMSG_OUT_OF_MEMORY);
       return false;
-    }
-    RootedObject errorObj(cx);
-    RootedObject nullStack(cx, nullptr);
-    if (!CreateCompileError(cx, compileArgs->scriptedCaller, nullStack,
-                            error.get(), &errorObj)) {
+    case ESMCompileResult::Status::Failed: {
+      RootedObject errorObj(cx);
+      RootedObject nullStack(cx, nullptr);
+      if (!CreateCompileError(
+              cx, static_cast<const CompileArgs&>(compileArgs).scriptedCaller,
+              nullStack, compileResult.error.get(), &errorObj)) {
+        return false;
+      }
+      RootedValue errorVal(cx, ObjectValue(*errorObj));
+      cx->setPendingException(errorVal, js::ShouldCaptureStack::Maybe);
       return false;
     }
-    RootedValue errorVal(cx, ObjectValue(*errorObj));
-    cx->setPendingException(errorVal, js::ShouldCaptureStack::Maybe);
-    return false;
+    case ESMCompileResult::Status::Success:
+      MOZ_ASSERT(module);
+      break;
   }
 
   // Step 6. Construct a WebAssembly module object from module, bytes,
@@ -1846,67 +1873,73 @@ struct MOZ_STACK_CLASS AutoPinBufferSourceLength {
 };
 
 // Checks if the `obj` is a buffer source (according to WebIDL rules) and
-// returns a view to the underlying memory. Callers should be sure to use
-// AutoPinBufferSourceLength for the resulting lifetime of the bytecode
-// source.
-static bool GetBytecodeSource(JSContext* cx, Handle<JSObject*> obj,
-                              unsigned errorNumber, BytecodeSource* bytecode,
-                              bool* isShared) {
+// returns the underlying memory. Callers should be sure to use
+// AutoPinBufferSourceLength for the resulting lifetime of the memory.
+static bool GetBufferSourceMemory(JSContext* cx, Handle<JSObject*> obj,
+                                  unsigned errorNumber,
+                                  SharedMem<uint8_t*>* dataPointer,
+                                  size_t* byteLength, bool* isShared) {
   JSObject* unwrapped = CheckedUnwrapStatic(obj);
-
-  SharedMem<uint8_t*> dataPointer;
-  size_t byteLength;
   if (!unwrapped || !IsBufferSource(cx, unwrapped, /*allowShared*/ true,
-                                    /*allowResizable*/ true, &dataPointer,
-                                    &byteLength, isShared)) {
+                                    /*allowResizable*/ true, dataPointer,
+                                    byteLength, isShared)) {
     JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr, errorNumber);
     return false;
   }
-
-  *bytecode = BytecodeSource(dataPointer.unwrap(), byteLength);
   return true;
 }
 
-// The same as `GetBytecodeSource`, but instead returns an owned bytecode
-// buffer copy. Callers don't need to use AutoPinBufferSourceLength because
-// they own the resulting memory.
+// Returns an owned bytecode buffer copy of a buffer source. Callers don't need
+// to use AutoPinBufferSourceLength because they own the resulting memory.
 static bool GetBytecodeBuffer(JSContext* cx, Handle<JSObject*> obj,
                               unsigned errorNumber, BytecodeBuffer* bytecode) {
-  BytecodeSource source;
+  SharedMem<uint8_t*> dataPointer;
+  size_t byteLength;
   bool isShared;
-  if (!GetBytecodeSource(cx, obj, errorNumber, &source, &isShared)) {
+  if (!GetBufferSourceMemory(cx, obj, errorNumber, &dataPointer, &byteLength,
+                             &isShared)) {
     return false;
   }
   AutoPinBufferSourceLength pin(cx, obj);
 
-  if (!BytecodeBuffer::fromSource(source, bytecode)) {
+  bool ok =
+      isShared
+          ? BytecodeBuffer::fromSharedMemory(dataPointer, byteLength, bytecode)
+          : BytecodeBuffer::fromSource(
+                BytecodeSource(dataPointer.unwrapUnshared(), byteLength),
+                bytecode);
+  if (!ok) {
     ReportOutOfMemory(cx);
     return false;
   }
   return true;
 }
 
-// The same as `GetBytecodeSource`, but instead returns an owned bytecode
-// buffer if the buffer source is shared.
+// Returns a bytecode source over a buffer source, or an owned bytecode buffer
+// copy if the buffer source is shared. Callers should be sure to use
+// AutoPinBufferSourceLength for the resulting lifetime of the bytecode.
 static bool GetBytecodeBufferOrSource(JSContext* cx, Handle<JSObject*> obj,
                                       unsigned errorNumber,
                                       BytecodeBufferOrSource* bytecode) {
-  BytecodeSource source;
+  SharedMem<uint8_t*> dataPointer;
+  size_t byteLength;
   bool isShared;
-  if (!GetBytecodeSource(cx, obj, errorNumber, &source, &isShared)) {
+  if (!GetBufferSourceMemory(cx, obj, errorNumber, &dataPointer, &byteLength,
+                             &isShared)) {
     return false;
   }
 
   if (!isShared) {
-    *bytecode = BytecodeBufferOrSource(source);
+    *bytecode = BytecodeBufferOrSource(
+        BytecodeSource(dataPointer.unwrapUnshared(), byteLength));
     return true;
   }
 
-  // The buffer source is shared, we need to make a copy to ensure it we have an
+  // The buffer source is shared, we need to make a copy to ensure we have an
   // immutable copy.
   AutoPinBufferSourceLength pin(cx, obj);
   BytecodeBuffer buffer;
-  if (!BytecodeBuffer::fromSource(source, &buffer)) {
+  if (!BytecodeBuffer::fromSharedMemory(dataPointer, byteLength, &buffer)) {
     ReportOutOfMemory(cx);
     return false;
   }

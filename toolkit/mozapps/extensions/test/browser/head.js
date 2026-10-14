@@ -1360,47 +1360,6 @@ MockInstall.prototype = {
   },
 };
 
-function waitForCondition(condition, nextTest, errorMsg) {
-  let tries = 0;
-  let interval = setInterval(function () {
-    if (tries >= 30) {
-      ok(false, errorMsg);
-      moveOn();
-    }
-    var conditionPassed;
-    try {
-      conditionPassed = condition();
-    } catch (e) {
-      ok(false, e + "\n" + e.stack);
-      conditionPassed = false;
-    }
-    if (conditionPassed) {
-      moveOn();
-    }
-    tries++;
-  }, 100);
-  let moveOn = function () {
-    clearInterval(interval);
-    nextTest();
-  };
-}
-
-// Wait for and then acknowledge (by pressing the primary button) the
-// given notification.
-function promiseNotification(id = "addon-webext-permissions") {
-  return new Promise(resolve => {
-    function popupshown() {
-      let notification = PopupNotifications.getNotification(id);
-      if (notification) {
-        PopupNotifications.panel.removeEventListener("popupshown", popupshown);
-        PopupNotifications.panel.firstElementChild.button.click();
-        resolve();
-      }
-    }
-    PopupNotifications.panel.addEventListener("popupshown", popupshown);
-  });
-}
-
 /**
  * Wait for the given PopupNotification to display
  *

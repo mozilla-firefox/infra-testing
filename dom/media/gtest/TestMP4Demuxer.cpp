@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "AOMDecoder.h"
 #include "BufferMediaResource.h"
 #include "DecoderData.h"
 #include "H265.h"
@@ -641,6 +642,60 @@ TEST(MP4Demuxer, SeekHEVC)
   });
 }
 
+// Generated with 1-second GOPs, then stss rewritten so later sync samples
+// are not KEY_FRAME (same shape as test_hevc_open_gop.mp4 CRA vs IDR):
+//   ffmpeg -f lavfi -i testsrc=duration=4:size=128x128:rate=30
+//     -c:v libaom-av1 -cpu-used 8 -crf 40 -g 30 -keyint_min 30 -an
+//     test_av1.mp4
+//   python3 - <<'PY'
+//   from pathlib import Path
+//   p = Path("test_av1.mp4")
+//   b = bytearray(p.read_bytes())
+//   i = b.find(b"stss")
+//   for k, s in enumerate((1, 28, 60, 88)):
+//       b[i+12+4*k:i+16+4*k] = s.to_bytes(4, "big")
+//   p.write_bytes(b)
+//   PY
+// Bitstream KEY_FRAME is samples 1, 31, 61, 91. stss is 1, 28, 60, 88.
+TEST(MP4Demuxer, SeekAV1)
+{
+  RefPtr<MP4DemuxerBinding> binding = new MP4DemuxerBinding("test_av1.mp4");
+
+  // Seek past the first GOP. The nearest stss sync sample is not a KEY_FRAME.
+  // The demuxer must mark the first sample from the bitstream, not stss.
+  const TimeUnit seekTime = TimeUnit::FromSeconds(2.0);
+
+  binding->RunTestAndWait([binding, seekTime]() {
+    binding->mVideoTrack =
+        binding->mDemuxer->GetTrackDemuxer(TrackInfo::kVideoTrack, 0);
+    binding->mVideoTrack->Seek(seekTime)->Then(
+        binding->mTaskQueue, __func__,
+        [binding, seekTime](TimeUnit aActualTime) {
+          EXPECT_LE(aActualTime, seekTime);
+          binding->mVideoTrack->GetSamples()->Then(
+              binding->mTaskQueue, __func__,
+              [binding,
+               aActualTime](RefPtr<MediaTrackDemuxer::SamplesHolder> aSamples) {
+                EXPECT_GT(aSamples->GetSamples().Length(), 0u);
+                RefPtr<MediaRawData> first = aSamples->GetSamples()[0];
+                EXPECT_TRUE(first->mKeyframe);
+                EXPECT_EQ(first->mTime, aActualTime);
+                EXPECT_TRUE(AOMDecoder::IsKeyframe(
+                    Span<const uint8_t>(first->Data(), first->Size())));
+                binding->mTaskQueue->BeginShutdown();
+              },
+              [binding](const MediaResult&) {
+                EXPECT_TRUE(false) << "GetSamples failed after seek";
+                binding->mTaskQueue->BeginShutdown();
+              });
+        },
+        [binding](const MediaResult&) {
+          EXPECT_TRUE(false) << "Seek failed";
+          binding->mTaskQueue->BeginShutdown();
+        });
+  });
+}
+
 TEST(MP4Demuxer, ZeroInLastMoov)
 {
   RefPtr<MP4DemuxerBinding> binding =
@@ -804,6 +859,82 @@ static Mp4parseTrackVideoInfo MakeVideoInfo(
   video.sample_info_count = 1;
   video.sample_info = aSampleInfo;
   return video;
+}
+
+TEST(MP4Demuxer, VideoInfoDisplaySizeBound)
+{
+  Mp4parseTrackVideoSampleInfo si{};
+  si.codec_type = MP4PARSE_CODEC_VP9;
+  si.image_width = 1920;
+  si.image_height = 1080;
+
+  Mp4parseTrackInfo track = MakeTrackInfo();
+
+  // A display size with both dimensions within the maximum image dimension and
+  // a total area at the maximum video area is accepted (16384 * 2304 ==
+  // MAX_VIDEO_WIDTH * MAX_VIDEO_HEIGHT).
+  {
+    Mp4parseTrackVideoInfo video = MakeVideoInfo(&si);
+    video.display_width = 16384;
+    video.display_height = 2304;
+    MP4VideoInfo info;
+    EXPECT_TRUE(NS_SUCCEEDED(info.Update(&track, &video).Code()));
+  }
+
+  // A display area one past the maximum video area is rejected by the area
+  // bound alone: both dimensions stay within the maximum image dimension, so
+  // only the width * height limit can reject it, unlike the per-axis cases
+  // below.
+  {
+    Mp4parseTrackVideoInfo video = MakeVideoInfo(&si);
+    video.display_width = 16384;
+    video.display_height = 2305;
+    MP4VideoInfo info;
+    EXPECT_EQ(NS_ERROR_DOM_MEDIA_METADATA_ERR,
+              info.Update(&track, &video).Code());
+  }
+
+  // A width one past the maximum image dimension is rejected on its own, even
+  // when the total area is within bounds.
+  {
+    Mp4parseTrackVideoInfo video = MakeVideoInfo(&si);
+    video.display_width = 16385;
+    video.display_height = 1;
+    MP4VideoInfo info;
+    EXPECT_EQ(NS_ERROR_DOM_MEDIA_METADATA_ERR,
+              info.Update(&track, &video).Code());
+  }
+
+  // A height one past the maximum image dimension is rejected on its own, even
+  // when the total area is within bounds.
+  {
+    Mp4parseTrackVideoInfo video = MakeVideoInfo(&si);
+    video.display_width = 1;
+    video.display_height = 16385;
+    MP4VideoInfo info;
+    EXPECT_EQ(NS_ERROR_DOM_MEDIA_METADATA_ERR,
+              info.Update(&track, &video).Code());
+  }
+
+  // A zero display dimension is rejected.
+  {
+    Mp4parseTrackVideoInfo video = MakeVideoInfo(&si);
+    video.display_width = 0;
+    video.display_height = 1080;
+    MP4VideoInfo info;
+    EXPECT_EQ(NS_ERROR_DOM_MEDIA_METADATA_ERR,
+              info.Update(&track, &video).Code());
+  }
+
+  // A display size far beyond the maximum image dimension is rejected.
+  {
+    Mp4parseTrackVideoInfo video = MakeVideoInfo(&si);
+    video.display_width = 65535;
+    video.display_height = 65535;
+    MP4VideoInfo info;
+    EXPECT_EQ(NS_ERROR_DOM_MEDIA_METADATA_ERR,
+              info.Update(&track, &video).Code());
+  }
 }
 
 TEST(MP4Demuxer, VideoInfoMdcvClli)

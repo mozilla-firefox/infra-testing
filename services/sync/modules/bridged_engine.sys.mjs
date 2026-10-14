@@ -290,11 +290,11 @@ BridgedEngine.prototype = {
     let outgoingBsosAsJSON = await this._bridge.apply(serverModifiedMillis);
     let changeset = {};
     for (let bsoAsJSON of outgoingBsosAsJSON) {
-      this._log.trace("outgoing bso", bsoAsJSON);
       let record = BridgedRecord.fromOutgoingBso(
         this.name,
         JSON.parse(bsoAsJSON)
       );
+      this._log.trace(`outgoing bso with length ${record.cleartext?.length}`);
       changeset[record.id] = {
         synced: false,
         record,

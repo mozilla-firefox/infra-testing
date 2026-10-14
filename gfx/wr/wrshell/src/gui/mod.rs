@@ -8,11 +8,14 @@ mod shell;
 mod textures;
 mod composite_view;
 mod draw_calls;
+mod scene_tree;
+mod shaders;
 mod timeline;
 
 use eframe::egui;
 use webrender_api::{DebugFlags, RenderCommandInfo};
 use webrender_api::debugger::{DebuggerMessage, DebuggerTextureContent, ProfileCounterId, CompositorDebugInfo};
+use webrender_api::debugger::{ShaderDiagnostic, ShaderStage};
 use crate::{command, net};
 use std::collections::{HashMap, BTreeMap, VecDeque};
 use std::fs;
@@ -20,6 +23,23 @@ use std::io::Write;
 use std::sync::mpsc;
 
 use profiler::Graph;
+
+/// Render a shader diagnostic as `file:line:column: message`, falling back to
+/// the variant name when the driver reported no location.
+pub fn format_shader_diagnostic(diagnostic: &ShaderDiagnostic) -> String {
+    let stage = match diagnostic.stage {
+        ShaderStage::Compile => "compile",
+        ShaderStage::Link => "link",
+    };
+
+    let location = match (&diagnostic.file, diagnostic.line, diagnostic.column) {
+        (Some(file), Some(line), Some(column)) => format!("{}:{}:{}", file, line, column),
+        (Some(file), Some(line), None) => format!("{}:{}", file, line),
+        _ => diagnostic.variant.clone(),
+    };
+
+    format!("[{} {}] {}: {}", stage, diagnostic.variant, location, diagnostic.message)
+}
 
 #[allow(dead_code)]
 enum ApplicationEvent {
@@ -74,6 +94,8 @@ struct DataModel {
     profile_graphs: HashMap<ProfileCounterId, Graph>,
     frame_log: FrameLog,
     timeline: timeline::Timeline,
+    scene_tree: scene_tree::SceneTreeState,
+    shaders: shaders::ShaderEditorState,
 }
 
 impl DataModel {
@@ -88,6 +110,8 @@ impl DataModel {
             profile_graphs: HashMap::new(),
             frame_log: FrameLog::new(),
             timeline: timeline::Timeline::new(),
+            scene_tree: scene_tree::SceneTreeState::new(),
+            shaders: shaders::ShaderEditorState::new(),
         }
     }
 }
@@ -101,6 +125,8 @@ pub enum Tool {
     Preview,
     DrawCalls,
     Timeline,
+    SceneTree,
+    Shaders,
 }
 
 impl egui_tiles::Behavior<Tool> for Gui {
@@ -113,6 +139,8 @@ impl egui_tiles::Behavior<Tool> for Gui {
             Tool::Preview => { "Preview" }
             Tool::DrawCalls => { "Draw calls" }
             Tool::Timeline => { "Timeline" }
+            Tool::SceneTree => { "Scene" }
+            Tool::Shaders => { "Shaders" }
         };
 
         title.into()
@@ -131,6 +159,8 @@ impl egui_tiles::Behavior<Tool> for Gui {
                 Tool::Shell => { shell::ui(self, ui); }
                 Tool::DrawCalls => { draw_calls::ui(self, ui); }
                 Tool::Timeline => { timeline::ui(self, ui); }
+                Tool::SceneTree => { scene_tree::ui(self, ui); }
+                Tool::Shaders => { shaders::ui(self, ui); }
             }
         });
 
@@ -211,6 +241,8 @@ impl Gui {
                     tiles.insert_pane(Tool::Profiler),
                     tiles.insert_pane(Tool::Preview),
                     tiles.insert_pane(Tool::DrawCalls),
+                    tiles.insert_pane(Tool::SceneTree),
+                    tiles.insert_pane(Tool::Shaders),
                 ];
                 let side = vec![
                     tiles.insert_pane(Tool::DebugFlags),
@@ -377,17 +409,7 @@ impl Gui {
                         self.data_model.log.push(msg);
                     }
                     command::CommandOutput::TextDocument { title, content } => {
-                        let title = format!("{} [id {}]", title, self.doc_id);
-                        self.doc_id += 1;
-                        self.data_model.preview_doc_index = Some(self.data_model.documents.len());
-                        self.data_model.documents.push(
-                            Document {
-                                title,
-                                kind: DocumentKind::Text {
-                                    content,
-                                }
-                            }
-                        );
+                        self.add_text_document(title, content);
                     }
                     command::CommandOutput::SerdeDocument { kind, ref content } => {
                         let title = format!("Compositor [id {}]", self.doc_id);
@@ -424,6 +446,21 @@ impl Gui {
                 );
             }
         }
+    }
+
+    /// Open a text document in the preview pane and make it the current one.
+    pub fn add_text_document(&mut self, title: String, content: String) {
+        let title = format!("{} [id {}]", title, self.doc_id);
+        self.doc_id += 1;
+        self.data_model.preview_doc_index = Some(self.data_model.documents.len());
+        self.data_model.documents.push(
+            Document {
+                title,
+                kind: DocumentKind::Text {
+                    content,
+                }
+            }
+        );
     }
 
     fn handle_network_event(&mut self, event: net::NetworkEvent) {
@@ -487,6 +524,12 @@ impl Gui {
 
                         self.data_model.timeline.current_frame = current;
                     }
+                    DebuggerMessage::ShaderCompileErrors(diagnostics) => {
+                        for diagnostic in &diagnostics {
+                            self.data_model.log.push(format_shader_diagnostic(diagnostic));
+                        }
+                        self.data_model.shaders.push_streamed_diagnostics(&diagnostics);
+                    }
                 }
             }
         }
@@ -535,6 +578,7 @@ pub enum DocumentKind {
     Texture {
         content: DebuggerTextureContent,
         handle: Option<egui::TextureHandle>,
+        view: textures::TextureView,
     }
 }
 
@@ -586,9 +630,13 @@ fn do_preview_ui(app: &mut Gui, ui: &mut egui::Ui) {
                     composite_view::ui(ui, info);
                 }
             }
-            DocumentKind::Texture { content, handle } => {
-                if let Some(handle) = handle {
-                    textures::texture_viewer_ui(ui, &content, &handle);
+            DocumentKind::Texture { .. } => {
+                // Re-borrow mutably to give the viewer access to its pan/zoom state.
+                if let Some(Document { kind: DocumentKind::Texture { content, handle, view }, .. }) =
+                    app.data_model.documents.get_mut(idx) {
+                    if let Some(handle) = handle {
+                        textures::texture_viewer_ui(ui, content, handle, view);
+                    }
                 }
             }
         }
@@ -613,5 +661,5 @@ struct GuiSavedState {
 impl GuiSavedState {
     /// Update this number to reset the configuration. This ensures that new
     /// panels are added.
-    const VERSION: u32 = 2;
+    const VERSION: u32 = 4;
 }

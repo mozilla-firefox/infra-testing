@@ -15,6 +15,7 @@
 #include "js/loader/ScriptLoadRequestList.h"
 #include "js/loader/ScriptLoaderInterface.h"
 #include "mozilla/CORSMode.h"
+#include "mozilla/Encoding.h"
 #include "mozilla/MaybeOneOf.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/dom/ScriptLoadContext.h"
@@ -224,8 +225,8 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
    * application of the default Trusted Types policy, a void string otherwise.
    * See https://html.spec.whatwg.org/#prepare-the-script-element
    */
-  bool ProcessScriptElement(nsIScriptElement* aElement,
-                            const nsAString& aSourceText);
+  MOZ_CAN_RUN_SCRIPT bool ProcessScriptElement(nsIScriptElement* aElement,
+                                               const nsAString& aSourceText);
 
   /**
    * Gets the currently executing script. This is useful if you want to
@@ -356,9 +357,10 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
    * loading the script. The streamed content is expected to be stored on the
    * aRequest argument.
    */
-  nsresult OnStreamComplete(nsIChannel* aChannel, ScriptLoadRequest* aRequest,
-                            nsresult aChannelStatus, nsresult aSRIStatus,
-                            SRICheckDataVerifier* aSRIDataVerifier);
+  MOZ_CAN_RUN_SCRIPT nsresult
+  OnStreamComplete(nsIChannel* aChannel, ScriptLoadRequest* aRequest,
+                   nsresult aChannelStatus, nsresult aSRIStatus,
+                   SRICheckDataVerifier* aSRIDataVerifier);
 
   /**
    * Returns wether any request is queued, and not executed yet.
@@ -373,7 +375,8 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
   /**
    * Processes any pending requests that are ready for processing.
    */
-  void ProcessPendingRequests(bool aAllowBypassingParserBlocking = false);
+  MOZ_CAN_RUN_SCRIPT void ProcessPendingRequests(
+      bool aAllowBypassingParserBlocking = false);
 
   /**
    * Starts deferring deferred scripts and puts them in the mDeferredRequests
@@ -386,7 +389,7 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
    * this will drop any pending scripts that haven't run yet, otherwise it will
    * do nothing.
    */
-  void ParsingComplete(bool aTerminated);
+  MOZ_CAN_RUN_SCRIPT void ParsingComplete(bool aTerminated);
 
   /**
    * Notifies the script loader that the checkpoint to begin execution of defer
@@ -400,7 +403,7 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
    * WARNING: This function will synchronously execute content scripts, so be
    * prepared that the world might change around you.
    */
-  void DeferCheckpointReached();
+  MOZ_CAN_RUN_SCRIPT void DeferCheckpointReached();
 
   /**
    * Returns the number of pending scripts, deferred or not.
@@ -435,7 +438,8 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
    * Process a request that was deferred so that the script could be compiled
    * off thread.
    */
-  nsresult ProcessOffThreadRequest(ScriptLoadRequest* aRequest);
+  MOZ_CAN_RUN_SCRIPT nsresult
+  ProcessOffThreadRequest(ScriptLoadRequest* aRequest);
 
   bool AddPendingChildLoader(ScriptLoader* aChild) {
     // XXX(Bug 1631371) Check if this should use a fallible operation as it
@@ -479,7 +483,7 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
   nsIURI* GetBaseURI() const override;
 
  private:
-  ~ScriptLoader();
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY ~ScriptLoader();
 
   already_AddRefed<ScriptLoadRequest> CreateLoadRequest(
       JS::loader::ScriptKind aKind, nsIURI* aURI, nsIScriptElement* aElement,
@@ -488,7 +492,8 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
       RequestPriority aRequestPriority, const SRIMetadata& aIntegrity,
       ReferrerPolicy aReferrerPolicy,
       JS::loader::ParserMetadata aParserMetadata,
-      ScriptLoadRequestType aRequestType);
+      ScriptLoadRequestType aRequestType,
+      const Encoding* aClassicScriptPreloadHintEncoding);
 
   /**
    * Helper function to lookup the cache entry and associate it to the
@@ -503,12 +508,9 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
   /**
    * Helper function to notify network observers for cached request.
    */
-  void EmulateNetworkEvents(ScriptLoadRequest* aRequest,
-                            const Maybe<nsAutoString>& aCharsetForPreload);
+  void EmulateNetworkEvents(ScriptLoadRequest* aRequest);
 
-  void NotifyObserversForCachedScript(
-      ScriptLoadRequest* aRequest,
-      const Maybe<nsAutoString>& aCharsetForPreload);
+  void NotifyObserversForCachedScript(ScriptLoadRequest* aRequest);
 
   /**
    * Unblocks the creator parser of the parser-blocking scripts.
@@ -518,15 +520,16 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
   /**
    * Asynchronously resumes the creator parser of the parser-blocking scripts.
    */
-  void ContinueParserAsync(ScriptLoadRequest* aParserBlockingRequest);
+  MOZ_CAN_RUN_SCRIPT void ContinueParserAsync(
+      ScriptLoadRequest* aParserBlockingRequest);
 
-  bool ProcessExternalScript(nsIScriptElement* aElement,
-                             JS::loader::ScriptKind aScriptKind,
-                             nsIContent* aScriptContent);
+  MOZ_CAN_RUN_SCRIPT bool ProcessExternalScript(
+      nsIScriptElement* aElement, JS::loader::ScriptKind aScriptKind,
+      nsIContent* aScriptContent);
 
-  bool ProcessInlineScript(nsIScriptElement* aElement,
-                           JS::loader::ScriptKind aScriptKind,
-                           const nsAString& aSourceText);
+  MOZ_CAN_RUN_SCRIPT bool ProcessInlineScript(
+      nsIScriptElement* aElement, JS::loader::ScriptKind aScriptKind,
+      const nsAString& aSourceText);
 
   enum class CacheBehavior : uint8_t {
     DoNothingDisabled,
@@ -573,17 +576,14 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
   /**
    * Start a load for aRequest's URI.
    */
-  nsresult StartLoad(ScriptLoadRequest* aRequest,
-                     const Maybe<nsAutoString>& aCharsetForPreload);
+  nsresult StartLoad(ScriptLoadRequest* aRequest);
   /**
    * Start a load for a classic script URI.
    * Sets up the necessary security flags before calling StartLoadInternal.
    */
-  nsresult StartClassicLoad(ScriptLoadRequest* aRequest,
-                            const Maybe<nsAutoString>& aCharsetForPreload);
+  nsresult StartClassicLoad(ScriptLoadRequest* aRequest);
 
-  void OnDelayedReady(ScriptLoadRequest* aRequest,
-                      const Maybe<nsAutoString>& aCharsetForPreload);
+  MOZ_CAN_RUN_SCRIPT void OnDelayedReady(ScriptLoadRequest* aRequest);
 
   static void PrepareCacheInfoChannel(nsIChannel* aChannel,
                                       ScriptLoadRequest* aRequest);
@@ -592,8 +592,7 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
       nsIChannel* aChannel, ScriptLoadRequest* aRequest);
 
   [[nodiscard]] static nsresult PrepareHttpRequestAndInitiatorType(
-      nsIChannel* aChannel, ScriptLoadRequest* aRequest,
-      const Maybe<nsAutoString>& aCharsetForPreload);
+      nsIChannel* aChannel, ScriptLoadRequest* aRequest);
 
   [[nodiscard]] nsresult PrepareIncrementalStreamLoader(
       nsIIncrementalStreamLoader** aOutLoader, nsIChannel* aChannel,
@@ -601,14 +600,9 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
 
   /**
    * Start a load for a script (module or classic) URI.
-   *
-   * aCharsetForPreload is only needed when this load is a preload (via
-   * ScriptLoader::PreloadURI), because ScriptLoadRequest doesn't
-   * have this information.
    */
   nsresult StartLoadInternal(ScriptLoadRequest* aRequest,
-                             nsSecurityFlags securityFlags,
-                             const Maybe<nsAutoString>& aCharsetForPreload);
+                             nsSecurityFlags securityFlags);
 
   /**
    * Register a <link rel=modulepreload> request that opened no channel with the
@@ -626,10 +620,11 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
    */
   nsresult RestartLoad(ScriptLoadRequest* aRequest);
 
-  void HandleLoadError(ScriptLoadRequest* aRequest, nsresult aResult);
+  MOZ_CAN_RUN_SCRIPT void HandleLoadError(ScriptLoadRequest* aRequest,
+                                          nsresult aResult);
 
-  void HandleLoadErrorAndProcessPendingRequests(ScriptLoadRequest* aRequest,
-                                                nsresult aResult);
+  MOZ_CAN_RUN_SCRIPT void HandleLoadErrorAndProcessPendingRequests(
+      ScriptLoadRequest* aRequest, nsresult aResult);
 
   /**
    * Process any pending requests asynchronously (i.e. off an event) if there
@@ -692,9 +687,11 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
                                JS::CompileOptions& aOptions,
                                CompileOrDecodeTask** aCompileOrDecodeTask);
 
-  nsresult ProcessRequest(ScriptLoadRequest* aRequest);
-  nsresult CompileOffThreadOrProcessRequest(ScriptLoadRequest* aRequest);
-  void FireScriptAvailable(nsresult aResult, ScriptLoadRequest* aRequest);
+  MOZ_CAN_RUN_SCRIPT nsresult ProcessRequest(ScriptLoadRequest* aRequest);
+  MOZ_CAN_RUN_SCRIPT nsresult
+  CompileOffThreadOrProcessRequest(ScriptLoadRequest* aRequest);
+  MOZ_CAN_RUN_SCRIPT void FireScriptAvailable(nsresult aResult,
+                                              ScriptLoadRequest* aRequest);
   // TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230)
   MOZ_CAN_RUN_SCRIPT_BOUNDARY void FireScriptEvaluated(
       nsresult aResult, ScriptLoadRequest* aRequest);
@@ -756,6 +753,14 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
   static nsCString& BytecodeMimeTypeFor(const ScriptLoadRequest* aRequest);
   static nsCString& BytecodeMimeTypeFor(
       const JS::loader::LoadedScript* aLoadedScript);
+
+  // Return the encoding for the classic script, which is used by the
+  // ScriptLoadHandler::TrySetDecoder method when neither the BOM or the charset
+  // is provided in the response.
+  const Encoding* GetClassicScriptFallbackEncoding(
+      const ScriptLoadRequest* aRequest);
+  const Encoding* GetClassicScriptFallbackEncoding(
+      const Encoding* aClassicScriptHintEncoding);
 
   // Queue the script load request for caching if we decided to cache it, or
   // cleanup the script load request fields otherwise.
@@ -854,7 +859,7 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
 
   void AddDeferRequest(ScriptLoadRequest* aRequest);
   void AddAsyncRequest(ScriptLoadRequest* aRequest);
-  bool MaybeRemovedDeferRequests();
+  MOZ_CAN_RUN_SCRIPT bool MaybeRemovedDeferRequests();
 
   bool ShouldApplyDelazifyStrategy(ScriptLoadRequest* aRequest);
   void ApplyDelazifyStrategy(JS::CompileOptions* aOptions);
@@ -960,7 +965,6 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
   // In mRequests, the additional information here is stored by the element.
   struct PreloadInfo {
     RefPtr<ScriptLoadRequest> mRequest;
-    nsString mCharset;
   };
 
   friend void ImplCycleCollectionUnlink(ScriptLoader::PreloadInfo& aField);
@@ -970,7 +974,7 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
 
   struct PreloadRequestComparator {
     bool Equals(const PreloadInfo& aPi,
-                ScriptLoadRequest* const& aRequest) const {
+                const ScriptLoadRequest* const& aRequest) const {
       return aRequest == aPi.mRequest;
     }
   };

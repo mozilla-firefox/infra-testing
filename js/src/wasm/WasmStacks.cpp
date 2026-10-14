@@ -35,6 +35,7 @@
 #include "wasm/WasmConstants.h"
 #include "wasm/WasmContext.h"
 #include "wasm/WasmFrameIter.h"
+#include "wasm/WasmInstance.h"
 #include "wasm/WasmJS.h"
 #include "wasm/WasmStubs.h"
 
@@ -698,6 +699,9 @@ void ContStack::traceSuspended(JSTracer* trc, JSObject* src) {
       static_cast<FrameWithInstances*>(resumeTarget_->framePointer),
       resumeTarget_->resumePC);
 
+  // Make sure we don't have a pending exitInstance.
+  MOZ_RELEASE_ASSERT(!iter.exitInstance());
+
 #  ifdef ENABLE_WASM_JSPI
   // Inferred ContObject to Debugger.Frame edges are traced only while marking;
   // see DebugAPI::traceWasmContFrame for why generic tracers must skip them.
@@ -873,7 +877,7 @@ ContStackArena::~ContStackArena() {
 /* static */
 UniqueContStackArena ContStackArena::create(ContStackAllocator* owner) {
   size_t arenaSize = owner->arenaSize();
-  void* arenaBase = gc::MapAlignedPages(arenaSize, ContStackAlignment);
+  void* arenaBase = gc::MapAlignedPagesAsStack(arenaSize, ContStackAlignment);
   if (!arenaBase) {
     return nullptr;
   }
@@ -931,10 +935,25 @@ void ContStackAllocator::ensureInitialized() {
   // Compute the size used for stacks in this allocator.
   stackSize_.compute();
 
-  // Compute the capacity in each arena.
-  arenaCapacity_ =
-      uint32_t(std::clamp(size_t(JS::Prefs::wasm_cont_stack_arena_capacity()),
-                          size_t(1), size_t(ContStackArena::MaxCapacity)));
+  // The virtual memory we're allowed to map for stacks. Every arena needs guard
+  // pages around each of its stacks, and each guard page splits the arena's
+  // mapping into more kernel mappings, so an unbounded number of arenas
+  // exhausts the process' mapping count well before its address space.
+  size_t maxVmem = JS::Prefs::wasm_cont_stack_max_vmem();
+
+  // How many stacks fit within the cap. We always allow one so that a tiny cap
+  // doesn't disable the feature entirely.
+  size_t maxStacks = std::max<size_t>(maxVmem / stackSize_.totalSize, 1);
+
+  // Compute the capacity in each arena, shrinking it if a whole arena wouldn't
+  // fit within the cap.
+  size_t capacity = JS::Prefs::wasm_cont_stack_arena_capacity();
+  capacity = std::min(capacity, maxStacks);
+  capacity = std::clamp<size_t>(capacity, 1, ContStackArena::MaxCapacity);
+  arenaCapacity_ = uint32_t(capacity);
+
+  // Compute how many arenas we can map within the cap.
+  maxArenas_ = std::max<size_t>(maxVmem / arenaSize(), 1);
 
   initialized_ = true;
 }
@@ -981,7 +1000,17 @@ ContStackArena* ContStackAllocator::findOrAddArenaForAllocate(JSContext* cx) {
     }
   }
 
-  return addArena(cx);
+  if (arenas_.length() >= maxArenas_) {
+    ReportTrapError(cx, JSMSG_WASM_CONT_IMP_LIMIT);
+    return nullptr;
+  }
+
+  ContStackArena* arena = addArena(cx);
+  if (!arena) {
+    ReportOutOfMemory(cx);
+    return nullptr;
+  }
+  return arena;
 }
 
 ContStackArena* ContStackAllocator::findArenaForAddress(
@@ -1005,11 +1034,9 @@ UniqueContStack ContStackAllocator::allocate(JSContext* cx,
                                              const Code* creatorCode) {
   ensureInitialized();
 
+  // Adding an arena may fail due to an OOM or the virtual memory cap.
   ContStackArena* arena = findOrAddArenaForAllocate(cx);
-
-  // Adding an arena may fail due to an OOM.
   if (!arena) {
-    ReportOutOfMemory(cx);
     return nullptr;
   }
 
@@ -1229,7 +1256,7 @@ void EmitSwitchStack(MacroAssembler& masm, Register switchTarget,
   // Switch to the destination instance from the switch target.
   masm.loadPtr(Address(switchTarget, offsetof(wasm::SwitchTarget, instance)),
                InstanceReg);
-  masm.loadWasmPinnedRegsFromInstance(mozilla::Nothing());
+  masm.loadWasmPinnedRegsFromInstance();
 #  ifdef WASM_HAS_HEAPREG
   MOZ_ASSERT(HeapReg != scratch1 && HeapReg != scratch2 && HeapReg != scratch3);
 #  endif

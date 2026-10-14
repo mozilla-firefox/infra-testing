@@ -685,6 +685,49 @@ add_task(async function scoreInOneTeam() {
   });
 });
 
+// The l10n IDs of a realtime suggestion's result menu commands are derived from
+// its realtime type, so the menu can be broken for one type only.
+add_task(async function resultMenu() {
+  MerinoTestUtils.server.response.body.suggestions = makeMerinoSuggestions([
+    {
+      date: "2025-10-31T17:00:00Z",
+      sport: "NFL",
+      sport_category: "football",
+      query: "query 1",
+      home_team: { name: "Home Team", score: 1 },
+      away_team: { name: "Away Team", score: 0 },
+      status_type: "live",
+    },
+  ]);
+
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "only match the Merino suggestion",
+  });
+  await UrlbarTestUtils.openResultMenu(window, { resultIndex: 1 });
+
+  let menuitems = gURLBar.view.resultMenu.querySelectorAll("panel-item");
+  Assert.deepEqual(
+    [...menuitems].map(m => document.l10n.getAttributes(m).id),
+    [
+      "urlbar-result-menu-show-less-frequently2",
+      "urlbar-result-menu-dont-show-sports2",
+      "urlbar-result-menu-manage-firefox-suggest2",
+      "urlbar-result-menu-learn-more2",
+      "urlbar-view-context-menu-skip-menu-with-tab",
+    ],
+    "The result menu should contain the expected commands"
+  );
+  await TestUtils.waitForCondition(
+    () => [...menuitems].every(m => m.textContent),
+    "Waiting for all commands to be labeled"
+  );
+
+  gURLBar.view.resultMenu.removeAttribute("open");
+  await UrlbarTestUtils.promisePopupClose(window);
+  gURLBar.handleRevert();
+});
+
 async function doTest({ now, data }) {
   let nows = Array.isArray(now) ? now : [now];
 
@@ -798,12 +841,22 @@ async function doOneTest({ expectedItems }) {
             "Child element should have expected attribute: " +
               JSON.stringify({ childName, attr })
           );
-          Assert.equal(
-            child.getAttribute(attr),
-            value,
-            "Child element attribute should have expected value: " +
-              JSON.stringify({ childName, attr })
-          );
+
+          if (childNamePrefix.endsWith("image")) {
+            UrlbarTestUtils.checkImageUrl(
+              child.getAttribute(attr),
+              UrlbarTestUtils.makeMozRemoteImageUrl(value),
+              "Child image attribute should have expected value: " +
+                JSON.stringify({ childName, attr })
+            );
+          } else {
+            Assert.equal(
+              child.getAttribute(attr),
+              value,
+              "Child element attribute should have expected value: " +
+                JSON.stringify({ childName, attr })
+            );
+          }
         }
       }
 

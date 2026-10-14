@@ -24,11 +24,13 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.state.state.CustomTabSessionState
 import mozilla.components.browser.state.state.SessionState
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.state.selectedOrDefaultSearchEngine
 import mozilla.components.browser.thumbnails.BrowserThumbnails
+import mozilla.components.browser.thumbnails.facts.BrowserThumbnailsFacts
 import mozilla.components.concept.engine.HitResult
 import mozilla.components.concept.engine.permission.SitePermissions
 import mozilla.components.concept.engine.prompt.ShareData
@@ -36,6 +38,7 @@ import mozilla.components.feature.app.links.AppLinksUseCases
 import mozilla.components.feature.contextmenu.ContextMenuCandidate
 import mozilla.components.feature.contextmenu.ContextMenuCandidate.Companion.createOpenInExternalAppCandidate
 import mozilla.components.feature.contextmenu.R as contextMenuR
+import mozilla.components.feature.listentopage.ListenAction
 import mozilla.components.feature.readerview.ReaderViewFeature
 import mozilla.components.feature.tab.collections.TabCollection
 import mozilla.components.feature.tabs.WindowFeature
@@ -46,6 +49,7 @@ import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
 import mozilla.components.support.ktx.kotlin.isContentUrl
 import org.mozilla.fenix.GleanMetrics.Translations
 import org.mozilla.fenix.R
+import org.mozilla.fenix.browser.readermode.PowerSavingModeReaderViewBinding
 import org.mozilla.fenix.browser.store.BrowserScreenAction.ReaderModeStatusUpdated
 import org.mozilla.fenix.components.Components
 import org.mozilla.fenix.components.LensFeature
@@ -73,6 +77,8 @@ import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.runIfFragmentIsAttached
 import org.mozilla.fenix.home.HomeFragment
 import org.mozilla.fenix.ipprotection.store.Surface as IPProtectionSurface
+import org.mozilla.fenix.ipprotection.ui.IPProtectionBottomSheetFragment
+import org.mozilla.fenix.listentopage.ListenSheetIntegration
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.onboarding.OnboardingFragmentDirections
 import org.mozilla.fenix.onboarding.OnboardingReason
@@ -92,6 +98,8 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
     private val translationsBinding = ViewBoundFeatureWrapper<TranslationsBinding>()
     private val translationsBannerIntegration = ViewBoundFeatureWrapper<TranslationsBannerIntegration>()
     private val pdfToolsIntegration = ViewBoundFeatureWrapper<PdfToolsIntegration>()
+    private val listenSheetIntegration = ViewBoundFeatureWrapper<ListenSheetIntegration>()
+    private val powerSavingModeReaderViewBinding = ViewBoundFeatureWrapper<PowerSavingModeReaderViewBinding>()
     private val continuousOnboardingFeature = ViewBoundFeatureWrapper<ContinuousOnboardingFeature>()
     private var qrScanFenixFeature: ViewBoundFeatureWrapper<QrScanFenixFeature>? =
         ViewBoundFeatureWrapper<QrScanFenixFeature>()
@@ -162,6 +170,7 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
         initBrowserToolbarComposableUpdates(view)
         initTranslationsUpdates(context = context, rootView = view)
         initPdfTools(context = context, rootView = view)
+        initListenSheet(context = context, rootView = view)
         initContinuousOnboardingFeature()
 
         thumbnailsFeature.set(
@@ -213,7 +222,11 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
                     store = components.core.store,
                     selectTabUseCase = components.useCases.tabsUseCases.selectTab,
                     onSwipeStarted = {
-                        thumbnailsFeature.get()?.requestScreenshot()
+                        thumbnailsFeature
+                            .get()
+                            ?.requestScreenshot(
+                                trigger = BrowserThumbnailsFacts.CaptureAttemptedTriggers.SWIPE_TO_SWITCH_TABS
+                            )
                     },
                 )
             )
@@ -279,10 +292,22 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
                         engine = context.components.core.engine,
                         store = context.components.core.store,
                         controlsView = binding.readerViewControlsBar,
-                    ) { available, active ->
-                        browserScreenStore.dispatch(ReaderModeStatusUpdated(ReaderModeStatus(available, active)))
-                    }
+                        onReaderViewStatusChange = { available, active ->
+                            browserScreenStore.dispatch(ReaderModeStatusUpdated(ReaderModeStatus(available, active)))
+                        },
+                    )
                 },
+            owner = this,
+            view = view,
+        )
+
+        powerSavingModeReaderViewBinding.set(
+            feature =
+                PowerSavingModeReaderViewBinding(
+                    browserStore = context.components.core.store,
+                    appStore = context.components.appStore,
+                    readerModeController = readerMenuController,
+                ),
             owner = this,
             view = view,
         )
@@ -340,6 +365,39 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
         )
     }
 
+    private fun initListenSheet(context: Context, rootView: View) {
+        val settings = context.components.settings
+        if (!settings.listenToPageFeatureFlagEnabled) {
+            return
+        }
+
+        listenSheetIntegration.set(
+            feature =
+                ListenSheetIntegration(
+                    container = binding.browserLayout,
+                    browserStore = context.components.core.store,
+                    listenStore = context.components.listenToPage.store,
+                    engineView = binding.engineView,
+                    isAddressBarAtBottom = settings.toolbarPosition == ToolbarPosition.BOTTOM,
+                    onListenClicked = {
+                        context.components.core.store.state.selectedTab?.let { tab ->
+                            context.components.listenToPage.store.dispatch(
+                                ListenAction.Session.ListenRequested(
+                                    tabId = tab.id,
+                                    url = tab.readerState.activeUrl ?: tab.content.url,
+                                )
+                            )
+                        }
+                    },
+                    onCustomizeReaderViewClicked = {
+                        context.components.appStore.dispatch(AppAction.ReaderViewAction.ReaderViewControlsShown)
+                    },
+                ),
+            owner = this,
+            view = rootView,
+        )
+    }
+
     private fun initContinuousOnboardingFeature() {
         ContinuousOnboardingFeature.register(
             fragment = this,
@@ -357,8 +415,7 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
                     )
             },
             navigateToIpProtection = {
-                findNavController()
-                    .navigate(BrowserFragmentDirections.actionGlobalIpProtectionDialog(IPProtectionSurface.BROWSER))
+                IPProtectionBottomSheetFragment.showPrompt(fragment = this, surface = IPProtectionSurface.BROWSER)
             },
         )
     }
@@ -505,6 +562,7 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
                             title = context.getString(contextMenuR.string.mozac_feature_contextmenu_share_link),
                             text = it,
                             url = it,
+                            private = getCurrentTab()?.content?.private == true,
                         )
                     )
                 },
@@ -517,27 +575,7 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
                         )
                         .defaultLocation
                 },
-                navigateToShareFragment = { currentTab, hitTabUrl ->
-                    val shareData = arrayOf(ShareData(title = hitTabUrl, url = hitTabUrl))
-                    val popUpToId =
-                        if (currentTab is CustomTabSessionState) {
-                            R.id.externalAppBrowserFragment
-                        } else {
-                            R.id.browserFragment
-                        }
-
-                    findNavController()
-                        .nav(
-                            id = R.id.browserFragment,
-                            directions =
-                                BrowserFragmentDirections.actionGlobalShareFragment(
-                                    sessionId = currentTab.id,
-                                    data = shareData,
-                                    showPage = true,
-                                ),
-                            navOptions = NavOptions.Builder().setPopUpTo(popUpToId, false).build(),
-                        )
-                },
+                navigateToShareFragment = ::navigateToShareFragment,
             )
         } else {
             ContextMenuCandidate.defaultCandidates(
@@ -560,6 +598,38 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
                 contextMenuCandidateAppLinksUseCases,
             ) +
             createOpenWithGoogleLensCandidate(context)
+    }
+
+    private fun navigateToShareFragment(
+        currentTab: SessionState,
+        hitTabUrl: String,
+    ) {
+        val shareData =
+            arrayOf(
+                ShareData(
+                    title = hitTabUrl,
+                    url = hitTabUrl,
+                    private = currentTab.content.private,
+                )
+            )
+        val popUpToId =
+            if (currentTab is CustomTabSessionState) {
+                R.id.externalAppBrowserFragment
+            } else {
+                R.id.browserFragment
+            }
+
+        findNavController()
+            .nav(
+                id = R.id.browserFragment,
+                directions =
+                    BrowserFragmentDirections.actionGlobalShareFragment(
+                        sessionId = currentTab.id,
+                        data = shareData,
+                        showPage = true,
+                    ),
+                navOptions = NavOptions.Builder().setPopUpTo(popUpToId, false).build(),
+            )
     }
 
     private fun createOpenWithGoogleLensCandidate(context: Context) =

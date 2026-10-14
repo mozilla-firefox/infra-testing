@@ -20,7 +20,7 @@ namespace mozilla::dom::quota {
 
 #if defined(NIGHTLY_BUILD) || defined(DEBUG)
 bool CheckClientUsagesConsistency(const ClientUsageArray& aClientUsages,
-                                  uint64_t aUsage, const nsACString& aContext);
+                                  int64_t aUsage, const nsACString& aContext);
 #endif  // defined(NIGHTLY_BUILD) || defined(DEBUG)
 
 struct PrincipalMetadata {
@@ -153,14 +153,19 @@ struct OriginStateMetadata {
 
 struct FullOriginMetadata : OriginMetadata, OriginStateMetadata {
   ClientUsageArray mClientUsages;
-  uint64_t mOriginUsage;
+
+  // Signed for the same reason as OriginInfo::mUsage, which this is normally
+  // populated from: it can transiently (or due to a bug elsewhere) go
+  // negative, and an unsigned type would turn that into a huge value that
+  // corrupts every quota check that reads it (see bug 2066923, bug 1585978).
+  int64_t mOriginUsage;
   uint32_t mQuotaVersion;
 
   FullOriginMetadata() = default;
 
   FullOriginMetadata(OriginMetadata aOriginMetadata,
                      OriginStateMetadata aOriginStateMetadata,
-                     const ClientUsageArray& aClientUsages, uint64_t aUsage,
+                     const ClientUsageArray& aClientUsages, int64_t aUsage,
                      uint32_t aQuotaVersion)
       : OriginMetadata(std::move(aOriginMetadata)),
         OriginStateMetadata(aOriginStateMetadata),
@@ -195,12 +200,18 @@ struct FullOriginMetadata : OriginMetadata, OriginStateMetadata {
            mQuotaVersion == aOther.mQuotaVersion;
   }
 
-  // Copies mStorageOrigin, mIsPrivate, and mQuotaVersion from aOther; call
-  // before Equals() when *this was loaded from an L1 row that omits these.
-  void CopyIntrinsicFieldsFrom(const FullOriginMetadata& aOther) {
-    mStorageOrigin = aOther.mStorageOrigin;
-    mIsPrivate = aOther.mIsPrivate;
-    mQuotaVersion = aOther.mQuotaVersion;
+  // Compares all fields except mStorageOrigin, mIsPrivate, and mQuotaVersion.
+  // Used when comparing scanned metadata against a DB row that omits these.
+  template <typename T,
+            typename = std::enable_if_t<std::is_same_v<T, FullOriginMetadata>>>
+  bool EqualsIgnoringIntrinsicFields(const T& aOther) const {
+    return mSuffix == aOther.mSuffix && mGroup == aOther.mGroup &&
+           mOrigin == aOther.mOrigin &&
+           mPersistenceType == aOther.mPersistenceType &&
+           static_cast<const OriginStateMetadata&>(*this).Equals(
+               static_cast<const OriginStateMetadata&>(aOther)) &&
+           mClientUsages == aOther.mClientUsages &&
+           mOriginUsage == aOther.mOriginUsage;
   }
 
   // Convenient method for duplicating a FullOriginMetadata instance. Creates

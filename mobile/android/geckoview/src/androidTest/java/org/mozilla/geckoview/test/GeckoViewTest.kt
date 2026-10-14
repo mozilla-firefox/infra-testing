@@ -286,35 +286,21 @@ class GeckoViewTest : BaseSessionTest() {
         val isLoadedActive = sessionRule.getActive(mainSession)
         assertFalse("The session was set to inactive.", isLoadedActive)
 
-        if (env.isFission) {
-            assertTrue("A process switch did occur for fission, so the PIDs are different.", initialPid != loadedPid)
+        assertTrue("A process switch did occur for fission, so the PIDs are different.", initialPid != loadedPid)
 
-            // Note that higher oom score means less priority
-            assertTrue(
-                "The initial oom score adj has more priority than the loaded oom score because it was backgrounded.",
-                loadedOomScoreAdj > initialOomScoreAdj,
-            )
-            assertTrue(
-                "The initial oom score adj indicates higher priority because it started in the foreground.",
-                initialOomScoreAdj == 0,
-            )
-            assertTrue(
-                "The loaded oom score adj indicates lower priority because it is backgrounded.",
-                loadedOomScoreAdj == 900,
-            )
-        } else {
-            assertTrue("A process switch did not occur.", initialPid == loadedPid)
-
-            // setActive(false) occurred on this PID, give time for it to settle.
-            // When it reaches 900, this indicates the pid is backgrounded.
-            UiThreadUtils.waitForCondition(
-                {
-                    getContentProcessesOomScoreAdj(listOf(loadedPid)).first() == 900
-                },
-                env.defaultTimeoutMillis,
-            )
-            assertTrue("The loaded oom score indicates low priority.", true)
-        }
+        // Note that higher oom score means less priority
+        assertTrue(
+            "The initial oom score adj has more priority than the loaded oom score because it was backgrounded.",
+            loadedOomScoreAdj > initialOomScoreAdj,
+        )
+        assertTrue(
+            "The initial oom score adj indicates higher priority because it started in the foreground.",
+            initialOomScoreAdj == 0,
+        )
+        assertTrue(
+            "The loaded oom score adj indicates lower priority because it is backgrounded.",
+            loadedOomScoreAdj == 900,
+        )
     }
 
     private fun visit(
@@ -339,20 +325,24 @@ class GeckoViewTest : BaseSessionTest() {
         val autofills =
             mapOf(
                 "#user1" to "username@example.com",
-                "#user2" to "username@example.com",
                 "#pass1" to "test-password",
-                "#pass2" to "test-password",
             )
+        val notFilled = listOf("#user2", "#pass2")
 
-        // Set up promises to monitor the values changing.
+        // Only the form containing the focused field is filled.
         val promises = autofills.map { entry ->
-            // Repeat each test with both the top document and the iframe document.
             mainSession.evaluatePromiseJS(
                 """
-                window.getDataForAllFrames('${entry.key}', '${entry.value}')
+                getData('${entry.key}', '${entry.value}')
                 """
             )
         }
+
+        mainSession.evaluateJS("document.querySelector('#user1').focus()")
+        UiThreadUtils.waitForCondition(
+            { mainSession.autofillSession.focused != null },
+            env.defaultTimeoutMillis,
+        )
 
         activityRule.scenario.onActivity {
             val root = MockViewStructure(View.NO_ID)
@@ -376,18 +366,32 @@ class GeckoViewTest : BaseSessionTest() {
             it.view.setSession(session)
 
             // Wait on the promises and check for correct values.
-            for (values in promises.map { p -> p.value.asJsonArray() }) {
-                for (i in 0 until values.length()) {
-                    val (key, actual, expected, eventInterface) = values.get(i).asJSList<String>()
+            for (values in promises.map { p -> p.value.asJSList<String>() }) {
+                val (key, actual, expected, eventInterface) = values
 
-                    assertThat("Auto-filled value must match ($key)", actual, equalTo(expected))
-                    assertThat(
-                        "input event should be dispatched with InputEvent interface",
-                        eventInterface,
-                        equalTo("InputEvent"),
-                    )
-                }
+                assertThat("Auto-filled value must match ($key)", actual, equalTo(expected))
+                assertThat(
+                    "input event should be dispatched with InputEvent interface",
+                    eventInterface,
+                    equalTo("InputEvent"),
+                )
             }
+        }
+
+        for (key in autofills.keys + notFilled) {
+            assertThat(
+                "Field in the unfocused iframe must not be filled ($key)",
+                mainSession.evaluatePromiseJS("window.getIframeValue('$key')").value as String,
+                equalTo("foo"),
+            )
+        }
+
+        for (key in notFilled) {
+            assertThat(
+                "Field outside the focused form must not be filled ($key)",
+                mainSession.evaluateJS("document.querySelector('$key').value") as String,
+                equalTo("foo"),
+            )
         }
     }
 

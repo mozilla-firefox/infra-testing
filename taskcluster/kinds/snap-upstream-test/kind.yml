@@ -18,7 +18,6 @@ kind-dependencies:
     - snap-upstream-build
 
 task-defaults:
-    run-on-repo-type: [hg]
     from-deps:
         group-by: single-with-filters
     attributes:
@@ -28,7 +27,6 @@ task-defaults:
         kind: test
         tier: 2
     run:
-        clone-with: hg
         using: run-task
         checkout: false
     fetches:
@@ -54,7 +52,6 @@ tasks:
             - generic-worker:os-group:gecko-t/t-linux-2204-wayland-snap/snap_sudo
         worker-type: t-linux-2204-wayland-snap
         run:
-            clone-with: hg
             command: >-
               export TASKCLUSTER_ROOT_DIR=$PWD && cd $MOZ_FETCHES_DIR/ && ./tests.sh --basic
         attributes:
@@ -67,7 +64,6 @@ tasks:
             - generic-worker:os-group:gecko-t/t-linux-2204-wayland-snap/snap_sudo
         worker-type: t-linux-2204-wayland-snap
         run:
-            clone-with: hg
             command: >-
               export TASKCLUSTER_ROOT_DIR=$PWD && cd $MOZ_FETCHES_DIR/ && ./tests.sh --qa
         attributes:
@@ -80,7 +76,6 @@ tasks:
             - generic-worker:os-group:gecko-t/t-linux-2404-wayland-snap/snap_sudo
         worker-type: t-linux-2404-wayland-snap
         run:
-            clone-with: hg
             command: >-
               export TASKCLUSTER_ROOT_DIR=$PWD && cd $MOZ_FETCHES_DIR/ && ./tests.sh --basic
         attributes:
@@ -93,7 +88,6 @@ tasks:
             - generic-worker:os-group:gecko-t/t-linux-2404-wayland-snap/snap_sudo
         worker-type: t-linux-2404-wayland-snap
         run:
-            clone-with: hg
             command: >-
               export TASKCLUSTER_ROOT_DIR=$PWD && cd $MOZ_FETCHES_DIR/ && ./tests.sh --qa
         attributes:

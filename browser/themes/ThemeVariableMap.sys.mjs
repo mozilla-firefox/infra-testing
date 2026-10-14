@@ -31,7 +31,7 @@ export const ThemeVariableMap = [
     },
   ],
   [
-    "--tab-loading-fill",
+    "--tab-icon-fill-loading",
     {
       lwtProperty: "tab_loading",
     },
@@ -43,7 +43,7 @@ export const ThemeVariableMap = [
     },
   ],
   [
-    "--tab-selected-textcolor",
+    "--tab-text-color-selected",
     {
       lwtProperty: "tab_text",
     },

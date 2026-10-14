@@ -1,7 +1,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, # You can obtain one at http://mozilla.org/MPL/2.0/.
-import concurrent.futures
+import contextlib
 import functools
 import glob
 import itertools
@@ -13,16 +13,18 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from types import SimpleNamespace
 
 import mozpack.path as mozpath
 from mach.decorators import Command, CommandArgument, SubCommand
 from mach.main import Mach
+from mozsystemmonitor.resourcemonitor import SystemResourceMonitor
 from mozversioncontrol import get_repository_object
 
 from mozbuild import build_commands
 from mozbuild.controller.clobber import Clobberer
-from mozbuild.util import cpu_count
+from mozbuild.util import construct_log_filename
 
 
 # FIXME: use itertools.batched when moving to python 3.12
@@ -302,14 +304,41 @@ def check(
     format,
     outgoing,
 ):
+    command_context._set_log_level(verbose)
+    command_context.activate_virtualenv()
+    command_context.log_manager.enable_unstructured()
+
+    with _recording_resource_usage(command_context):
+        return _check(
+            command_context,
+            patterns,
+            jobs,
+            verbose,
+            checks,
+            fix,
+            header_filter,
+            output,
+            format,
+            outgoing,
+        )
+
+
+def _check(
+    command_context,
+    patterns,
+    jobs,
+    verbose,
+    checks,
+    fix,
+    header_filter,
+    output,
+    format,
+    outgoing,
+):
     from mozbuild.controller.building import (
         StaticAnalysisFooter,
         StaticAnalysisOutputManager,
     )
-
-    command_context._set_log_level(verbose)
-    command_context.activate_virtualenv()
-    command_context.log_manager.enable_unstructured()
 
     rc, clang_paths = get_clang_tools(command_context, verbose=verbose)
     if rc != 0:
@@ -318,10 +347,15 @@ def check(
     if not _is_version_eligible(command_context, clang_paths):
         return 1
 
-    rc, _compile_db, compilation_commands_path = _build_compile_db(
-        command_context, verbose=verbose
-    )
-    rc = rc or _build_export(command_context, jobs=jobs, verbose=verbose)
+    with _timed_phase(command_context, "Preparing the compilation database"):
+        rc, _compile_db, compilation_commands_path = _build_compile_db(
+            command_context, verbose=verbose
+        )
+    if rc != 0:
+        return rc
+
+    with _timed_phase(command_context, "Running the export tiers"):
+        rc = _build_export(command_context, jobs=jobs, verbose=verbose)
     if rc != 0:
         return rc
 
@@ -340,36 +374,15 @@ def check(
 
     abs_files = get_abspath_files(command_context, files)
 
-    def to_source(filename):
-        basename, ext = os.path.splitext(filename)
-        if ext != ".h":
-            return filename
-        for src_ext in [".cpp", ".c", ".mm", ".cc", ".cxx"]:
-            if os.path.exists(basename + src_ext):
-                return basename + src_ext
-        return filename
-
     sources = {}
-    header_sources = {}
     compile_db_files = {f["file"] for f in compile_db}
     for candidate in abs_files:
-        associated_entry = to_source(candidate)
-        if associated_entry in compile_db_files:
-            if candidate != associated_entry:
-                header_sources[associated_entry] = candidate
+        if candidate in compile_db_files:
             # Check we're not erasing an existing entry
-            elif associated_entry not in sources:
-                sources[associated_entry] = None
+            if candidate not in sources:
+                sources[candidate] = None
 
-    # Filter source to remove excluded files
-    header_sources = _generate_path_list(
-        command_context, header_sources, verbose=verbose
-    )
     sources = _generate_path_list(command_context, sources, verbose=verbose)
-
-    # Do not process files already in header_sources again in sources
-    for header_src in header_sources:
-        sources.pop(header_src, None)
 
     cwd = command_context.topobjdir
 
@@ -377,7 +390,7 @@ def check(
         command_context.topsrcdir,
         command_context.topobjdir,
         get_clang_tidy_config(command_context).checks_with_data,
-        len(sources) + len(header_sources),
+        len(sources),
     )
 
     footer = StaticAnalysisFooter(monitor)
@@ -386,58 +399,29 @@ def check(
         command_context.log_manager, monitor, footer
     ) as output_manager:
         rc = 0
-        arg_max = 512  # The actual shell limit is way above
-        for batch in batched(list(sources.items()), arg_max):
-            args = _get_clang_tidy_command(
-                command_context,
-                clang_paths,
-                compilation_commands_path,
-                checks=checks,
-                header_filter=header_filter,
-                sources=dict(batch),
-                jobs=jobs,
-                fix=fix,
-                warnings_as_errors=True,
-                verbose=verbose,
-            )
-            rc |= command_context.run_process(
-                args=args,
-                ensure_exit_code=False,
-                line_handler=output_manager.on_line,
-                cwd=cwd,
-            )
-
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=jobs or cpu_count()
-        ) as executor:
-            futures = []
-            # process header independently, because we need per-instance
-            # header-filter for it to work
-            for header_src, header_hdr in header_sources.items():
+        with _timed_phase(
+            command_context, f"Running clang-tidy on {len(sources)} sources"
+        ):
+            arg_max = 512  # The actual shell limit is way above
+            for batch in batched(list(sources.items()), arg_max):
                 args = _get_clang_tidy_command(
                     command_context,
                     clang_paths,
                     compilation_commands_path,
                     checks=checks,
                     header_filter=header_filter,
-                    sources={header_src: header_hdr},
-                    jobs=1,
+                    sources=dict(batch),
+                    jobs=jobs,
                     fix=fix,
                     warnings_as_errors=True,
                     verbose=verbose,
                 )
-                futures.append(
-                    executor.submit(
-                        command_context.run_process,
-                        args=args,
-                        ensure_exit_code=False,
-                        line_handler=output_manager.on_line,
-                        cwd=cwd,
-                    )
+                rc |= command_context.run_process(
+                    args=args,
+                    ensure_exit_code=False,
+                    line_handler=output_manager.on_line,
+                    cwd=cwd,
                 )
-            for future in concurrent.futures.as_completed(futures):
-                # Wait for every task to finish
-                rc |= future.result()
 
         command_context.log(
             logging.WARNING,
@@ -450,13 +434,13 @@ def check(
         if output is not None:
             output_manager.write(output, format)
 
-    if not sources and not header_sources:
+    if not sources:
         command_context.log(
             logging.WARNING,
             "static-analysis",
             {},
-            "There are no files eligible for analysis. Please note that 'header' files "
-            "cannot be used for analysis since they do not consist compilation units.",
+            "There are no files eligible for analysis.\n"
+            "Note that only non-generated headers listed in SOURCE_HEADERS or EXPORT are analyzed.",
         )
         return 0
 
@@ -567,6 +551,47 @@ def _is_version_eligible(command_context, clang_paths, log_error=True):
     return False
 
 
+@contextlib.contextmanager
+def _recording_resource_usage(command_context):
+    """Record a resource usage profile for the duration of the context, and
+    write it to the logs directory, or next to the other artifacts in CI."""
+    monitor = SystemResourceMonitor(poll_interval=0.1)
+    monitor.start()
+    try:
+        yield
+    finally:
+        monitor.stop()
+
+        if os.environ.get("MOZ_AUTOMATION") == "1":
+            profile_path = "/builds/worker/profile_resource-usage.json"
+        else:
+            log_subdir = os.path.join("logs", "static-analysis")
+            command_context._ensure_state_subdir_exists(log_subdir)
+            profile_path = command_context._get_state_filename(
+                construct_log_filename("profile"), subdir=log_subdir
+            )
+
+        with open(profile_path, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(monitor.as_profile(), f, separators=(",", ":"))
+
+
+@contextlib.contextmanager
+def _timed_phase(command_context, phase):
+    """Log how long `phase` took, and record it as a profiler marker."""
+    SystemResourceMonitor.begin_marker("StaticAnalysis", phase)
+    start = time.monotonic()
+    try:
+        yield
+    finally:
+        SystemResourceMonitor.end_marker("StaticAnalysis", phase)
+        command_context.log(
+            logging.INFO,
+            "timing",
+            {"phase": phase, "duration": time.monotonic() - start},
+            "{phase} took {duration:.1f}s",
+        )
+
+
 def _get_clang_tidy_command(
     command_context,
     clang_paths,
@@ -637,402 +662,6 @@ def _get_clang_tidy_command(
         # backslashes.
         + [re.escape(os.path.normpath(s)) for s in sources]
     )
-
-
-@StaticAnalysisSubCommand(
-    "static-analysis",
-    "autotest",
-    "Run the auto-test suite in order to determine that the analysis did not regress.",
-)
-@CommandArgument(
-    "--dump-results",
-    "-d",
-    default=False,
-    action="store_true",
-    help="Generate the baseline for the regression test. Based on"
-    " this baseline we will test future results.",
-)
-@CommandArgument(
-    "--intree-tool",
-    "-i",
-    default=False,
-    action="store_true",
-    help="Use a pre-aquired in-tree clang-tidy package from the automation env."
-    " This option is only valid on automation environments.",
-)
-@CommandArgument(
-    "checker_names",
-    nargs="*",
-    default=[],
-    help="Checkers that are going to be auto-tested.",
-)
-def autotest(
-    command_context,
-    verbose=False,
-    dump_results=False,
-    intree_tool=False,
-    checker_names=[],
-):
-    # If 'dump_results' is True than we just want to generate the issues files for each
-    # checker in particulat and thus 'force_download' becomes 'False' since we want to
-    # do this on a local trusted clang-tidy package.
-    command_context._set_log_level(verbose)
-    command_context.activate_virtualenv()
-
-    force_download = not dump_results
-
-    # Configure the tree or download clang-tidy package, depending on the option that we choose
-    if intree_tool:
-        clang_paths = SimpleNamespace()
-        if "MOZ_AUTOMATION" not in os.environ:
-            command_context.log(
-                logging.INFO,
-                "static-analysis",
-                {},
-                "The `autotest` with `--intree-tool` can only be ran in automation.",
-            )
-            return 1
-        if "MOZ_FETCHES_DIR" not in os.environ:
-            command_context.log(
-                logging.INFO,
-                "static-analysis",
-                {},
-                "`MOZ_FETCHES_DIR` is missing from the environment variables.",
-            )
-            return 1
-
-        _, config, _ = _get_config_environment(command_context)
-        clang_tools_path = os.environ["MOZ_FETCHES_DIR"]
-        clang_paths._clang_tidy_path = mozpath.join(
-            clang_tools_path,
-            "clang-tidy",
-            "bin",
-            "clang-tidy" + config.substs.get("HOST_BIN_SUFFIX", ""),
-        )
-        clang_paths._clang_format_path = mozpath.join(
-            clang_tools_path,
-            "clang-tidy",
-            "bin",
-            "clang-format" + config.substs.get("HOST_BIN_SUFFIX", ""),
-        )
-        clang_paths._clang_apply_replacements = mozpath.join(
-            clang_tools_path,
-            "clang-tidy",
-            "bin",
-            "clang-apply-replacements" + config.substs.get("HOST_BIN_SUFFIX", ""),
-        )
-        clang_paths._run_clang_tidy_path = mozpath.join(
-            clang_tools_path, "clang-tidy", "bin", "run-clang-tidy"
-        )
-        clang_paths._clang_format_diff = mozpath.join(
-            clang_tools_path, "clang-tidy", "share", "clang", "clang-format-diff.py"
-        )
-
-        # Ensure that clang-tidy is present
-        rc = not os.path.exists(clang_paths._clang_tidy_path)
-    else:
-        rc, clang_paths = get_clang_tools(
-            command_context, force=force_download, verbose=verbose
-        )
-
-    if rc != 0:
-        command_context.log(
-            logging.ERROR,
-            "ERROR: static-analysis",
-            {},
-            "ERROR: clang-tidy unable to locate package.",
-        )
-        return TOOLS_FAILED_DOWNLOAD
-
-    clang_paths._clang_tidy_base_path = mozpath.join(
-        command_context.topsrcdir, "tools", "clang-tidy"
-    )
-
-    # For each checker run it
-    platform, _ = command_context.platform
-
-    if platform not in get_clang_tidy_config(command_context).platforms:
-        command_context.log(
-            logging.ERROR,
-            "static-analysis",
-            {},
-            f"ERROR: RUNNING: clang-tidy autotest for platform {platform} not supported.",
-        )
-        return TOOLS_UNSUPORTED_PLATFORM
-
-    max_workers = cpu_count()
-
-    command_context.log(
-        logging.INFO,
-        "static-analysis",
-        {},
-        f"RUNNING: clang-tidy autotest for platform {platform} with {max_workers} workers.",
-    )
-
-    # List all available checkers
-    cmd = [clang_paths._clang_tidy_path, "-list-checks", "-checks=*"]
-    clang_output = subprocess.check_output(cmd, stderr=subprocess.STDOUT).decode(
-        "utf-8"
-    )
-    available_checks = clang_output.split("\n")[1:]
-    clang_tidy_checks = [c.strip() for c in available_checks if c]
-
-    # Build the dummy compile_commands.json
-    compilation_commands_path = _create_temp_compilation_db(command_context)
-    checkers_test_batch = []
-    checkers_results = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = []
-        for item in get_clang_tidy_config(command_context).checks_with_data:
-            # Skip if any of the following statements is true:
-            # 1. Checker attribute 'publish' is False.
-            not_published = not bool(item.get("publish", True))
-            # 2. Checker has restricted-platforms and current platform is not of them.
-            ignored_platform = (
-                "restricted-platforms" in item
-                and platform not in item["restricted-platforms"]
-            )
-            # 3. Checker name is mozilla-* or -*.
-            ignored_checker = item["name"] in ["mozilla-*", "-*"]
-            # 4. List checker_names is passed and the current checker is not part of the
-            #    list or 'publish' is False
-            checker_not_in_list = checker_names and (
-                item["name"] not in checker_names or not_published
-            )
-            if (
-                not_published
-                or ignored_platform
-                or ignored_checker
-                or checker_not_in_list
-            ):
-                continue
-            checkers_test_batch.append(item["name"])
-            futures.append(
-                executor.submit(
-                    _verify_checker,
-                    command_context,
-                    clang_paths,
-                    compilation_commands_path,
-                    dump_results,
-                    clang_tidy_checks,
-                    item,
-                    checkers_results,
-                )
-            )
-
-        error_code = TOOLS_SUCCESS
-        for future in concurrent.futures.as_completed(futures):
-            # Wait for every task to finish
-            ret_val = future.result()
-            if ret_val != TOOLS_SUCCESS:
-                # We are interested only in one error and we don't break
-                # the execution of for loop since we want to make sure that all
-                # tasks finished.
-                error_code = ret_val
-
-        if error_code != TOOLS_SUCCESS:
-            command_context.log(
-                logging.INFO,
-                "static-analysis",
-                {},
-                "FAIL: the following clang-tidy check(s) failed:",
-            )
-            for failure in checkers_results:
-                checker_error = failure["checker-error"]
-                checker_name = failure["checker-name"]
-                info1 = failure["info1"]
-                info2 = failure["info2"]
-                info3 = failure["info3"]
-
-                message_to_log = ""
-                if checker_error == TOOLS_CHECKER_NOT_FOUND:
-                    message_to_log = (
-                        "\tChecker "
-                        f"{checker_name} not present in this clang-tidy version."
-                    )
-                elif checker_error == TOOLS_CHECKER_NO_TEST_FILE:
-                    message_to_log = (
-                        "\tChecker "
-                        f"{checker_name} does not have a test file - {checker_name}.cpp"
-                    )
-                elif checker_error == TOOLS_CHECKER_RETURNED_NO_ISSUES:
-                    message_to_log = (
-                        f"\tChecker {checker_name} did not find any issues in its test file, "
-                        f"clang-tidy output for the run is:\n{info1}"
-                    )
-                elif checker_error == TOOLS_CHECKER_FAILED_FILE:
-                    message_to_log = (
-                        f"\tChecker {checker_name} failed to run on its test file, "
-                        f"clang-tidy output for the run is:\n{info1}"
-                    )
-                elif checker_error == TOOLS_CHECKER_RESULT_FILE_NOT_FOUND:
-                    message_to_log = f"\tChecker {checker_name} does not have a result file - {checker_name}.json"
-                elif checker_error == TOOLS_CHECKER_DIFF_FAILED:
-                    message_to_log = (
-                        f"\tChecker {checker_name}\nExpected: {info1}\n"
-                        f"Got: {info2}\n"
-                        "clang-tidy output for the run is:\n"
-                        f"{info3}"
-                    )
-
-                print("\n" + message_to_log)
-
-            # Also delete the tmp folder
-            shutil.rmtree(compilation_commands_path)
-            return error_code
-
-        # Run the analysis on all checkers at the same time only if we don't dump results.
-        if not dump_results:
-            ret_val = _run_analysis_batch(
-                command_context,
-                clang_paths,
-                compilation_commands_path,
-                checkers_test_batch,
-            )
-            if ret_val != TOOLS_SUCCESS:
-                shutil.rmtree(compilation_commands_path)
-                return ret_val
-
-    command_context.log(
-        logging.INFO, "static-analysis", {}, "SUCCESS: clang-tidy all tests passed."
-    )
-    # Also delete the tmp folder
-    shutil.rmtree(compilation_commands_path)
-
-
-def _run_analysis(
-    command_context,
-    clang_paths,
-    compilation_commands_path,
-    checks,
-    header_filter,
-    sources,
-    jobs=1,
-    fix=False,
-    print_out=False,
-):
-    cmd = _get_clang_tidy_command(
-        command_context,
-        clang_paths,
-        compilation_commands_path,
-        checks=checks,
-        header_filter=header_filter,
-        sources=sources,
-        jobs=jobs,
-        fix=fix,
-    )
-
-    try:
-        clang_output = subprocess.check_output(cmd, stderr=subprocess.STDOUT).decode(
-            "utf-8"
-        )
-    except subprocess.CalledProcessError as e:
-        # Callers unpack the result, so this must stay a two-element tuple.
-        clang_output = e.output.decode("utf-8", errors="replace")
-        print(clang_output)
-        return None, clang_output
-    return _parse_issues(command_context, clang_output), clang_output
-
-
-def _run_analysis_batch(command_context, clang_paths, compilation_commands_path, items):
-    command_context.log(
-        logging.INFO,
-        "static-analysis",
-        {},
-        "RUNNING: clang-tidy checker batch analysis.",
-    )
-    if not len(items):
-        command_context.log(
-            logging.ERROR,
-            "static-analysis",
-            {},
-            "ERROR: clang-tidy checker list is empty!",
-        )
-        return TOOLS_CHECKER_LIST_EMPTY
-
-    # Some checks need header interaction
-    test_file_path_h = "|".join(checker + ".h" for checker in items)
-
-    issues, clang_output = _run_analysis(
-        command_context,
-        clang_paths,
-        compilation_commands_path,
-        checks="-*," + ",".join(items),
-        header_filter=test_file_path_h,
-        sources={
-            mozpath.join(clang_paths._clang_tidy_base_path, "test", checker)
-            + ".cpp": None
-            for checker in items
-        },
-        print_out=True,
-    )
-
-    if issues is None:
-        return TOOLS_CHECKER_FAILED_FILE
-
-    failed_checks = []
-    failed_checks_baseline = []
-    for checker in items:
-        test_file_path_json = (
-            mozpath.join(clang_paths._clang_tidy_base_path, "test", checker) + ".json"
-        )
-        # Read the pre-determined issues
-        baseline_issues = _get_autotest_stored_issues(test_file_path_json)
-
-        # We also stored the 'reliability' index so strip that from the baseline_issues
-        baseline_issues[:] = [
-            item for item in baseline_issues if "reliability" not in item
-        ]
-
-        found = all([element_base in issues for element_base in baseline_issues])
-
-        if not found:
-            failed_checks.append(checker)
-            failed_checks_baseline.append(baseline_issues)
-
-    if len(failed_checks) > 0:
-        command_context.log(
-            logging.ERROR,
-            "static-analysis",
-            {},
-            "ERROR: The following check(s) failed for bulk analysis: "
-            + " ".join(failed_checks),
-        )
-
-        for failed_check, baseline_issue in zip(failed_checks, failed_checks_baseline):
-            print(
-                f"\tChecker {failed_check} expect following results: \n\t\t{baseline_issue}"
-            )
-
-        print(
-            f"This is the output generated by clang-tidy for the bulk build:\n{clang_output}"
-        )
-        return TOOLS_CHECKER_DIFF_FAILED
-
-    return TOOLS_SUCCESS
-
-
-def _create_temp_compilation_db(command_context):
-    directory = tempfile.mkdtemp(prefix="cc")
-    with open(mozpath.join(directory, "compile_commands.json"), "w") as file_handler:
-        compile_commands = []
-        director = mozpath.join(
-            command_context.topsrcdir, "tools", "clang-tidy", "test"
-        )
-        for item in get_clang_tidy_config(command_context).checks:
-            if item in ["-*", "mozilla-*"]:
-                continue
-            file = item + ".cpp"
-            element = {}
-            element["directory"] = director
-            element["command"] = "cpp -std=c++20 " + file
-            element["file"] = mozpath.join(director, file)
-            compile_commands.append(element)
-
-        json.dump(compile_commands, file_handler)
-        file_handler.flush()
-
-        return directory
 
 
 @StaticAnalysisSubCommand(
@@ -1140,143 +769,6 @@ def clang_format(command_context, path, **kwargs):
     pass
 
 
-def _verify_checker(
-    command_context,
-    clang_paths,
-    compilation_commands_path,
-    dump_results,
-    clang_tidy_checks,
-    item,
-    checkers_results,
-):
-    check = item["name"]
-    test_file_path = mozpath.join(clang_paths._clang_tidy_base_path, "test", check)
-    test_file_path_cpp = test_file_path + ".cpp"
-    test_file_path_json = test_file_path + ".json"
-
-    command_context.log(
-        logging.INFO,
-        "static-analysis",
-        {},
-        f"RUNNING: clang-tidy checker {check}.",
-    )
-
-    # Structured information in case a checker fails
-    checker_error = {
-        "checker-name": check,
-        "checker-error": "",
-        "info1": "",
-        "info2": "",
-        "info3": "",
-    }
-
-    # Verify if this checker actually exists
-    if check not in clang_tidy_checks:
-        checker_error["checker-error"] = TOOLS_CHECKER_NOT_FOUND
-        checkers_results.append(checker_error)
-        return TOOLS_CHECKER_NOT_FOUND
-
-    # Verify if the test file exists for this checker
-    if not os.path.exists(test_file_path_cpp):
-        checker_error["checker-error"] = TOOLS_CHECKER_NO_TEST_FILE
-        checkers_results.append(checker_error)
-        return TOOLS_CHECKER_NO_TEST_FILE
-
-    # Some checks need header interaction
-    test_file_path_h = os.path.splitext(os.path.basename(test_file_path_cpp))[0] + ".h"
-
-    issues, clang_output = _run_analysis(
-        command_context,
-        clang_paths,
-        compilation_commands_path,
-        checks="-*," + check,
-        header_filter=test_file_path_h,
-        sources={test_file_path_cpp: None},
-    )
-    if issues is None:
-        checker_error["checker-error"] = TOOLS_CHECKER_FAILED_FILE
-        checker_error["info1"] = clang_output
-        checkers_results.append(checker_error)
-        return TOOLS_CHECKER_FAILED_FILE
-
-    # Verify to see if we got any issues, if not raise exception
-    if not issues:
-        checker_error["checker-error"] = TOOLS_CHECKER_RETURNED_NO_ISSUES
-        checker_error["info1"] = clang_output
-        checkers_results.append(checker_error)
-        return TOOLS_CHECKER_RETURNED_NO_ISSUES
-
-    # Also store the 'reliability' index for this checker
-    issues.append({"reliability": item["reliability"]})
-
-    if dump_results:
-        _build_autotest_result(test_file_path_json, json.dumps(issues))
-    else:
-        if not os.path.exists(test_file_path_json):
-            # Result file for test not found maybe regenerate it?
-            checker_error["checker-error"] = TOOLS_CHECKER_RESULT_FILE_NOT_FOUND
-            checkers_results.append(checker_error)
-            return TOOLS_CHECKER_RESULT_FILE_NOT_FOUND
-
-        # Read the pre-determined issues
-        baseline_issues = _get_autotest_stored_issues(test_file_path_json)
-
-        # Compare the two lists
-        if issues != baseline_issues:
-            checker_error["checker-error"] = TOOLS_CHECKER_DIFF_FAILED
-            checker_error["info1"] = baseline_issues
-            checker_error["info2"] = issues
-            checker_error["info3"] = clang_output
-            checkers_results.append(checker_error)
-            return TOOLS_CHECKER_DIFF_FAILED
-
-    return TOOLS_SUCCESS
-
-
-def _build_autotest_result(file, issues):
-    with open(file, "w") as f:
-        f.write(issues)
-
-
-def _get_autotest_stored_issues(file):
-    with open(file) as f:
-        return json.load(f)
-
-
-def _parse_issues(command_context, clang_output):
-    """
-    Parse clang-tidy output into structured issues
-    """
-
-    # Limit clang output parsing to 'Enabled checks:'
-    end = re.search(r"^Enabled checks:\n", clang_output, re.MULTILINE)
-    if end is not None:
-        clang_output = clang_output[: end.start() - 1]
-
-    platform, _ = command_context.platform
-    re_strip_colors = re.compile(r"\x1b\[[\d;]+m", re.MULTILINE)
-    filtered = re_strip_colors.sub("", clang_output)
-    # Starting with clang 8, for the diagnostic messages we have multiple `LF CR`
-    # in order to be compatible with msvc compiler format, and for this
-    # we are not interested to match the end of line.
-    regex_string = r"(.+):(\d+):(\d+): (warning|error): ([^\[\]\n]+)(?: \[([\.\w-]+)\])"
-
-    # For non 'win' based platforms we also need the 'end of the line' regex
-    if platform not in ("win64", "win32"):
-        regex_string += "?$"
-
-    regex_header = re.compile(regex_string, re.MULTILINE)
-
-    # Sort headers by positions
-    headers = sorted(regex_header.finditer(filtered), key=lambda h: h.start())
-    issues = []
-    for _, header in enumerate(headers):
-        header_group = header.groups()
-        element = [header_group[3], header_group[4], header_group[5]]
-        issues.append(element)
-    return issues
-
-
 def _get_config_environment(command_context):
     ran_configure = False
     config = None
@@ -1325,8 +817,13 @@ def _build_compile_db(command_context, verbose=False):
         command_context.topobjdir, "static-analysis"
     )
     compile_db = mozpath.join(compilation_commands_path, "compile_commands.json")
+    backend_file = mozpath.join(
+        command_context.topobjdir, "backend.StaticAnalysisBackend"
+    )
 
-    if os.path.exists(compile_db):
+    if os.path.exists(compile_db) and not command_context.backend_out_of_date(
+        backend_file
+    ):
         return 0, compile_db, compilation_commands_path
 
     rc, config, ran_configure = _get_config_environment(command_context)
@@ -1340,10 +837,13 @@ def _build_compile_db(command_context, verbose=False):
         return _build_compile_db(command_context, verbose=verbose)
 
     if config:
-        print(
-            "Looks like a clang compilation database has not been "
-            "created yet, creating it now..."
-        )
+        if os.path.exists(compile_db):
+            print("The clang compilation database is out of date, regenerating it...")
+        else:
+            print(
+                "Looks like a clang compilation database has not been "
+                "created yet, creating it now..."
+            )
         rc = build_commands.build_backend(
             command_context, ["StaticAnalysis"], verbose=verbose
         )
@@ -1361,16 +861,27 @@ def _build_export(command_context, jobs, verbose=False):
     # Then build the rest of the build dependencies by running the full
     # export target, because we can't do anything better.
     for target in ("pre-export", "export", "pre-compile"):
+        output = []
         rc = command_context._run_make(
             directory=command_context.topobjdir,
             target=target,
-            line_handler=None,
+            line_handler=None if verbose else output.append,
             print_directory=verbose,
             log=verbose,
             silent=not verbose,
             num_jobs=jobs,
+            append_env={"NO_BUILDSTATUS_MESSAGES": "1"},
+            ensure_exit_code=False,
         )
         if rc != 0:
+            for line in output:
+                on_line(line.rstrip())
+            command_context.log(
+                logging.ERROR,
+                "static-analysis",
+                {"target": target, "rc": rc},
+                "Running make {target} failed with exit code {rc}.",
+            )
             return rc
     return 0
 
@@ -1526,6 +1037,10 @@ def _generate_path_list(command_context, paths, verbose=True):
         # Make sure that the file exists and it has a supported extension
         elif os.path.isfile(f) and f.endswith(extensions):
             path_entries[f] = h
+
+    if header_skiplist := get_clang_tidy_config(command_context).header_skiplist:
+        for header in header_skiplist:
+            path_entries.pop(header, None)
 
     return path_entries
 

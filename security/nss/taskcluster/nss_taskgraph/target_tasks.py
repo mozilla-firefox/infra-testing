@@ -18,10 +18,10 @@ def filter_build_type(build_types, task):
 # are also the try-syntax selectors, matched directly.
 #
 # A build *variant* that lives in the build_type rather than the platform name
-# (make / fips / fuzz) is selected with a `<platform>-<variant>` token, which
-# maps back to its underlying platform here and is then narrowed by the matching
-# attribute in filter_platform below. (Kept as an explicit literal so `./mach
-# try` can scrape these selectors for its --help output.)
+# (make / fips / fuzz / tsan) is selected with a `<platform>-<variant>` token,
+# which maps back to its underlying platform here and is then narrowed by the
+# matching attribute in filter_platform below. (Kept as an explicit literal so
+# `./mach try` can scrape these selectors for its --help output.)
 PLATFORM_ALIASES = {
     "linux-x86-make": "linux-x86",
     "linux-x64-make": "linux-x64",
@@ -33,10 +33,11 @@ PLATFORM_ALIASES = {
     "linux-aarch64-fips": "linux-aarch64",
     "linux-x86-fuzz": "linux-x86",
     "linux-x64-fuzz": "linux-x64",
+    "linux-x64-tsan": "linux-x64",
 }
 
 # build attribute that must be truthy for each `-<variant>` selector suffix.
-_VARIANT_ATTR = {"make": "make", "fips": "make-fips", "fuzz": "fuzz"}
+_VARIANT_ATTR = {"make": "make", "fips": "make-fips", "fuzz": "fuzz", "tsan": "tsan"}
 
 
 def filter_platform(platform, task):
@@ -74,6 +75,14 @@ def filter_try_syntax(options, task):
             tests.add(group)
         if not any(t in options["unittests"] for t in tests):
             return False
+
+    # Filter fuzz tasks. Fuzzing runs are opt-in on try (`-u fuzz`, or `-u all`)
+    # because every target burns a worker for its whole MAX_FUZZ_TIME. Once
+    # selected they are narrowed by platform and build type like anything else.
+    if task.kind == "fuzz" and not any(
+        t in options["unittests"] for t in ("all", "fuzz")
+    ):
+        return False
 
     # Filter extra builds.
     if group == "builds" and not options["extra"]:

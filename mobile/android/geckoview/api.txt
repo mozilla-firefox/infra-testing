@@ -109,6 +109,7 @@ import org.mozilla.geckoview.OrientationController;
 import org.mozilla.geckoview.OverscrollEdgeEffect;
 import org.mozilla.geckoview.PageExtractionController;
 import org.mozilla.geckoview.PanZoomController;
+import org.mozilla.geckoview.PdfViewerController;
 import org.mozilla.geckoview.RuntimeSettings;
 import org.mozilla.geckoview.ScreenLength;
 import org.mozilla.geckoview.SessionAccessibility;
@@ -842,6 +843,7 @@ package org.mozilla.geckoview {
 
   public class GeckoDisplay {
     ctor protected GeckoDisplay(GeckoSession);
+    method @NonNull @UiThread public GeckoResult<Bitmap> captureFullPage();
     method @NonNull @UiThread public GeckoResult<Bitmap> capturePixels();
     method @UiThread public void safeAreaInsetsChanged(int, int, int, int);
     method @UiThread public void screenOriginChanged(int, int);
@@ -862,6 +864,7 @@ package org.mozilla.geckoview {
     method @AnyThread @NonNull public GeckoDisplay.ScreenshotBuilder aspectPreservingSize(int);
     method @AnyThread @NonNull public GeckoDisplay.ScreenshotBuilder bitmap(@Nullable Bitmap);
     method @NonNull @UiThread public GeckoResult<Bitmap> capture();
+    method @NonNull @UiThread public GeckoResult<Bitmap> captureFullPage();
     method @AnyThread @NonNull public GeckoDisplay.ScreenshotBuilder scale(float);
     method @AnyThread @NonNull public GeckoDisplay.ScreenshotBuilder size(int, int);
     method @AnyThread @NonNull public GeckoDisplay.ScreenshotBuilder source(int, int, int, int);
@@ -1307,6 +1310,7 @@ package org.mozilla.geckoview {
     method @UiThread public void getPageToSurfaceMatrix(@NonNull Matrix);
     method @NonNull @UiThread public PanZoomController getPanZoomController();
     method @AnyThread @NonNull public SessionPdfFileSaver getPdfFileSaver();
+    method @AnyThread @NonNull public PdfViewerController.SessionEditor getPdfViewerEditor();
     method @Nullable @UiThread public GeckoSession.PermissionDelegate getPermissionDelegate();
     method @AnyThread @Nullable public GeckoSession.PrintDelegate getPrintDelegate();
     method @Nullable @UiThread public GeckoSession.ProgressDelegate getProgressDelegate();
@@ -2205,6 +2209,7 @@ package org.mozilla.geckoview {
     ctor public GeckoView(Context);
     ctor public GeckoView(Context, AttributeSet);
     method @UiThread public void addWindowInsetsListener(@NonNull String, @Nullable OnApplyWindowInsetsListener);
+    method @NonNull @UiThread public GeckoResult<Bitmap> captureFullPage();
     method @NonNull @UiThread public GeckoResult<Bitmap> capturePixels();
     method public void coverUntilFirstPaint(int);
     method public void dispatchDraw(@Nullable Canvas);
@@ -2560,6 +2565,24 @@ package org.mozilla.geckoview {
   }
 
   @Retention(value=RetentionPolicy.SOURCE) public static interface PanZoomController.ScrollableDirections {
+  }
+
+  public class PdfViewerController {
+    ctor public PdfViewerController();
+  }
+
+  public static class PdfViewerController.PdfViewerException extends Exception {
+    ctor public PdfViewerException(int);
+    field public static final int ERROR_NOT_A_PDF = -2;
+    field public static final int ERROR_UNKNOWN = -1;
+    field public final int code;
+  }
+
+  @Retention(value=RetentionPolicy.SOURCE) public static interface PdfViewerController.PdfViewerException.Code {
+  }
+
+  public static class PdfViewerController.SessionEditor {
+    method @HandlerThread @NonNull public GeckoResult<Void> addSignature(@NonNull String);
   }
 
   @UiThread public class ProfilerController {

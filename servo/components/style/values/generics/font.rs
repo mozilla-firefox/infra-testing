@@ -39,6 +39,7 @@ pub trait TaggedFontValue {
     ToResolvedValue,
     ToShmem,
 )]
+#[repr(C)]
 pub struct FeatureTagValue<Integer> {
     /// A four-character tag, packed into a u32 (one byte per character).
     pub tag: FontTag,
@@ -91,6 +92,7 @@ where
     ToResolvedValue,
     ToShmem,
 )]
+#[repr(C)]
 pub struct VariationValue<Number> {
     /// A four-character tag, packed into a u32 (one byte per character).
     #[animation(constant)]
@@ -123,24 +125,22 @@ impl<T> TaggedFontValue for VariationValue<T> {
     ToTyped,
 )]
 #[css(comma)]
+#[repr(transparent)]
 #[typed(todo_derive_fields)]
-pub struct FontSettings<T>(#[css(if_empty = "normal", iterable)] pub Box<[T]>);
+pub struct FontSettings<T>(#[css(if_empty = "normal", iterable)] pub ThinVec<T>);
 
 impl<T> FontSettings<T> {
     /// Default value of font settings as `normal`.
     #[inline]
     pub fn normal() -> Self {
-        FontSettings(vec![].into_boxed_slice())
+        FontSettings(Default::default())
     }
 }
 
 impl<T: Parse> Parse for FontSettings<T> {
     /// https://drafts.csswg.org/css-fonts-4/#descdef-font-face-font-feature-settings
     /// https://drafts.csswg.org/css-fonts-4/#font-variation-settings-def
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         if input
             .try_parse(|i| i.expect_ident_matching("normal"))
             .is_ok()
@@ -151,7 +151,7 @@ impl<T: Parse> Parse for FontSettings<T> {
         Ok(FontSettings(
             input
                 .parse_comma_separated(|i| T::parse(context, i))?
-                .into_boxed_slice(),
+                .into(),
         ))
     }
 }
@@ -161,7 +161,6 @@ impl<T: Parse> Parse for FontSettings<T> {
 /// See:
 ///   https://drafts.csswg.org/css-fonts-4/#font-variation-settings-def
 ///   https://drafts.csswg.org/css-fonts-4/#descdef-font-face-font-feature-settings
-///
 #[derive(
     Clone,
     Copy,
@@ -177,6 +176,7 @@ impl<T: Parse> Parse for FontSettings<T> {
     ToResolvedValue,
     ToShmem,
 )]
+#[repr(transparent)]
 pub struct FontTag(pub u32);
 
 impl fmt::Debug for FontTag {
@@ -208,16 +208,12 @@ impl ToCss for FontTag {
 }
 
 impl Parse for FontTag {
-    fn parse<'i, 't>(
-        _context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
-        let location = input.current_source_location();
+    fn parse(_context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         let tag = input.expect_string()?;
 
         // allowed strings of length 4 containing chars: <U+20, U+7E>
         if tag.len() != 4 || tag.as_bytes().iter().any(|c| *c < b' ' || *c > b'~') {
-            return Err(location.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+            return Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError));
         }
 
         let mut raw = Cursor::new(tag.as_bytes());
@@ -341,7 +337,6 @@ impl<Factor: ToTyped> ToTyped for GenericFontSizeAdjust<Factor> {
     Debug,
     Deserialize,
     MallocSizeOf,
-    Parse,
     PartialEq,
     Serialize,
     SpecifiedValueInfo,

@@ -21,9 +21,8 @@ struct SGNContextStr {
     SECOidTag signalg;
     SECOidTag hashalg;
     CK_MECHANISM_TYPE mech;
-    void *hashcx;
     /* if we are using explicitly hashing, this value will be non-null */
-    const SECHashObject *hashobj;
+    PK11Context *hashcx;
     /* if we are using the combined mechanism, this value will be non-null */
     PK11Context *signcx;
     SECKEYPrivateKey *key;
@@ -121,7 +120,7 @@ SGN_DestroyContext(SGNContext *cx, PRBool freeit)
 {
     if (cx) {
         if (cx->hashcx != NULL) {
-            (*cx->hashobj->destroy)(cx->hashcx, PR_TRUE);
+            PK11_DestroyContext(cx->hashcx, PR_TRUE);
             cx->hashcx = NULL;
         }
         if (cx->signcx != NULL) {
@@ -160,11 +159,11 @@ SGN_Begin(SGNContext *cx)
     PK11Context *signcx = NULL;
 
     if (cx->hashcx != NULL) {
-        (*cx->hashobj->destroy)(cx->hashcx, PR_TRUE);
+        PK11_DestroyContext(cx->hashcx, PR_TRUE);
         cx->hashcx = NULL;
     }
     if (cx->signcx != NULL) {
-        (void)PK11_DestroyContext(cx->signcx, PR_TRUE);
+        PK11_DestroyContext(cx->signcx, PR_TRUE);
         cx->signcx = NULL;
     }
     /* if we can get a combined context, we'll use that */
@@ -174,15 +173,15 @@ SGN_Begin(SGNContext *cx)
         return SECSuccess;
     }
 
-    cx->hashobj = HASH_GetHashObjectByOidTag(cx->hashalg);
-    if (!cx->hashobj)
+    cx->hashcx = PK11_CreateDigestContext(cx->hashalg);
+    if (cx->hashcx == NULL)
         return SECFailure; /* error code is already set */
 
-    cx->hashcx = (*cx->hashobj->create)();
-    if (cx->hashcx == NULL)
-        return SECFailure;
-
-    (*cx->hashobj->begin)(cx->hashcx);
+    if (PK11_DigestBegin(cx->hashcx) != SECSuccess) {
+        PK11_DestroyContext(cx->hashcx, PR_TRUE);
+        cx->hashcx = NULL;
+        return SECFailure; /* error code is already set */
+    }
     return SECSuccess;
 }
 
@@ -196,8 +195,7 @@ SGN_Update(SGNContext *cx, const unsigned char *input, unsigned int inputLen)
         }
         return PK11_DigestOp(cx->signcx, input, inputLen);
     }
-    (*cx->hashobj->update)(cx->hashcx, input, inputLen);
-    return SECSuccess;
+    return PK11_DigestOp(cx->hashcx, input, inputLen);
 }
 
 /* XXX Old template; want to expunge it eventually. */
@@ -273,7 +271,8 @@ SECStatus
 SGN_End(SGNContext *cx, SECItem *result)
 {
     unsigned char digest[HASH_LENGTH_MAX];
-    unsigned part1;
+    unsigned int part1 = 0;
+    unsigned int expectedLen;
     SECStatus rv;
     SECItem digder, sigitem;
     PLArenaPool *arena = 0;
@@ -305,7 +304,16 @@ SGN_End(SGNContext *cx, SECItem *result)
         return sgn_PKCS11ToX509Sig(cx, result);
     }
     /* Finish up digest function */
-    (*cx->hashobj->end)(cx->hashcx, digest, &part1, sizeof(digest));
+    rv = PK11_DigestFinal(cx->hashcx, digest, &part1, sizeof(digest));
+    if (rv != SECSuccess) {
+        goto loser;
+    }
+    expectedLen = HASH_ResultLenByOidTag(cx->hashalg);
+    if (expectedLen == 0 || part1 != expectedLen) {
+        PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
+        rv = SECFailure;
+        goto loser;
+    }
 
     if (privKey->keyType == rsaKey &&
         cx->signalg != SEC_OID_PKCS1_RSA_PSS_SIGNATURE) {
@@ -483,6 +491,23 @@ const SEC_ASN1Template CERT_SignedDataTemplate[] = {
 
 SEC_ASN1_CHOOSER_IMPLEMENT(CERT_SignedDataTemplate)
 
+static SECOidTag
+seckey_CurveOidFromPrivKey(const SECKEYPrivateKey *privKey)
+{
+    SECItem params;
+    SECStatus rv;
+    SECOidTag tag;
+
+    rv = PK11_ReadAttribute(privKey->pkcs11Slot, privKey->pkcs11ID,
+                            CKA_EC_PARAMS, NULL, &params);
+    if (rv != SECSuccess) {
+        return SEC_OID_UNKNOWN;
+    }
+    tag = SECKEY_GetECCOid(&params);
+    SECITEM_FreeItem(&params, PR_FALSE);
+    return tag;
+}
+
 static SECStatus
 sec_DerSignData(PLArenaPool *arena, SECItem *result,
                 const unsigned char *buf, int len, SECKEYPrivateKey *pk,
@@ -520,6 +545,9 @@ sec_DerSignData(PLArenaPool *arena, SECItem *result,
                 break;
             case ecKey:
                 algID = SEC_OID_ANSIX962_ECDSA_SHA256_SIGNATURE;
+                break;
+            case edKey:
+                algID = seckey_CurveOidFromPrivKey(pk);
                 break;
             case mldsaKey:
                 algID = seckey_GetParameterSet(pk);
@@ -608,7 +636,7 @@ SGN_Digest(SECKEYPrivateKey *privKey,
         return SECFailure;
     }
 
-    if (privKey->keyType == mldsaKey) {
+    if ((privKey->keyType == mldsaKey) || (privKey->keyType == edKey)) {
         /* don't allow digest sign for mldsa. May be possible if mu
          * is enabled, in that case the hash must be the special mldsa
          * hash, which we don't have defined yet */
@@ -771,6 +799,19 @@ SEC_GetSignatureAlgorithmOidTag(KeyType keyType, SECOidTag hashAlgTag)
                 default:
                     break;
             }
+            break;
+        case edKey:
+            /* signature and curve are the same oid, just make sure
+             * it's valid */
+            switch (hashAlgTag) {
+                case SEC_OID_ED25519_SIGNATURE:
+                    /* add curve 448 here if/when we to support it */
+                    sigTag = hashAlgTag;
+                    break;
+                default:
+                    break;
+            }
+            break;
         default:
             break;
     }
@@ -789,20 +830,38 @@ SEC_GetSignatureAlgorithmOidTagByKey(const SECKEYPrivateKey *privKey, const SECK
     /* make sure we have only one key */
     if (privKey) {
         keyType = privKey->keyType;
-        /* for mldsa, the hash has to match the paramset anyway, so
-         * pass in the param set as the hash */
-        if (keyType == mldsaKey) {
-            hashAlgTag = seckey_GetParameterSet(privKey);
+        switch (keyType) {
+            case mldsaKey:
+                /* for mldsa, the hash has to match the paramset anyway, so
+                 * pass in the param set as the hash */
+                hashAlgTag = seckey_GetParameterSet(privKey);
+                break;
+            case edKey:
+                /* for ed, hash matches the curve, so we return the curve oid */
+                hashAlgTag = seckey_CurveOidFromPrivKey(privKey);
+                break;
+            default:
+                /* everything gets the hash from the caller, or will default */
+                break;
         }
     } else {
         /* the logic above should guarentee the following assert. */
         PORT_Assert(pubKey != NULL);
         PORT_Assert(privKey == NULL);
         keyType = pubKey->keyType;
-        /* for mldsa, the hash has to match the paramset anyway, so
-         * pass in the param set as the hash */
-        if (keyType == mldsaKey) {
-            hashAlgTag = pubKey->u.mldsa.paramSet;
+        switch (keyType) {
+            case mldsaKey:
+                /* for mldsa, the hash has to match the paramset anyway, so
+                 * pass in the param set as the hash */
+                hashAlgTag = pubKey->u.mldsa.paramSet;
+                break;
+            case edKey:
+                /* for ed, hash matches the curve, so we return the curve oid */
+                hashAlgTag = SECKEY_GetECCOid(&pubKey->u.ec.DEREncodedParams);
+                break;
+            default:
+                /* everything gets the hash from the caller, or will default */
+                break;
         }
     }
     return SEC_GetSignatureAlgorithmOidTag(keyType, hashAlgTag);

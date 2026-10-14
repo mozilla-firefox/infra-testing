@@ -13,9 +13,25 @@ const _OpenInPrivateWindow = site => ({
   action: ac.OnlyToMain({
     type: at.OPEN_PRIVATE_WINDOW,
     data: {
+      card_type: site.card_type,
       url: site.url,
       referrer: site.referrer,
       event_source: "CONTEXT_MENU",
+      topic: site.topic,
+      tile_id: site.tile_id,
+      scheduled_corpus_item_id: site.scheduled_corpus_item_id,
+      corpus_item_id: site.corpus_item_id,
+      received_rank: site.received_rank,
+      recommended_at: site.recommended_at,
+      format: site.format,
+      is_pocket_card: site.type === "CardGrid",
+      ...(site.section
+        ? {
+            section: site.section,
+            section_position: site.section_position,
+            is_section_followed: site.is_section_followed,
+          }
+        : {}),
     },
   }),
   userEvent: "OPEN_PRIVATE_WINDOW",
@@ -154,36 +170,16 @@ export const LinkMenuOptions = {
           : {}),
       })),
     }),
-    impression: ac.ImpressionStats({
-      source: eventSource,
-      block: 0,
-      tiles: tiles.map((site, index) => ({
-        id: site.guid,
-        pos: pos + index,
-        ...(site.shim && site.shim.delete ? { shim: site.shim.delete } : {}),
-      })),
-    }),
     userEvent: "BLOCK",
   }),
 
   // This is the "Dismiss" action for leaderboard/billboard ads.
-  BlockAdUrl: (site, pos, eventSource) => ({
+  BlockAdUrl: site => ({
     id: "newtab-menu-dismiss",
     icon: "dismiss",
     action: ac.AlsoToMain({
       type: at.BLOCK_URL,
       data: [site],
-    }),
-    impression: ac.ImpressionStats({
-      source: eventSource,
-      block: 0,
-      tiles: [
-        {
-          id: site.guid,
-          pos,
-          ...(site.shim && site.shim.save ? { shim: site.shim.save } : {}),
-        },
-      ],
     }),
     userEvent: "BLOCK",
   }),
@@ -584,7 +580,10 @@ export function getLinkMenuOptions(props) {
           if (eventName) {
             let value;
             // Bug 1958135: Pass additional info to ac.OPEN_NEW_WINDOW event
-            if (action.type === "OPEN_NEW_WINDOW") {
+            if (
+              action.type === "OPEN_NEW_WINDOW" ||
+              action.type === "OPEN_PRIVATE_WINDOW"
+            ) {
               const {
                 card_type,
                 corpus_item_id,

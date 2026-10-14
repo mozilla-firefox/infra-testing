@@ -15,6 +15,10 @@ const { ClientEnvironmentBase } = ChromeUtils.importESModule(
 add_task(async function setup() {
   // Trigger a proper telemetry init.
   do_get_profile(true);
+  // Make sure TelemetryEnvironment initialization doesn't wait for
+  // browser-delayed-startup-finished indefinitely as part of waiting
+  // for Intl initialization promise to be resolved.
+  fakeIntlReady();
 
   // Make sure we don't generate unexpected pings due to pref changes.
   await setEmptyPrefWatchlist();
@@ -84,7 +88,7 @@ add_task(async function test_prefs() {
   const testAppBuild = Services.appinfo.appBuildID;
   const testAppDisplayVersion = ClientEnvironmentBase.version;
   const testChannel = ClientEnvironmentBase.channel;
-  const testIsDefault = ClientEnvironmentBase.isDefaultBrowser;
+  const testIsDefault = await ClientEnvironmentBase.isDefaultBrowser;
   const testDistributionId = ClientEnvironmentBase.distribution;
   await UsageReporting.ensureInitialized();
   let profileAccessor = await ProfileAge();

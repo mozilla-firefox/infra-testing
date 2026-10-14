@@ -25,7 +25,7 @@ const lazy = XPCOMUtils.declareLazy({
     "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs",
   ChatStore:
     "moz-src:///browser/components/aiwindow/ui/modules/ChatStore.sys.mjs",
-  GenAI: "resource:///modules/GenAI.sys.mjs",
+  GenAI: "moz-src:///browser/components/genai/GenAI.sys.mjs",
   MemoryStore:
     "moz-src:///browser/components/aiwindow/services/MemoryStore.sys.mjs",
   getCachedModelsData:
@@ -37,8 +37,7 @@ const lazy = XPCOMUtils.declareLazy({
 let previousAssistantModel = "No model";
 
 Preferences.addAll([
-  // browser.ai.control.* prefs defined in main.js
-  { id: "browser.ml.chat.provider", type: "string" },
+  // browser.ai.control.* and browser.ml.chat.provider prefs defined in main.js
   { id: "browser.ml.chat.shortcuts.smartwindow", type: "bool" },
   { id: "browser.smartwindow.apiKey", type: "string" },
   { id: "browser.smartwindow.enabled", type: "bool" },
@@ -198,6 +197,9 @@ class BlockAiConfirmationDialog extends MozLitElement {
       <ul>
         <li
           data-l10n-id="preferences-ai-controls-block-confirmation-translations"
+        ></li>
+        <li
+          data-l10n-id="preferences-ai-controls-block-confirmation-speech-recognition"
         ></li>
         <li
           data-l10n-id="preferences-ai-controls-block-confirmation-pdfjs"
@@ -594,13 +596,14 @@ makeAiControlSetting({
   pref: "browser.ai.control.linkPreviewKeyPoints",
   feature: OnDeviceModelManager.features.KeyPoints,
 });
+makeAiControlSetting({
+  id: "aiControlSpeechRecognitionSelect",
+  pref: "browser.ai.control.speechRecognition",
+  feature: OnDeviceModelManager.features.SpeechRecognition,
+});
 
 // sidebar chatbot
 Preferences.addSetting({ id: "chatbotProviderItem" });
-Preferences.addSetting({
-  id: "chatbotProvider",
-  pref: "browser.ml.chat.provider",
-});
 Preferences.addSetting(
   /** @type {{ feature: OnDeviceModelFeaturesEnum } & SettingConfig } */ ({
     id: "aiControlSidebarChatbotSelect",
@@ -781,7 +784,7 @@ Preferences.addSetting({
   onUserClick(e) {
     e.preventDefault();
     const browser = window.browsingContext.embedderElement;
-    lazy.AIWindow.launchWindow(browser, true);
+    lazy.AIWindow.launchWindow(browser, true, "settings");
   },
 });
 
@@ -1364,8 +1367,8 @@ SettingGroupManager.registerGroups({
             id: "aiControlDefaultToggle",
             l10nId: "preferences-ai-controls-block-ai",
             control: "moz-toggle",
+            headingLevel: 3,
             controlAttrs: {
-              headinglevel: 3,
               inputlayout: "inline-end",
             },
             options: [
@@ -1401,8 +1404,8 @@ SettingGroupManager.registerGroups({
         l10nId: "preferences-ai-controls-on-device-group",
         supportPage: "on-device-models",
         control: "moz-fieldset",
+        headingLevel: 2,
         controlAttrs: {
-          headinglevel: 2,
           iconsrc: "chrome://browser/skin/device-desktop.svg",
         },
         items: [
@@ -1434,6 +1437,22 @@ SettingGroupManager.registerGroups({
                         },
                       },
                     ],
+                  },
+                ],
+              },
+              {
+                control: "moz-box-item",
+                items: [
+                  {
+                    id: "aiControlSpeechRecognitionSelect",
+                    l10nId:
+                      "preferences-ai-controls-speech-recognition-control",
+                    control: "moz-select",
+                    controlAttrs: {
+                      inputlayout: "inline-end",
+                    },
+                    supportPage: "speech-recognition-firefox",
+                    options: [...AI_CONTROL_OPTIONS],
                   },
                 ],
               },
@@ -1492,8 +1511,8 @@ SettingGroupManager.registerGroups({
         l10nId: "ai-window-features-group",
         control: "moz-fieldset",
         supportPage: "smart-window",
+        headingLevel: 2,
         controlAttrs: {
-          headinglevel: 2,
           iconsrc: "chrome://browser/skin/smart-window-mono-32.svg",
           badge: "beta",
         },
@@ -1535,10 +1554,10 @@ SettingGroupManager.registerGroups({
       {
         id: "sidebarChatbotFieldset",
         control: "moz-fieldset",
-        l10nId: "preferences-ai-controls-sidebar-chatbot-group-2",
+        l10nId: "preferences-ai-controls-sidebar-chatbot-group-3",
         supportPage: "ai-chatbot",
+        headingLevel: 2,
         controlAttrs: {
-          headinglevel: 2,
           iconsrc: "chrome://browser/skin/sidebar-collapsed.svg",
         },
         items: [
@@ -1600,6 +1619,7 @@ SettingGroupManager.registerGroups({
       {
         id: "modelSelection",
         control: "moz-radio-group",
+        l10nId: "smart-window-model-radio-group",
         options: [
           ...buildPresetModelOptions(),
           {

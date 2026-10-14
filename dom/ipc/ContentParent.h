@@ -104,6 +104,7 @@ namespace dom {
 class BrowsingContextGroup;
 class Element;
 class BrowserParent;
+class IPCTabContext;
 class MemoryReport;
 class TabContext;
 class GetFilesHelper;
@@ -168,11 +169,11 @@ class ContentParent final : public PContentParent,
   /** Shut down the content-process machinery. */
   static void ShutDown();
 
-  static uint32_t GetPoolSize(const nsACString& aContentProcessType);
+  static uint32_t GetPoolSize(const RemoteType& aContentProcessType);
 
-  static uint32_t GetMaxProcessCount(const nsACString& aContentProcessType);
+  static uint32_t GetMaxProcessCount(const RemoteType& aContentProcessType);
 
-  static bool IsMaxProcessCountReached(const nsACString& aContentProcessType);
+  static bool IsMaxProcessCountReached(const RemoteType& aContentProcessType);
 
   static void ReleaseCachedProcesses();
 
@@ -218,7 +219,7 @@ class ContentParent final : public PContentParent,
    *                   The returned KeepAlive will be for this BrowserId.
    */
   static UniqueContentParentKeepAlive GetNewOrUsedLaunchingBrowserProcess(
-      const nsACString& aRemoteType, BrowsingContextGroup* aGroup = nullptr,
+      const RemoteType& aRemoteType, BrowsingContextGroup* aGroup = nullptr,
       hal::ProcessPriority aPriority =
           hal::ProcessPriority::PROCESS_PRIORITY_FOREGROUND,
       bool aPreferUsed = false, uint64_t aBrowserId = 0);
@@ -228,7 +229,7 @@ class ContentParent final : public PContentParent,
    * resolves when the process is finished launching.
    */
   static RefPtr<ContentParent::LaunchPromise> GetNewOrUsedBrowserProcessAsync(
-      const nsACString& aRemoteType, BrowsingContextGroup* aGroup = nullptr,
+      const RemoteType& aRemoteType, BrowsingContextGroup* aGroup = nullptr,
       hal::ProcessPriority aPriority =
           hal::ProcessPriority::PROCESS_PRIORITY_FOREGROUND,
       bool aPreferUsed = false, uint64_t aBrowserId = 0);
@@ -238,7 +239,7 @@ class ContentParent final : public PContentParent,
    * until the process process is finished launching before returning.
    */
   static UniqueContentParentKeepAlive GetNewOrUsedBrowserProcess(
-      const nsACString& aRemoteType, BrowsingContextGroup* aGroup = nullptr,
+      const RemoteType& aRemoteType, BrowsingContextGroup* aGroup = nullptr,
       hal::ProcessPriority aPriority =
           hal::ProcessPriority::PROCESS_PRIORITY_FOREGROUND,
       bool aPreferUsed = false, uint64_t aBrowserId = 0);
@@ -276,7 +277,7 @@ class ContentParent final : public PContentParent,
    */
   static already_AddRefed<RemoteBrowser> CreateBrowser(
       const TabContext& aContext, Element* aFrameElement,
-      const nsACString& aRemoteType, BrowsingContext* aBrowsingContext,
+      const RemoteType& aRemoteType, BrowsingContext* aBrowsingContext,
       ContentParent* aOpenerContentParent);
 
   /**
@@ -302,11 +303,11 @@ class ContentParent final : public PContentParent,
   static void BroadcastMediaCodecsSupportedUpdate(
       RemoteMediaIn aLocation, const media::MediaCodecsSupported& aSupported);
 
-  const nsACString& GetRemoteType() const override;
+  const RemoteType& GetRemoteType() const override;
 
   virtual void DoGetRemoteType(nsACString& aRemoteType,
                                ErrorResult& aError) const override {
-    aRemoteType = GetRemoteType();
+    aRemoteType = GetRemoteType().Stringify();
   }
 
   enum CPIteratorPolicy { eLive, eAll };
@@ -542,7 +543,8 @@ class ContentParent final : public PContentParent,
 
   mozilla::ipc::IPCResult RecvNotifyShutdownSuccess();
 
-  PContentPermissionRequestParent* AllocPContentPermissionRequestParent(
+  already_AddRefed<PContentPermissionRequestParent>
+  AllocPContentPermissionRequestParent(
       const nsTArray<PermissionRequest>& aRequests, nsIPrincipal* aPrincipal,
       nsIPrincipal* aTopLevelPrincipal, const bool& aIsHandlingUserInput,
       const bool& aMaybeUnsafePermissionDelegate, const TabId& aTabId,
@@ -554,9 +556,6 @@ class ContentParent final : public PContentParent,
       nsIPrincipal* aTopLevelPrincipal, const bool& aIsHandlingUserInput,
       const bool& aMaybeUnsafePermissionDelegate, const TabId& tabId,
       const bool& aIgnoreAllowSitePermission) override;
-
-  bool DeallocPContentPermissionRequestParent(
-      PContentPermissionRequestParent* actor);
 
   void ForkNewProcess(bool aBlocking);
 
@@ -752,7 +751,8 @@ class ContentParent final : public PContentParent,
    * removed from this list, but will still be in the sContentParents list for
    * the GetAll/GetAllEvenIfDead APIs.
    */
-  static nsClassHashtable<nsCStringHashKey, nsTArray<ContentParent*>>*
+  static mozilla::StaticAutoPtr<
+      nsClassHashtable<nsGenericHashKey<RemoteType>, nsTArray<ContentParent*>>>
       sBrowserContentParents;
   static mozilla::StaticAutoPtr<LinkedList<ContentParent>> sContentParents;
 
@@ -779,7 +779,7 @@ class ContentParent final : public PContentParent,
       const OriginAttributes& aOriginAttributes, bool aUserActivation,
       bool aTextDirectiveUserActivation);
 
-  explicit ContentParent(const nsACString& aRemoteType);
+  explicit ContentParent(const RemoteType& aRemoteType);
 
   // Common implementation of LaunchSubprocess{Sync,Async}.
   // Return `true` in case of success, `false` if launch was
@@ -871,7 +871,7 @@ class ContentParent final : public PContentParent,
    * |aContentProcessType|.
    */
   static nsTArray<ContentParent*>& GetOrCreatePool(
-      const nsACString& aContentProcessType);
+      const RemoteType& aContentProcessType);
 
   mozilla::ipc::IPCResult RecvInitBackground(
       Endpoint<mozilla::ipc::PBackgroundStarterParent>&& aEndpoint);
@@ -1118,8 +1118,14 @@ class ContentParent final : public PContentParent,
       CreateAudioIPCConnectionResolver&& aResolver);
 
 #ifndef ANDROID
-  mozilla::ipc::IPCResult RecvRequestHWInferenceConnection(
-      Endpoint<PHWInferenceManagerParent>&& aEndpoint);
+  // Points mHWInferenceKeepAlive at the live HWInference process, launching it
+  // if it is gone. Leaves it null once the restart budget is spent.
+  void EnsureHWInferenceConnection();
+
+  mozilla::ipc::IPCResult RecvAcquireHWInferenceProcess();
+
+  mozilla::ipc::IPCResult RecvCreateSpeechRecognition(
+      Endpoint<hwinference::PSpeechRecognitionParent>&& aEndpoint);
 
   mozilla::ipc::IPCResult RecvReleaseHWInferenceConnection();
 #endif  // !ANDROID
@@ -1216,6 +1222,7 @@ class ContentParent final : public PContentParent,
       const nsACString& aTrackingOrigin, uint32_t aCookieBehavior,
       const ContentBlockingNotifier::StorageAccessPermissionGrantedReason&
           aReason,
+      const Maybe<bool>& aHadPriorUserInteraction,
       CompleteAllowAccessForResolver&& aResolver);
 
   mozilla::ipc::IPCResult RecvStoreUserInteractionAsPermission(
@@ -1268,7 +1275,7 @@ class ContentParent final : public PContentParent,
 
 #if defined(XP_WIN)
   mozilla::ipc::IPCResult RecvGetModulesTrust(
-      ModulePaths&& aModPaths, bool aRunAtNormalPriority,
+      ModuleIdentifiers&& aModIdents, bool aRunAtNormalPriority,
       GetModulesTrustResolver&& aResolver);
 #endif  // defined(XP_WIN)
 
@@ -1284,8 +1291,8 @@ class ContentParent final : public PContentParent,
       const MaybeDiscarded<BrowsingContext>& aContext);
 
   mozilla::ipc::IPCResult RecvNotifyOnHistoryReload(
-      const MaybeDiscarded<BrowsingContext>& aContext, const bool& aForceReload,
-      NotifyOnHistoryReloadResolver&& aResolver);
+      const MaybeDiscarded<BrowsingContext>& aContext,
+      const uint32_t& aReloadFlags, NotifyOnHistoryReloadResolver&& aResolver);
 
   mozilla::ipc::IPCResult RecvHistoryCommit(
       const MaybeDiscarded<BrowsingContext>& aContext, const uint64_t& aLoadID,
@@ -1332,9 +1339,9 @@ class ContentParent final : public PContentParent,
   RecvSessionHistoryEntryStoreWindowNameInContiguousEntries(
       const MaybeDiscarded<BrowsingContext>& aContext, const nsAString& aName);
 
-  mozilla::ipc::IPCResult RecvGetLoadingSessionHistoryInfoFromParent(
+  mozilla::ipc::IPCResult RecvAdoptChildSHEntry(
       const MaybeDiscarded<BrowsingContext>& aContext,
-      GetLoadingSessionHistoryInfoFromParentResolver&& aResolver);
+      AdoptChildSHEntryResolver&& aResolver);
 
   mozilla::ipc::IPCResult RecvSynchronizeNavigationAPIState(
       const MaybeDiscarded<BrowsingContext>& aContext,
@@ -1383,9 +1390,9 @@ class ContentParent final : public PContentParent,
 
   mozilla::ipc::IPCResult RecvGeckoTraceExport(ByteBuf&& aBuf);
 
-  mozilla::ipc::IPCResult RecvSetContainerFeaturePolicy(
+  mozilla::ipc::IPCResult RecvSetContainerPermissionsPolicy(
       const MaybeDiscardedBrowsingContext& aContainerContext,
-      MaybeFeaturePolicyInfo&& aContainerFeaturePolicyInfo);
+      MaybePermissionsPolicyInfo&& aContainerPermissionsPolicyInfo);
 
   mozilla::ipc::IPCResult RecvUpdateAncestorOriginsList(
       const MaybeDiscardedBrowsingContext& aContext);
@@ -1447,9 +1454,6 @@ class ContentParent final : public PContentParent,
                                         ErrorResult& aRv) override;
   mozilla::ipc::IProtocol* AsNativeActor() override { return this; }
 
-  static already_AddRefed<nsIPrincipal> CreateRemoteTypeIsolationPrincipal(
-      const nsACString& aRemoteType);
-
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
   bool IsBlockingShutdown() { return mBlockShutdownCalled; }
 #endif
@@ -1467,11 +1471,9 @@ class ContentParent final : public PContentParent,
  private:
   // Return an existing ContentParent if possible. Otherwise, `nullptr`.
   static UniqueContentParentKeepAlive GetUsedBrowserProcess(
-      const nsACString& aRemoteType, nsTArray<ContentParent*>& aContentParents,
-      uint32_t aMaxContentParents, bool aPreferUsed, ProcessPriority aPriority,
-      uint64_t aBrowserId);
+      const RemoteType& aRemoteType, bool aPreferUsed, uint64_t aBrowserId);
 
-  void AddToPool(nsTArray<ContentParent*>&);
+  void AddToPool();
   void RemoveFromPool(nsTArray<ContentParent*>&);
   void AssertNotInPool();
 
@@ -1498,9 +1500,8 @@ class ContentParent final : public PContentParent,
 
   bool mIsAPreallocBlocker;  // We called AddBlocker for this ContentParent
 
-  nsCString mRemoteType;
+  RemoteType mRemoteType;
   nsCString mProfile;
-  nsCOMPtr<nsIPrincipal> mRemoteTypeIsolationPrincipal;
 
   ContentParentId mChildID;
   int32_t mGeolocationWatchID;
@@ -1679,9 +1680,9 @@ class ThreadsafeContentParentHandle final {
   ContentParentId ChildID() const { return mChildID; }
 
   // Get the current RemoteType of this ContentParent. Safe to call from any
-  // thread. If the returned RemoteType is PREALLOC_REMOTE_TYPE, it may change
-  // again in the future.
-  nsCString GetRemoteType() MOZ_EXCLUDES(mMutex);
+  // thread. If the returned RemoteType is Prealloc, it may change again in the
+  // future.
+  RemoteType GetRemoteType() MOZ_EXCLUDES(mMutex);
 
   // Try to get a reference to the real `ContentParent` object from this weak
   // reference. This may only be called on the main thread.
@@ -1710,7 +1711,7 @@ class ThreadsafeContentParentHandle final {
 
  private:
   ThreadsafeContentParentHandle(ContentParent* aActor, ContentParentId aChildID,
-                                const nsACString& aRemoteType)
+                                const RemoteType& aRemoteType)
       : mChildID(aChildID),
         mLoadedOrigins(MakeRefPtr<LoadedOriginSet>(aRemoteType)),
         mWeakActor(aActor) {}
@@ -1738,16 +1739,6 @@ class ThreadsafeContentParentHandle final {
   // thread to read or clear.
   ContentParent* mWeakActor MOZ_GUARDED_BY(sMainThreadCapability);
 };
-
-// This is the C++ version of remoteTypePrefix in E10SUtils.sys.mjs.
-nsDependentCSubstring RemoteTypePrefix(const nsACString& aContentProcessType);
-
-// This is based on isWebRemoteType in E10SUtils.sys.mjs.
-bool IsWebRemoteType(const nsACString& aContentProcessType);
-
-bool IsWebCoopCoepRemoteType(const nsACString& aContentProcessType);
-
-bool IsExtensionRemoteType(const nsACString& aContentProcessType);
 
 inline nsISupports* ToSupports(mozilla::dom::ContentParent* aContentParent) {
   return static_cast<nsIDOMProcessParent*>(aContentParent);

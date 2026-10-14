@@ -76,6 +76,7 @@ var TabContextMenu = {
             "#context_askChat",
             "#context_aiSeparator",
             "#context_askChatSummarize",
+            "#context_createAITab",
           ],
         },
         {
@@ -138,6 +139,7 @@ var TabContextMenu = {
             "#context_moveToStart",
             "#context_moveToEnd",
             "#context_openTabInWindow",
+            "#context_openTabInMiniWindow",
             "#moveTabSeparator",
             "#context_moveTabToGroupSeparator",
             "#context_selectAllSeparator",
@@ -235,6 +237,7 @@ var TabContextMenu = {
             ["#context_bookmarkSelectedTabs", "#context_bookmarkTab"],
             ["#context_addNote", "#context_editNote"],
             "#context_askChatSummarize",
+            "#context_createAITab",
             "#context_tabToolsSeparator",
           ],
         },
@@ -309,6 +312,7 @@ var TabContextMenu = {
             "#context_moveToStart",
             "#context_moveToEnd",
             "#context_openTabInWindow",
+            "#context_openTabInMiniWindow",
             "#moveTabSeparator",
           ],
         },
@@ -515,6 +519,9 @@ var TabContextMenu = {
       }
     }
 
+    document.getElementById("context_openTabInMiniWindow").hidden =
+      !Services.prefs.getBoolPref("browser.mini-window.enabled", false);
+
     let disabled = gBrowser.tabs.length == 1;
     let tabCountInfo = JSON.stringify({
       tabCount: this.contextTabs.length,
@@ -583,7 +590,7 @@ var TabContextMenu = {
     let openGroupsToMoveTo = [];
     let savedGroupsToMoveTo = [];
 
-    if (gBrowser.tabGroupsEnabled) {
+    if (TabContextMenu.Tabbrowser.prefs.tabGroupsEnabled) {
       let selectedGroupCount = new Set(
         // The filter removes the "null" group for ungrouped tabs.
         this.contextTabs.map(t => t.group).filter(g => g)
@@ -716,7 +723,7 @@ var TabContextMenu = {
     }
 
     this._updateMoveTabToFlattenedVisibility(
-      gBrowser.tabGroupsEnabled,
+      TabContextMenu.Tabbrowser.prefs.tabGroupsEnabled,
       !!openGroupsToMoveTo.length,
       !!savedGroupsToMoveTo.length
     );
@@ -861,6 +868,14 @@ var TabContextMenu = {
         this
       );
     }
+
+    document.getElementById("context_createAITab").hidden = !(
+      TabContextMenu.AITAB_ENABLED &&
+      TabContextMenu.AIWindow.isAIWindowActiveAndEnabled(window) &&
+      this.contextTabs.some(tab =>
+        ["http", "https"].includes(tab.linkedBrowser.currentURI.scheme)
+      )
+    );
 
     // Move Tab items
     let contextMoveTabOptions = document.getElementById(
@@ -1460,9 +1475,19 @@ XPCOMUtils.defineLazyPreferenceGetter(
   false
 );
 
+XPCOMUtils.defineLazyPreferenceGetter(
+  TabContextMenu,
+  "AITAB_ENABLED",
+  "browser.smartwindow.aitab.enabled",
+  false
+);
+
 ChromeUtils.defineESModuleGetters(TabContextMenu, {
-  GenAI: "resource:///modules/GenAI.sys.mjs",
+  AIWindow:
+    "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs",
+  GenAI: "moz-src:///browser/components/genai/GenAI.sys.mjs",
   MenuSectionLayout: "resource:///modules/MenuSectionLayout.sys.mjs",
+  Tabbrowser: "moz-src:///browser/components/tabbrowser/Tabbrowser.sys.mjs",
   TabNotes: "moz-src:///browser/components/tabnotes/TabNotes.sys.mjs",
   TabStateFlusher:
     "moz-src:///browser/components/sessionstore/TabStateFlusher.sys.mjs",

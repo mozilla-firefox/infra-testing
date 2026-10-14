@@ -110,7 +110,7 @@ class GridInspector {
    * loading the highlighter settings.
    */
   async init() {
-    if (!this.inspector) {
+    if (this.#isDestroyed()) {
       return;
     }
 
@@ -252,29 +252,27 @@ class GridInspector {
    *         A list of GridFront objects.
    * @return {boolean}
    */
-  haveCurrentFragmentsChanged(newGridFronts) {
+  async haveCurrentFragmentsChanged(newGridFronts) {
     const gridHighlighters = this.highlighters.gridHighlighters;
 
     if (!gridHighlighters.size) {
       return false;
     }
 
-    const gridFronts = newGridFronts.filter(g =>
-      gridHighlighters.has(g.containerNodeFront)
-    );
-    if (!gridFronts.length) {
-      return false;
-    }
-
     const { grids } = this.store.getState();
 
     for (const node of gridHighlighters.keys()) {
-      const oldFragments = grids.find(g => g.nodeFront === node).gridFragments;
-      const newFragments = newGridFronts.find(
+      const oldGrid = grids.find(g => g.nodeFront === node);
+      const newGridFront = newGridFronts.find(
         g => g.containerNodeFront === node
-      ).gridFragments;
+      );
 
-      if (!compareFragmentsGeometry(oldFragments, newFragments)) {
+      if (!oldGrid || !newGridFront) {
+        continue;
+      }
+
+      const newFragments = await this.#getGridFragments(newGridFront);
+      if (!compareFragmentsGeometry(oldGrid.gridFragments, newFragments)) {
         return true;
       }
     }
@@ -301,7 +299,7 @@ class GridInspector {
    */
   async updateGridPanel() {
     // Stop refreshing if the inspector or store is already destroyed.
-    if (!this.inspector || !this.store) {
+    if (this.#isDestroyed()) {
       return;
     }
 
@@ -376,7 +374,11 @@ class GridInspector {
         colorForHost,
         fallbackColor
       );
+
       const highlighted = this.highlighters.gridHighlighters.has(nodeFront);
+      const gridFragments = highlighted
+        ? await this.#getGridFragments(grid)
+        : [];
       const disabled =
         !highlighted &&
         this.maxHighlighters > 1 &&
@@ -388,7 +390,8 @@ class GridInspector {
         color,
         disabled,
         direction: grid.direction,
-        gridFragments: grid.gridFragments,
+        gridFront: grid,
+        gridFragments,
         highlighted,
         isSubgrid,
         nodeFront,
@@ -488,19 +491,37 @@ class GridInspector {
    * @param  {boolean} highlighted
    *         If the grid should be updated to highlight or hide.
    */
-  onHighlighterChange(nodeFront, highlighted) {
-    if (!this.isPanelVisible()) {
-      return;
+  async onHighlighterChange(nodeFront, highlighted) {
+    try {
+      if (!this.isPanelVisible()) {
+        return;
+      }
+
+      const { grids } = this.store.getState();
+      const grid = grids.find(g => g.nodeFront === nodeFront);
+
+      if (!grid || grid.highlighted === highlighted) {
+        return;
+      }
+
+      const gridFragments = highlighted
+        ? await this.#getGridFragments(grid.gridFront)
+        : [];
+
+      // Bail out if nodeFront was destroyed while retrieving grid fragments.
+      if (nodeFront.isDestroyed()) {
+        return;
+      }
+
+      this.store.dispatch(
+        updateGridHighlighted(nodeFront, highlighted, gridFragments)
+      );
+    } catch (e) {
+      this._throwUnlessDestroyed(
+        e,
+        "Inspector destroyed while executing onHighlighterChange callback"
+      );
     }
-
-    const { grids } = this.store.getState();
-    const grid = grids.find(g => g.nodeFront === nodeFront);
-
-    if (!grid || grid.highlighted === highlighted) {
-      return;
-    }
-
-    this.store.dispatch(updateGridHighlighted(nodeFront, highlighted));
   }
 
   /**
@@ -555,7 +576,7 @@ class GridInspector {
       if (
         grids.length === newGridFronts.length &&
         oldNodeFronts.sort().join(",") == newNodeFronts.sort().join(",") &&
-        !this.haveCurrentFragmentsChanged(newGridFronts)
+        !(await this.haveCurrentFragmentsChanged(newGridFronts))
       ) {
         // Same list of containers and the geometry of all the displayed grids remained the
         // same, we can safely abort.
@@ -652,11 +673,31 @@ class GridInspector {
    *         The NodeFront of the grid container element for which the grid
    *         highlighter is toggled on/off for.
    */
-  onToggleGridHighlighter(node) {
-    const { grids } = this.store.getState();
-    const grid = grids.find(g => g.nodeFront === node);
-    this.store.dispatch(updateGridHighlighted(node, !grid.highlighted));
-    this.highlighters.toggleGridHighlighter(node, "grid");
+  async onToggleGridHighlighter(node) {
+    try {
+      const { grids } = this.store.getState();
+      const grid = grids.find(g => g.nodeFront === node);
+      const highlighted = !grid.highlighted;
+
+      const gridFragments = highlighted
+        ? await this.#getGridFragments(grid.gridFront)
+        : [];
+
+      // Bail out if nodeFront was destroyed while retrieving grid fragments.
+      if (node.isDestroyed()) {
+        return;
+      }
+
+      this.store.dispatch(
+        updateGridHighlighted(node, highlighted, gridFragments)
+      );
+      this.highlighters.toggleGridHighlighter(node, "grid");
+    } catch (e) {
+      this._throwUnlessDestroyed(
+        e,
+        "Inspector destroyed while executing onToggleGridHighlighter callback"
+      );
+    }
   }
 
   /**
@@ -736,7 +777,7 @@ class GridInspector {
    *        the error is swallowed.
    */
   _throwUnlessDestroyed(error, message) {
-    if (!this.inspector) {
+    if (this.#isDestroyed()) {
       console.warn(message);
     } else {
       // If the grid inspector was not destroyed, this is an unexpected error.
@@ -762,6 +803,39 @@ class GridInspector {
       // Recurse into children grids.
       this._updateZOrder(grids, grids[childIndex], zIndex + 1);
     }
+  }
+
+  /**
+   * Retrieve the grid fragments of a grid container. Note that retrieving grid
+   * fragments on the platform side triggers a reflow and should only be used if
+   * necessary.
+   *
+   * @param  {GridFront} gridFront
+   *         The GridFront of the grid container.
+   * @return {Array} The grid fragments or an empty array if the inspector or
+   *         the grid front was destroyed in the meantime.
+   */
+  async #getGridFragments(gridFront) {
+    try {
+      return await gridFront.getFragments();
+    } catch (e) {
+      if (gridFront.isDestroyed()) {
+        // The GridFront can be destroyed while the inspector is still alive if
+        // it belonged to an iframe target which was destroyed.
+        console.warn("GridFront destroyed while executing getGridFragments");
+      } else {
+        this._throwUnlessDestroyed(
+          e,
+          "Inspector destroyed while executing getGridFragments"
+        );
+      }
+    }
+
+    return [];
+  }
+
+  #isDestroyed() {
+    return !this.inspector || !this.store;
   }
 }
 

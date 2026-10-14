@@ -44,17 +44,6 @@ def test_update():
     assert mozinfo.info["foo"] == 123
 
 
-def test_apple_silicon():
-    """apple_silicon must follow the merged target processor, not the
-    architecture of the interpreter running the harness (bug 2055837)."""
-    mozinfo.update({"os": "mac", "processor": "aarch64"})
-    assert mozinfo.info["apple_silicon"] is True
-    mozinfo.update({"os": "mac", "processor": "x86_64"})
-    assert mozinfo.info["apple_silicon"] is False
-    mozinfo.update({"os": "linux", "processor": "aarch64"})
-    assert mozinfo.info["apple_silicon"] is False
-
-
 def test_update_file(tmpdir):
     """Test that mozinfo.update can load a JSON file."""
     j = os.path.join(tmpdir, "mozinfo.json")

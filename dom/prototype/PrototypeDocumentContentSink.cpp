@@ -420,6 +420,7 @@ void PrototypeDocumentContentSink::CloseElement(Element* aElement) {
   if (nsIContent::RequiresDoneAddingChildren(
           aElement->NodeInfo()->NamespaceID(),
           aElement->NodeInfo()->NameAtom())) {
+    nsAutoScriptBlocker scriptBlocker;
     aElement->DoneAddingChildren(false);
   }
 
@@ -649,20 +650,20 @@ nsresult PrototypeDocumentContentSink::DoneWalking() {
   MOZ_ASSERT(!mStillWalking, "walk not done");
   MOZ_ASSERT(!mDocument->HasPendingInitialTranslation(), "translation pending");
 
-  if (mDocument) {
-    MOZ_ASSERT(mDocument->GetReadyStateEnum() == Document::READYSTATE_LOADING,
+  if (const RefPtr<Document> doc = mDocument) {
+    MOZ_ASSERT(doc->GetReadyStateEnum() == Document::READYSTATE_LOADING,
                "Bad readyState");
-    mDocument->SetReadyStateInternal(Document::READYSTATE_INTERACTIVE);
-    mDocument->NotifyPossibleTitleChange(false);
+    doc->SetReadyStateInternal(Document::READYSTATE_INTERACTIVE);
+    doc->NotifyPossibleTitleChange(false);
 
-    nsContentUtils::DispatchEventOnlyToChrome(mDocument, mDocument,
+    nsContentUtils::DispatchEventOnlyToChrome(doc, doc,
                                               u"MozBeforeInitialXULLayout"_ns,
                                               CanBubble::eYes, Cancelable::eNo);
   }
 
-  if (mScriptLoader) {
-    mScriptLoader->ParsingComplete(false);
-    mScriptLoader->DeferCheckpointReached();
+  if (const RefPtr<ScriptLoader> scriptLoader = mScriptLoader) {
+    scriptLoader->ParsingComplete(false);
+    scriptLoader->DeferCheckpointReached();
   }
 
   StartLayout();
@@ -694,7 +695,7 @@ nsresult PrototypeDocumentContentSink::DoneWalking() {
 
   doc->SetScrollToRef(mDocument->GetDocumentURI());
 
-  doc->EndLoad();
+  doc->EndLoad(/* aFireDOMContentLoadedSync = */ true);
 
   return NS_OK;
 }

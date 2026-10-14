@@ -6,7 +6,7 @@
 
 #include "mozilla/gfx/MacIOSurface.h"
 #include "mozilla/gfx/gfxVars.h"
-#include "mozilla/layers/GpuFence.h"
+#include "mozilla/layers/CompositeProcessFencesHolderMap.h"
 #include "mozilla/webrender/RenderMacIOSurfaceTextureHost.h"
 #include "mozilla/webrender/RenderThread.h"
 #include "mozilla/webrender/WebRenderAPI.h"
@@ -17,20 +17,39 @@ namespace layers {
 MacIOSurfaceTextureHostOGL::MacIOSurfaceTextureHostOGL(
     TextureFlags aFlags, const SurfaceDescriptorMacIOSurface& aDescriptor)
     : TextureHost(TextureHostType::MacIOSurface, aFlags),
+      mDescriptor(aDescriptor),
       mSurface(MacIOSurface::LookupSurface(
           aDescriptor.surfaceId(), aDescriptor.yUVColorSpace(),
           aDescriptor.transferFunction(),
           aDescriptor.isOpaque() ? MacIOSurface::AllowAlpha::No
-                                 : MacIOSurface::AllowAlpha::Yes)),
-      mGpuFence(aDescriptor.gpuFence()) {
+                                 : MacIOSurface::AllowAlpha::Yes)) {
   MOZ_COUNT_CTOR(MacIOSurfaceTextureHostOGL);
   if (!mSurface) {
     gfxCriticalNote << "Failed to look up MacIOSurface";
+  }
+
+  if (!mDescriptor.fencesHolderId()) {
+    return;
+  }
+  MOZ_ASSERT(mDescriptor.fencesHolderId()->IsValid());
+  if (auto* fenceHolderMap = CompositeProcessFencesHolderMap::Get()) {
+    fenceHolderMap->RegisterReference(mDescriptor.fencesHolderId().ref());
+  } else {
+    MOZ_ASSERT_UNREACHABLE("FencesHolderMap not available");
   }
 }
 
 MacIOSurfaceTextureHostOGL::~MacIOSurfaceTextureHostOGL() {
   MOZ_COUNT_DTOR(MacIOSurfaceTextureHostOGL);
+
+  if (!mDescriptor.fencesHolderId()) {
+    return;
+  }
+  if (auto* fenceHolderMap = CompositeProcessFencesHolderMap::Get()) {
+    fenceHolderMap->Unregister(mDescriptor.fencesHolderId().ref());
+  } else {
+    MOZ_ASSERT_UNREACHABLE("FencesHolderMap not available");
+  }
 }
 
 gfx::SurfaceFormat MacIOSurfaceTextureHostOGL::GetFormat() const {
@@ -84,7 +103,7 @@ void MacIOSurfaceTextureHostOGL::CreateRenderTexture(
   MOZ_ASSERT(mExternalImageId.isSome());
 
   RefPtr texture = MakeRefPtr<wr::RenderMacIOSurfaceTextureHost>(
-      GetMacIOSurface(), mGpuFence);
+      GetMacIOSurface(), mDescriptor.fencesHolderId());
 
   bool isDRM = (bool)(mFlags & TextureFlags::DRM_SOURCE);
   texture->SetIsFromDRMSource(isDRM);
@@ -298,6 +317,10 @@ void MacIOSurfaceTextureHostOGL::PushDisplayItems(
       MOZ_ASSERT_UNREACHABLE("unexpected to be called");
     }
   }
+}
+
+SurfaceDescriptor MacIOSurfaceTextureHostOGL::GetSurfaceDescriptor() {
+  return mDescriptor;
 }
 
 }  // namespace layers

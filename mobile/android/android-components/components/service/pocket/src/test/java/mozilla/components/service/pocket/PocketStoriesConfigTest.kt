@@ -4,6 +4,7 @@
 
 package mozilla.components.service.pocket
 
+import java.util.Locale
 import kotlin.reflect.KVisibility
 import mozilla.components.service.pocket.helpers.assertClassVisibility
 import mozilla.components.support.base.worker.Frequency
@@ -59,9 +60,10 @@ class PocketStoriesConfigTest {
     fun `WHEN instantiating a PocketStoriesConfig THEN contentRecommendationsParams default value is used`() {
         val config = PocketStoriesConfig(mock())
 
-        assertTrue(config.contentRecommendationsParams.locale.isBlank())
+        assertEquals(Locale.getDefault(), config.contentRecommendationsParams.locale)
         assertTrue(config.contentRecommendationsParams.region.isBlank())
         assertTrue(config.contentRecommendationsParams.topics.isEmpty())
         assertEquals(DEFAULT_CONTENT_RECOMMENDATIONS_COUNT, config.contentRecommendationsParams.count)
+        assertTrue(config.contentRecommendationsParams.userAgent.isBlank())
     }
 }

@@ -16,6 +16,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import mozilla.appservices.fxaclient.DeviceConfig as ASDeviceConfig
@@ -47,11 +49,13 @@ import mozilla.components.service.fxa.SharedPrefAccountStorage
 import mozilla.components.service.fxa.StorageWrapper
 import mozilla.components.service.fxa.emitSyncFailedFact
 import mozilla.components.service.fxa.into
+import mozilla.components.service.fxa.sync.SharedPrefsSyncStateStorage
+import mozilla.components.service.fxa.sync.SyncConnectionState
 import mozilla.components.service.fxa.sync.SyncManager
 import mozilla.components.service.fxa.sync.SyncReason
+import mozilla.components.service.fxa.sync.SyncStateStorage
 import mozilla.components.service.fxa.sync.SyncStatusObserver
 import mozilla.components.service.fxa.sync.WorkManagerSyncManager
-import mozilla.components.service.fxa.sync.clearSyncState
 import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.base.observer.Observable
 import mozilla.components.support.base.observer.ObserverRegistry
@@ -148,9 +152,20 @@ open class FxaAccountManager(
     // Note that trying to perform a sync while account isn't authenticated will not succeed.
     @GuardedBy("this") private var syncManager: SyncManager? = null
 
+    /** Emits whether sync is connected on this device. */
+    val syncConnectionState: StateFlow<SyncConnectionState> by lazy {
+        syncManager?.syncConnectionState ?: MutableStateFlow(SyncConnectionState.Uninitialized)
+    }
+
+    /** Provider for retrieving a [SyncStateStorage] instance. */
+    private val syncStateStorageProvider by lazy {
+        SharedPrefsSyncStateStorage.SingletonProvider(context, coroutineContext)
+    }
+
     init {
         registerForAccountEvents(accountStateEventsObserver, ProcessLifecycleOwner.get(), false)
 
+        GlobalAccountManager.setSyncStateStorageProvider(syncStateStorageProvider)
         syncConfig?.let {
             // Initialize sync manager with the passed-in config.
             require(syncConfig.supportedEngines.isNotEmpty()) {
@@ -221,6 +236,9 @@ open class FxaAccountManager(
                         }
                         syncManager?.now(reason, debounce, customEngineSubset)
                     }
+
+                    // refresh profile on explicit "sync now" action
+                    refreshProfile(ignoreCache = true)
                 }
                 else -> logger.info("Ignoring syncNow request, not in the right state: $s")
             }
@@ -255,6 +273,8 @@ open class FxaAccountManager(
     /** Call this after registering your observers, and before interacting with this class. */
     suspend fun start() =
         withContext(coroutineContext) {
+            syncManager?.initialize()
+
             processQueue(Event.Account.Start)
 
             if (!isAccountManagerReady) {
@@ -329,8 +349,9 @@ open class FxaAccountManager(
      * @param pairingUrl Optional pairing URL in case a pairing flow is being initiated.
      * @param entrypoint an enum representing the feature entrypoint requesting the URL. the entrypoint is used in
      *   telemetry.
-     * @param authScopes The oAuth scopes being requested, if none are provided we default to the scopes provided when
-     *   constructing [FxaAccountManager]
+     * @param authScopes The OAuth scopes being requested. When sync decoupling is enabled
+     *   ([SyncConfig.syncDecouplingEnabled], this parameter gets ignored. Otherwise, if none are provided we default to
+     *   the scopes provided when constructing [FxaAccountManager]
      * @param service The name fo the service being enabled. This may change the UX shown by the FxA content servers.
      * @return An authentication url which is to be presented to the user.
      */
@@ -341,6 +362,9 @@ open class FxaAccountManager(
         service: String = "",
     ): String? =
         withContext(coroutineContext) {
+            // When sync decoupling is enabled, we need to send empty scopes.
+            // see https://bugzilla.mozilla.org/show_bug.cgi?id=2066516#c4
+            val authScopes = authScopes.orEmptyIf { syncConfig?.syncDecouplingEnabled == true }
             val event =
                 if (pairingUrl != null) {
                     Event.Account.BeginPairingFlow(pairingUrl, service, entrypoint, authScopes)
@@ -435,6 +459,10 @@ open class FxaAccountManager(
             processQueue(Event.Account.AuthenticationError(operation, errorCountWithinTheTimeWindow))
         }
     }
+
+    /** @return an empty Set if [condition] evaluates to true */
+    private inline fun Set<String>.orEmptyIf(condition: () -> Boolean): Set<String> =
+        this.takeIf { !condition() }.orEmpty()
 
     /** Pumps the state machine until all events are processed and their side-effects resolve. */
     private suspend fun processQueue(event: Event) {
@@ -583,7 +611,7 @@ open class FxaAccountManager(
         // layers as well; if they're already empty (unused), nothing bad will happen
         // and extra overhead is quite small.
         SyncEnginesStorage(context).clear()
-        clearSyncState(context)
+        syncStateStorageProvider.get().clear()
     }
 
     private fun persistDeclinedEngines(declinedEngines: Set<SyncEngine>) {
@@ -645,6 +673,7 @@ open class FxaAccountManager(
         return WorkManagerSyncManager(
             context = context,
             syncConfig = config,
+            syncStateStorageProvider = syncStateStorageProvider,
             coroutineContext = coroutineContext,
         )
     }

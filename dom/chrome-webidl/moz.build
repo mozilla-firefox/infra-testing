@@ -23,6 +23,9 @@ with Files("MatchGlob.webidl"):
 with Files("MatchPattern.webidl"):
     BUG_COMPONENT = ("WebExtensions", "General")
 
+with Files("Nimbus.webidl"):
+    BUG_COMPONENT = ("Firefox", "Nimbus Desktop Client")
+
 with Files("WebExtension*.webidl"):
     BUG_COMPONENT = ("WebExtensions", "General")
 
@@ -47,6 +50,7 @@ WEBIDL_FILES = [
     "ChildSHistory.webidl",
     "ChromeNodeList.webidl",
     "ClonedErrorHolder.webidl",
+    "CollectorLogAnalyzer.webidl",
     "ConsoleInstance.webidl",
     "ContentAnalysis.webidl",
     "CSSAppearanceBaseRule.webidl",
@@ -82,10 +86,12 @@ WEBIDL_FILES = [
     "MozStorageStatementParams.webidl",
     "MozStorageStatementRow.webidl",
     "NetDashboard.webidl",
+    "Nimbus.webidl",
     "OriginAttributes.webidl",
     "PathUtils.webidl",
     "PermissionSetParameters.webidl",
     "PrecompiledScript.webidl",
+    "ProfilerCounter.webidl",
     "PromiseDebugging.webidl",
     "SessionStoreUtils.webidl",
     "StripOnShareRule.webidl",
@@ -126,6 +132,11 @@ GENERATED_EVENTS_WEBIDL_FILES = [
 if CONFIG["MOZ_BUILD_APP"] != "mobile/android":
     WEBIDL_FILES += [
         "UniFFI.webidl",
+    ]
+
+if CONFIG["MOZ_WIDGET_TOOLKIT"] != "android":
+    WEBIDL_FILES += [
+        "TextGenerator.webidl",
     ]
 
 if CONFIG["MOZ_PLACES"]:

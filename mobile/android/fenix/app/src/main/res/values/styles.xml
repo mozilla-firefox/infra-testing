@@ -111,8 +111,6 @@
         <!-- Layers -->
         <!-- Card background, Menu background, Dialog, Banner -->
         <item name="layer2">@color/fx_mobile_layer_color_2</item>
-        <!-- Search -->
-        <item name="layer3">@color/fx_mobile_layer_color_3</item>
 
         <!-- Action -->
         <!-- Primary button in a disabled state -->
@@ -143,13 +141,7 @@
         <item name="accent">@color/accent_normal_theme</item>
         <item name="accentBright">@color/photonViolet70</item>
         <item name="accentHighContrast">@color/accent_high_contrast_normal_theme</item>
-        <item name="neutral">@color/neutral_normal_theme</item>
-        <item name="neutralFaded">@color/neutral_faded_normal_theme</item>
         <item name="accentUsedOnDarkBackground">@color/fx_mobile_tertiary</item>
-        <item name="toolbarStartGradient">@color/fx_mobile_surface</item>
-        <item name="toolbarCenterGradient">@color/fx_mobile_surface</item>
-        <item name="toolbarEndGradient">@color/fx_mobile_surface</item>
-        <item name="fillLinkFromClipboard">@color/fill_link_from_clipboard_normal_theme</item>
         <item name="addOnPrivateBrowsingExteriorCircleBackground">@color/add_on_private_browsing_exterior_circle_background_normal_theme</item>
         <item name="mozacPromptLoginEditTextCursorColor">@color/prompt_login_edit_text_cursor_color_normal_theme</item>
         <item name="awesomeBarIndicatorColor">@color/search_suggestion_indicator_icon_color_normal_theme</item>
@@ -166,8 +158,6 @@
         <item name="fenixLogo">@drawable/ic_logo_wordmark_normal</item>
         <item name="fenixWordmarkText">@drawable/ic_wordmark_text_normal</item>
         <item name="fenixWordmarkLogo">@drawable/ic_wordmark_logo</item>
-        <item name="bottomBarBackground">@drawable/home_bottom_bar_background</item>
-        <item name="bottomBarBackgroundTop">@drawable/home_bottom_bar_background_top</item>
         <item name="mozac_ic_private_mode_circle_fill_background_color">@android:color/transparent</item>
         <item name="mozac_ic_private_mode_circle_fill_icon_color">@color/fx_mobile_on_surface</item>
         <item name="mozac_ic_shield_slash_bg_fill_critical">?attr/colorOnSurface</item>
@@ -212,11 +202,15 @@
     <style name="NormalTheme" parent="NormalThemeBase" />
 
     <style name="BaseDialogStyle.Private" parent="BaseDialogStyle">
-        <item name="android:background">?attr/layer2</item>
+        <item name="alertDialogStyle">@style/MaterialAlertDialog.App.Private</item>
         <item name="materialAlertDialogTitleTextStyle">@style/MaterialAlertDialog.App.Title.Text.Private</item>
         <item name="buttonBarPositiveButtonStyle">@style/PrivateDialogButtonStyle</item>
         <item name="buttonBarNegativeButtonStyle">@style/PrivateDialogButtonStyle</item>
         <item name="materialAlertDialogBodyTextStyle">@style/MaterialAlertDialog.App.Body.Text.Private</item>
+    </style>
+
+    <style name="MaterialAlertDialog.App.Private" parent="MaterialAlertDialog.Material3">
+        <item name="backgroundTint">?attr/layer2</item>
     </style>
 
     <style name="PrivateDialogButtonStyle" parent="Widget.Material3.Button.TextButton.Dialog">
@@ -254,7 +248,6 @@
     <style name="BaseDialogStyle" parent="ThemeOverlay.Material3.MaterialAlertDialog">
         <item name="materialAlertDialogTitleTextStyle">@style/MaterialAlertDialog.App.Title.Text</item>
         <item name="materialAlertDialogBodyTextStyle">@style/MaterialAlertDialog.App.Body.Text</item>
-        <item name="android:background">?attr/colorSurfaceContainerHigh</item>
         <item name="colorAccent">?accent</item>
         <item name="buttonBarPositiveButtonStyle">@style/DialogButtonStyle</item>
         <item name="buttonBarNegativeButtonStyle">@style/DialogButtonStyle</item>
@@ -405,8 +398,6 @@
         <!-- Layers -->
         <!-- Card background, Menu background, Dialog, Banner -->
         <item name="layer2">@color/fx_mobile_private_layer_color_2</item>
-        <!-- Search -->
-        <item name="layer3">@color/fx_mobile_private_layer_color_3</item>
 
         <!-- Action -->
         <!-- Primary button in a disabled state -->
@@ -434,13 +425,7 @@
         <item name="accent">@color/accent_private_theme</item>
         <item name="accentBright">@color/photonViolet70</item>
         <item name="accentHighContrast">@color/accent_high_contrast_private_theme</item>
-        <item name="neutral">@color/neutral_private_theme</item>
-        <item name="neutralFaded">@color/neutral_faded_private_theme</item>
         <item name="accentUsedOnDarkBackground">@color/accent_high_contrast_private_theme</item>
-        <item name="toolbarStartGradient">@color/fx_mobile_private_surface</item>
-        <item name="toolbarCenterGradient">@color/fx_mobile_private_surface</item>
-        <item name="toolbarEndGradient">@color/fx_mobile_private_surface</item>
-        <item name="fillLinkFromClipboard">@color/accent_high_contrast_private_theme</item>
         <item name="addOnPrivateBrowsingExteriorCircleBackground">@color/accent_private_theme</item>
         <item name="mozacPromptLoginEditTextCursorColor">@color/prompt_login_edit_text_cursor_color_private_theme</item>
         <item name="awesomeBarIndicatorColor">@color/photonGreen60</item>
@@ -457,8 +442,6 @@
         <item name="fenixLogo">@drawable/ic_logo_wordmark_private</item>
         <item name="fenixWordmarkText">@drawable/ic_wordmark_text_private</item>
         <item name="fenixWordmarkLogo">@drawable/ic_wordmark_logo</item>
-        <item name="bottomBarBackground">@drawable/private_home_bottom_bar_background_gradient</item>
-        <item name="bottomBarBackgroundTop">@drawable/private_home_bottom_bar_background_gradient_top</item>
         <item name="mozac_ic_private_mode_circle_fill_background_color">@color/novaWhite</item>
         <item name="mozac_ic_private_mode_circle_fill_icon_color">@color/fx_mobile_private_layer_color_2</item>
         <item name="mozac_ic_shield_slash_bg_fill_critical">?attr/colorOnSurface</item>
@@ -783,5 +766,16 @@
 
     <style name="RadioButtonStyle" parent="Widget.Material3.CompoundButton.RadioButton">
         <item name="buttonTint">@color/compound_button_tint</item>
+    </style>
+
+   <!-- Style for the Tab Group flow that hides the dialog window in favor of a bottom sheet. -->
+    <style name="TabGroupFlowDialogStyle" parent="Theme.MaterialComponents.DayNight.Dialog">
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@null</item>
     </style>
 </resources>

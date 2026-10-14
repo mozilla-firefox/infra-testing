@@ -4,12 +4,11 @@
 
 //! Specified types for CSS values related to effects.
 
+use crate::Zero;
 use crate::derives::*;
 use crate::parser::{Parse, ParserContext};
-use crate::values::computed::effects::BoxShadow as ComputedBoxShadow;
-use crate::values::computed::effects::SimpleShadow as ComputedSimpleShadow;
-#[cfg(feature = "gecko")]
-use crate::values::computed::url::ComputedUrl;
+#[cfg(feature = "servo")]
+use crate::values::Impossible;
 use crate::values::computed::Angle as ComputedAngle;
 use crate::values::computed::CSSPixelLength as ComputedCSSPixelLength;
 use crate::values::computed::Filter as ComputedFilter;
@@ -18,6 +17,10 @@ use crate::values::computed::NonNegativeNumber as ComputedNonNegativeNumber;
 use crate::values::computed::Number as ComputedNumber;
 use crate::values::computed::NumberOrPercentage as ComputedNumberOrPercentage;
 use crate::values::computed::ZeroToOneNumber as ComputedZeroToOneNumber;
+use crate::values::computed::effects::BoxShadow as ComputedBoxShadow;
+use crate::values::computed::effects::SimpleShadow as ComputedSimpleShadow;
+#[cfg(feature = "gecko")]
+use crate::values::computed::url::ComputedUrl;
 use crate::values::computed::{Context, ToComputedValue};
 use crate::values::generics::effects::BoxShadow as GenericBoxShadow;
 use crate::values::generics::effects::Filter as GenericFilter;
@@ -28,11 +31,8 @@ use crate::values::specified::length::{Length, NonNegativeLength};
 #[cfg(feature = "gecko")]
 use crate::values::specified::url::SpecifiedUrl;
 use crate::values::specified::{Angle, NonNegativeNumberOrPercentage, Number, NumberOrPercentage};
-#[cfg(feature = "servo")]
-use crate::values::Impossible;
-use crate::Zero;
-use cssparser::{match_ignore_ascii_case, BasicParseErrorKind, Parser, Token};
-use style_traits::{ParseError, StyleParseErrorKind, ValueParseErrorKind};
+use cssparser::{Parser, match_ignore_ascii_case};
+use style_traits::{ParseError, StyleParseErrorKind};
 
 /// A specified value for a single shadow of the `box-shadow` property.
 pub type BoxShadow =
@@ -91,10 +91,7 @@ impl NonNegativeFactor {
 }
 
 impl Parse for NonNegativeFactor {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         Ok(Self(FilterFactor(
             NonNegativeNumberOrPercentage::parse(context, input)?.0,
         )))
@@ -110,10 +107,7 @@ impl ZeroToOneFactor {
 
 impl Parse for ZeroToOneFactor {
     #[inline]
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         Ok(Self(FilterFactor(clamp_to_one(
             NumberOrPercentage::parse_non_negative(context, input)?,
         ))))
@@ -124,23 +118,19 @@ impl Parse for ZeroToOneFactor {
 pub type SimpleShadow = GenericSimpleShadow<Option<Color>, Length, Option<NonNegativeLength>>;
 
 impl Parse for BoxShadow {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         let mut lengths = None;
         let mut color = None;
         let mut inset = false;
 
         loop {
-            if !inset {
-                if input
+            if !inset
+                && input
                     .try_parse(|input| input.expect_ident_matching("inset"))
                     .is_ok()
-                {
-                    inset = true;
-                    continue;
-                }
+            {
+                inset = true;
+                continue;
             }
             if lengths.is_none() {
                 let value = input.try_parse::<_, _, ParseError>(|i| {
@@ -161,26 +151,25 @@ impl Parse for BoxShadow {
                     continue;
                 }
             }
-            if color.is_none() {
-                if let Ok(value) = input.try_parse(|i| Color::parse(context, i)) {
-                    color = Some(value);
-                    continue;
-                }
+            if color.is_none()
+                && let Ok(value) = input.try_parse(|i| Color::parse(context, i))
+            {
+                color = Some(value);
+                continue;
             }
             break;
         }
 
-        let lengths =
-            lengths.ok_or(input.new_custom_error(StyleParseErrorKind::UnspecifiedError))?;
+        let lengths = lengths.ok_or(ParseError::custom(StyleParseErrorKind::UnspecifiedError))?;
         Ok(BoxShadow {
             base: SimpleShadow {
-                color: color,
+                color,
                 horizontal: lengths.0,
                 vertical: lengths.1,
                 blur: lengths.2,
             },
             spread: lengths.3,
-            inset: inset,
+            inset,
         })
     }
 }
@@ -258,39 +247,35 @@ impl Filter {
                 factor.0.to_computed_value_without_context()?.value(),
             ))),
             Filter::DropShadow(ref shadow) => {
-                if cfg!(feature = "gecko") {
-                    let color = shadow
-                        .color
+                let color = shadow
+                    .color
+                    .as_ref()
+                    .unwrap_or(&Color::currentcolor())
+                    .to_computed_color(None)?;
+
+                let horizontal = ComputedCSSPixelLength::new(
+                    shadow
+                        .horizontal
+                        .to_computed_pixel_length_without_context()?,
+                );
+                let vertical = ComputedCSSPixelLength::new(
+                    shadow.vertical.to_computed_pixel_length_without_context()?,
+                );
+                let blur = ComputedNonNegativeLength::new(
+                    shadow
+                        .blur
                         .as_ref()
-                        .unwrap_or(&Color::currentcolor())
-                        .to_computed_color(None)?;
+                        .unwrap_or(&NonNegativeLength::zero())
+                        .0
+                        .to_computed_pixel_length_without_context()?,
+                );
 
-                    let horizontal = ComputedCSSPixelLength::new(
-                        shadow
-                            .horizontal
-                            .to_computed_pixel_length_without_context()?,
-                    );
-                    let vertical = ComputedCSSPixelLength::new(
-                        shadow.vertical.to_computed_pixel_length_without_context()?,
-                    );
-                    let blur = ComputedNonNegativeLength::new(
-                        shadow
-                            .blur
-                            .as_ref()
-                            .unwrap_or(&NonNegativeLength::zero())
-                            .0
-                            .to_computed_pixel_length_without_context()?,
-                    );
-
-                    Ok(ComputedFilter::DropShadow(ComputedSimpleShadow {
-                        color,
-                        horizontal,
-                        vertical,
-                        blur,
-                    }))
-                } else {
-                    Err(())
-                }
+                Ok(ComputedFilter::DropShadow(ComputedSimpleShadow {
+                    color,
+                    horizontal,
+                    vertical,
+                    blur,
+                }))
             },
             #[cfg(feature = "gecko")]
             Filter::Url(ref url) => Ok(ComputedFilter::Url(ComputedUrl(url.clone()))),
@@ -302,24 +287,16 @@ impl Filter {
 
 impl Parse for Filter {
     #[inline]
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         #[cfg(feature = "gecko")]
         {
             if let Ok(url) = input.try_parse(|i| SpecifiedUrl::parse(context, i)) {
                 return Ok(GenericFilter::Url(url));
             }
         }
-        let location = input.current_source_location();
-        let function = match input.expect_function() {
-            Ok(f) => f.clone(),
-            Err(cssparser::BasicParseError {
-                kind: BasicParseErrorKind::UnexpectedToken(t),
-                location,
-            }) => return Err(location.new_custom_error(ValueParseErrorKind::InvalidFilter(t))),
-            Err(e) => return Err(e.into()),
+        let function = {
+            let f = input.expect_function()?;
+            f.clone()
         };
         input.parse_nested_block(|i| {
             match_ignore_ascii_case! { &*function,
@@ -380,9 +357,7 @@ impl Parse for Filter {
                     ))
                 },
                 "drop-shadow" => Ok(GenericFilter::DropShadow(Parse::parse(context, i)?)),
-                _ => Err(location.new_custom_error(
-                    ValueParseErrorKind::InvalidFilter(Token::Function(function.clone()))
-                )),
+                _ => Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError)),
             }
         })
     }
@@ -390,10 +365,7 @@ impl Parse for Filter {
 
 impl Parse for SimpleShadow {
     #[inline]
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         let color = input.try_parse(|i| Color::parse(context, i)).ok();
         let horizontal = Length::parse(context, input)?;
         let vertical = Length::parse(context, input)?;
@@ -442,4 +414,46 @@ impl ToComputedValue for SimpleShadow {
             blur: Some(ToComputedValue::from_computed_value(&computed.blur)),
         }
     }
+}
+
+/// https://drafts.fxtf.org/compositing/#propdef-mix-blend-mode
+#[allow(missing_docs)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Deserialize,
+    Eq,
+    FromPrimitive,
+    Hash,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    Serialize,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+    ToTyped,
+)]
+#[repr(u8)]
+pub enum Blend {
+    Normal,
+    Multiply,
+    Screen,
+    Overlay,
+    Darken,
+    Lighten,
+    ColorDodge,
+    ColorBurn,
+    HardLight,
+    SoftLight,
+    Difference,
+    Exclusion,
+    Hue,
+    Saturation,
+    Color,
+    Luminosity,
+    PlusLighter,
 }

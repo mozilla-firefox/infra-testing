@@ -205,9 +205,7 @@ nsresult LlamaGenerateTask::Run() {
     LOGE_RUNNER("{} Error during generation {}", __PRETTY_FUNCTION__,
                 result.inspectErr().mMessage);
 
-    mErrorMessage = result.inspectErr().mMessage;
-    mState = TaskState::CompletedFailure;
-
+    FailTask(result.inspectErr().mMessage);
     return NS_ERROR_FAILURE;
   }
 
@@ -220,10 +218,7 @@ nsresult LlamaGenerateTask::Run() {
           "full",
           __PRETTY_FUNCTION__);
       LOGE_RUNNER("{}", msg);
-
-      mErrorMessage = std::move(msg);
-      mState = TaskState::CompletedFailure;
-
+      FailTask(std::move(msg));
       return NS_ERROR_FAILURE;
     }
   }
@@ -231,19 +226,23 @@ nsresult LlamaGenerateTask::Run() {
   // Notify completion (nullopt signals end of stream)
   LOGV_RUNNER("{}: Indicating completed status", __PRETTY_FUNCTION__);
 
+  // LlamaRunner guards against concurrent calls by checking mState on its
+  // current task is not Running. PushMessage(Nothing()) notifies completion to
+  // consumers of LlamaRunner. mState needs to be updated before the push to
+  // avoid a window where mState is still Running but the consumer has already
+  // been notified
+  mState = TaskState::CompletedSuccess;
   if (MOZ_UNLIKELY(!PushMessage(mozilla::Nothing()))) {
     auto msg = nsFmtCString(
         "{}: Fatal error: Unable to indicate "
         "completion status as the queue is full",
         __PRETTY_FUNCTION__);
     LOGE_RUNNER("{}", msg);
-
-    mErrorMessage = std::move(msg);
-    mState = TaskState::CompletedFailure;
+    FailTask(std::move(msg));
+    return NS_ERROR_FAILURE;
   }
 
   LOGV_RUNNER("{} LlamaGenerateTask Completed.", __PRETTY_FUNCTION__);
-  mState = TaskState::CompletedSuccess;
   return NS_OK;
 }
 
@@ -260,11 +259,22 @@ nsresult LlamaGenerateTask::Cancel() {
   return NS_OK;
 }
 
+void LlamaGenerateTask::FailTask(nsCString aMessage) {
+  MutexAutoLock lock(mMutex);
+  mErrorMessage = std::move(aMessage);
+  mState = TaskState::CompletedFailure;
+  if (mHasPendingConsumer) {
+    mHasPendingConsumer = false;
+    mPromiseHolders[mCurrentPromiseHolderIdx].Reject(mErrorMessage, __func__);
+  }
+}
+
 bool LlamaGenerateTask::PushMessage(
     mozilla::Maybe<LlamaChatResponse> aMessage) {
   LOGV_RUNNER("Entered {}", __PRETTY_FUNCTION__);
 
-  if (MaybePushMessage(aMessage)) {
+  MutexAutoLock lock(mMutex);
+  if (MaybePushMessageLocked(aMessage, lock)) {
     return true;
   }
 
@@ -277,6 +287,13 @@ bool LlamaGenerateTask::PushMessage(
 
 bool LlamaGenerateTask::MaybePushMessage(
     mozilla::Maybe<LlamaChatResponse> aMessage) {
+  MutexAutoLock lock(mMutex);
+  return MaybePushMessageLocked(std::move(aMessage), lock);
+}
+
+bool LlamaGenerateTask::MaybePushMessageLocked(
+    mozilla::Maybe<LlamaChatResponse> aMessage,
+    const MutexAutoLock& aProofOfLock) {
   LOGV_RUNNER("Entered {}", __PRETTY_FUNCTION__);
 
   // One producer (thread this function is running from), one consumer thread.
@@ -338,6 +355,7 @@ bool LlamaGenerateTask::MaybePushMessage(
 
 RefPtr<LlamaGenerateTaskPromise> LlamaGenerateTask::GetMessage() {
   LOGV_RUNNER("Entered {}", __PRETTY_FUNCTION__);
+  MutexAutoLock lock(mMutex);
   if (mState == TaskState::CompletedFailure) {
     LOGE_RUNNER("{}: {}", __PRETTY_FUNCTION__, mErrorMessage);
     return LlamaGenerateTaskPromise::CreateAndReject(mErrorMessage, __func__);
@@ -463,9 +481,32 @@ already_AddRefed<Promise> LlamaStreamSource::CancelCallbackImpl(
     JSContext* aCx, const Optional<JS::Handle<JS::Value>>& aReason,
     ErrorResult& aRv) {
   LOGD_RUNNER("Entered {}", __PRETTY_FUNCTION__);
+
+  // Cancelling only sets a flag the task checks between tokens, so it holds
+  // the backend for a while yet. The generation thread finishes that task
+  // before anything else, so a runnable queued behind it reports when the
+  // backend -- which is not thread-safe, and is shared with the next
+  // generation -- is free.
+  RefPtr<Promise> drained;
+  nsIGlobalObject* global = GetRelevantGlobal();
+  if (global && mGenerateThread && mOriginalEventTarget) {
+    drained = Promise::Create(global, aRv);
+    if (aRv.Failed()) {
+      return nullptr;
+    }
+    InvokeAsync(
+        mGenerateThread, __func__,
+        []() { return GenericPromise::CreateAndResolve(true, __func__); })
+        ->Then(mOriginalEventTarget, __func__,
+               [drained](const GenericPromise::ResolveOrRejectValue&) {
+                 drained->MaybeResolveWithUndefined();
+               });
+  }
+
   ShutdownWorkerThread();
+
   LOGD_RUNNER("Exited {}", __PRETTY_FUNCTION__);
-  return nullptr;
+  return drained.forget();
 }
 
 already_AddRefed<Promise> LlamaStreamSource::PullCallbackImpl(
@@ -572,6 +613,13 @@ already_AddRefed<Promise> LlamaStreamSource::PullCallbackImpl(
           [](JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult& aRv,
              RefPtr<Promise> aPromise, RefPtr<ReadableStream> aStream)
               MOZ_CAN_RUN_SCRIPT -> already_AddRefed<Promise> {
+                // A cancellation closes the stream with this pull outstanding.
+                if (aStream->State() != ReadableStream::ReaderState::Readable) {
+                  LOGD_RUNNER("{}: The stream is no longer readable",
+                              __PRETTY_FUNCTION__);
+                  return nullptr;
+                }
+
                 if (aValue.isUndefined()) {
                   LOGD_RUNNER(
                       "{}: LlamaStreamSource completed. Closing the stream",
@@ -684,8 +732,7 @@ bool LlamaRunner::InInferenceProcess(JSContext*, JSObject*) {
   if (!ContentChild::GetSingleton()) {
     return false;
   }
-  return ContentChild::GetSingleton()->GetRemoteType().Equals(
-      INFERENCE_REMOTE_TYPE);
+  return ContentChild::GetSingleton()->GetRemoteType().IsInference();
 }
 
 class MetadataCallback final : public nsIFileMetadataCallback {

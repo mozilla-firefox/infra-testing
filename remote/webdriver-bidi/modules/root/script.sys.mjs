@@ -879,7 +879,7 @@ class ScriptModule extends RootBiDiModule {
 
   #buildReturnValue(evaluationResult) {
     evaluationResult = lazy.processExtraData(
-      this.messageHandler.sessionId,
+      this.messageHandler.internalSessionId,
       evaluationResult
     );
 

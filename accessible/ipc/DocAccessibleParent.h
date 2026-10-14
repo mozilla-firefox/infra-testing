@@ -20,6 +20,8 @@ namespace mozilla {
 namespace dom {
 class BrowserParent;
 class CanonicalBrowsingContext;
+class WindowContext;
+class WindowGlobalParent;
 }  // namespace dom
 
 namespace a11y {
@@ -94,21 +96,28 @@ class DocAccessibleParent : public RemoteAccessible,
   void MarkAsShutdown() {
     MOZ_ASSERT(mChildDocs.IsEmpty());
     MOZ_ASSERT(mAccessibles.Count() == 0);
-    MOZ_ASSERT(!mBrowsingContext);
     mShutdown = true;
   }
 
-  void SetBrowsingContext(dom::CanonicalBrowsingContext* aBrowsingContext);
-
-  dom::CanonicalBrowsingContext* GetBrowsingContext() const {
-    return mBrowsingContext;
-  }
+  /**
+   * Return the BrowsingContext of the WindowGlobal which manages this
+   * document, or null if this document has been shut down.
+   */
+  dom::CanonicalBrowsingContext* GetBrowsingContext() const;
 
   /**
-   * Return our manager as a BrowserParent. This document's manager is always
-   * a BrowserParent since PDocAccessible is managed by PBrowser.
+   * Return our manager as a WindowGlobalParent. This document's manager is
+   * always a WindowGlobalParent since PDocAccessible is managed by
+   * PWindowGlobal.
    */
-  dom::BrowserParent* Manager() const;
+  dom::WindowGlobalParent* Manager() const;
+
+  /**
+   * Return the BrowserParent for the PBrowser connection hosting this
+   * document's content process, regardless of how deeply this document is
+   * nested via in-process iframes.
+   */
+  dom::BrowserParent* GetBrowserParent() const;
 
   /*
    * Called when a message from a document in a child process notifies the main
@@ -162,7 +171,7 @@ class DocAccessibleParent : public RemoteAccessible,
       const uint64_t& aID, nsTArray<TextRangeData>&& aSelection);
 
   mozilla::ipc::IPCResult RecvRoleChangedEvent(
-      const a11y::role& aRole, const uint8_t& aRoleMapEntryIndex);
+      const uint8_t& aRoleMapEntryIndex);
 
   mozilla::ipc::IPCResult RecvBindChildDoc(
       NotNull<PDocAccessibleParent*> aChildDoc, const uint64_t& aID);
@@ -327,7 +336,8 @@ class DocAccessibleParent : public RemoteAccessible,
   Maybe<LayoutDeviceIntRect> mFocusedAccBounds;
 #endif
 
-  static DocAccessibleParent* GetFrom(dom::BrowsingContext* aBrowsingContext);
+  static DocAccessibleParent* GetFrom(dom::WindowContext* aWindowContext,
+                                      bool aAllowShutdown = false);
 
   size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) override;
 
@@ -353,9 +363,7 @@ class DocAccessibleParent : public RemoteAccessible,
    */
   bool RequestDomainsIfInactive(uint64_t aRequiredCacheDomains);
 
-#ifdef MOZ_ENABLE_SKIA_PDF
   mozilla::ipc::IPCResult RecvPrinting();
-#endif
 
   enum class AllowConstruction {
     Disallow,
@@ -439,7 +447,6 @@ class DocAccessibleParent : public RemoteAccessible,
   bool mShutdown : 1;
   bool mIsPrintDoc : 1 = false;
   bool mIsInitialTreeDone : 1 = false;
-  RefPtr<dom::CanonicalBrowsingContext> mBrowsingContext;
 
   nsTHashSet<RefPtr<dom::BrowserBridgeParent>> mPendingOOPChildDocs;
 

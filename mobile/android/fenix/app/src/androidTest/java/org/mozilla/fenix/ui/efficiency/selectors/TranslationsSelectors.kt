@@ -6,17 +6,19 @@ package org.mozilla.fenix.ui.efficiency.selectors
 
 import org.mozilla.fenix.R
 import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
+import org.mozilla.fenix.ui.efficiency.helpers.PageReadinessProfiles
 import org.mozilla.fenix.ui.efficiency.helpers.Selector
+import org.mozilla.fenix.ui.efficiency.helpers.SelectorContainer
 import org.mozilla.fenix.ui.efficiency.helpers.SelectorStrategy
 
-object TranslationsSelectors {
+object TranslationsSelectors : SelectorContainer {
 
     val TRANSLATIONS_OPTIONS_BUTTON =
         Selector(
             strategy = SelectorStrategy.COMPOSE_BY_CONTENT_DESCRIPTION,
             value = getStringResource(R.string.translation_option_bottom_sheet_title_heading),
             description = "Translations sheet options button",
-            groups = listOf("requiredForPage"),
+            readiness = PageReadinessProfiles.IDENTITY_ANCHOR,
         )
 
     val TRANSLATION_SETTINGS_BUTTON =
@@ -24,7 +26,27 @@ object TranslationsSelectors {
             strategy = SelectorStrategy.COMPOSE_BY_TEXT,
             value = getStringResource(R.string.translation_option_bottom_sheet_translation_settings),
             description = "the Translation settings button on the options sheet",
-            groups = listOf(),
+        )
+
+    val TRANSLATION_SHEET_BACK_BUTTON =
+        Selector(
+            strategy = SelectorStrategy.COMPOSE_BY_CONTENT_DESCRIPTION,
+            value = "Navigate back",
+            description = "the Translation sheet back button",
+        )
+
+    val TRANSLATION_SHEET_HANDLE =
+        Selector(
+            strategy = SelectorStrategy.COMPOSE_BY_CONTENT_DESCRIPTION,
+            value = getStringResource(R.string.translation_option_bottom_sheet_close_content_description),
+            description = "the Translation sheet handle",
+        )
+
+    val TRANSLATION_IN_PROGRESS_SNACK_BAR =
+        Selector(
+            strategy = SelectorStrategy.COMPOSE_BY_TEXT,
+            value = getStringResource(R.string.translation_in_progress_snackbar),
+            description = "the Translation in progress snackbar",
         )
 
     /**
@@ -44,7 +66,14 @@ object TranslationsSelectors {
             strategy = SelectorStrategy.COMPOSE_BY_TEXT_MERGED,
             value = getStringResource(R.string.translation_option_bottom_sheet_never_translate_in_language, language),
             description = "the Never translate $language row",
-            groups = listOf(),
+        )
+
+    @Suppress("ktlint:standard:function-naming", "FunctionName")
+    fun ALWAYS_TRANSLATE_LANGUAGE(language: String = "") =
+        Selector(
+            strategy = SelectorStrategy.COMPOSE_BY_TEXT_MERGED,
+            value = getStringResource(R.string.translation_option_bottom_sheet_always_translate_in_language, language),
+            description = "the Always translate $language row",
         )
 
     val NEVER_TRANSLATE_DESCRIPTION =
@@ -52,14 +81,5 @@ object TranslationsSelectors {
             strategy = SelectorStrategy.COMPOSE_BY_TEXT,
             value = getStringResource(R.string.translation_option_bottom_sheet_switch_description),
             description = "the never-translate override description",
-            groups = listOf(),
-        )
-
-    val all =
-        listOf(
-            TRANSLATIONS_OPTIONS_BUTTON,
-            TRANSLATION_SETTINGS_BUTTON,
-            NEVER_TRANSLATE_LANGUAGE(),
-            NEVER_TRANSLATE_DESCRIPTION,
         )
 }

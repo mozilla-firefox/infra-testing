@@ -2,12 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/// <reference path="./moz-segmented-control.tagmap.d.ts" />
+
 import { html } from "../vendor/lit.all.mjs";
 import {
   SelectControlBaseElement,
   SelectControlItemMixin,
 } from "../lit-select-control.mjs";
-import MozButton from "chrome://global/content/elements/moz-button.mjs";
+import { MozButton } from "chrome://global/content/elements/moz-button.mjs";
 
 /**
  * A segmented control component that can function as either a tab switcher or
@@ -45,6 +47,10 @@ export class MozSegmentedControl extends SelectControlBaseElement {
 
   getChildRole() {
     return this.deck ? "tab" : super.getChildRole();
+  }
+
+  getGroupRole() {
+    return this.deck ? "tablist" : super.getGroupRole();
   }
 
   willUpdate(changedProperties) {
@@ -124,20 +130,30 @@ export class MozSegmentedControlItem extends SelectControlItemMixin(MozButton) {
     super.willUpdate(changedProperties);
     if (changedProperties.has("checked")) {
       this.type = this.checked ? "primary" : "ghost";
-      this.setAttribute("aria-checked", this.checked ? "true" : "false");
+      this.ariaChecked = this.checked ? "true" : "false";
     }
     if (changedProperties.has("itemTabIndex")) {
       this.setAttribute("tabindex", this.itemTabIndex);
     }
-    if (changedProperties.has("role")) {
-      this.setAttribute("role", this.role);
+  }
+
+  updated(changedProperties) {
+    super.updated(changedProperties);
+    if (changedProperties.has("role") && this.buttonEl) {
+      this.buttonEl.setAttribute("role", this.role);
     }
   }
 
   handleClick(event) {
     event.stopPropagation();
-    super.handleClick();
+    if (this.isDisabled) {
+      return;
+    }
     this.focus();
+    if (this.checked) {
+      return;
+    }
+    super.handleClick();
 
     // Manually dispatch events since we're not using an input.
     this.dispatchEvent(

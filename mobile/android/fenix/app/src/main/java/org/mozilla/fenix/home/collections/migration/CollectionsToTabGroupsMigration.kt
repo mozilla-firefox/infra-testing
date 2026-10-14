@@ -4,7 +4,9 @@
 
 package org.mozilla.fenix.home.collections.migration
 
+import android.database.sqlite.SQLiteException
 import java.io.File
+import java.io.IOException
 import java.util.UUID
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -16,15 +18,14 @@ import mozilla.components.concept.base.crash.CrashReporting
 import mozilla.components.concept.engine.Engine
 import mozilla.components.feature.tab.collections.Tab
 import mozilla.components.feature.tab.collections.TabCollection
+import mozilla.components.feature.tabgroups.storage.data.TabGroup
+import mozilla.components.feature.tabgroups.storage.repository.TabGroupRepository
 import mozilla.components.feature.tabs.TabsUseCases
 import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.utils.DateTimeProvider
 import mozilla.components.support.utils.DefaultDateTimeProvider
 import org.mozilla.fenix.components.TabCollectionStorage
-import org.mozilla.fenix.tabgroups.storage.data.TabGroup
-import org.mozilla.fenix.tabgroups.storage.repository.TabGroupRepository
 import org.mozilla.fenix.tabstray.data.TabGroupTheme
-import org.mozilla.fenix.utils.Settings
 
 private const val BREADCRUMB_CATEGORY = "CollectionsToTabGroupsMigration"
 
@@ -35,7 +36,8 @@ private const val BREADCRUMB_CATEGORY = "CollectionsToTabGroupsMigration"
  * @param tabCollectionStorage The [TabCollectionStorage] containing the existing collections.
  * @param restoreUseCase Use case for restoring a collection's tabs.
  * @param tabGroupRepository [TabGroupRepository] used to observe and modify tab group data.
- * @param settings [Settings] for accessing user preferences.
+ * @param collectionsMigrationRepository [CollectionsMigrationRepository] used to read and record the migration
+ *   progress.
  * @param engine The [Engine] implementation for restoring the engine state.
  * @param filesDir [File] directory holding the collections' on-disk session snapshots.
  * @param dateTimeProvider The [DateTimeProvider] used to get the current time.
@@ -47,7 +49,7 @@ class CollectionsToTabGroupsMigration(
     private val tabCollectionStorage: TabCollectionStorage,
     private val restoreUseCase: TabsUseCases.RestoreUseCase,
     private val tabGroupRepository: TabGroupRepository,
-    private val settings: Settings,
+    private val collectionsMigrationRepository: CollectionsMigrationRepository,
     private val engine: Engine,
     private val filesDir: File,
     private val dateTimeProvider: DateTimeProvider = DefaultDateTimeProvider(),
@@ -64,23 +66,27 @@ class CollectionsToTabGroupsMigration(
      * The migration can be run again if a collection fails to migrate at any point. The collections that were already
      * migrated are recorded so they are skipped by the next attempt.
      *
-     * @return true when all [TabCollection]s have been migrated and false otherwise.
+     * @return true when all [TabCollection]s have been migrated or if the migration should be skipped and false
+     *   otherwise.
      */
     suspend fun migrateIfNeeded(): Boolean {
-        if (!shouldMigrate(settings)) {
+        if (!collectionsMigrationRepository.shouldMigrate()) {
             return true
         }
 
         val collections = getCollections() ?: return false
-        val pendingCollections = collections.filterNot { settings.migratedCollectionIds.contains(it.id.toString()) }
+        val migratedCollectionIds = collectionsMigrationRepository.getMigratedCollectionIds()
+        val pendingCollections = collections.filterNot { migratedCollectionIds.contains(it.id.toString()) }
 
         recordBreadcrumb(
             message = "Migrating collections to tab groups",
             data = mapOf("collections" to pendingCollections.size.toString()),
         )
 
-        val migratedAllCollections =
-            pendingCollections.map { collection -> migrateCollection(collection = collection) }.all { it }
+        val results = pendingCollections.map { collection -> migrateCollection(collection = collection) }
+        val migratedAllCollections = results.all {
+            it == MigrationResult.TAB_GROUP_CREATED || it == MigrationResult.NO_TABS_TO_MIGRATE
+        }
 
         recordBreadcrumb(
             message = "Migrated collections to tab groups",
@@ -88,9 +94,14 @@ class CollectionsToTabGroupsMigration(
         )
 
         if (migratedAllCollections) {
-            settings.hasMigratedCollectionsToTabGroups = true
-            // Clear the stored collection IDs since they are only needed to resume an incomplete migration.
-            settings.migratedCollectionIds = emptySet()
+            collectionsMigrationRepository.updateHasMigratedCollections(migrated = true)
+            collectionsMigrationRepository.clearMigratedCollectionIds()
+
+            // Only advertise the migration once every collection has been migrated, and it actually produced a tab
+            // group, so that a user without any collections is not shown the migration card.
+            if (results.any { it == MigrationResult.TAB_GROUP_CREATED }) {
+                collectionsMigrationRepository.updateCollectionsMigrationCardVisibility(visible = true)
+            }
         }
 
         return migratedAllCollections
@@ -106,21 +117,38 @@ class CollectionsToTabGroupsMigration(
             null
         }
 
+    /**
+     * Migrates a single [TabCollection] to a [TabGroup] and returns the [MigrationResult].
+     *
+     * The broad exception catch is deliberate to handle unexpected exceptions. Restoring a tab reads and deserializes
+     * an on-disk session snapshot whose reader only catches [IOException]. Creating the tab group is a Room write that
+     * can throw [SQLiteException]. Exceptions are caught and reported, and returns [MigrationResult.FAILED] for the
+     * next retry.
+     *
+     * @param collection The [TabCollection] to migrate.
+     * @return The [MigrationResult] for the given [collection].
+     */
     @Suppress("TooGenericExceptionCaught")
-    private suspend fun migrateCollection(collection: TabCollection): Boolean =
+    private suspend fun migrateCollection(collection: TabCollection): MigrationResult =
         try {
-            migrateCollectionToTabGroup(collection = collection)
-            true
+            val result = migrateCollectionToTabGroup(collection = collection)
+
+            if (result != MigrationResult.FAILED) {
+                // Only record the collection as migrated once it succeeded, so a failed collection is retried.
+                collectionsMigrationRepository.addMigratedCollectionId(collectionId = collection.id.toString())
+            }
+
+            result
         } catch (e: Exception) {
             reportFailure(
                 message = "Unable to migrate collection with ${collection.tabs.size} items to a tab group",
                 throwable = e,
             )
-            false
+            MigrationResult.FAILED
         }
 
-    /** Migrates a [TabCollection] to a closed [TabGroup]. */
-    private suspend fun migrateCollectionToTabGroup(collection: TabCollection) =
+    /** Migrates a [TabCollection] to a closed [TabGroup] and returns the [MigrationResult]. */
+    private suspend fun migrateCollectionToTabGroup(collection: TabCollection): MigrationResult =
         withContext(ioDispatcher) {
             val recoverableTabs =
                 collection.tabs.map { tab ->
@@ -129,7 +157,9 @@ class CollectionsToTabGroupsMigration(
                     tab.restore(filesDir, engine) ?: tab.toRecoverableTab()
                 }
 
-            if (recoverableTabs.isNotEmpty()) {
+            if (recoverableTabs.isEmpty()) {
+                MigrationResult.NO_TABS_TO_MIGRATE
+            } else {
                 restoreUseCase.invoke(tabs = recoverableTabs)
                 tabGroupRepository.createTabGroupWithTabs(
                     tabGroup =
@@ -138,13 +168,24 @@ class CollectionsToTabGroupsMigration(
                             theme = TabGroupTheme.default.name,
                             closed = true,
                             lastModified = dateTimeProvider.currentTimeMillis(),
-                        ),
-                    tabIds = recoverableTabs.map { it.state.id },
+                            tabIds = recoverableTabs.map { it.state.id },
+                        )
                 )
+                MigrationResult.TAB_GROUP_CREATED
             }
-
-            settings.migratedCollectionIds += collection.id.toString()
         }
+
+    /** The outcome of migrating a single [TabCollection]. */
+    private enum class MigrationResult {
+        /** A [TabGroup] was created for the collection. */
+        TAB_GROUP_CREATED,
+
+        /** The collection had no tabs, so no [TabGroup] was created for it. */
+        NO_TABS_TO_MIGRATE,
+
+        /** The collection could not be migrated and is attempted again on a subsequent run. */
+        FAILED,
+    }
 
     /**
      * Returns a [RecoverableTab] built from this [Tab]'s stored url and title without any engine state. This means the
@@ -180,19 +221,5 @@ class CollectionsToTabGroupsMigration(
                 level = level,
             )
         )
-    }
-
-    companion object {
-
-        /**
-         * Returns whether the migration should be attempted. The migration is skipped once every [TabCollection]s has
-         * been migrated, when the migration has been disabled, and when the Tab Groups feature is disabled.
-         *
-         * @param settings [Settings] for accessing user preferences.
-         */
-        fun shouldMigrate(settings: Settings): Boolean =
-            !settings.hasMigratedCollectionsToTabGroups &&
-                settings.migrateCollectionsToTabGroupsEnabled &&
-                settings.tabGroupsEnabled
     }
 }

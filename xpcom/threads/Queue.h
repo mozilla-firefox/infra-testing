@@ -8,11 +8,12 @@
 #include <stdint.h>
 
 #include <algorithm>
+#include <limits>
 #include <utility>
 
-#include "mozalloc.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/mozalloc.h"
 
 namespace mozilla {
 

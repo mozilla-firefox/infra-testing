@@ -17,6 +17,7 @@
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/BrowsingContextBinding.h"
 #include "mozilla/dom/BrowsingContextGroup.h"
+#include "mozilla/dom/ChromeUtils.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/EventTarget.h"
 #include "mozilla/dom/Navigation.h"
@@ -34,9 +35,7 @@
 #include "mozilla/dom/SessionStorageManager.h"
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/layers/CompositorBridgeChild.h"
-#ifdef NS_PRINTING
-#  include "mozilla/layout/RemotePrintJobParent.h"
-#endif
+#include "mozilla/layout/RemotePrintJobParent.h"
 #include "mozilla/net/DocumentLoadListener.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/ScopedPrefs.h"
@@ -53,6 +52,7 @@
 #include "nsISupports.h"
 #include "nsIWebNavigation.h"
 #include "nsDocShell.h"
+#include "nsDocShellLoadTypes.h"
 #include "nsFrameLoader.h"
 #include "nsFrameLoaderOwner.h"
 #include "nsGlobalWindowOuter.h"
@@ -247,7 +247,7 @@ void CanonicalBrowsingContext::GetCurrentRemoteType(nsACString& aRemoteType,
                                                     ErrorResult& aRv) const {
   // If we're in the parent process, dump out the void string.
   if (mProcessId == 0) {
-    aRemoteType = NOT_REMOTE_TYPE;
+    aRemoteType = RemoteType::NotRemote().Stringify();
     return;
   }
 
@@ -257,7 +257,7 @@ void CanonicalBrowsingContext::GetCurrentRemoteType(nsACString& aRemoteType,
     return;
   }
 
-  aRemoteType = cp->GetRemoteType();
+  aRemoteType = cp->GetRemoteType().Stringify();
 }
 
 void CanonicalBrowsingContext::SetOwnerProcessId(uint64_t aProcessId) {
@@ -336,6 +336,13 @@ void CanonicalBrowsingContext::ReplacedBy(
   txn.SetDisplayMode(GetDisplayMode());
   txn.SetForceDesktopViewport(GetForceDesktopViewport());
   txn.SetIsUnderHiddenEmbedderElement(GetIsUnderHiddenEmbedderElement());
+
+  // Propagate the WatchedByDevTools state so that cross-group navigations can
+  // be tracked by DevTools. Never set the flag if DevTools are not open, would
+  // trigger a crash (bug 2073442).
+  bool watched =
+      GetWatchedByDevToolsInternal() && ChromeUtils::IsDevToolsOpened();
+  txn.SetWatchedByDevToolsInternal(watched);
 
   // When using site-specific zoom, we let the frontend manage the zoom level
   // of BFCache'd contexts. Overriding those zoom levels can cause weirdness
@@ -475,24 +482,20 @@ CanonicalBrowsingContext::GetBrowserDOMWindow() {
 }
 
 already_AddRefed<WindowGlobalParent>
-CanonicalBrowsingContext::GetEmbedderWindowGlobal() const {
-  uint64_t windowId = GetEmbedderInnerWindowId();
-  if (windowId == 0) {
-    return nullptr;
+CanonicalBrowsingContext::GetEmbedderWindowGlobal() {
+  if (auto* parent = GetParentWindowContext()) {
+    return do_AddRef(parent);
   }
-
-  return WindowGlobalParent::GetByInnerWindowId(windowId);
+  if (mCrossGroupEmbedderWindowId) {
+    return WindowGlobalParent::GetByInnerWindowId(mCrossGroupEmbedderWindowId);
+  }
+  return nullptr;
 }
 
 CanonicalBrowsingContext*
 CanonicalBrowsingContext::GetParentCrossChromeBoundary() {
-  if (GetParent()) {
-    return Cast(GetParent());
-  }
-  if (auto* embedder = GetEmbedderElement()) {
-    return Cast(embedder->OwnerDoc()->GetBrowsingContext());
-  }
-  return nullptr;
+  RefPtr<WindowGlobalParent> parent = GetEmbedderWindowGlobal();
+  return parent ? parent->BrowsingContext() : nullptr;
 }
 
 CanonicalBrowsingContext* CanonicalBrowsingContext::TopCrossChromeBoundary() {
@@ -563,7 +566,7 @@ void CanonicalBrowsingContext::AddLoadingSessionHistoryEntry(
   mLoadingEntries.AppendElement(LoadingSessionHistoryEntry{aLoadId, aEntry});
 }
 
-void CanonicalBrowsingContext::GetLoadingSessionHistoryInfoFromParent(
+void CanonicalBrowsingContext::AdoptChildSHEntry(
     Maybe<LoadingSessionHistoryInfo>& aLoadingInfo) {
   nsISHistory* shistory = GetSessionHistory();
   if (!shistory || !GetParent()) {
@@ -572,22 +575,60 @@ void CanonicalBrowsingContext::GetLoadingSessionHistoryInfoFromParent(
 
   SessionHistoryEntry* parentSHE =
       GetParent()->Canonical()->GetActiveSessionHistoryEntry();
-  if (parentSHE) {
-    int32_t index = -1;
-    for (BrowsingContext* sibling : GetParent()->Children()) {
-      ++index;
-      if (sibling == this) {
-        if (RefPtr entry =
-                parentSHE->GetChildSHEntryIfHasNoDynamicallyAddedChild(index)) {
-          aLoadingInfo.emplace(entry);
-          mLoadingEntries.AppendElement(LoadingSessionHistoryEntry{
-              aLoadingInfo.value().mLoadId, entry.get()});
-          (void)SetHistoryID(entry->DocshellID());
-        }
-        break;
-      }
+  if (!parentSHE) {
+    return;
+  }
+
+  int32_t index = -1;
+  for (BrowsingContext* sibling : GetParent()->Children()) {
+    ++index;
+    if (sibling == this) {
+      break;
     }
   }
+
+  RefPtr<SessionHistoryEntry> entry;
+  parentSHE->GetChildAt(index, getter_AddRefs(entry));
+  if (!entry) {
+    return;
+  }
+
+  // Adopt the entry's docshell ID so later navigations can still
+  // match this BC back to it.
+  (void)SetHistoryID(entry->DocshellID());
+
+  uint32_t loadType = parentSHE->Info().LoadType();
+
+  bool dynamicallyAddedChild = false;
+  parentSHE->HasDynamicallyAddedChild(&dynamicallyAddedChild);
+
+  // XXX For history traversal, RemoveDynEntries will have cleared dynamic
+  // entries and dynamicallyAddedChild will be false once we get here.
+  // The order enforced by AddChild should avoid confusion between dynamic and
+  // static children anyway.
+  // Checking dynamicallyAddedChild might not be needed anymore.
+  MOZ_ASSERT_IF(
+      loadType != LOAD_REFRESH && !(loadType & nsIDocShell::LOAD_CMD_RELOAD),
+      !dynamicallyAddedChild);
+
+  // Never restore subframes for shift-reload or refresh.
+  // Also don't reload the child frame from history if the parent frame has
+  // expired from cache.
+  MOZ_ASSERT(!IsForceReloadType(loadType),
+             "Should've purged entry in PrepareReloadEntry");
+  if (IsForceReloadType(loadType) || loadType == LOAD_REFRESH ||
+      dynamicallyAddedChild ||
+      (loadType == LOAD_RELOAD_NORMAL &&
+       (parentSHE->SharedInfo()->mExpired ||
+        !StaticPrefs::docshell_shistory_restoreSubframesOnReload()))) {
+    parentSHE->RemoveChild(entry);
+    return;
+  }
+
+  entry->SetLoadType(loadType);
+  aLoadingInfo.emplace(entry);
+  mLoadingEntries.AppendElement(
+      LoadingSessionHistoryEntry{aLoadingInfo.value().mLoadId, entry.get()});
 }
 
 UniquePtr<LoadingSessionHistoryInfo>
@@ -865,7 +906,6 @@ void CanonicalBrowsingContext::MaybeReuseNavigationKeyFromActiveEntry(
 }
 
 using PrintPromise = CanonicalBrowsingContext::PrintPromise;
-#ifdef NS_PRINTING
 // Clients must call StaticCloneForPrintingCreated or
 // NoStaticCloneForPrintingWillBeCreated before the underlying promise can
 // resolve.
@@ -946,7 +986,6 @@ class PrintListenerAdapter final : public nsIWebProgressListener {
 };
 
 NS_IMPL_ISUPPORTS(PrintListenerAdapter, nsIWebProgressListener)
-#endif
 
 already_AddRefed<Promise> CanonicalBrowsingContext::PrintJS(
     nsIPrintSettings* aPrintSettings, ErrorResult& aRv) {
@@ -967,9 +1006,6 @@ already_AddRefed<Promise> CanonicalBrowsingContext::PrintJS(
 
 RefPtr<PrintPromise> CanonicalBrowsingContext::Print(
     nsIPrintSettings* aPrintSettings) {
-#ifndef NS_PRINTING
-  return PrintPromise::CreateAndReject(NS_ERROR_NOT_AVAILABLE, __func__);
-#else
   bool needContentAnalysis = false;
   nsCOMPtr<nsIContentAnalysis> contentAnalysis =
       mozilla::components::nsIContentAnalysis::Service();
@@ -1013,26 +1049,20 @@ RefPtr<PrintPromise> CanonicalBrowsingContext::Print(
     return done;
   }
   return PrintWithNoContentAnalysis(aPrintSettings, false, nullptr);
-#endif
 }
 
 void CanonicalBrowsingContext::ReleaseClonedPrint(
     const MaybeDiscardedBrowsingContext& aClonedStaticBrowsingContext) {
-#ifdef NS_PRINTING
   auto* browserParent = GetBrowserParent();
   if (NS_WARN_IF(!browserParent)) {
     return;
   }
   (void)browserParent->SendDestroyPrintClone(aClonedStaticBrowsingContext);
-#endif
 }
 
 RefPtr<PrintPromise> CanonicalBrowsingContext::PrintWithNoContentAnalysis(
     nsIPrintSettings* aPrintSettings, bool aForceStaticDocument,
     const MaybeDiscardedBrowsingContext& aCachedStaticDocument) {
-#ifndef NS_PRINTING
-  return PrintPromise::CreateAndReject(NS_ERROR_NOT_AVAILABLE, __func__);
-#else
   auto promise = MakeRefPtr<PrintPromise::Private>(__func__);
   auto listener = MakeRefPtr<PrintListenerAdapter>(promise);
   if (IsInProcess()) {
@@ -1089,10 +1119,13 @@ RefPtr<PrintPromise> CanonicalBrowsingContext::PrintWithNoContentAnalysis(
     return promise;
   }
 
-  layout::RemotePrintJobParent* remotePrintJob =
-      new layout::RemotePrintJobParent(printSettings);
+  auto remotePrintJob = MakeRefPtr<layout::RemotePrintJobParent>(printSettings);
   printData.remotePrintJob() =
       browserParent->Manager()->SendPRemotePrintJobConstructor(remotePrintJob);
+  if (NS_WARN_IF(!printData.remotePrintJob())) {
+    promise->Reject(NS_ERROR_FAILURE, __func__);
+    return promise;
+  }
 
   remotePrintJob->RegisterListener(listener);
 
@@ -1121,7 +1154,6 @@ RefPtr<PrintPromise> CanonicalBrowsingContext::PrintWithNoContentAnalysis(
         });
   }
   return promise.forget();
-#endif
 }
 
 void CanonicalBrowsingContext::CallOnTopDescendants(
@@ -1390,7 +1422,7 @@ already_AddRefed<nsDocShellLoadState> CanonicalBrowsingContext::CreateLoadInfo(
 }
 
 void CanonicalBrowsingContext::NotifyOnHistoryReload(
-    bool aForceReload, bool& aCanReload,
+    uint32_t aReloadFlags, bool& aCanReload,
     Maybe<NotNull<RefPtr<nsDocShellLoadState>>>& aLoadState,
     Maybe<bool>& aReloadActiveEntry) {
   MOZ_DIAGNOSTIC_ASSERT(!aLoadState);
@@ -1405,26 +1437,17 @@ void CanonicalBrowsingContext::NotifyOnHistoryReload(
   }
 
   if (mActiveEntry) {
+    shistory->PrepareReloadEntry(mActiveEntry, aReloadFlags);
     aLoadState.emplace(WrapMovingNotNull(
         RefPtr{CreateLoadInfo(mActiveEntry, NavigationType::Reload)}));
     aReloadActiveEntry.emplace(true);
-    if (aForceReload) {
-      shistory->RemoveFrameEntries(mActiveEntry);
-    }
   } else if (!mLoadingEntries.IsEmpty()) {
-    const LoadingSessionHistoryEntry& loadingEntry =
-        mLoadingEntries.LastElement();
-    uint64_t loadId = loadingEntry.mLoadId;
+    RefPtr<SessionHistoryEntry> loadingEntry =
+        mLoadingEntries.LastElement().mEntry;
+    shistory->PrepareReloadEntry(loadingEntry, aReloadFlags);
     aLoadState.emplace(WrapMovingNotNull(
-        RefPtr{CreateLoadInfo(loadingEntry.mEntry, NavigationType::Reload)}));
+        RefPtr{CreateLoadInfo(loadingEntry, NavigationType::Reload)}));
     aReloadActiveEntry.emplace(false);
-    if (aForceReload) {
-      SessionHistoryEntry::LoadingEntry* entry =
-          SessionHistoryEntry::GetByLoadId(loadId);
-      if (entry) {
-        shistory->RemoveFrameEntries(entry->mEntry);
-      }
-    }
   }
 
   if (aLoadState) {
@@ -1624,8 +1647,9 @@ Maybe<int32_t> CanonicalBrowsingContext::HistoryGo(
   }
 
   for (auto& loadResult : loadResults) {
-    if (nsresult result = loadResult.mBrowsingContext->CheckSandboxFlags(
-            loadResult.mLoadState);
+    if (nsresult result =
+            loadResult.mBrowsingContext->EnsureSourceSandboxAllowsNavigation(
+                loadResult.mLoadState);
         NS_FAILED(result)) {
       aResolver(result);
       MOZ_LOG(gSHLog, LogLevel::Debug,
@@ -2546,7 +2570,8 @@ CanonicalBrowsingContext::ChangeRemoteness(
     return RemotenessPromise::CreateAndReject(NS_ERROR_NOT_AVAILABLE, __func__);
   }
 
-  if (aOptions.mRemoteType.IsEmpty() && (!IsTop() || !GetEmbedderElement())) {
+  if (aOptions.mRemoteType.IsNotRemote() &&
+      (!IsTop() || !GetEmbedderElement())) {
     NS_WARNING("Cannot load non-remote subframes");
     return RemotenessPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
   }
@@ -2615,7 +2640,8 @@ CanonicalBrowsingContext::ChangeRemoteness(
         "which will never perform a process-switch to being in-process with "
         "their embedder");
     MOZ_DIAGNOSTIC_ASSERT(!aOptions.mReplaceBrowsingContext);
-    MOZ_DIAGNOSTIC_ASSERT(!aOptions.mRemoteType.IsEmpty());
+    MOZ_DIAGNOSTIC_ASSERT(aOptions.mRemoteType.IsKnown());
+    MOZ_DIAGNOSTIC_ASSERT(!aOptions.mRemoteType.IsNotRemote());
     MOZ_DIAGNOSTIC_ASSERT(!change->mWaitingForPrepareToChange);
     MOZ_DIAGNOSTIC_ASSERT(!change->mSpecificGroup);
 
@@ -2628,7 +2654,7 @@ CanonicalBrowsingContext::ChangeRemoteness(
   }
 
   // Switching to the parent process.
-  if (aOptions.mRemoteType.IsEmpty()) {
+  if (aOptions.mRemoteType.IsNotRemote()) {
     change->ProcessLaunched();
     return promise.forget();
   }
@@ -2689,15 +2715,16 @@ CanonicalBrowsingContext::ChangeRemoteness(
   return promise.forget();
 }
 
-void CanonicalBrowsingContext::MaybeSetPermanentKey(Element* aEmbedder) {
-  MOZ_DIAGNOSTIC_ASSERT(IsTop());
+void CanonicalBrowsingContext::SetCrossGroupEmbedderElement(
+    Element* aEmbedder) {
+  MOZ_DIAGNOSTIC_ASSERT(IsTop() && aEmbedder);
 
-  if (aEmbedder) {
-    if (nsCOMPtr<nsIBrowser> browser = aEmbedder->AsBrowser()) {
-      JS::Rooted<JS::Value> key(RootingCx());
-      if (NS_SUCCEEDED(browser->GetPermanentKey(&key)) && key.isObject()) {
-        mPermanentKey = key;
-      }
+  mCrossGroupEmbedderWindowId = aEmbedder->OwnerDoc()->InnerWindowID();
+
+  if (nsCOMPtr<nsIBrowser> browser = aEmbedder->AsBrowser()) {
+    JS::Rooted<JS::Value> key(RootingCx());
+    if (NS_SUCCEEDED(browser->GetPermanentKey(&key)) && key.isObject()) {
+      mPermanentKey = key;
     }
   }
 }
@@ -2953,12 +2980,14 @@ void CanonicalBrowsingContext::ReactivateDocuments(
     Group()->EachParent([&](ContentParent* aContentParent) {
       nsTArray<SessionHistoryInfo> newSHIs;
       Maybe<SessionHistoryInfo> reactivatedEntry;
+      Maybe<PreviousSessionHistoryInfo> previousEntry;
       if (GetContentParent() == aContentParent && Navigation::IsAPIEnabled()) {
         newSHIs.AppendElements(std::move(topNewSHIs));
         reactivatedEntry.emplace(mActiveEntry->Info());
+        previousEntry = previousEntryForActivation;
       }
-      (void)aContentParent->SendReactivateDocuments(
-          this, reactivatedEntry, newSHIs, previousEntryForActivation);
+      (void)aContentParent->SendReactivateDocuments(this, reactivatedEntry,
+                                                    newSHIs, previousEntry);
     });
 
     UpdateCurrentTopByBrowserId(this);
@@ -3243,9 +3272,9 @@ void CanonicalBrowsingContext::CancelSessionStoreUpdate() {
   }
 }
 
-void CanonicalBrowsingContext::SetContainerFeaturePolicy(
-    Maybe<FeaturePolicyInfo>&& aContainerFeaturePolicyInfo) {
-  mContainerFeaturePolicyInfo = std::move(aContainerFeaturePolicyInfo);
+void CanonicalBrowsingContext::SetContainerPermissionsPolicy(
+    Maybe<PermissionsPolicyInfo>&& aContainerPermissionsPolicyInfo) {
+  mContainerPermissionsPolicyInfo = std::move(aContainerPermissionsPolicyInfo);
 }
 
 already_AddRefed<CanonicalBrowsingContext>
@@ -3544,11 +3573,6 @@ nsresult CanonicalBrowsingContext::ClearBfcacheByPrincipal(
   NS_ENSURE_ARG_POINTER(aPrincipal);
   MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess());
 
-  // Allow disabling the feature if unexpected regressions occur
-  if (!StaticPrefs::privacy_clearSiteDataHeader_cache_bfcache_enabled()) {
-    return NS_OK;
-  }
-
   // Iter through all open tabs by going through all top-level browsing
   // contexts.
   AutoTArray<RefPtr<BrowsingContextGroup>, 32> groups;
@@ -3631,7 +3655,7 @@ void CanonicalBrowsingContext::RemovePageAwakeRequest() {
 }
 
 void CanonicalBrowsingContext::CloneDocumentTreeInto(
-    CanonicalBrowsingContext* aSource, const nsACString& aRemoteType,
+    CanonicalBrowsingContext* aSource, const RemoteType& aRemoteType,
     embedding::PrintData&& aPrintData) {
   NavigationIsolationOptions options;
   options.mRemoteType = aRemoteType;
@@ -3728,10 +3752,11 @@ bool CanonicalBrowsingContext::StartApzAutoscroll(float aAnchorX,
 
   mozilla::layers::ScrollableLayerGuid guid(layersId, aPresShellId, aScrollId);
 
-  return widget->StartAsyncAutoscroll(
+  widget->StartAsyncAutoscroll(
       ViewAs<ScreenPixel>(
           anchor, PixelCastJustification::LayoutDeviceIsScreenForBounds),
       guid);
+  return true;
 }
 
 void CanonicalBrowsingContext::StopApzAutoscroll(nsViewID aScrollId,

@@ -140,23 +140,8 @@ bool GeneralParser<ParseHandler, Unit>::mustMatchTokenInternal(
   return true;
 }
 
-ParserSharedBase::ParserSharedBase(FrontendContext* fc,
-                                   CompilationState& compilationState,
-                                   Kind kind)
-    : fc_(fc),
-      alloc_(compilationState.parserAllocScope.alloc()),
-      compilationState_(compilationState),
-      pc_(nullptr),
-      usedNames_(compilationState.usedNames) {
-  fc_->nameCollectionPool().addActiveCompilation();
-}
-
-ParserSharedBase::~ParserSharedBase() {
-  fc_->nameCollectionPool().removeActiveCompilation();
-}
-
 #if defined(DEBUG) || defined(JS_JITSPEW)
-void ParserSharedBase::dumpAtom(TaggedParserAtomIndex index) const {
+void ParserBase::dumpAtom(TaggedParserAtomIndex index) const {
   parserAtoms().dump(index);
 }
 #endif
@@ -164,7 +149,11 @@ void ParserSharedBase::dumpAtom(TaggedParserAtomIndex index) const {
 ParserBase::ParserBase(FrontendContext* fc,
                        const ReadOnlyCompileOptions& options,
                        CompilationState& compilationState)
-    : ParserSharedBase(fc, compilationState, ParserSharedBase::Kind::Parser),
+    : fc_(fc),
+      alloc_(compilationState.parserAllocScope.alloc()),
+      compilationState_(compilationState),
+      pc_(nullptr),
+      usedNames_(compilationState.usedNames),
       anyChars(fc, options, this),
       ss(nullptr),
 #ifdef DEBUG
@@ -173,6 +162,7 @@ ParserBase::ParserBase(FrontendContext* fc,
       isUnexpectedEOF_(false),
       awaitHandling_(AwaitIsName),
       inParametersOfAsyncFunction_(false) {
+  fc_->nameCollectionPool().addActiveCompilation();
 }
 
 bool ParserBase::checkOptions() {
@@ -183,7 +173,10 @@ bool ParserBase::checkOptions() {
   return anyChars.checkOptions();
 }
 
-ParserBase::~ParserBase() { MOZ_ASSERT(checkOptionsCalled_); }
+ParserBase::~ParserBase() {
+  MOZ_ASSERT(checkOptionsCalled_);
+  fc_->nameCollectionPool().removeActiveCompilation();
+}
 
 JSAtom* ParserBase::liftParserAtomToJSAtom(TaggedParserAtomIndex index) {
   JSContext* cx = fc_->maybeCurrentJSContext();
@@ -373,6 +366,10 @@ template <class ParseHandler, typename Unit>
 typename ParseHandler::ListNodeResult
 GeneralParser<ParseHandler, Unit>::parse() {
   MOZ_ASSERT(checkOptionsCalled_);
+
+  if (!this->fc_->checkCompilationCancellation()) {
+    return errorResult();
+  }
 
   SourceExtent extent = SourceExtent::makeGlobalExtent(
       /* len = */ 0, options().lineno,
@@ -1875,6 +1872,10 @@ FullParseHandler::ModuleNodeResult Parser<FullParseHandler, Unit>::moduleBody(
     ModuleSharedContext* modulesc) {
   MOZ_ASSERT(checkOptionsCalled_);
 
+  if (!fc_->checkCompilationCancellation()) {
+    return errorResult();
+  }
+
   this->compilationState_.moduleMetadata =
       fc_->getAllocator()->template new_<StencilModuleMetadata>();
   if (!this->compilationState_.moduleMetadata) {
@@ -1959,6 +1960,20 @@ FullParseHandler::ModuleNodeResult Parser<FullParseHandler, Unit>::moduleBody(
   modulepc.varScope()
       .lookupDeclaredName(
           TaggedParserAtomIndex::WellKnown::star_namespace_star_())
+      ->value()
+      ->setClosedOver();
+
+  // Reserve an environment slot for a "*deferred-namespace*" pseudo-binding
+  // and mark as closed-over. We do not know until module linking if this will
+  // be used.
+  if (!noteDeclaredName(
+          TaggedParserAtomIndex::WellKnown::star_deferred_namespace_star_(),
+          DeclarationKind::Const, pos())) {
+    return errorResult();
+  }
+  modulepc.varScope()
+      .lookupDeclaredName(
+          TaggedParserAtomIndex::WellKnown::star_deferred_namespace_star_())
       ->value()
       ->setClosedOver();
 
@@ -2991,6 +3006,10 @@ GeneralParser<ParseHandler, Unit>::functionDefinition(
     FunctionAsyncKind asyncKind, bool tryAnnexB /* = false */) {
   MOZ_ASSERT_IF(kind == FunctionSyntaxKind::Statement, funName);
 
+  if (!this->fc_->checkCompilationCancellation()) {
+    return errorResult();
+  }
+
   // If we see any inner function, note it on our current context. The bytecode
   // emitter may eliminate the function later, but we use a conservative
   // definition for consistency between lazy and full parsing.
@@ -3135,6 +3154,10 @@ bool Parser<FullParseHandler, Unit>::trySyntaxParseInnerFunction(
         yieldHandling, kind, newDirectives);
     if (syntaxNodeResult.isErr()) {
       if (syntaxParser->hadAbortedSyntaxParse()) {
+        if (!fc_->checkCompilationCancellation()) {
+          return false;
+        }
+
         // Try again with a full parse. UsedNameTracker needs to be
         // rewound to just before we tried the syntax parse for
         // correctness.
@@ -5078,16 +5101,70 @@ GeneralParser<ParseHandler, Unit>::importDeclaration() {
     return errorResult();
   }
 
+  TokenKind next = TokenKind::Eof;
+  if (options().deferImportEval() && tt == TokenKind::Defer &&
+      !tokenStream.peekToken(&next)) {
+    return errorResult();
+  }
+
   ListNodeType importSpecSet =
       MOZ_TRY(handler_.newList(ParseNodeKind::ImportSpecList, pos()));
 
   ImportPhase phase = ImportPhase::Evaluation;
-  NameNodeType importSourceBinding;
+  NameNodeType importSourceBinding = null();
   if (tt == TokenKind::String) {
+    // import ModuleSpecifier;
     // Handle the form |import 'a'| by leaving the list empty. This is
     // equivalent to |import {} from 'a'|.
     handler_.setEndPosition(importSpecSet, pos().begin);
+  } else if (options().deferImportEval() && tt == TokenKind::Defer &&
+             next == TokenKind::Mul) {
+    // import defer NameSpaceImport FromClause;
+    phase = ImportPhase::Deferred;
+    tokenStream.consumeKnownToken(TokenKind::Mul);
+
+    // Parse: as BindingIdentifier
+    if (!mustMatchToken(TokenKind::As, JSMSG_AS_AFTER_IMPORT_STAR)) {
+      return errorResult();
+    }
+    if (!mustMatchToken(TokenKindIsPossibleIdentifierName,
+                        JSMSG_NO_BINDING_NAME)) {
+      return errorResult();
+    }
+
+    uint32_t begin = pos().begin;
+    TaggedParserAtomIndex bindingAtom = importedBinding();
+    if (!bindingAtom) {
+      return errorResult();
+    }
+
+    NameNodeType bindingNameNode;
+    MOZ_TRY_VAR_OR_RETURN(bindingNameNode, newName(bindingAtom), errorResult());
+
+    // Deferred namespace imports are not indirect bindings but lexical
+    // definitions that hold a module namespace object, like regular namespace
+    // imports. They are treated as const variables initialized at module link.
+    if (!noteDeclaredName(bindingAtom, DeclarationKind::Const, pos())) {
+      return errorResult();
+    }
+
+    pc_->varScope().lookupDeclaredName(bindingAtom)->value()->setClosedOver();
+
+    // Add to importSpecSet like namespaceImport does
+    UnaryNodeType importSpec;
+    MOZ_TRY_VAR_OR_RETURN(
+        importSpec, handler_.newImportNamespaceSpec(begin, bindingNameNode),
+        errorResult());
+    handler_.addList(importSpecSet, importSpec);
+
+    if (!mustMatchToken(TokenKind::From, JSMSG_FROM_AFTER_IMPORT_CLAUSE)) {
+      return errorResult();
+    }
+    if (!mustMatchToken(TokenKind::String, JSMSG_MODULE_SPEC_AFTER_FROM)) {
+      return errorResult();
+    }
   } else {
+    // import ImportClause
     if (tt == TokenKind::LeftCurly) {
       if (!namedImports(importSpecSet)) {
         return errorResult();
@@ -5181,6 +5258,8 @@ GeneralParser<ParseHandler, Unit>::importDeclaration() {
           return errorResult();
         }
 
+        // ImportedDefaultBinding, NameSpaceImport
+        // ImportedDefaultBinding, NamedImports
         if (tt == TokenKind::Comma) {
           tokenStream.consumeKnownToken(tt);
           if (!tokenStream.getToken(&tt)) {
@@ -11304,8 +11383,7 @@ PerHandlerParser<ParseHandler>::stringLiteral() {
 template <class ParseHandler>
 typename ParseHandler::NodeResult
 PerHandlerParser<ParseHandler>::noSubstitutionTaggedTemplate() {
-  if (anyChars.hasInvalidTemplateEscape()) {
-    anyChars.clearInvalidTemplateEscape();
+  if (anyChars.currentToken().hasInvalidTemplateEscape()) {
     return handler_.newRawUndefinedLiteral(pos());
   }
 
@@ -12362,10 +12440,10 @@ GeneralParser<ParseHandler, Unit>::importExpr(YieldHandling yieldHandling,
 
     if (options().sourcePhaseImports() && next == TokenKind::Source) {
       phase = ImportPhase::Source;
+    } else if (options().deferImportEval() && next == TokenKind::Defer) {
+      phase = ImportPhase::Deferred;
     } else {
-      error(JSMSG_UNEXPECTED_TOKEN,
-            options().sourcePhaseImports() ? "meta or source" : "meta",
-            TokenKindToDesc(next));
+      error(JSMSG_UNEXPECTED_TOKEN_NO_EXPECT, TokenKindToDesc(next));
       return errorResult();
     }
 

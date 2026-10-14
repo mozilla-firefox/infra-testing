@@ -43,6 +43,7 @@ class ComputedStyle;
 struct AnchorPosResolutionCache;
 class AnchorPosReferenceData;
 struct IntrinsicSize;
+class LogicalMargin;
 struct SizeComputationInput;
 
 }  // namespace mozilla
@@ -145,6 +146,11 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleFont {
 
   nsAtom* GetFontPaletteAtom() const { return mFontPalette._0.AsAtom(); }
 
+  nsAtom* GetLangAtom() const {
+    auto* atom = mLanguage.AsAtom();
+    return atom == nsGkAtoms::empty ? nullptr : atom;
+  }
+
   nsFont mFont;
 
   // Our "computed size". Can be different from mFont.size which is our "actual
@@ -183,7 +189,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleFont {
   // The value mSize would have had if scriptminsize had never been applied
   mozilla::NonNegativeLength mScriptUnconstrainedSize;
   mozilla::Length mScriptMinSize;
-  RefPtr<nsAtom> mLanguage;
+  mozilla::StyleXLang mLanguage;
 };
 
 struct nsStyleImageLayers {
@@ -224,7 +230,7 @@ struct nsStyleImageLayers {
     mozilla::Position mPosition;
     StyleBackgroundSize mSize;
     StyleBackgroundClip mClip;
-    MOZ_INIT_OUTSIDE_CTOR StyleGeometryBox mOrigin;
+    MOZ_INIT_OUTSIDE_CTOR mozilla::StyleBackgroundOrigin mOrigin;
 
     // This property is used for background layer only.
     // For a mask layer, it should always be the initial value, which is
@@ -1040,7 +1046,6 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStylePosition {
   StyleImplicitGridTracks mGridAutoRows;
   mozilla::StyleAspectRatio mAspectRatio;
   mozilla::StyleGridAutoFlow mGridAutoFlow;
-  mozilla::StyleMasonryAutoFlow mMasonryAutoFlow;
 
   mozilla::StyleContentDistribution mAlignContent;
   mozilla::StyleItemPlacement mAlignItems;
@@ -1053,8 +1058,8 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStylePosition {
   mozilla::StyleObjectFit mObjectFit;
   mozilla::StyleBoxSizing mBoxSizing;
   int32_t mOrder;
-  float mFlexGrow;
-  float mFlexShrink;
+  mozilla::StyleNonNegativeNumber mFlexGrow;
+  mozilla::StyleNonNegativeNumber mFlexShrink;
   mozilla::StyleZIndex mZIndex;
 
   mozilla::StyleGridTemplateComponent mGridTemplateColumns;
@@ -1662,6 +1667,8 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
   mozilla::StyleScrollSnapAlign mScrollSnapAlign;
   mozilla::StyleScrollSnapStop mScrollSnapStop;
   mozilla::StyleScrollSnapType mScrollSnapType;
+  mozilla::StyleScrollbarInset mScrollbarInsetBlock;
+  mozilla::StyleScrollbarInset mScrollbarInsetInline;
 
   mozilla::StyleBackfaceVisibility mBackfaceVisibility;
   mozilla::StyleTransformStyle mTransformStyle;
@@ -1847,6 +1854,12 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
     return mOverflowX == mozilla::StyleOverflow::Visible &&
            mOverflowY == mozilla::StyleOverflow::Visible;
   }
+
+  // How much to shorten each scrollbar by at each of its ends. Each side holds
+  // the inset measured from it, so the block-axis pair shortens the scrollbar
+  // running along the block axis. Defined in WritingModes.h.
+  inline mozilla::LogicalMargin GetScrollbarInset(
+      mozilla::WritingMode aWM) const;
 
   bool IsContainPaint() const {
     // Short circuit for no containment whatsoever
@@ -2244,7 +2257,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleXUL {
   STYLE_STRUCT(nsStyleXUL)
   nsStyleXUL();
 
-  float mBoxFlex;
+  mozilla::StyleNonNegativeNumber mBoxFlex;
   int32_t mBoxOrdinal;
   mozilla::StyleBoxAlign mBoxAlign;
   mozilla::StyleBoxDirection mBoxDirection;
@@ -2299,7 +2312,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleSVG {
   mozilla::StyleSVGWidth mStrokeWidth;
 
   mozilla::StyleSVGOpacity mFillOpacity;
-  float mStrokeMiterlimit;
+  mozilla::StyleNonNegativeNumber mStrokeMiterlimit;
   mozilla::StyleSVGOpacity mStrokeOpacity;
 
   mozilla::StyleFillRule mClipRule;
@@ -2483,5 +2496,18 @@ struct nsSize_Simple {
 STATIC_ASSERT_TYPE_LAYOUTS_MATCH(nsSize, nsSize_Simple);
 STATIC_ASSERT_FIELD_OFFSET_MATCHES(nsSize, nsSize_Simple, width);
 STATIC_ASSERT_FIELD_OFFSET_MATCHES(nsSize, nsSize_Simple, height);
+
+/**
+ * <div rustbindgen="true" replaces="mozilla::gfx::Rect">
+ */
+struct Rect_Simple {  // note that this is gfx::Rect, NOT gfxRect!
+  float x, y, width, height;
+};
+
+STATIC_ASSERT_TYPE_LAYOUTS_MATCH(mozilla::gfx::Rect, Rect_Simple);
+STATIC_ASSERT_FIELD_OFFSET_MATCHES(mozilla::gfx::Rect, Rect_Simple, x);
+STATIC_ASSERT_FIELD_OFFSET_MATCHES(mozilla::gfx::Rect, Rect_Simple, y);
+STATIC_ASSERT_FIELD_OFFSET_MATCHES(mozilla::gfx::Rect, Rect_Simple, width);
+STATIC_ASSERT_FIELD_OFFSET_MATCHES(mozilla::gfx::Rect, Rect_Simple, height);
 
 #endif /* nsStyleStruct_h_ */

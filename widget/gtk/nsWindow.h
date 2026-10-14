@@ -18,6 +18,7 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/RWLock.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/Result.h"
 #include "mozilla/TouchEvents.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/gfx/BaseMargin.h"
@@ -184,7 +185,6 @@ class nsWindow : public nsIWidget {
                                 const LayoutDeviceIntRect& aRect,
                                 const InitData&) override;
   void Destroy() override;
-  float GetDPI() override;
   double GetDefaultScaleInternal() override;
   uint32_t GetMaxTouchPoints() const override;
   mozilla::DesktopToLayoutDeviceScale GetDesktopToDeviceScale() const override;
@@ -202,8 +202,6 @@ class nsWindow : public nsIWidget {
   nsSizeMode GetSizeMode() const { return mSizeMode; }
   nsSizeMode SizeMode() override { return mSizeMode; }
   void SetSizeMode(nsSizeMode aMode) override;
-  void GetWorkspaceID(nsAString& workspaceID) override;
-  void MoveToWorkspace(const nsAString& workspaceID) override;
   void Enable(bool aState) override;
   void SetFocus(Raise, mozilla::dom::CallerType aCallerType) override;
   LayoutDeviceIntRect GetBounds() override;
@@ -249,6 +247,8 @@ class nsWindow : public nsIWidget {
 #ifdef MOZ_WAYLAND
     static Bounds ComputeWayland(const nsWindow*);
 #endif
+    static DesktopIntMargin ComputeCSDMargin(GtkWidget* aShell,
+                                             GtkWidget* aChild);
   };
   void SchedulePendingBounds();
   void MaybeRecomputeBounds();
@@ -287,7 +287,15 @@ class nsWindow : public nsIWidget {
   mozilla::widget::IMContextWrapper* GetIMContext() const { return mIMContext; }
 
   bool DispatchCommandEvent(nsAtom* aCommand);
-  bool DispatchContentCommandEvent(mozilla::EventMessage aMsg);
+
+  /**
+   * Return true if the command is enabled or the target is in a remote content.
+   * Return false if the command is disabled.
+   * Return error if TextEventDispatcher is not available or the event handler
+   * returns error.
+   */
+  mozilla::Result<bool, nsresult> DispatchContentCommandEvent(
+      mozilla::EventMessage);
 
   // event callbacks
   gboolean OnExposeEvent(cairo_t* cr);

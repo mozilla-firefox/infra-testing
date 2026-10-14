@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.ui.efficiency.pageObjects
 
+import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.hasAnyChild
 import androidx.compose.ui.test.hasTestTag
@@ -12,12 +13,15 @@ import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.onChildAt
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.waitUntilAtLeastOneExists
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
+import org.mozilla.fenix.helpers.TestAssetHelper.waitingTime
 import org.mozilla.fenix.tabstray.TabsTrayTestTag
 import org.mozilla.fenix.ui.efficiency.helpers.BasePage
-import org.mozilla.fenix.ui.efficiency.helpers.Selector
 import org.mozilla.fenix.ui.efficiency.helpers.SwipeDirection
-import org.mozilla.fenix.ui.efficiency.navigation.NavigationRegistry
+import org.mozilla.fenix.ui.efficiency.navigation.NavigationFacts
+import org.mozilla.fenix.ui.efficiency.navigation.NavigationGraph
+import org.mozilla.fenix.ui.efficiency.navigation.NavigationOptions
 import org.mozilla.fenix.ui.efficiency.navigation.NavigationStep
 import org.mozilla.fenix.ui.efficiency.selectors.TabDrawerSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.ToolbarSelectors
@@ -25,8 +29,8 @@ import org.mozilla.fenix.ui.efficiency.selectors.ToolbarSelectors
 class TabDrawerPage(composeRule: AndroidComposeTestRule<HomeActivityIntentTestRule, *>) : BasePage(composeRule) {
     override val pageName = "TabDrawerPage"
 
-    init {
-        NavigationRegistry.register(
+    internal override fun registerNavigation(builder: NavigationGraph.Builder) {
+        builder.register(
             from = "HomePage",
             to = pageName,
             steps = listOf(NavigationStep.Click(ToolbarSelectors.TAB_COUNTER)),
@@ -36,31 +40,35 @@ class TabDrawerPage(composeRule: AndroidComposeTestRule<HomeActivityIntentTestRu
         // the content-description variant: UIAutomator (not Compose, which can hang while GeckoView is
         // active) AND not the testTag, because with shouldUseExpandedToolbar the counter moves to the bottom
         // navigation bar and carries no tag there.
-        NavigationRegistry.register(
+        builder.register(
             from = "BrowserPage",
             to = pageName,
             steps = listOf(NavigationStep.Click(ToolbarSelectors.TAB_COUNTER_ANY_LAYOUT)),
         )
 
-        NavigationRegistry.register(
+        builder.register(
             from = pageName,
             to = "HomePage",
             steps = listOf(NavigationStep.PressBack),
+            requires = setOf(NavigationFacts.RETURN_SURFACE_HOME),
         )
 
-        NavigationRegistry.register(
+        builder.register(
             from = pageName,
             to = "BrowserPage",
             steps = listOf(NavigationStep.PressBack),
+            requires = setOf(NavigationFacts.RETURN_SURFACE_BROWSER),
         )
     }
 
-    override fun mozGetSelectorsByGroup(group: String): List<Selector> {
-        return TabDrawerSelectors.all.filter { it.groups.contains(group) }
-    }
+    override val selectorCatalog = TabDrawerSelectors
 
-    override fun navigateToPage(url: String, forceNavigation: Boolean): TabDrawerPage {
-        super.navigateToPage(url, forceNavigation)
+    override fun navigateToPage(
+        url: String,
+        forceNavigation: Boolean,
+        navigationOptions: NavigationOptions,
+    ): TabDrawerPage {
+        super.navigateToPage(url, forceNavigation, navigationOptions)
         return this
     }
 
@@ -70,7 +78,7 @@ class TabDrawerPage(composeRule: AndroidComposeTestRule<HomeActivityIntentTestRu
     }
 
     fun verifyNoOpenTabsInNormalBrowsing(): TabDrawerPage {
-        mozVerifyElementsByGroup("emptyNormalBrowsingTabDrawerView")
+        mozVerifyElementsByGroup(TabDrawerSelectors.Group.EMPTY_NORMAL_BROWSING_TAB_DRAWER_VIEW)
         return this
     }
 
@@ -84,6 +92,17 @@ class TabDrawerPage(composeRule: AndroidComposeTestRule<HomeActivityIntentTestRu
         urls.forEach { url ->
             mozVerifyAnyHasChildWithText(TabDrawerSelectors.TAB_ITEM_ROOT, url)
         }
+        return this
+    }
+
+    /**
+     * Wait until each title has rendered in the tray, tree-agnostically (tabs created from a URL show the URL until the
+     * page's title loads). Unlike [verifyExistingOpenTabs] this matches in both grid and list view, where a list row
+     * merges its title into the row node rather than exposing it as a child.
+     */
+    @OptIn(ExperimentalTestApi::class)
+    fun waitForTabTitlesLoaded(vararg tabTitles: String): TabDrawerPage {
+        tabTitles.forEach { composeRule.waitUntilAtLeastOneExists(hasText(it), waitingTime) }
         return this
     }
 
@@ -109,6 +128,17 @@ class TabDrawerPage(composeRule: AndroidComposeTestRule<HomeActivityIntentTestRu
         return this
     }
 
+    /**
+     * Tap the footer pill to open the protections dashboard (driven via a locally-instantiated
+     * ProtectionsDashboardPage).
+     */
+    fun openTrackersBlockedDashboard(): TabDrawerPage {
+        // Footer in the lazy tabs list, so wait for it to compose before tapping (mozClick does not poll).
+        mozVerify(TabDrawerSelectors.TRACKERS_BLOCKED_DASHBOARD_PILL)
+        mozClick(TabDrawerSelectors.TRACKERS_BLOCKED_DASHBOARD_PILL)
+        return this
+    }
+
     fun typeInTabSearch(query: String): TabDrawerPage {
         mozEnterText(query, TabDrawerSelectors.TAB_SEARCH_FIELD)
         return this
@@ -125,14 +155,27 @@ class TabDrawerPage(composeRule: AndroidComposeTestRule<HomeActivityIntentTestRu
      * Ordering cannot be expressed with the mozVerify* family, which only answers "does any node match". The wait is
      * delegated to the harness first because the positional assert below is a one-shot check and would race a list that
      * is still populating.
+     *
+     * With [isListViewEnabled] the tabs tray renders rows that merge their title into the row node, so the grid path's
+     * child-text precondition and TAB_ITEM_ROOT child assert do not hold; the unmerged tree is read instead, matching
+     * the legacy robot's list-view branch.
      */
-    fun verifyOpenTabsOrder(position: Int, tabTitle: String): TabDrawerPage {
-        mozVerifyAnyHasChildWithText(TabDrawerSelectors.TAB_ITEM_ROOT, tabTitle)
-        composeRule
-            .onNodeWithTag(TabsTrayTestTag.NORMAL_TABS_LIST)
-            .onChildAt(position - 1)
-            .assert(hasTestTag(TabsTrayTestTag.TAB_ITEM_ROOT))
-            .assert(hasAnyChild(hasText(tabTitle)))
+    @OptIn(ExperimentalTestApi::class)
+    fun verifyOpenTabsOrder(position: Int, tabTitle: String, isListViewEnabled: Boolean = false): TabDrawerPage {
+        if (isListViewEnabled) {
+            composeRule.waitUntilAtLeastOneExists(hasText(tabTitle), waitingTime)
+            composeRule
+                .onNodeWithTag(TabsTrayTestTag.NORMAL_TABS_LIST, useUnmergedTree = true)
+                .onChildAt(position - 1)
+                .assert(hasAnyChild(hasText(tabTitle)))
+        } else {
+            mozVerifyAnyHasChildWithText(TabDrawerSelectors.TAB_ITEM_ROOT, tabTitle)
+            composeRule
+                .onNodeWithTag(TabsTrayTestTag.NORMAL_TABS_LIST)
+                .onChildAt(position - 1)
+                .assert(hasTestTag(TabsTrayTestTag.TAB_ITEM_ROOT))
+                .assert(hasAnyChild(hasText(tabTitle)))
+        }
         return this
     }
 
@@ -174,6 +217,12 @@ class TabDrawerPage(composeRule: AndroidComposeTestRule<HomeActivityIntentTestRu
         mozClick(TabDrawerSelectors.ADD_TO_GROUP_THREE_DOT_BUTTON)
     }
 
+    private fun longClickTabAndTapAddToGroup(tabTitle: String) {
+        mozLongClick(TabDrawerSelectors.TAB_ITEM_WITH_TITLE(tabTitle))
+        mozClick(TabDrawerSelectors.TAB_SELECTION_THREE_DOT_BUTTON)
+        mozClick(TabDrawerSelectors.ADD_TO_GROUP_THREE_DOT_BUTTON)
+    }
+
     fun selectTabsAndCreateFirstTabGroup(
         tabTitle: String,
         tabGroupTitle: String = "",
@@ -200,7 +249,7 @@ class TabDrawerPage(composeRule: AndroidComposeTestRule<HomeActivityIntentTestRu
         numberOfTabs: Int,
         tabGroupColor: String,
     ): TabDrawerPage {
-        selectTabsAndTapAddToGroup(tabTitle)
+        longClickTabAndTapAddToGroup(tabTitle)
         mozClick(TabDrawerSelectors.TAB_GROUP_ITEM(tabGroupTitle, numberOfTabs, tabGroupColor))
         return this
     }
@@ -244,6 +293,40 @@ class TabDrawerPage(composeRule: AndroidComposeTestRule<HomeActivityIntentTestRu
 
         mozClick(TabDrawerSelectors.CREATE_TAB_GROUP_SAVE_BUTTON)
 
+        return this
+    }
+
+    /**
+     * Select a tab group card in the tray's selection mode. A grid card exposes its title as a child node, but a list
+     * card exposes it only through its "Add to ..." content description, so the handle depends on [isListViewEnabled].
+     */
+    fun selectTabGroupCard(
+        tabGroupTitle: String,
+        numberOfTabs: Int,
+        tabGroupColor: String,
+        isListViewEnabled: Boolean,
+    ): TabDrawerPage {
+        val selector =
+            if (isListViewEnabled) {
+                TabDrawerSelectors.TAB_GROUP_ITEM(tabGroupTitle, numberOfTabs, tabGroupColor)
+            } else {
+                TabDrawerSelectors.TAB_ITEM_WITH_TITLE(tabGroupTitle)
+            }
+        mozClick(selector)
+        return this
+    }
+
+    /**
+     * Merge the already-selected tab groups into a new group from the multi-select menu, naming it [tabGroupTitle] and
+     * coloring it [tabGroupColor]. Assumes selection mode is active with the groups to merge selected.
+     */
+    fun mergeSelectedTabGroupsIntoNewGroup(tabGroupTitle: String, tabGroupColor: String): TabDrawerPage {
+        mozClick(TabDrawerSelectors.TAB_SELECTION_THREE_DOT_BUTTON)
+        mozClick(TabDrawerSelectors.ADD_TO_GROUP_THREE_DOT_BUTTON)
+        mozClick(TabDrawerSelectors.ADD_TO_NEW_TAB_GROUP_BUTTON)
+        mozEnterText(tabGroupTitle, TabDrawerSelectors.CREATE_TAB_GROUP_NAME_TEXT_FIELD)
+        mozClick(TabDrawerSelectors.CREATE_TAB_GROUP_COLOR_BUTTON(tabGroupColor))
+        mozClick(TabDrawerSelectors.CREATE_TAB_GROUP_SAVE_BUTTON)
         return this
     }
 

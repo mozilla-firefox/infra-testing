@@ -19,17 +19,15 @@ namespace layers {
  */
 class DMABUFTextureHostOGL : public TextureHost {
  public:
-  DMABUFTextureHostOGL(TextureFlags aFlags, const SurfaceDescriptor& aDesc);
+  DMABUFTextureHostOGL(TextureFlags aFlags,
+                       const SurfaceDescriptorDMABuf& aDesc);
   virtual ~DMABUFTextureHostOGL();
 
   bool IsValid() override { return !!mSurface; }
 
   gfx::SurfaceFormat GetFormat() const override;
-
   already_AddRefed<gfx::DataSourceSurface> GetAsSurface(
-      gfx::DataSourceSurface* aSurface) override {
-    return nullptr;  // XXX - implement this (for MOZ_DUMP_PAINTING)
-  }
+      gfx::DataSourceSurface* aSurface) override;
 
   gl::GLContext* gl() const;
 
@@ -58,7 +56,10 @@ class DMABUFTextureHostOGL : public TextureHost {
                         const Range<wr::ImageKey>& aImageKeys,
                         PushDisplayItemFlagSet aFlags) override;
 
+  SurfaceDescriptor GetSurfaceDescriptor() override;
+
  protected:
+  const SurfaceDescriptorDMABuf mDescriptor;
   RefPtr<GLTextureSource> mTextureSource;
   RefPtr<DMABufSurface> mSurface;
 };

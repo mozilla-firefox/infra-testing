@@ -13,6 +13,7 @@
 #include "jit/WarpBuilderShared.h"
 #include "js/Vector.h"
 #include "vm/ArgumentsObject.h"
+#include "vm/BoundFunctionObject.h"
 #include "vm/DateObject.h"
 #include "vm/TypedArrayObject.h"
 
@@ -111,7 +112,8 @@ bool EmulateStateOf<MemoryView>::run(MemoryView& view) {
 
 static inline bool IsOptimizableObjectInstruction(MInstruction* ins) {
   return ins->isNewObject() || ins->isNewPlainObject() ||
-         ins->isNewCallObject() || ins->isNewIterator();
+         ins->isNewCallObject() || ins->isNewIterator() ||
+         ins->isNewBoundFunction();
 }
 
 static bool PhiOperandEqualTo(MDefinition* operand, MInstruction* newObject) {
@@ -125,6 +127,14 @@ static bool PhiOperandEqualTo(MDefinition* operand, MInstruction* newObject) {
 
     case MDefinition::Opcode::GuardToClass:
       return PhiOperandEqualTo(operand->toGuardToClass()->input(), newObject);
+
+    case MDefinition::Opcode::GuardBoundFunctionIsConstructor:
+      return PhiOperandEqualTo(
+          operand->toGuardBoundFunctionIsConstructor()->object(), newObject);
+
+    case MDefinition::Opcode::GuardObjectIdentity:
+      return PhiOperandEqualTo(operand->toGuardObjectIdentity()->object(),
+                               newObject);
 
     case MDefinition::Opcode::CheckIsObj:
       return PhiOperandEqualTo(operand->toCheckIsObj()->input(), newObject);
@@ -272,6 +282,7 @@ static bool IsObjectEscaped(MDefinition* ins, MInstruction* newObject,
     switch (def->op()) {
       case MDefinition::Opcode::StoreFixedSlot:
       case MDefinition::Opcode::LoadFixedSlot:
+      case MDefinition::Opcode::LoadFixedSlotAndUnbox:
         // Not escaped if it is the first argument.
         if (def->indexOf(*i) == 0) {
           break;
@@ -279,9 +290,6 @@ static bool IsObjectEscaped(MDefinition* ins, MInstruction* newObject,
 
         JitSpewDef(JitSpew_Escape, "is escaped by\n", def);
         return true;
-
-      case MDefinition::Opcode::PostWriteBarrier:
-        break;
 
       case MDefinition::Opcode::Slots: {
         // Ensure MSlots is only used by MStoreDynamicSlot and MLoadDynamicSlot.
@@ -376,7 +384,47 @@ static bool IsObjectEscaped(MDefinition* ins, MInstruction* newObject,
 
       // Doesn't escape the object.
       case MDefinition::Opcode::IsObject:
+      case MDefinition::Opcode::BoundFunctionNumArgs:
         break;
+
+      case MDefinition::Opcode::GuardBoundFunctionIsConstructor: {
+        auto* guard = def->toGuardBoundFunctionIsConstructor();
+        if (!newObject->isNewBoundFunction()) {
+          JitSpewDef(JitSpew_Escape, "is not a bound function\n", guard);
+          return true;
+        }
+        JSObject* templateObj = MObjectState::templateObjectOf(newObject);
+        if (!templateObj->as<BoundFunctionObject>().isConstructor()) {
+          JitSpewDef(JitSpew_Escape, "has a non-matching isConstructor guard\n",
+                     guard);
+          return true;
+        }
+        if (IsObjectEscaped(def->toInstruction(), newObject, shape)) {
+          JitSpewDef(JitSpew_Escape, "is indirectly escaped by\n", def);
+          return true;
+        }
+        break;
+      }
+
+      case MDefinition::Opcode::GuardObjectIdentity: {
+        // tryAttachBoundFunction guards newTarget == callee for constructing
+        // calls. Both operands are the object we're replacing, so the guard is
+        // trivially true and doesn't escape it. Note that either operand can be
+        // a chain of guards on that object rather than the object itself.
+        auto* guard = def->toGuardObjectIdentity();
+        if (guard->bailOnEquality() ||
+            !PhiOperandEqualTo(guard->object(), newObject) ||
+            !PhiOperandEqualTo(guard->expected(), newObject)) {
+          JitSpewDef(JitSpew_Escape, "has a non-trivial identity guard\n",
+                     guard);
+          return true;
+        }
+        if (IsObjectEscaped(def->toInstruction(), newObject, shape)) {
+          JitSpewDef(JitSpew_Escape, "is indirectly escaped by\n", def);
+          return true;
+        }
+        break;
+      }
 
       // This instruction is a no-op used to verify that scalar replacement
       // is working as expected in jit-test.
@@ -387,10 +435,6 @@ static bool IsObjectEscaped(MDefinition* ins, MInstruction* newObject,
       // out some guards in certain circumstances. We'll turn this into a
       // regular constant later.
       case MDefinition::Opcode::ConstantProto:
-        break;
-
-      // We definitely don't need barriers for objects that don't exist.
-      case MDefinition::Opcode::AssertCanElidePostWriteBarrier:
         break;
 
       default:
@@ -446,7 +490,11 @@ class ObjectMemoryView : public MDefinitionVisitorDefaultNoop {
   void visitObjectState(MObjectState* ins);
   void visitStoreFixedSlot(MStoreFixedSlot* ins);
   void visitLoadFixedSlot(MLoadFixedSlot* ins);
-  void visitPostWriteBarrier(MPostWriteBarrier* ins);
+  void visitLoadFixedSlotAndUnbox(MLoadFixedSlotAndUnbox* ins);
+  void visitBoundFunctionNumArgs(MBoundFunctionNumArgs* ins);
+  void visitGuardBoundFunctionIsConstructor(
+      MGuardBoundFunctionIsConstructor* ins);
+  void visitGuardObjectIdentity(MGuardObjectIdentity* ins);
   void visitStoreDynamicSlot(MStoreDynamicSlot* ins);
   void visitLoadDynamicSlot(MLoadDynamicSlot* ins);
   void visitGuardShape(MGuardShape* ins);
@@ -462,8 +510,6 @@ class ObjectMemoryView : public MDefinitionVisitorDefaultNoop {
   void visitCompare(MCompare* ins);
   void visitConstantProto(MConstantProto* ins);
   void visitIsObject(MIsObject* ins);
-  void visitAssertCanElidePostWriteBarrier(
-      MAssertCanElidePostWriteBarrier* ins);
 };
 
 /* static */ const char ObjectMemoryView::phaseName[] =
@@ -686,11 +732,67 @@ void ObjectMemoryView::visitLoadFixedSlot(MLoadFixedSlot* ins) {
   ins->block()->discard(ins);
 }
 
-void ObjectMemoryView::visitPostWriteBarrier(MPostWriteBarrier* ins) {
+void ObjectMemoryView::visitLoadFixedSlotAndUnbox(MLoadFixedSlotAndUnbox* ins) {
   // Skip loads made on other objects.
   if (ins->object() != obj_) {
     return;
   }
+
+  MOZ_ASSERT(state_->hasFixedSlot(ins->slot()));
+  MDefinition* val = state_->getFixedSlot(ins->slot());
+  if (val->type() == ins->type()) {
+    ins->replaceAllUsesWith(val);
+  } else {
+    auto* unbox = MUnbox::New(alloc_, val, ins->type(), ins->mode());
+    ins->block()->insertBefore(ins, unbox);
+    ins->replaceAllUsesWith(unbox);
+  }
+
+  // Remove original instruction.
+  ins->block()->discard(ins);
+}
+
+void ObjectMemoryView::visitBoundFunctionNumArgs(MBoundFunctionNumArgs* ins) {
+  // Skip instructions on other objects.
+  if (ins->object() != obj_) {
+    return;
+  }
+
+  JSObject* templateObj = MObjectState::templateObjectOf(obj_);
+  size_t numBoundArgs = templateObj->as<BoundFunctionObject>().numBoundArgs();
+
+  auto* num = MConstant::NewInt32(alloc_, int32_t(numBoundArgs));
+  ins->block()->insertBefore(ins, num);
+  ins->replaceAllUsesWith(num);
+
+  // Remove original instruction.
+  ins->block()->discard(ins);
+}
+
+void ObjectMemoryView::visitGuardBoundFunctionIsConstructor(
+    MGuardBoundFunctionIsConstructor* ins) {
+  // Skip guards on other objects.
+  if (ins->object() != obj_) {
+    return;
+  }
+
+  // IsObjectEscaped checked the template object is a constructor.
+  ins->replaceAllUsesWith(obj_);
+
+  // Remove original instruction.
+  ins->block()->discard(ins);
+}
+
+void ObjectMemoryView::visitGuardObjectIdentity(MGuardObjectIdentity* ins) {
+  // Skip guards on other objects.
+  if (ins->object() != obj_) {
+    return;
+  }
+
+  // IsObjectEscaped checked both operands are this object.
+  MOZ_ASSERT(ins->expected() == obj_);
+  MOZ_ASSERT(!ins->bailOnEquality());
+  ins->replaceAllUsesWith(obj_);
 
   // Remove original instruction.
   ins->block()->discard(ins);
@@ -957,15 +1059,6 @@ void ObjectMemoryView::visitIsObject(MIsObject* ins) {
   ins->replaceAllUsesWith(cst);
 
   // Remove original instruction.
-  ins->block()->discard(ins);
-}
-
-void ObjectMemoryView::visitAssertCanElidePostWriteBarrier(
-    MAssertCanElidePostWriteBarrier* ins) {
-  if (ins->object() != obj_) {
-    return;
-  }
-
   ins->block()->discard(ins);
 }
 
@@ -1239,10 +1332,6 @@ static bool IsArrayEscaped(MInstruction* ins, MInstruction* newArray) {
         break;
       }
 
-      case MDefinition::Opcode::PostWriteBarrier:
-      case MDefinition::Opcode::PostWriteElementBarrier:
-        break;
-
       // This instruction is a no-op used to verify that scalar replacement
       // is working as expected in jit-test.
       case MDefinition::Opcode::AssertRecoveredOnBailout:
@@ -1436,8 +1525,6 @@ class ArrayMemoryView : public GenericArrayReplacer {
   void visitSetInitializedLength(MSetInitializedLength* ins);
   void visitInitializedLength(MInitializedLength* ins);
   void visitArrayLength(MArrayLength* ins);
-  void visitPostWriteBarrier(MPostWriteBarrier* ins);
-  void visitPostWriteElementBarrier(MPostWriteElementBarrier* ins);
   void visitApplyArray(MApplyArray* ins);
   void visitConstructArray(MConstructArray* ins);
 };
@@ -1709,27 +1796,6 @@ void ArrayMemoryView::visitArrayLength(MArrayLength* ins) {
 
   // Remove original instruction.
   discardInstruction(ins, elements);
-}
-
-void ArrayMemoryView::visitPostWriteBarrier(MPostWriteBarrier* ins) {
-  // Skip barriers on other objects.
-  if (ins->object() != arr_) {
-    return;
-  }
-
-  // Remove original instruction.
-  ins->block()->discard(ins);
-}
-
-void ArrayMemoryView::visitPostWriteElementBarrier(
-    MPostWriteElementBarrier* ins) {
-  // Skip barriers on other objects.
-  if (ins->object() != arr_) {
-    return;
-  }
-
-  // Remove original instruction.
-  ins->block()->discard(ins);
 }
 
 void ArrayMemoryView::visitApplyArray(MApplyArray* ins) {
@@ -2425,12 +2491,10 @@ MNewArrayObject* ArgumentsReplacer::inlineArgsArray(MInstruction* ins,
       ins->block()->insertBefore(ins, index);
 
       MDefinition* arg = actualArgs->getArg(begin + i);
-      auto* store = MStoreElement::NewUnbarriered(alloc(), elements, index, arg,
-                                                  /* needsHoleCheck = */ false);
+      auto* store =
+          MStoreElement::NewNoPreBarrier(alloc(), elements, index, arg,
+                                         /* needsHoleCheck = */ false);
       ins->block()->insertBefore(ins, store);
-
-      auto* barrier = MPostWriteBarrier::New(alloc(), newArray, arg);
-      ins->block()->insertBefore(ins, barrier);
     }
 
     auto* initLength =
@@ -2709,14 +2773,8 @@ bool RestReplacer::escapes(MInstruction* ins) {
       }
 
       case MDefinition::Opcode::GuardShape: {
-        const Shape* shape = rest()->shape();
-        if (!shape) {
-          JitSpew(JitSpew_Escape, "No shape defined.");
-          return true;
-        }
-
         auto* guard = def->toGuardShape();
-        if (shape != guard->shape()) {
+        if (rest()->shape() != guard->shape()) {
           JitSpewDef(JitSpew_Escape, "has a non-matching guard shape\n", def);
           return true;
         }

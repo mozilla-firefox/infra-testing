@@ -46,6 +46,7 @@ class ABIArgIter;
 namespace wasm {
 
 struct CodeMetadata;
+struct StackMap;
 struct TableDesc;
 struct V128;
 
@@ -240,6 +241,19 @@ const char* ToString(TrapMachineInsn tmi);
 // resulting FaultingCodeRange is ignored.  Hence the burden of
 // error/consistency checking is placed on the (infrequently used) access
 // routines rather than the constructors.
+//
+// In typical use, there are two reasons why FaultingCodeRange may fail
+// `isValid()`:
+//
+// * The generating assembler OOMd.  In this case, routines handling
+//   FaultingCodeRanges will ignore the ranges, and at the end of compilation
+//   the assembler's OOM flag is checked and as a result all code and metadata
+//   resulting from the compilation is discarded.
+//
+// * or, the FaultingCodeRange was deliberately created as invalid, using
+//   `FaultingCodeRange()`.  This can be used to signify to callers that "no
+//   trap required here / no stackmap required here" and is detected and handled
+//   accordingly.
 
 class FaultingCodeRange {
   // Definitions that summarise the range of instruction lengths in the code we
@@ -884,6 +898,11 @@ struct TrapData {
   // validly constructed, but has no debug frame yet.
   bool failedUnwindSignatureMismatch;
 
+  // Indicates whether wasm::StartUnwinding() actually unwound the frame within
+  // which the trap occurred. This is used to unwind the corresponding shadow
+  // stack entry in wasm::HandleExceptionWasm.
+  bool unwoundFrame;
+
   struct FaultInfo {
     uint32_t memoryIndex;
     uint64_t byteOffset;
@@ -892,6 +911,18 @@ struct TrapData {
   // For Trap::OutOfBounds triggered by a memory fault, the memory index and
   // byte offset of the faulting address within the memory's mapped region.
   mozilla::Maybe<FaultInfo> faultInfo;
+};
+
+// A class that abstractifies the process of adding stackmaps to a collection
+// thereof.  The idea is that an instantiation of this interface can perform any
+// action it wants in `addMap`, and `addMap` will be called deep within the
+// assembler stack, normally to add a stackmap corresponding to a trap site.
+// This decouples the assembler stack from any knowledge of how baseline/Ion
+// manage stackmaps.
+class StackMapRegistry {
+ public:
+  [[nodiscard]]
+  virtual bool addMap(StackMap* map, FaultingCodeRange insnRange) = 0;
 };
 
 // The (,Callable,Func)Offsets classes are used to record the offsets of

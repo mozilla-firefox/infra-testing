@@ -250,7 +250,7 @@ add_task(async function test_platform_decoder_not_found() {
     },
     message,
     isLinux ? "" : { l10nId: "moz-support-link-text" },
-    isLinux ? "" : gNavigatorBundle.getString("decoder.noCodecs.accesskey"),
+    "",
     true,
     tab_checker_for_sumo("fix-video-audio-problems-firefox-windows")
   );
@@ -267,7 +267,7 @@ add_task(async function test_cannot_initialize_pulseaudio() {
     { type: "cannot-initialize-pulseaudio", formats: "testFormat" },
     message,
     { l10nId: "moz-support-link-text" },
-    gNavigatorBundle.getString("decoder.noCodecs.accesskey"),
+    "",
     true,
     tab_checker_for_sumo("fix-common-audio-and-video-issues")
   );

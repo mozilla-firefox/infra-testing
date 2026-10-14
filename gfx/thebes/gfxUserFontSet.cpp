@@ -418,7 +418,26 @@ void gfxUserFontEntry::FontLoadComplete() {
   }
 }
 
-void gfxUserFontEntry::ContinueLoad() {
+void gfxUserFontEntry::ScheduleContinueLoad() {
+  MOZ_ASSERT(NS_IsMainThread());
+  RefPtr<nsIRunnable> runnable =
+      NewRunnableMethod("gfxUserFontEntry::DoContinueLoad", this,
+                        &gfxUserFontEntry::DoContinueLoad);
+  // We don't want to trigger the channel open at random points in time, because
+  // it can run privileged JS.
+  if (!nsContentUtils::IsSafeToRunScript()) {
+    // There's a script-blocker on the stack. We know the sooner point where we
+    // can trigger the load.
+    nsContentUtils::AddScriptRunner(runnable.forget());
+  } else {
+    // We dispatch with a rather high priority, since somebody actually cares
+    // about this font.
+    NS_DispatchToCurrentThreadQueue(runnable.forget(),
+                                    EventQueuePriority::MediumHigh);
+  }
+}
+
+void gfxUserFontEntry::DoContinueLoad() {
   if (mUserFontLoadState == STATUS_NOT_LOADED) {
     // We must have been cancelled (possibly due to a font-list refresh) while
     // the runnable was pending, so just bail out.
@@ -562,8 +581,8 @@ void gfxUserFontEntry::DoLoadNextSrc(bool aIsContinue) {
           // buffers or other sync sources?
           SetLoadState(STATUS_LOAD_PENDING);
           NS_DispatchToMainThread(
-              NewRunnableMethod("gfxUserFontEntry::ContinueLoad", this,
-                                &gfxUserFontEntry::ContinueLoad));
+              NewRunnableMethod("gfxUserFontEntry::DoContinueLoad", this,
+                                &gfxUserFontEntry::DoContinueLoad));
           return;
         }
 
@@ -594,22 +613,8 @@ void gfxUserFontEntry::DoLoadNextSrc(bool aIsContinue) {
           fontSet->LogMessage(this, mCurrentSrcIndex, "font load failed",
                               nsIScriptError::errorFlag, rv);
         } else if (!aIsContinue) {
-          RefPtr<nsIRunnable> runnable =
-              NewRunnableMethod("gfxUserFontEntry::ContinueLoad", this,
-                                &gfxUserFontEntry::ContinueLoad);
           SetLoadState(STATUS_LOAD_PENDING);
-          // We don't want to trigger the channel open at random points in
-          // time, because it can run privileged JS.
-          if (!nsContentUtils::IsSafeToRunScript()) {
-            // There's a script-blocker on the stack. We know the sooner point
-            // where we can trigger the load.
-            nsContentUtils::AddScriptRunner(runnable.forget());
-          } else {
-            // We dispatch with a rather high priority, since somebody actually
-            // cares about this font.
-            NS_DispatchToCurrentThreadQueue(runnable.forget(),
-                                            EventQueuePriority::MediumHigh);
-          }
+          ScheduleContinueLoad();
           return;
         } else {
           // Actually start the async load.
@@ -726,6 +731,13 @@ bool gfxUserFontEntry::LoadPlatformFont(uint32_t aSrcIndex,
                                         const uint8_t*&& aSanitizedFontData,
                                         uint32_t aSanitizedLength,
                                         nsTArray<OTSMessage>&& aMessages) {
+  // Only URL and buffer sources are loaded here (local sources are resolved
+  // directly in DoLoadNextSrc).
+  MOZ_ASSERT(
+      mSrcList[aSrcIndex].mSourceType == gfxFontFaceSrc::eSourceType_URL ||
+          mSrcList[aSrcIndex].mSourceType == gfxFontFaceSrc::eSourceType_Buffer,
+      "unexpected source type reaching LoadPlatformFont");
+
   // This function consumes aOriginalFontData.
   auto atExit = MakeScopeExit([=]() { free((void*)aOriginalFontData); });
 
@@ -790,7 +802,10 @@ bool gfxUserFontEntry::LoadPlatformFont(uint32_t aSrcIndex,
         ("userfonts (%p) [src %d] failed uri: (%s) for (%s)"
          " error making platform font\n",
          fontSet.get(), aSrcIndex,
-         mSrcList[aSrcIndex].mURI->GetSpecOrDefault().get(),
+         // Local fonts don't reach this function, so null mURI => buffer-type.
+         mSrcList[aSrcIndex].mURI
+             ? mSrcList[aSrcIndex].mURI->GetSpecOrDefault().get()
+             : "(buffer)",
          FamilyName().get()));
     return false;
   }
@@ -814,13 +829,15 @@ bool gfxUserFontEntry::LoadPlatformFont(uint32_t aSrcIndex,
 #if MOZ_FONTATIONS
   // Give the new gfxFontEntry a Skrifa reference backed by our downloaded and
   // sanitized font data.
-  SkrifaFontRef* skf = skrifa_font_new(fontData->Data(), fontData->Length());
-  if (skf) {
-    fe->SetSkrifaFont(skf);
+  if (StaticPrefs::gfx_font_rendering_fontations_enabled_AtStartup()) {
+    SkrifaFontRef* skf = skrifa_font_new(fontData->Data(), fontData->Length());
+    if (skf) {
+      fe->SetSkrifaFont(skf);
 #  if NIGHTLY_BUILD
-    // also append (skrifa) to the name for devtools visibility
-    originalFullName.AppendLiteral(" (skrifa)");
+      // also append (skrifa) to the name for devtools visibility
+      originalFullName.AppendLiteral(" (skrifa)");
 #  endif
+    }
   }
 #endif
 
@@ -843,8 +860,12 @@ bool gfxUserFontEntry::LoadPlatformFont(uint32_t aSrcIndex,
       ("userfonts (%p) [src %d] loaded uri: (%s) for (%s) "
        "(%p) gen: %8.8x compress: %d%%\n",
        fontSet.get(), aSrcIndex,
-       mSrcList[aSrcIndex].mURI->GetSpecOrDefault().get(), FamilyName().get(),
-       this, uint32_t(fontSet->GetGeneration()), fontCompressionRatio));
+       // Local fonts don't reach this function, so null mURI => buffer-type.
+       mSrcList[aSrcIndex].mURI
+           ? mSrcList[aSrcIndex].mURI->GetSpecOrDefault().get()
+           : "(buffer)",
+       FamilyName().get(), this, uint32_t(fontSet->GetGeneration()),
+       fontCompressionRatio));
 
   if (NS_IsMainThread()) {
     // UserFontCache::CacheFont is not currently safe to call off-main-thread,

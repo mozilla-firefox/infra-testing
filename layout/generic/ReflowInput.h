@@ -180,7 +180,6 @@ struct SizeComputationInput {
    */
   template <typename SizeOrMaxSize>
   inline nscoord ComputeISizeValue(const LogicalSize& aContainingBlockSize,
-                                   StyleBoxSizing aBoxSizing,
                                    const SizeOrMaxSize&) const;
 
   /**
@@ -234,6 +233,11 @@ struct ReflowInput : public SizeComputationInput {
   // This takes on an arbitrary value the first time a block is reflowed
   nscoord mBlockDelta = 0;
 
+  // Distance from top of the line clamp root block to the top of this block.
+  // Necessary due to BStart() and GetRect() not being initialised before
+  // reflow.
+  nscoord mBOffsetToLineClampRoot = 0;
+
   // Physical accessors for the private fields. They are needed for
   // compatibility with not-yet-updated code. New code should use the accessors
   // for logical coordinates, unless the code really works on physical
@@ -273,6 +277,19 @@ struct ReflowInput : public SizeComputationInput {
   }
   nscoord ComputedMaxBSize() const {
     return mComputedMaxSize.BSize(mWritingMode);
+  }
+
+  // The block-size to resolve percentages against when they are resolved
+  // against our own content-box size, e.g. percentage gaps in a flex or grid
+  // container.
+  nscoord ComputedBSizeAsPercentageBasis() const {
+    if (mFlags.mTreatBSizeAsIndefinite) {
+      return NS_UNCONSTRAINEDSIZE;
+    }
+    if (mPercentageBasisInBlockAxis) {
+      return *mPercentageBasisInBlockAxis;
+    }
+    return ComputedBSize();
   }
 
   // WARNING: In general, adjusting available inline-size or block-size is not
@@ -551,6 +568,9 @@ struct ReflowInput : public SizeComputationInput {
     // https://drafts.csswg.org/css-inline-3/#text-box-trim
     bool mShouldApplyTextBoxTrimAtBlockEnd : 1;
     bool mShouldApplyTextBoxTrimAtFragmentEnd : 1;
+
+    // True if the block is a line-clamp container or a descendant thereof
+    bool mIsInLineClampContainer : 1;
   };
   Flags mFlags;
 
@@ -900,13 +920,15 @@ struct ReflowInput : public SizeComputationInput {
   // stores them in the assorted data members
   void ComputeMinMaxValues(const LogicalSize& aCBSize);
 
-  // aInsideBoxSizing returns the part of the padding, border, and margin
-  // in the aAxis dimension that goes inside the edge given by box-sizing;
-  // aOutsideBoxSizing returns the rest.
-  void CalculateBorderPaddingMargin(LogicalAxis aAxis,
-                                    nscoord aContainingBlockSize,
-                                    nscoord* aInsideBoxSizing,
-                                    nscoord* aOutsideBoxSizing) const;
+  struct BorderPaddingMargin {
+    nscoord mBorderPadding = 0;
+    nscoord mMargin = 0;
+  };
+  // Computes the sum of border and padding, and the sum of margins, in aAxis,
+  // as the frame would have them if it were in-flow. 'auto' margins are
+  // treated as zero.
+  BorderPaddingMargin CalculateBorderPaddingMargin(
+      LogicalAxis aAxis, nscoord aContainingBlockSize) const;
 
   void CalculateBlockSideMargins();
 

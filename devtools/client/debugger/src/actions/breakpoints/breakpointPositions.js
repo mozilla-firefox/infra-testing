@@ -3,8 +3,9 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import {
-  getBreakpointPositionsForSource,
-  getSourceActorsForSource,
+  getBreakpointPositionsForLocationSource,
+  getRelevantSourceActorsForLocation,
+  getBreakpointPositionsKeyForLocation,
 } from "../../selectors/index";
 
 import { makeBreakpointId } from "../../utils/breakpoint/index";
@@ -141,99 +142,82 @@ async function _setBreakpointPositions(location, thunkArgs) {
   const { client, dispatch, getState, sourceMapLoader } = thunkArgs;
   const results = {};
   let generatedSource = location.source;
+
+  let ranges;
   if (location.source.isOriginal) {
-    const ranges = await sourceMapLoader.getGeneratedRangesForOriginal(
+    // Retrieve all the ranges where this original source is defined in the bundle.
+    // This is typically returning a single range.
+    ranges = await sourceMapLoader.getGeneratedRangesForOriginal(
       location.source.id,
       true
     );
     generatedSource = location.source.generatedSource;
-
-    // Note: While looping here may not look ideal, in the vast majority of
-    // cases, the number of ranges here should be very small, and is quite
-    // likely to only be a single range.
-    for (const range of ranges) {
-      // Wrap infinite end positions to the next line to keep things simple
-      // and because we know we don't care about the end-line whitespace
-      // in this case.
-      if (range.end.column === Infinity) {
-        range.end = {
-          line: range.end.line + 1,
-          column: 0,
-        };
-      }
-
-      // Retrieve the positions for all the source actors for the related generated source.
-      // There might be many if it is loaded many times.
-      // We limit the retrieval of positions within the given range, so that we don't
-      // retrieve the whole bundle positions.
-      const allActorsPositions = await Promise.all(
-        getSourceActorsForSource(getState(), generatedSource.id).map(actor =>
-          client.getSourceActorBreakpointPositions(actor, range)
-        )
-      );
-
-      // `allActorsPositions` looks like this:
-      // [
-      //   { // Positions for the first source actor
-      //     1: [ 2, 6 ], // Line 1 is breakable on column 2 and 6
-      //     2: [ 2 ], // Line 2 is only breakable on column 2
-      //   },
-      //   {...} // Positions for another source actor
-      // ]
-      for (const actorPositions of allActorsPositions) {
-        for (const rangeLine in actorPositions) {
-          const columns = actorPositions[rangeLine];
-
-          // Merge all actors's breakable columns and avoid duplication of columns reported as breakable
-          const existing = results[rangeLine];
-          if (existing) {
-            for (const column of columns) {
-              if (!existing.includes(column)) {
-                existing.push(column);
-              }
-            }
-          } else {
-            results[rangeLine] = columns;
-          }
-        }
-      }
-    }
   } else {
     const { line } = location;
     if (typeof line !== "number") {
       throw new Error("Line is required for generated sources");
     }
+    // To use the same codepath as original sources, return a unique range
+    // matching the currently selected line in the selected source
+    ranges = [
+      {
+        // Only retrieve positions for the given line
+        start: { line, column: 0 },
+        end: { line: line + 1, column: 0 },
+      },
+    ];
+  }
 
-    // We only retrieve the positions for the given requested line, that, for each source actor.
-    // There might be many source actor, if it is loaded many times.
-    // Or if this is an html page, with many inline scripts.
-    const allActorsBreakableColumns = await Promise.all(
-      getSourceActorsForSource(getState(), location.source.id).map(
-        async actor => {
-          const positions = await client.getSourceActorBreakpointPositions(
-            actor,
-            {
-              // Only retrieve positions for the given line
-              start: { line, column: 0 },
-              end: { line: line + 1, column: 0 },
-            }
-          );
-          return positions[line] || [];
-        }
+  // Retrieve the list of source actors related to the selected source
+  const sourceActors = getRelevantSourceActorsForLocation(getState(), location);
+  // Compute the source key at the same time as it is also derived from source actors
+  const sourceKey = getBreakpointPositionsKeyForLocation(getState(), location);
+
+  // Note: While looping here may not look ideal, in the vast majority of
+  // cases, the number of ranges here should be very small, and is quite
+  // likely to only be a single range.
+  for (const range of ranges) {
+    // Wrap infinite end positions to the next line to keep things simple
+    // and because we know we don't care about the end-line whitespace
+    // in this case.
+    if (range.end.column === Infinity) {
+      range.end = {
+        line: range.end.line + 1,
+        column: 0,
+      };
+    }
+
+    const allActorsPositions = await Promise.all(
+      sourceActors.map(actor =>
+        client.getSourceActorBreakpointPositions(actor, range)
       )
     );
 
-    for (const columns of allActorsBreakableColumns) {
-      // Merge all actors's breakable columns and avoid duplication of columns reported as breakable
-      const existing = results[line];
-      if (existing) {
-        for (const column of columns) {
-          if (!existing.includes(column)) {
-            existing.push(column);
+    // `allActorsPositions` looks like this:
+    // [
+    //   { // Positions for the first source actor
+    //     1: [ 2, 6 ], // Line 1 is breakable on column 2 and 6
+    //     2: [ 2 ], // Line 2 is only breakable on column 2
+    //   },
+    //   {...} // Positions for another source actor
+    // ]
+    for (const actorPositions of allActorsPositions) {
+      // For non-original source, actorPositions should have a unique entry,
+      // only one for `location.line`.
+      for (const rangeLine in actorPositions) {
+        const columns = actorPositions[rangeLine];
+
+        // Merge all actors's breakable columns and avoid duplication of columns reported as breakable
+        const existing = results[rangeLine];
+        if (existing) {
+          for (const column of columns) {
+            if (!existing.includes(column)) {
+              existing.push(column);
+            }
           }
+        } else {
+          results[rangeLine] = columns;
         }
-      } else {
-        results[line] = columns;
       }
     }
   }
@@ -250,19 +234,9 @@ async function _setBreakpointPositions(location, thunkArgs) {
 
   dispatch({
     type: "ADD_BREAKPOINT_POSITIONS",
-    source: location.source,
+    sourceKey,
     positions,
   });
-}
-
-function generatedSourceActorKey(state, source) {
-  const generatedSource = source.isOriginal ? source.generatedSource : source;
-  const actors = generatedSource
-    ? getSourceActorsForSource(state, generatedSource.id).map(
-        ({ actor }) => actor
-      )
-    : [];
-  return [source.id, ...actors].join(":");
 }
 
 /**
@@ -291,9 +265,9 @@ export const setBreakpointPositions = memoizeableAction(
   "setBreakpointPositions",
   {
     getValue: (location, { getState }) => {
-      const positions = getBreakpointPositionsForSource(
+      const positions = getBreakpointPositionsForLocationSource(
         getState(),
-        location.source.id
+        location
       );
       if (!positions) {
         return null;
@@ -312,10 +286,14 @@ export const setBreakpointPositions = memoizeableAction(
       return fulfilled(positions);
     },
     createKey(location, { getState }) {
-      const key = generatedSourceActorKey(getState(), location.source);
+      // Use the same key as the source-actors reducer
+      const sourceKey = getBreakpointPositionsKeyForLocation(
+        getState(),
+        location
+      );
       return !location.source.isOriginal && location.line
-        ? `${key}-${location.line}`
-        : key;
+        ? `${sourceKey}-${location.line}`
+        : sourceKey;
     },
     action: async (location, thunkArgs) =>
       _setBreakpointPositions(location, thunkArgs),
@@ -326,9 +304,10 @@ export function updateBreakpointPositionsForNewPrettyPrintedSource(
   minifiedSource
 ) {
   return async ({ dispatch, getState }) => {
-    const oldPositions = getBreakpointPositionsForSource(
+    const location = createLocation({ source: minifiedSource });
+    const oldPositions = getBreakpointPositionsForLocationSource(
       getState(),
-      minifiedSource.id
+      location
     );
     if (!oldPositions) {
       return;
@@ -339,12 +318,20 @@ export function updateBreakpointPositionsForNewPrettyPrintedSource(
       Number(lineString)
     );
 
-    dispatch({ type: "CLEAR_BREAKPOINT_POSITIONS", source: minifiedSource });
+    const sourceKey = getBreakpointPositionsKeyForLocation(
+      getState(),
+      location
+    );
+    dispatch({ type: "CLEAR_BREAKPOINT_POSITIONS", sourceKey });
 
     // recompute the breakpoint positions for all lines for which we had breakpointPositions before
     await Promise.all(
       lines.map(line =>
-        dispatch(setBreakpointPositions({ source: minifiedSource, line }))
+        dispatch(
+          setBreakpointPositions(
+            createLocation({ source: minifiedSource, line })
+          )
+        )
       )
     );
   };

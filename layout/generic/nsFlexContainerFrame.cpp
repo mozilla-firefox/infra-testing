@@ -4748,14 +4748,20 @@ void nsFlexContainerFrame::Reflow(nsPresContext* aPresContext,
     // Calculate gap sizes for main and cross axis. We only need them in
     // DoFlexLayout in the first-in-flow, so no need to worry about consumed
     // block-size.
+    //
+    // NOTE: tentativeContentBoxSize might be definite but gapPercentageBasis
+    // indefinite, due to e.g. mTreatBSizeAsIndefinite.
+    LogicalSize gapPercentageBasis = tentativeContentBoxSize;
+    gapPercentageBasis.BSize(wm) =
+        aReflowInput.ComputedBSizeAsPercentageBasis();
     const auto& mainGapStyle =
         axisTracker.IsRowOriented() ? stylePos->mColumnGap : stylePos->mRowGap;
     const auto& crossGapStyle =
         axisTracker.IsRowOriented() ? stylePos->mRowGap : stylePos->mColumnGap;
     const nscoord mainGapSize = nsLayoutUtils::ResolveGapToLength(
-        mainGapStyle, tentativeContentBoxMainSize);
+        mainGapStyle, axisTracker.MainComponent(gapPercentageBasis));
     const nscoord crossGapSize = nsLayoutUtils::ResolveGapToLength(
-        crossGapStyle, tentativeContentBoxCrossSize);
+        crossGapStyle, axisTracker.CrossComponent(gapPercentageBasis));
 
     // When fragmenting a flex container, we run the flex algorithm without
     // regards to pagination in order to compute the flex container's desired
@@ -5648,6 +5654,10 @@ std::tuple<nscoord, nsReflowStatus> nsFlexContainerFrame::ReflowChildren(
   const FlexItem* endmostItem =
       endmostLine.IsEmpty() ? nullptr : &endmostLine.EndmostItem(aAxisTracker);
 
+  // Forced breaks are honored only if the available block-size is constrained,
+  // since an unconstrained reflow must not push items to a next-in-flow.
+  const bool shouldHonorForcedBreaks =
+      aAvailableSizeForItems.BSize(flexWM) != NS_UNCONSTRAINEDSIZE;
   bool endmostItemOrLineHasBreakAfter = false;
   // If true, push all remaining flex items to the container's next-in-flow.
   bool shouldPushRemainingItems = false;
@@ -5810,7 +5820,7 @@ std::tuple<nscoord, nsReflowStatus> nsFlexContainerFrame::ReflowChildren(
             ReflowFlexItem(aAxisTracker, aReflowInput, item, framePos,
                            isAdjacentWithBStart, availableSize, aContainerSize);
 
-        if (aReflowInput.IsInFragmentedContext()) {
+        if (shouldHonorForcedBreaks) {
           const bool itemHasBreakBefore =
               item.Frame()->ShouldBreakBefore(aReflowInput.mBreakType) ||
               childStatus.IsInlineBreakBefore();
@@ -5876,7 +5886,7 @@ std::tuple<nscoord, nsReflowStatus> nsFlexContainerFrame::ReflowChildren(
           overflowIncompleteItems.Insert(item.Frame());
         }
 
-        if (aReflowInput.IsInFragmentedContext()) {
+        if (shouldHonorForcedBreaks) {
           const bool itemHasBreakAfter =
               item.Frame()->ShouldBreakAfter(aReflowInput.mBreakType) ||
               childStatus.IsInlineBreakAfter();
@@ -5985,7 +5995,7 @@ std::tuple<nscoord, nsReflowStatus> nsFlexContainerFrame::ReflowChildren(
       }
     }
 
-    if (aReflowInput.IsInFragmentedContext() && aAxisTracker.IsRowOriented()) {
+    if (shouldHonorForcedBreaks && aAxisTracker.IsRowOriented()) {
       // Propagate forced break values from the flex items to its flex line.
       if (lineHasBreakBefore) {
         if (&line == &startmostLine) {
@@ -6563,8 +6573,6 @@ nscoord nsFlexContainerFrame::ComputeIntrinsicISize(
 
     const auto childWM = childFrame->GetWritingMode();
     const IntrinsicSizeInput childInput(aInput, childWM, flexWM);
-    const auto* styleFrame = nsLayoutUtils::GetStyleFrame(childFrame);
-    const auto* childStylePos = styleFrame->StylePosition();
 
     // A flex item with a definite block size can transfer its block size to the
     // inline-axis via its own aspect-ratio or serve as a percentage basis for
@@ -6585,22 +6593,11 @@ nscoord nsFlexContainerFrame::ComputeIntrinsicISize(
             NS_UNCONSTRAINEDSIZE &&
         ShouldStretchCrossSize(this, childFrame, flexWM,
                                axisTracker.CrossAxis())) {
-      // FIXME(emilio): Shouldn't this pass
-      // aInput.mPercentageBasisForChildren->ISize() to IntrinsicBSizeOffsets()?
-      const auto offsets = childFrame->IntrinsicBSizeOffsets();
-      // FIXME(bug 1933566): We resolve this here manually because 'stretch'
-      // isn't yet properly handled in intrinsic sizing, but we should
-      // eventually simplify this to look more like GenerateFlexItemForChild(),
-      // once that works.
-      const auto stretchedStyleCrossSize =
-          StyleSize::FromAppUnits(nsLayoutUtils::ComputeStretchBSize(
-              aInput.mPercentageBasisForChildren->BSize(flexWM), offsets.margin,
-              offsets.BorderPadding(), childStylePos->mBoxSizing));
       // The size override is in the child's own writing mode.
       if (flexWM.IsOrthogonalTo(childWM)) {
-        sizeOverrides.mStyleISize.emplace(stretchedStyleCrossSize);
+        sizeOverrides.mStyleISize.emplace(StyleSize::Stretch());
       } else {
-        sizeOverrides.mStyleBSize.emplace(stretchedStyleCrossSize);
+        sizeOverrides.mStyleBSize.emplace(StyleSize::Stretch());
       }
     }
     nscoord childISize = nsLayoutUtils::IntrinsicForContainer(

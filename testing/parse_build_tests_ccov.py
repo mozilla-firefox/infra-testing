@@ -20,33 +20,21 @@ def main():
     ):
         return
 
-    assert (
-        "GRCOV_PATH" in os.environ
-    ), "The environment variable GRCOV_PATH should contain a path to grcov"
+    assert "GRCOV_PATH" in os.environ, (
+        "The environment variable GRCOV_PATH should contain a path to grcov"
+    )
     grcov_path = os.environ["GRCOV_PATH"]
     assert os.path.exists(grcov_path), "grcov should exist"
 
     grcov_command = [
         grcov_path,
+        "--llvm",
         "-t",
         "lcov",
         "-p",
         buildconfig.topsrcdir,
         buildconfig.topobjdir,
     ]
-
-    if buildconfig.substs["OS_TARGET"] == "Linux":
-        gcc_dir = os.path.join(os.environ["MOZ_FETCHES_DIR"], "gcc")
-        if "LD_LIBRARY_PATH" in os.environ:
-            os.environ["LD_LIBRARY_PATH"] = "{}/lib64/:{}".format(
-                gcc_dir, os.environ["LD_LIBRARY_PATH"]
-            )
-        else:
-            os.environ["LD_LIBRARY_PATH"] = "{}/lib64/".format(gcc_dir)
-
-        os.environ["PATH"] = "{}/bin/{}{}".format(
-            gcc_dir, os.pathsep, os.environ["PATH"]
-        )
 
     grcov_output = subprocess.check_output(grcov_command)
 

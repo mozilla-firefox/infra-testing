@@ -548,6 +548,9 @@ enum class YUVColorSpace : uint8_t {
   _Last = Identity,
 };
 
+std::ostream& operator<<(std::ostream& aOut,
+                         const YUVColorSpace& aYUVColorSpace);
+
 enum class ColorDepth : uint8_t {
   COLOR_8,
   COLOR_10,
@@ -606,12 +609,17 @@ enum class TransferFunction : uint8_t {
   Default = BT709,
 };
 
+std::ostream& operator<<(std::ostream& aOut,
+                         const TransferFunction& aTransferFunction);
+
 enum class ColorRange : uint8_t {
   LIMITED,
   FULL,
   _First = LIMITED,
   _Last = FULL,
 };
+
+std::ostream& operator<<(std::ostream& aOut, const ColorRange& aColorRange);
 
 // HDR metadata structures, populated from codec-level signalling.
 struct Chromaticity {
@@ -716,6 +724,8 @@ enum class ColorSpace2 : uint8_t {
   _Last = BT2020,
 };
 
+std::ostream& operator<<(std::ostream& aOut, const ColorSpace2& aColorSpace2);
+
 inline ColorSpace2 ToColorSpace2(const YUVColorSpace in) {
   switch (in) {
     case YUVColorSpace::BT601:
@@ -727,7 +737,7 @@ inline ColorSpace2 ToColorSpace2(const YUVColorSpace in) {
     case YUVColorSpace::Identity:
       return ColorSpace2::SRGB;
   }
-  MOZ_ASSERT_UNREACHABLE();
+  MOZ_CRASH("bad YUVColorSpace");
 }
 
 inline YUVColorSpace ToYUVColorSpace(const ColorSpace2 in) {
@@ -745,7 +755,7 @@ inline YUVColorSpace ToYUVColorSpace(const ColorSpace2 in) {
     case ColorSpace2::DISPLAY_P3:
       MOZ_CRASH("Bad ColorSpace2 for ToYUVColorSpace");
   }
-  MOZ_ASSERT_UNREACHABLE();
+  MOZ_CRASH("bad ColorSpace2");
 }
 
 struct FromYUVRangedColorSpaceT final {
@@ -933,15 +943,24 @@ enum class ChromaSubsampling : uint8_t {
   _Last = HALF_WIDTH_AND_HEIGHT,
 };
 
+std::ostream& operator<<(std::ostream& aOut,
+                         const ChromaSubsampling& aChromaSubsampling);
+
 template <typename T>
 static inline T ChromaSize(const T& aYSize, ChromaSubsampling aSubsampling) {
+  MOZ_ASSERT(aYSize.width >= 0 && aYSize.height >= 0);
+  // Equivalent to (aDimension + 1) / 2 for non-negative dimensions without
+  // overflowing at the maximum value.
+  const auto halfCeil = [](auto aDimension) {
+    return aDimension - aDimension / 2;
+  };
   switch (aSubsampling) {
     case ChromaSubsampling::FULL:
       return aYSize;
     case ChromaSubsampling::HALF_WIDTH:
-      return T((aYSize.width + 1) / 2, aYSize.height);
+      return T(halfCeil(aYSize.width), aYSize.height);
     case ChromaSubsampling::HALF_WIDTH_AND_HEIGHT:
-      return T((aYSize.width + 1) / 2, (aYSize.height + 1) / 2);
+      return T(halfCeil(aYSize.width), halfCeil(aYSize.height));
   }
   MOZ_CRASH("bad ChromaSubsampling");
 }
@@ -1166,7 +1185,6 @@ struct sRGBColor {
   }
 
   bool operator==(const sRGBColor& aColor) const = default;
-  bool operator!=(const sRGBColor& aColor) const = default;
 
   Float r, g, b, a;
 };
@@ -1233,7 +1251,6 @@ struct DeviceColor {
   }
 
   bool operator==(const DeviceColor& aColor) const = default;
-  bool operator!=(const DeviceColor& aColor) const = default;
 
   friend std::ostream& operator<<(std::ostream& aOut,
                                   const DeviceColor& aColor);

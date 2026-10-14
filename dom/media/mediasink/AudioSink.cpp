@@ -38,7 +38,7 @@ AudioSink::AudioSink(AbstractThread* aThread,
     : mOwnerThread(aThread),
       mOutputRate(
           DecideAudioPlaybackSampleRate(aInfo, aShouldResistFingerprinting)),
-      mOutputChannels(DecideAudioPlaybackChannels(aInfo)),
+      mOutputChannels(AudioPlaybackChannels(aInfo)),
       mAudibilityMonitor(
           mOutputRate,
           StaticPrefs::dom_media_silence_duration_for_audibility()),
@@ -164,6 +164,7 @@ void AudioSink::ApplyPlaybackParams(const PlaybackParams& aParams) {
   mAudioStream->SetVolume(aParams.mVolume);
   mAudioStream->SetPlaybackRate(aParams.mPlaybackRate);
   mAudioStream->SetPreservesPitch(aParams.mPreservesPitch);
+  mAudioStream->SetStreamName(aParams.mStreamName);
 }
 
 void AudioSink::ConnectAudioQueues() {
@@ -308,29 +309,38 @@ void AudioSink::ShutDown() {
     mAudioStream = nullptr;
     ReenqueueUnplayedAudioDataIfNeeded();
   }
+  mStoppedForSeek = false;
   mProcessedQueueFinished = true;
 }
 
 void AudioSink::PrepareForReuse() {
   MOZ_ASSERT(mOwnerThread->IsCurrentThreadIn());
   MOZ_ASSERT(mAudioStream);
-  SINK_LOG("PrepareForReuse: detaching audio-queue listeners for seek reuse");
+  SINK_LOG("PrepareForReuse: dropping queued pre-seek audio for seek reuse");
 
-  // The cubeb stream keeps running across the seek, so we must not touch the
-  // ring buffer here (the live callback is consuming it). Just detach from the
-  // audio queues so the sink doesn't react to the decode reset during the seek;
-  // the buffered pre-seek audio keeps draining under the live callback and the
-  // remainder is dropped in ResetForReuse.
+  // Detach from the audio queues so the sink doesn't react to the decode reset
+  // during the seek, and clear the ring buffer by setting
+  // mDiscardUpToSampleCount, because that data is pre-seek and the stream must
+  // only output silence during seeking.
   mAudioQueueListener.DisconnectIfExists();
   mAudioQueueFinishListener.DisconnectIfExists();
   mProcessedQueueListener.DisconnectIfExists();
+  mStoppedForSeek = true;
+  mDiscardUpToSampleCount = mTotalSamplesPushed;
 }
 
 RefPtr<MediaSink::EndedPromise> AudioSink::ResetForReuse(
     const PlaybackParams& aParams, const media::TimeUnit& aStartTime) {
   MOZ_ASSERT(mOwnerThread->IsCurrentThreadIn());
   MOZ_ASSERT(mAudioStream);
+  MOZ_ASSERT(mDiscardUpToSampleCount == mTotalSamplesPushed,
+             "Nothing may be pushed while the sink is stopped for a seek");
   SINK_LOG("ResetForReuse to start time {}", aStartTime.ToMicroseconds());
+
+  // This is safe because the sink is shut down, and all event listeners that
+  // push to this queue are disconnected at this time and nobody can be writing
+  // to it.
+  mProcessedSPSCQueue->ResetProducerThreadId();
 
   ApplyPlaybackParams(aParams);
 
@@ -347,23 +357,21 @@ RefPtr<MediaSink::EndedPromise> AudioSink::ResetForReuse(
   mLastProcessedPacket = Nothing();
   mConverter = nullptr;
 
-  // Resuming into a playing state; bring the stream's logical state back in
-  // sync with the sink.
+  // Resuming into a playing state. A pause taken before the seek leaves the
+  // backend stopped, in which case this restarts it for real.
   mAudioStream->Resume();
-  ConnectAudioQueues();
 
-  // Everything pushed so far is pre-seek, so snapshotting the push total here
-  // makes the callback drop exactly the currently-queued samples and play
-  // everything enqueued afterwards. Snapshot before refilling so the post-seek
-  // audio pushed next is kept.
-  mDiscardUpToSampleCount = mTotalSamplesPushed;
+  // Must precede ConnectAudioQueues() and NotifyAudioNeeded(); see
+  // AudioClock::Rebase.
+  mAudioStream->RebaseLive();
+
+  ConnectAudioQueues();
 
   // Ensure at least one post-seek packet is converted and ready to play.
   NotifyAudioNeeded();
 
-  // The stream was never stopped, so there is no cubeb_stream_start; rebase the
-  // still-running clock and re-arm the ended promise for the reused stream.
-  mAudioStream->RebaseLive();
+  mStoppedForSeek = false;
+
   return mAudioStream->ReinitEndedPromise();
 }
 
@@ -459,8 +467,10 @@ uint32_t AudioSink::PopFrames(AudioDataValue* aBuffer, uint32_t aFrames,
   if (samplesRead != samplesToPop) {
     if (Ended()) {
       SINK_LOG("Last PopFrames -- Source ended.");
+    } else if (IsIntentionallySilent()) {
+      SINK_LOG_V("Stopped for a seek, outputting silence.");
     } else {
-      NS_WARNING("Underrun when popping samples from audiosink ring buffer.");
+      SINK_LOG("Underrun when popping samples from audiosink ring buffer.");
       TRACE_COMMENT("AudioSink::PopFrames", "Underrun %u frames missing",
                     SampleToFrame(samplesToPop - samplesRead));
     }
@@ -481,8 +491,8 @@ uint32_t AudioSink::PopFrames(AudioDataValue* aBuffer, uint32_t aFrames,
 
 bool AudioSink::Ended() const {
   // Return true when error encountered so AudioStream can start draining.
-  // Both atomic so we don't need locking
-  return mProcessedQueueFinished || mErrored;
+  // All atomic so we don't need locking.
+  return mErrored || (!mStoppedForSeek && mProcessedQueueFinished);
 }
 
 void AudioSink::CheckIsAudible(const Span<AudioDataValue>& aInterleaved,

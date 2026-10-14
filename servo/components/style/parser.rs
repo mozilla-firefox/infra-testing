@@ -7,11 +7,13 @@
 use crate::context::QuirksMode;
 use crate::custom_properties::{AttrTaint, AttrTaintedRange};
 use crate::error_reporting::{ContextualParseError, ParseErrorReporter};
+use crate::properties::PropertyIdRef;
 use crate::stylesheets::{CssRuleType, CssRuleTypes, Namespaces, Origin, UrlExtraData};
 use crate::use_counters::UseCounters;
 use cssparser::{Parser, SourceLocation, UnicodeRange};
 use selectors::parser::ParseRelative;
 use std::borrow::Cow;
+use std::cell::Cell;
 use style_traits::{OneOrMoreSeparated, ParseError, ParsingMode, Separator};
 
 /// Nesting context for parsing rules.
@@ -68,6 +70,52 @@ impl NestingContext {
     }
 }
 
+/// Context for the property declaration that is currently being parsed.
+#[derive(Debug, Default)]
+pub struct PropertyDeclarationContext<'a> {
+    /// Reference to the current property's name/ID.
+    property_id: Option<PropertyIdRef<'a>>,
+    /// Current count of random() functions that have been parsed so far
+    /// in the current property declaration. Used when a random() function
+    /// has a `property-index-scoped` key.
+    random_count: Cell<i32>,
+}
+
+impl<'a> PropertyDeclarationContext<'a> {
+    fn set(&mut self, property_id: PropertyIdRef<'a>) {
+        debug_assert!(
+            self.property_id.is_none(),
+            "Previous declaration should be empty"
+        );
+        self.property_id = Some(property_id);
+        self.random_count.set(0);
+    }
+
+    fn clear(&mut self) {
+        self.property_id = None;
+        self.random_count.set(0);
+    }
+
+    /// The declaration being parsed, if any.
+    pub fn property_id(&self) -> Option<PropertyIdRef<'a>> {
+        self.property_id
+    }
+
+    /// The index of the current random() function in this declaration.
+    pub fn current_random_index(&self) -> i32 {
+        self.random_count.get()
+    }
+
+    /// Claims the next index for a random() function in this declaration. The
+    /// index is 1-based and follows the order the functions appear in the
+    /// parsed value.
+    pub fn increment_random_count(&self) -> i32 {
+        let index = self.random_count.get() + 1;
+        self.random_count.set(index);
+        index
+    }
+}
+
 /// The data that the parser needs from outside in order to parse a stylesheet.
 pub struct ParserContext<'a> {
     /// The `Origin` of the stylesheet, whether it's a user, author or
@@ -89,6 +137,8 @@ pub struct ParserContext<'a> {
     pub nesting_context: NestingContext,
     /// The relevant regions in the input that have been tainted by attr() if relevant.
     pub attr_tainted_regions: AttrTaint,
+    /// Current property declaration context.
+    pub property_declaration_context: PropertyDeclarationContext<'a>,
 }
 
 impl<'a> ParserContext<'a> {
@@ -115,7 +165,21 @@ impl<'a> ParserContext<'a> {
             use_counters,
             nesting_context: NestingContext::new_from_rule(rule_type),
             attr_tainted_regions,
+            property_declaration_context: Default::default(),
         }
+    }
+
+    /// Temporarily sets the property declaration context and executes the callback function,
+    /// returning its result.
+    pub fn with_property_declaration<R>(
+        &mut self,
+        property_id: PropertyIdRef<'a>,
+        cb: impl FnOnce(&Self) -> R,
+    ) -> R {
+        self.property_declaration_context.set(property_id);
+        let r = cb(self);
+        self.property_declaration_context.clear();
+        r
     }
 
     /// Temporarily sets the rule_type and executes the callback function, returning its result.
@@ -169,6 +233,10 @@ impl<'a> ParserContext<'a> {
             .parsing_mode
             .intersects(ParsingMode::MEDIA_QUERY_CONDITION)
         {
+            return false;
+        }
+
+        if !self.allows_computational_dependence() {
             return false;
         }
 
@@ -241,10 +309,7 @@ pub trait Parse: Sized {
     /// Parse a value of this type.
     ///
     /// Returns an error on failure.
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>>;
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError>;
 }
 
 impl<T> Parse for Vec<T>
@@ -252,10 +317,7 @@ where
     T: Parse + OneOrMoreSeparated,
     <T as OneOrMoreSeparated>::S: Separator,
 {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         <T as OneOrMoreSeparated>::S::parse(input, |i| T::parse(context, i))
     }
 }
@@ -264,28 +326,19 @@ impl<T> Parse for Box<T>
 where
     T: Parse,
 {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         T::parse(context, input).map(Box::new)
     }
 }
 
 impl Parse for crate::OwnedStr {
-    fn parse<'i, 't>(
-        _: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(_: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         Ok(input.expect_string()?.as_ref().to_owned().into())
     }
 }
 
 impl Parse for UnicodeRange {
-    fn parse<'i, 't>(
-        _: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(_: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         Ok(UnicodeRange::parse(input)?)
     }
 }

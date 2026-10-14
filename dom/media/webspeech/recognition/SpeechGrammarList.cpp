@@ -40,35 +40,29 @@ nsISupports* SpeechGrammarList::GetParentObject() const { return mParent; }
 
 uint32_t SpeechGrammarList::Length() const { return mItems.Length(); }
 
-already_AddRefed<SpeechGrammar> SpeechGrammarList::Item(uint32_t aIndex,
-                                                        ErrorResult& aRv) {
-  RefPtr<SpeechGrammar> result = mItems.ElementAt(aIndex);
+already_AddRefed<SpeechGrammar> SpeechGrammarList::Item(uint32_t aIndex) {
+  RefPtr<SpeechGrammar> result = mItems.SafeElementAt(aIndex, nullptr);
   return result.forget();
 }
 
-void SpeechGrammarList::AddFromURI(const nsAString& aSrc,
-                                   const Optional<float>& aWeight,
-                                   ErrorResult& aRv) {
-  aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);
-}
+void SpeechGrammarList::AddFromUri(const nsAString& aSrc,
+                                   const Optional<float>& aWeight) {}
 
 void SpeechGrammarList::AddFromString(const nsAString& aString,
-                                      const Optional<float>& aWeight,
-                                      ErrorResult& aRv) {
+                                      const Optional<float>& aWeight) {
   SpeechGrammar* speechGrammar = new SpeechGrammar(mParent);
-  speechGrammar->SetSrc(aString, aRv);
+  speechGrammar->SetSrc(aString);
   mItems.AppendElement(speechGrammar);
 }
 
 already_AddRefed<SpeechGrammar> SpeechGrammarList::IndexedGetter(
-    uint32_t aIndex, bool& aPresent, ErrorResult& aRv) {
+    uint32_t aIndex, bool& aPresent) {
   if (aIndex >= Length()) {
     aPresent = false;
     return nullptr;
   }
-  ErrorResult rv;
   aPresent = true;
-  return Item(aIndex, rv);
+  return Item(aIndex);
 }
 
 }  // namespace mozilla::dom

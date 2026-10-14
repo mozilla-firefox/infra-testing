@@ -36,7 +36,6 @@ class nsDocumentFragment;
 class nsFrameSelection;
 class nsHTMLDocument;
 class nsITransferable;
-class nsRange;
 class nsStaticAtom;
 class nsStyledElement;
 class nsTableCellFrame;
@@ -62,6 +61,7 @@ class Blob;
 class DocumentFragment;
 class Event;
 class HTMLBRElement;
+class Range;
 class MouseEvent;
 class StaticRange;
 }  // namespace dom
@@ -259,27 +259,6 @@ class HTMLEditor final : public EditorBase,
    */
   MOZ_CAN_RUN_SCRIPT nsresult GetBackgroundColorState(bool* aMixed,
                                                       nsAString& aOutColor);
-
-  /**
-   * PasteNoFormattingAsAction() pastes content in clipboard without any style
-   * information.
-   *
-   * @param aClipboardType      nsIClipboard::kGlobalClipboard or
-   *                            nsIClipboard::kSelectionClipboard.
-   * @param aDispatchPasteEvent Yes if this should dispatch ePaste event
-   *                            before pasting.  Otherwise, No.
-   * @param aDataTransfer       The object containing the data to use for the
-   *                            paste operation. May be nullptr, in which case
-   *                            this will just get the data from the clipboard.
-   * @param aPrincipal          Set subject principal if it may be called by
-   *                            JS.  If set to nullptr, will be treated as
-   *                            called by system.
-   */
-  MOZ_CAN_RUN_SCRIPT nsresult
-  PasteNoFormattingAsAction(nsIClipboard::ClipboardType aClipboardType,
-                            DispatchPasteEvent aDispatchPasteEvent,
-                            DataTransfer* aDataTransfer = nullptr,
-                            nsIPrincipal* aPrincipal = nullptr);
 
   bool CanPasteTransferable(nsITransferable* aTransferable) final;
 
@@ -879,8 +858,8 @@ class HTMLEditor final : public EditorBase,
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<InsertTextResult, nsresult>
   ReplaceTextWithTransaction(dom::Text& aTextNode, uint32_t aOffset,
-                             uint32_t aLength,
-                             const nsAString& aStringToInsert);
+                             uint32_t aLength, const nsAString& aStringToInsert,
+                             InsertTextFor aPurpose);
 
   struct NormalizedStringToInsertText;
 
@@ -892,7 +871,8 @@ class HTMLEditor final : public EditorBase,
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<InsertTextResult, nsresult>
   InsertOrReplaceTextWithTransaction(const EditorDOMPoint& aPointToInsert,
-                                     const NormalizedStringToInsertText& aData);
+                                     const NormalizedStringToInsertText& aData,
+                                     InsertTextFor aPurpose);
 
   struct ReplaceWhiteSpacesData;
 
@@ -901,7 +881,8 @@ class HTMLEditor final : public EditorBase,
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<InsertTextResult, nsresult>
   ReplaceTextWithTransaction(dom::Text& aTextNode,
-                             const ReplaceWhiteSpacesData& aData);
+                             const ReplaceWhiteSpacesData& aData,
+                             InsertTextFor aPurpose);
 
   /**
    * Insert aStringToInsert to aPointToInsert.  If the point is not editable,
@@ -910,7 +891,8 @@ class HTMLEditor final : public EditorBase,
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<InsertTextResult, nsresult>
   InsertTextWithTransaction(const nsAString& aStringToInsert,
                             const EditorDOMPoint& aPointToInsert,
-                            InsertTextTo aInsertTextTo) final;
+                            InsertTextTo aInsertTextTo,
+                            InsertTextFor aPurpose) final;
 
   /**
    * CopyLastEditableChildStyles() clones inline container elements into
@@ -996,7 +978,7 @@ class HTMLEditor final : public EditorBase,
    * linefeed only nodes.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
-  CollapseAdjacentTextNodes(nsRange& aRange);
+  CollapseAdjacentTextNodes(dom::Range& aRange);
 
   static dom::Element* GetLinkElement(nsINode* aNode);
 
@@ -1320,15 +1302,15 @@ class HTMLEditor final : public EditorBase,
       EditSubAction aEditSubAction);
 
   /**
-   * CreateRangeIncludingAdjuscentWhiteSpaces() creates an nsRange instance
-   * which may be expanded from the given range to include adjuscent
+   * CreateRangeIncludingAdjuscentWhiteSpaces() creates a dom::Range
+   * instance which may be expanded from the given range to include adjuscent
    * white-spaces.  If this fails handling something, returns nullptr.
    */
   template <typename EditorDOMRangeType>
-  already_AddRefed<nsRange> CreateRangeIncludingAdjuscentWhiteSpaces(
+  already_AddRefed<dom::Range> CreateRangeIncludingAdjuscentWhiteSpaces(
       const EditorDOMRangeType& aRange);
   template <typename EditorDOMPointType1, typename EditorDOMPointType2>
-  already_AddRefed<nsRange> CreateRangeIncludingAdjuscentWhiteSpaces(
+  already_AddRefed<dom::Range> CreateRangeIncludingAdjuscentWhiteSpaces(
       const EditorDOMPointType1& aStartPoint,
       const EditorDOMPointType2& aEndPoint);
 
@@ -1341,7 +1323,7 @@ class HTMLEditor final : public EditorBase,
    */
   [[nodiscard]] Result<EditorRawDOMRange, nsresult>
   GetRangeExtendedToHardLineEdgesForBlockEditAction(
-      const nsRange* aRange, const Element& aEditingHost) const;
+      const dom::Range* aRange, const Element& aEditingHost) const;
 
   /**
    * InitializeInsertingElement is a callback type of methods which inserts
@@ -3033,12 +3015,7 @@ class HTMLEditor final : public EditorBase,
     MOZ_CAN_RUN_SCRIPT void Update(HTMLEditor& aHTMLEditor,
                                    Selection& aSelection);
 
-    bool operator==(const CellIndexes& aOther) const {
-      return mRow == aOther.mRow && mColumn == aOther.mColumn;
-    }
-    bool operator!=(const CellIndexes& aOther) const {
-      return mRow != aOther.mRow || mColumn != aOther.mColumn;
-    }
+    bool operator==(const CellIndexes& aOther) const = default;
 
     [[nodiscard]] bool isErr() const { return mRow < 0 || mColumn < 0; }
 
@@ -3295,9 +3272,12 @@ class HTMLEditor final : public EditorBase,
   HandlePasteAsQuotation(AutoEditActionDataSetter& aEditActionData,
                          nsIClipboard::ClipboardType aClipboardType,
                          DataTransfer* aDataTransfer) final;
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
-  HandlePasteTransferable(AutoEditActionDataSetter& aEditActionData,
-                          nsITransferable& aTransferable) final;
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult HandlePasteTransferable(
+      AutoEditActionDataSetter& aEditActionData, nsITransferable& aTransferable,
+      DataTransfer* aDataTransfer) final;
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult HandlePasteNoFormatting(
+      AutoEditActionDataSetter& aEditActionData,
+      nsIClipboard::ClipboardType aClipboardType, DataTransfer* aDataTransfer);
 
   /**
    * PasteInternal() pasts text with replacing selected content.
@@ -4329,13 +4309,14 @@ class HTMLEditor final : public EditorBase,
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult RefreshResizersInternal();
 
-  ManualNACPtr CreateResizer(int16_t aLocation, nsIContent& aParentContent);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY ManualNACPtr
+  CreateResizer(int16_t aLocation, nsIContent& aParentContent);
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
   SetAnonymousElementPositionWithoutTransaction(nsStyledElement& aStyledElement,
                                                 int32_t aX, int32_t aY);
 
-  ManualNACPtr CreateShadow(nsIContent& aParentContent,
-                            Element& aOriginalObject);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY ManualNACPtr
+  CreateShadow(nsIContent& aParentContent, Element& aOriginalObject);
 
   /**
    * SetShadowPosition() moves the shadow element to proper position.
@@ -4349,7 +4330,8 @@ class HTMLEditor final : public EditorBase,
   SetShadowPosition(Element& aShadowElement, Element& aElement,
                     int32_t aElementLeft, int32_t aElementTop);
 
-  ManualNACPtr CreateResizingInfo(nsIContent& aParentContent);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY ManualNACPtr
+  CreateResizingInfo(nsIContent& aParentContent);
   MOZ_CAN_RUN_SCRIPT nsresult SetResizingInfoPosition(int32_t aX, int32_t aY,
                                                       int32_t aW, int32_t aH);
 
@@ -4424,7 +4406,8 @@ class HTMLEditor final : public EditorBase,
    * always non-nullptr.  Otherwise, i.e., the grabber is hidden during
    * creation, this returns false.
    */
-  bool CreateGrabberInternal(nsIContent& aParentContent);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY bool CreateGrabberInternal(
+      nsIContent& aParentContent);
 
   MOZ_CAN_RUN_SCRIPT nsresult StartMoving();
   MOZ_CAN_RUN_SCRIPT nsresult SetFinalPosition(int32_t aX, int32_t aY);
@@ -4477,9 +4460,9 @@ class HTMLEditor final : public EditorBase,
    *                              is to be added to the created anonymous
    *                              element
    */
-  ManualNACPtr CreateAnonymousElement(nsAtom* aTag, nsIContent& aParentContent,
-                                      const nsAString& aClass,
-                                      bool aIsCreatedHidden);
+  MOZ_CAN_RUN_SCRIPT ManualNACPtr
+  CreateAnonymousElement(nsAtom* aTag, nsIContent& aParentContent,
+                         const nsAString& aClass, bool aIsCreatedHidden);
 
   /**
    * Reads a blob into memory and notifies the BlobReader object when the read
@@ -4505,13 +4488,13 @@ class HTMLEditor final : public EditorBase,
 
   /**
    * For saving allocation cost in the constructor of
-   * EditorBase::TopLevelEditSubActionData, we should reuse same nsRange
+   * EditorBase::TopLevelEditSubActionData, we should reuse same dom::Range
    * instance with all top level edit sub actions.
    * The instance is always cleared when TopLevelEditSubActionData is
    * destructed, but AbstractRange::mOwner keeps grabbing the owner document
    * so that we need to make it in the cycle collection.
    */
-  [[nodiscard]] inline already_AddRefed<nsRange>
+  [[nodiscard]] inline already_AddRefed<dom::Range>
   GetChangedRangeForTopLevelEditSubAction() const;
 
   MOZ_CAN_RUN_SCRIPT void DidDoTransaction(
@@ -4605,7 +4588,7 @@ class HTMLEditor final : public EditorBase,
   // Used by TopLevelEditSubActionData::mSelectedRange.
   mutable RefPtr<RangeItem> mSelectedRangeForTopLevelEditSubAction;
   // Used by TopLevelEditSubActionData::mChangedRange.
-  mutable RefPtr<nsRange> mChangedRangeForTopLevelEditSubAction;
+  mutable RefPtr<dom::Range> mChangedRangeForTopLevelEditSubAction;
 
   RefPtr<Runnable> mPendingRootElementUpdatedRunner;
   RefPtr<DocumentModifiedEvent> mPendingDocumentModifiedRunner;
@@ -4714,8 +4697,6 @@ class HTMLEditor final : public EditorBase,
   bool mDisabledLinkHandling = false;
   bool mOldLinkHandlingEnabled = false;
 
-  bool mHasBeforeInputBeenCanceled = false;
-
   bool mHasFocus = false;
   bool mIsInDesignMode = false;
 
@@ -4740,7 +4721,7 @@ class HTMLEditor final : public EditorBase,
                               // PrepareToInsertBRElement,
                               // ReflectPaddingBRElementForEmptyEditor,
                               // RefreshEditingUI,
-                              // mComposerUpdater, mHasBeforeInputBeenCanceled
+                              // mComposerUpdater
   friend class JoinNodesTransaction;  // DidJoinNodesTransaction, DoJoinNodes,
                                       // DoSplitNode, // RangeUpdaterRef
   friend class ListElementSelectionState;      // CollectEditTargetNodes,

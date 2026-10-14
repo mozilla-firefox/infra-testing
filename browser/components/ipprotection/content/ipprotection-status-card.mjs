@@ -43,7 +43,6 @@ export default class IPProtectionStatusCard extends MozLitElement {
     bandwidthUsage: { type: Object },
     hasExclusion: { type: Boolean },
     isActivating: { type: Boolean },
-    showLocationButtonBadge: { type: Boolean },
   };
 
   #actionButtonFocused = false;
@@ -134,9 +133,6 @@ export default class IPProtectionStatusCard extends MozLitElement {
         @click=${this.handleLocationButtonClick}
       >
         <span class="location-btn-content">
-          ${this.showLocationButtonBadge
-            ? html`<moz-badge type="new"></moz-badge>`
-            : null}
           ${country
             ? html`<span
                 data-l10n-id="ipprotection-location-country-button"

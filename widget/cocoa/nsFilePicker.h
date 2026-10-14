@@ -24,7 +24,8 @@ class nsFilePicker final : public nsBaseFilePicker {
   NS_DECL_ISUPPORTS
 
   // nsIFilePicker (less what's in nsBaseFilePicker)
-  NS_IMETHOD Open(nsIFilePickerShownCallback* aCallback) override;
+  MOZ_CAN_RUN_SCRIPT NS_IMETHOD
+  Open(nsIFilePickerShownCallback* aCallback) override;
   NS_IMETHOD GetDefaultString(nsAString& aDefaultString) override;
   NS_IMETHOD SetDefaultString(const nsAString& aDefaultString) override;
   NS_IMETHOD GetDefaultExtension(nsAString& aDefaultExtension) override;
@@ -62,6 +63,12 @@ class nsFilePicker final : public nsBaseFilePicker {
                         nsIFilePickerShownCallback* aCallback);
   void PresentFolderPanel(nsIFilePickerShownCallback* aCallback);
   void PresentSavePanel(nsIFilePickerShownCallback* aCallback);
+
+  // Called when an open or folder panel is dismissed. Invokes aCallback on a
+  // later main-thread turn, first filtering mFiles through Content Analysis
+  // when that applies to this picker.
+  void FinishOpenOrFolderPanel(nsIFilePickerShownCallback* aCallback,
+                               ResultCode aResult);
 
   // Presents aPanel asynchronously using the best available AppKit API: as a
   // sheet attached to the parent widget's NSWindow when one exists, otherwise

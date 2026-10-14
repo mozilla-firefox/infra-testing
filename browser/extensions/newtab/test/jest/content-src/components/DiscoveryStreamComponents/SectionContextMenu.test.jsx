@@ -30,7 +30,6 @@ describe("<SectionContextMenu>", () => {
       <WrapWithProvider>
         <SectionContextMenu
           dispatch={jest.fn()}
-          source=""
           index={0}
           sectionKey=""
           following={false}
@@ -43,6 +42,48 @@ describe("<SectionContextMenu>", () => {
       container.querySelector(".section-context-menu")
     ).toBeInTheDocument();
     expect(container.querySelector("panel-list")).toBeInTheDocument();
+  });
+
+  it("should label the menu button with the section title", () => {
+    const { container } = renderWithStore({
+      sectionKey: "sports",
+      title: "Sports",
+      sectionPersonalization: {},
+      sectionPosition: 1,
+    });
+    const button = container.querySelector(
+      ".section-context-menu > moz-button"
+    );
+
+    expect(button).toHaveAttribute(
+      "data-l10n-id",
+      "newtab-menu-content-tooltip"
+    );
+    expect(JSON.parse(button.getAttribute("data-l10n-args"))).toEqual({
+      title: "Sports",
+    });
+  });
+
+  it("should use the variable-free tooltip when the section has no title", () => {
+    // Sections render with a blank title while spocs load. Formatting
+    // newtab-menu-content-tooltip without $title crashes the Fluent resolver in
+    // debug builds, so the button has to switch messages rather than pass an
+    // empty $title.
+    const { container } = renderWithStore({
+      sectionKey: "sports",
+      title: "",
+      sectionPersonalization: {},
+      sectionPosition: 1,
+    });
+    const button = container.querySelector(
+      ".section-context-menu > moz-button"
+    );
+
+    expect(button).toHaveAttribute(
+      "data-l10n-id",
+      "newtab-menu-section-tooltip"
+    );
+    expect(button).not.toHaveAttribute("data-l10n-args");
   });
 
   it("should open the learn more url and record telemetry when Learn More is clicked", () => {

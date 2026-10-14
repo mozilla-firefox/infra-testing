@@ -42,7 +42,7 @@ class SettingsSubMenuHomepageRobot {
     fun verifyHomePageView(
         shortcutsSwitchEnabled: Boolean = true,
         sponsoredShortcutsCheckBox: Boolean = true,
-        jumpBackInSwitchEnabled: Boolean = true,
+        continueSwitchEnabled: Boolean = true,
         recentBookmarksSwitchEnabled: Boolean = true,
         recentlyVisitedSwitchEnabled: Boolean = true,
         pocketSwitchEnabled: Boolean = true,
@@ -116,12 +116,12 @@ class SettingsSubMenuHomepageRobot {
                 )
             Log.i(TAG, "verifyHomePageView: Verified that the \"Sponsored shortcuts\" check box is not checked")
         }
-        Log.i(TAG, "verifyHomePageView: Trying to verify that the \"Jump back in\" option is visible")
-        jumpBackInButton().check(matches(withEffectiveVisibility(Visibility.VISIBLE)))
-        Log.i(TAG, "verifyHomePageView: Verified that the \"Jump back in\" option is visible")
-        if (jumpBackInSwitchEnabled) {
-            Log.i(TAG, "verifyHomePageView: Trying to verify that the \"Jump back in\" toggle is checked")
-            jumpBackInButton()
+        Log.i(TAG, "verifyHomePageView: Trying to verify that the \"Continue\" option is visible")
+        continueButton().check(matches(withEffectiveVisibility(Visibility.VISIBLE)))
+        Log.i(TAG, "verifyHomePageView: Verified that the \"Continue\" option is visible")
+        if (continueSwitchEnabled) {
+            Log.i(TAG, "verifyHomePageView: Trying to verify that the \"Continue\" toggle is checked")
+            continueButton()
                 .check(
                     matches(
                         TestHelper.hasCousin(
@@ -132,10 +132,10 @@ class SettingsSubMenuHomepageRobot {
                         )
                     )
                 )
-            Log.i(TAG, "verifyHomePageView: Verified that the \"Jump back in\" toggle is checked")
+            Log.i(TAG, "verifyHomePageView: Verified that the \"Continue\" toggle is checked")
         } else {
-            Log.i(TAG, "verifyHomePageView: Trying to verify that the \"Jump back in\" toggle is not checked")
-            jumpBackInButton()
+            Log.i(TAG, "verifyHomePageView: Trying to verify that the \"Continue\" toggle is not checked")
+            continueButton()
                 .check(
                     matches(
                         TestHelper.hasCousin(
@@ -146,7 +146,7 @@ class SettingsSubMenuHomepageRobot {
                         )
                     )
                 )
-            Log.i(TAG, "verifyHomePageView: Verified that the \"Jump back in\" toggle is not checked")
+            Log.i(TAG, "verifyHomePageView: Verified that the \"Continue\" toggle is not checked")
         }
         Log.i(TAG, "verifyHomePageView: Trying to verify that the \"Recent bookmarks\" option is visible")
         recentBookmarksButton().check(matches(withEffectiveVisibility(Visibility.VISIBLE)))
@@ -330,10 +330,10 @@ class SettingsSubMenuHomepageRobot {
         Log.i(TAG, "clickSponsoredShortcuts: Clicked the \"Sponsored shortcuts\" option")
     }
 
-    fun clickJumpBackInButton() {
-        Log.i(TAG, "clickJumpBackInButton: Trying to click the \"Jump back in\" option")
-        jumpBackInButton().click()
-        Log.i(TAG, "clickJumpBackInButton: Clicked the \"Jump back in\" option")
+    fun clickContinueButton() {
+        Log.i(TAG, "clickContinueButton: Trying to click the \"Continue\" option")
+        continueButton().click()
+        Log.i(TAG, "clickContinueButton: Clicked the \"Continue\" option")
     }
 
     fun clickRecentlyVisited() {
@@ -545,7 +545,7 @@ private fun shortcutsButton() = onView(allOf(withText(R.string.top_sites_toggle_
 
 private fun sponsoredShortcutsButton() = onView(allOf(withText(R.string.customize_toggle_contile)))
 
-private fun jumpBackInButton() = onView(allOf(withText(R.string.customize_toggle_jump_back_in)))
+private fun continueButton() = onView(allOf(withText(R.string.customize_toggle_continue)))
 
 private fun recentBookmarksButton() = onView(allOf(withText(R.string.customize_toggle_bookmarks)))
 

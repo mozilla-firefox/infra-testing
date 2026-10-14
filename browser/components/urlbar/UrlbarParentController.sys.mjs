@@ -8,16 +8,18 @@ import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
  * @import {BrowserSearchTelemetry} from "moz-src:///browser/components/search/BrowserSearchTelemetry.sys.mjs"
  * @import {ProvidersManager} from "moz-src:///browser/components/urlbar/UrlbarProvidersManager.sys.mjs"
  * @import {SearchEngine} from "moz-src:///toolkit/components/search/SearchEngine.sys.mjs"
- * @import {SapLocation, SmartbarInput} from "moz-src:///browser/components/urlbar/content/SmartbarInput.mjs"
+ * @import {SapLocation} from "moz-src:///browser/components/urlbar/content/SmartbarInput.mjs"
  * @import {UrlbarView} from "chrome://browser/content/urlbar/UrlbarView.mjs"
  * @import {WindowMode} from "moz-src:///browser/components/urlbar/content/UrlbarInputBase.mjs"
  * @import {SearchEngineInfo} from "chrome://browser/content/urlbar/SearchEngineStore.mjs"
- * @import {UrlbarLoadRequest} from "chrome://browser/content/urlbar/UrlbarShared.mjs"
+ * @import {UrlbarLoadRequest, LoadURLParams} from "chrome://browser/content/urlbar/UrlbarShared.mjs"
+ * @import {UrlbarChildControllerProxy, UrlbarInputProxy, UrlbarViewProxy} from "moz-src:///browser/components/urlbar/actors/UrlbarParent.sys.mjs"
  */
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AboutNewTab: "resource:///modules/AboutNewTab.sys.mjs",
   AppProvidedConfigEngine:
     "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
   ASRouter: "resource:///modules/asrouter/ASRouter.sys.mjs",
@@ -25,6 +27,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
   BrowserSearchTelemetry:
     "moz-src:///browser/components/search/BrowserSearchTelemetry.sys.mjs",
+  ContainerCreationPanel:
+    "chrome://browser/content/usercontext/ContainerCreationPanel.mjs",
   ExtensionUtils: "resource://gre/modules/ExtensionUtils.sys.mjs",
   Interactions: "moz-src:///browser/components/places/Interactions.sys.mjs",
   ProvidersManager:
@@ -102,12 +106,12 @@ export class UrlbarParentController {
   static _lastAutofillReintegrationPromise = Promise.resolve();
 
   /**
-   * The paired UrlbarChildController, which registers itself via setChild().
+   * The paired UrlbarChildController or an object that can forward calls to it.
    * Listener registration and notification dispatch live on it, keeping
    * dispatch on the side where the listeners (the view, the event bufferer)
    * live. The child is always set before any query runs.
    *
-   * @type {UrlbarChildController}
+   * @type {UrlbarChildControllerProxy | UrlbarChildController}
    */
   #child = null;
 
@@ -168,10 +172,9 @@ export class UrlbarParentController {
   }
 
   /**
-   * The input, owned by the paired `UrlbarChildController` and read through it
-   * for the query-lifecycle and telemetry call sites that need it.
+   * The input or an object that can forward calls to the input.
    *
-   * @type {UrlbarInput}
+   * @type {UrlbarInputProxy | UrlbarInput}
    */
   get input() {
     return this.#child?.input;
@@ -221,9 +224,9 @@ export class UrlbarParentController {
   }
 
   /**
-   * The view.
+   * The view or an object that can forward calls to the view.
    *
-   * @type {UrlbarView}
+   * @type {UrlbarViewProxy | UrlbarView}
    */
   get view() {
     return this.#child?.view;
@@ -444,7 +447,10 @@ export class UrlbarParentController {
    */
   recordEngagement(wire) {
     this.engagementEvent.recordFromChild(
-      lazy.UrlbarTelemetryUtils.recordedEngagementFromWire(wire)
+      lazy.UrlbarTelemetryUtils.recordedEngagementFromWire(
+        wire,
+        this.liveResults
+      )
     );
   }
 
@@ -457,27 +463,15 @@ export class UrlbarParentController {
   }
 
   /**
-   * Records a bounce a message-path child collector triggered. The counterpart
-   * to the proxy's `handleBounceTrigger()`.
+   * Tracks a potential bounce a message-path child collector built. The
+   * counterpart to the proxy's `startTrackingBuiltBounce()`.
    *
-   * @param {object} payload
-   *   `{snapshot, startTime, browsingContextId, contentData}`.
+   * @param {BuiltBounce} payload
+   *   The bounce the child collector built.
    * @returns {Promise<void>}
    */
-  handleBounceTrigger(payload) {
-    return this.engagementEvent.handleBounceTrigger(payload);
-  }
-
-  /**
-   * Caches the live browser behind a bounce the message-path collector is
-   * tracking, so `handleBounceTrigger()` can resolve it once the tab is gone.
-   * The counterpart to the proxy's `trackBounceBrowser()`.
-   *
-   * @param {number} browserId
-   *   The bounce browser's stable browser id.
-   */
-  trackBounceBrowser(browserId) {
-    this.engagementEvent.trackBounceBrowser(browserId);
+  startTrackingBuiltBounce(payload) {
+    return this.engagementEvent.startTrackingBuiltBounce(payload);
   }
 
   /**
@@ -573,7 +567,7 @@ export class UrlbarParentController {
 
     // For backspace-induced blocks, record the unblock delay: fast unblocks
     // suggest the original block was accidental.
-    if (backspaceBlock?.level === level) {
+    if (backspaceBlock) {
       Glean.urlbarAutofill.reintegrationAfterBackspace[
         level
       ].accumulateSingleSample(Date.now() - backspaceBlock.blockedAt);
@@ -600,34 +594,38 @@ export class UrlbarParentController {
    * to form history. The parent-side counterpart to the content-side
    * `_recordSearch()`.
    *
-   * @param {object} options
-   * @param {string} options.engineId
+   * @param {object} searchData
+   * @param {string} searchData.engineId
    *   The id of the engine handling the search.
-   * @param {string} options.query
-   * @param {string} options.searchSource
+   * @param {string} searchData.query
+   * @param {string} searchData.searchSource
    *   Where the search originated from.
-   * @param {object} options.details
+   * @param {object} searchData.details
    *   The search action details, per `BrowserSearchTelemetry.recordSearch()`.
-   * @param {number} [options.browserId]
-   *   The id of the browser where the search is being opened; defaults to the
-   *   selected browser.
-   * @param {boolean} [options.opensInPrivateWindow]
+   * @param {boolean} [searchData.opensInPrivateWindow]
    *   Whether the search opens in a new private window, in which case it's
    *   not added to form history. If this is false but the current window
    *   is private, it's not added either.
    */
-  recordSearch({
+  recordSearch(searchData) {
+    let browser = this.browserWindow.gBrowser.selectedBrowser;
+    this.#recordSearchForBrowser({ ...searchData, browser });
+  }
+
+  /**
+   * See this.recordSearch().
+   *
+   * @param {Parameters<typeof this.recordSearch>[0] & {browser: MozBrowser}} searchData
+   *   The data for `recordSearch` and the browser where the search is loading.
+   */
+  #recordSearchForBrowser({
+    browser,
     engineId,
     query,
     searchSource,
     details,
-    browserId,
     opensInPrivateWindow,
   }) {
-    let browser =
-      this.resolveTargetBrowser(browserId) ||
-      this.browserWindow.gBrowser.selectedBrowser;
-
     // Record when the user uses the search bar to be used for message
     // targeting. This is arbitrarily capped at 100, only to prevent the number
     // from growing infinitely.
@@ -648,6 +646,11 @@ export class UrlbarParentController {
         "browser.search.widget.lastUsed",
         new Date().toISOString()
       );
+    }
+
+    if (this.sapName == "newtab_searchbar") {
+      let newtabBrowser = this.#actor.browsingContext.top.embedderElement;
+      details.newtabSessionId = lazy.AboutNewTab.getVisitId(newtabBrowser);
     }
 
     lazy.ASRouter.sendTriggerMessage({
@@ -683,19 +686,29 @@ export class UrlbarParentController {
    * the next-opened tab is the search tab. Reaching its browser is parent-only.
    *
    * @param {Parameters<typeof this.recordSearch>[0]} searchData
-   *   The data for `recordSearch`; its `browserId` is filled in here.
+   *   The data for `recordSearch`.
    */
   recordSearchInOpenedTab(searchData) {
     this.browserWindow.gBrowser.tabContainer.addEventListener(
       "TabOpen",
       tabEvent => {
-        this.recordSearch({
+        this.#recordSearchForBrowser({
           ...searchData,
-          browserId: tabEvent.target.linkedBrowser.browserId,
+          browser: tabEvent.target.linkedBrowser,
         });
       },
       { once: true }
     );
+  }
+
+  /**
+   * Counts a zero-prefix view event under this input's SAP.
+   *
+   * @param {"abandonment"|"engagement"|"exposure"} kind
+   *   The zero-prefix event to count.
+   */
+  recordZeroPrefix(kind) {
+    Glean.urlbarZeroprefix2[kind][this.sapName].add(1);
   }
 
   /**
@@ -784,7 +797,7 @@ export class UrlbarParentController {
    * and notification dispatch. It must be set before any query runs, since
    * the query lifecycle notifies through it.
    *
-   * @param {object} child The paired UrlbarChildController.
+   * @param {UrlbarChildControllerProxy | UrlbarChildController} child
    */
   setChild(child) {
     this.#child = child;
@@ -804,13 +817,17 @@ export class UrlbarParentController {
    *   The target browser's id. Only used if `where == current` and the call
    *   isn't coming from a content process. If it's not specified and
    *   `where == current`, the currently selected tab is used.
+   * @param {boolean} [tracksBounce]
+   *   Whether the caller tracks a bounce for this load. Any other load ends a
+   *   bounce tracked in the tab it navigates.
    */
   openSERP(
     engineId,
     searchTerms,
     where,
     inBackground = false,
-    browserId = null
+    browserId = null,
+    tracksBounce = false
   ) {
     let searchEngine = lazy.SearchService.getEngineById(engineId);
 
@@ -819,11 +836,15 @@ export class UrlbarParentController {
       searchTerms
     );
 
+    let browser =
+      this.resolveTargetBrowser(browserId) ??
+      this.browserWindow.gBrowser.selectedBrowser;
     this.browserWindow.openTrustedLinkIn(url, where, {
       inBackground,
+      initiatedByURLBar: tracksBounce,
       postData,
-      targetBrowser:
-        where == "current" ? this.resolveTargetBrowser(browserId) : null,
+      resolveOnContentBrowserCreated: claimBounceForLoad(browser),
+      targetBrowser: where == "current" ? browser : null,
       globalHistoryOptions: {
         triggeringSource: this.sapName,
         triggeringSearchEngine: searchEngine.name,
@@ -855,9 +876,33 @@ export class UrlbarParentController {
   }
 
   /**
-   * Returns the icon URL of the engine with the given id. This can be a blob
-   * URL, which only resolves in this process, so UrlbarParent serializes it
-   * before handing it to another process.
+   * Opens the preferences page. The chrome window's `openPreferences` is a
+   * script global of the browser window, out of reach of an input hosted in a
+   * content page, so the call is made here.
+   *
+   * @param {string} paneID
+   *   The preferences pane to open, per `openPreferences`.
+   * @param {object} [extraArgs]
+   *   Extra arguments, per `openPreferences`.
+   */
+  openPreferences(paneID, extraArgs) {
+    this.browserWindow.openPreferences(paneID, extraArgs);
+  }
+
+  /**
+   * Opens the panel that adds a container, anchored in the browser window for
+   * the same reason `openPreferences` is called here.
+   *
+   * @param {string} entrypoint
+   *   The UI entry point the request came from.
+   */
+  openContainerCreationPanel(entrypoint) {
+    lazy.ContainerCreationPanel.open(this.browserWindow, entrypoint);
+  }
+
+  /**
+   * Returns the icon URL of the engine with the given id, in a form the view
+   * can load.
    *
    * @param {string} engineId
    * @returns {Promise<?string>}
@@ -869,7 +914,7 @@ export class UrlbarParentController {
       lazy.logger.warn(`No engine found for id ${engineId}`);
       return null;
     }
-    return (await engine.getIconURL()) ?? null;
+    return (await lazy.UrlbarUtils.getEngineIconUrl(engine, this)) ?? null;
   }
 
   /**
@@ -919,7 +964,7 @@ export class UrlbarParentController {
             // Speculative connect only if search suggestions are enabled.
             if (
               (lazy.UrlbarPrefs.get("suggest.searches") ||
-                context.sapName == "searchbar") &&
+                context.isSearchbarSAP) &&
               lazy.UrlbarPrefs.get("browser.search.suggest.enabled")
             ) {
               let engine = lazy.SearchService.getEngineByName(
@@ -974,10 +1019,12 @@ export class UrlbarParentController {
    *   What to load.
    * @param {string} loadData.where
    *   Where to open, per `openTrustedLinkIn`.
-   * @param {object} loadData.params
+   * @param {LoadURLParams} loadData.params
    *   The serializable `openTrustedLinkIn` params.
    * @param {number} [loadData.browserId]
-   *   The target browser's id; defaults to the selected browser.
+   *   The target browser's id; defaults to the selected browser. A content
+   *   sender always targets its own tab. A `current` load is dropped if its
+   *   target browser has gone away.
    * @param {string} [loadData.userTypedValue]
    *   The value to record as the browser's typed value, for a `current` load.
    * @returns {{reverted: boolean, browserId: number}}
@@ -989,9 +1036,17 @@ export class UrlbarParentController {
    *   content-process input can't resolve the selected browser itself.
    */
   loadURL({ loadRequest, where, params, browserId, userTypedValue }) {
-    let browser =
-      this.resolveTargetBrowser(browserId) ||
-      this.browserWindow.gBrowser.selectedBrowser;
+    // TODO(bug 2076823): Simplify how the target browser is picked.
+    let browser = this.resolveTargetBrowser(browserId);
+    if (!browser) {
+      // The tab was closed before the load got here; don't hand its load to
+      // whichever tab is selected now.
+      if ((browserId || this.rendersInContentProcess) && where == "current") {
+        return { reverted: false, browserId };
+      }
+      browser = this.browserWindow.gBrowser.selectedBrowser;
+    }
+    params.resolveOnContentBrowserCreated = claimBounceForLoad(browser);
 
     let { url, postData } = lazy.UrlbarUtils.loadRequestToUrl(loadRequest);
     if (!url) {
@@ -1014,6 +1069,9 @@ export class UrlbarParentController {
     } else {
       params.initiatingDoc = this.browserWindow.document;
     }
+
+    // Specifies that the URL load was initiated by a URL bar input.
+    params.initiatedByURLBar = true;
 
     // Focus the content area before triggering loads, since if the load
     // occurs in a new tab, we want focus to be restored to the content area
@@ -1162,8 +1220,8 @@ export class UrlbarParentController {
    *   The URL being loaded.
    * @param {string} loadData.where
    *   Where to open, per `openTrustedLinkIn`.
-   * @param {object} loadData.params
-   *   The `openTrustedLinkIn` params, extended here with `initiatedByURLBar`.
+   * @param {LoadURLParams} loadData.params
+   *   The `openTrustedLinkIn` params.
    * @param {string} [loadData.userTypedValue]
    *   The value to record as the browser's typed value, for a `current` load.
    */
@@ -1206,9 +1264,6 @@ export class UrlbarParentController {
         );
       }
     }
-
-    // Specifies that the URL load was initiated by the URL bar.
-    params.initiatedByURLBar = true;
   }
 
   /**
@@ -1256,7 +1311,9 @@ export class UrlbarParentController {
    * @param {UrlbarQueryContext} queryContext the object to cache.
    */
   setLastQueryContextCache(queryContext) {
-    this._lastQueryContextWrapper = { queryContext };
+    // Marked done: no query is running behind a context cached this way, so
+    // cancelQuery() must not treat it as one.
+    this._lastQueryContextWrapper = { queryContext, done: true };
   }
 
   /**
@@ -1267,6 +1324,16 @@ export class UrlbarParentController {
   }
 
   /**
+   * The last query's results, which are the authoritative objects a result
+   * reconstructed from the wire resolves back to. See `UrlbarResult.fromWire()`.
+   *
+   * @type {UrlbarResult[]}
+   */
+  get liveResults() {
+    return this._lastQueryContextWrapper?.queryContext.results ?? [];
+  }
+
+  /**
    * Notifies listeners of results, by dispatching through the paired
    * UrlbarChildController, which owns the listeners.
    *
@@ -1274,7 +1341,18 @@ export class UrlbarParentController {
    * @param {object} params Parameters to pass with the notification.
    */
   notify(name, ...params) {
-    this.#child.notify(name, ...params);
+    if (this.#child.isProxy === true) {
+      this.#child.notifyFromWire(
+        name,
+        ...params.map(param =>
+          param instanceof lazy.UrlbarQueryContext
+            ? { serializedQueryContext: param.toWire() }
+            : param
+        )
+      );
+    } else {
+      this.#child.notify(name, ...params);
+    }
   }
 
   #engineStoreInitStarted = false;
@@ -1417,6 +1495,131 @@ export class UrlbarParentController {
 }
 
 /**
+ * A bounce a message-path child collector built at engagement time.
+ *
+ * @typedef {object} BuiltBounce
+ * @property {object} built
+ *   The Glean event from `UrlbarTelemetryUtils.buildEventInfo()`, minus
+ *   `view_time`, which only the parent knows and only at trigger time.
+ * @property {string} searchSource
+ *   The engagement's search source, which the SAP is resolved from.
+ * @property {?number} browserId
+ *   The stable browser id of the tab the engagement happened in, or null when
+ *   the input has no chrome window to read one from.
+ */
+
+/**
+ * A bounce still being tracked.
+ *
+ * @typedef {object} TrackedBounce
+ * @property {number} startTime
+ *   When the engagement happened.
+ * @property {(viewTime: number) => void} record
+ *   Records the bounce, given the view time in milliseconds.
+ * @property {boolean} awaitingLoad
+ *   Whether the engagement's load has yet to claim the bounce.
+ */
+
+/**
+ * Bounces still being tracked, keyed by the browser of the page they were
+ * tracked for. In module scope because a bounce outlives the collector that
+ * started it: the New Tab search bar's page -- and with it its actor and parent
+ * controller -- is gone by the time the tab navigates back or closes, so the
+ * trigger arrives from a chrome window input. `record` closes over the
+ * collector that resolves the SAP and makes the Glean call, and the map is weak
+ * so a tab that never sees a trigger doesn't keep that collector's window
+ * alive.
+ *
+ * A bounce is tracked before the engagement's page loads, under the tab the
+ * engagement happened in, and moves to the browser the page loads in once the
+ * load claims it (see `claimBounceForLoad()`).
+ *
+ * @type {WeakMap<MozBrowser, TrackedBounce>}
+ */
+const gTrackedBounces = new WeakMap();
+
+/**
+ * Handle a bounce event trigger.
+ * These include closing the tab/window and navigating away via
+ * browser chrome (this includes clicking on history or bookmark entries,
+ * and engaging with the URL bar).
+ *
+ * @param {MozBrowser} browser
+ *   The browser of the tab the trigger happened in.
+ */
+export async function handleBounceEventTrigger(browser) {
+  let tracking = gTrackedBounces.get(browser);
+  if (!tracking) {
+    return;
+  }
+  gTrackedBounces.delete(browser);
+  await recordBounceIfShortVisit(browser, tracking);
+}
+
+/**
+ * Claims the bounce an engagement in a tab is tracking for the page it is
+ * about to load, so the bounce follows that page to the browser it loads in:
+ * a new tab or window, or the tab itself.
+ *
+ * @param {MozBrowser} sourceBrowser
+ *   The browser of the tab the engagement happened in.
+ * @returns {(browser: MozBrowser) => void}
+ *   Moves the bounce to the browser the page loaded in. A no-op when no bounce
+ *   is awaiting a load from the tab.
+ */
+function claimBounceForLoad(sourceBrowser) {
+  let tracking = gTrackedBounces.get(sourceBrowser);
+  if (!tracking?.awaitingLoad) {
+    return () => {};
+  }
+  tracking.awaitingLoad = false;
+  return browser => {
+    if (
+      browser == sourceBrowser ||
+      gTrackedBounces.get(sourceBrowser) != tracking
+    ) {
+      return;
+    }
+    gTrackedBounces.delete(sourceBrowser);
+    gTrackedBounces.set(browser, tracking);
+  };
+}
+
+/**
+ * Records a bounce no longer tracked if the page it was tracked for was viewed
+ * for less than the bounce threshold.
+ *
+ * @param {MozBrowser} browser
+ *   The browser the page loaded in.
+ * @param {TrackedBounce} tracking
+ *   The bounce.
+ */
+async function recordBounceIfShortVisit(browser, tracking) {
+  const interactions =
+    (await lazy.Interactions.getRecentInteractionsForBrowser(browser)) ?? [];
+
+  let totalViewTime = 0;
+  for (let interaction of interactions) {
+    if (interaction.created_at >= tracking.startTime) {
+      totalViewTime += interaction.totalViewTime || 0;
+    }
+  }
+
+  // If the total view time when the user navigates away after a
+  // URL bar interaction is less than the threshold of
+  // events.bounce.maxSecondsFromLastSearch, we record a bounce event.
+  // If totalViewTime is 0, that means the page didn't load yet, so
+  // we wouldn't record a bounce event.
+  if (
+    totalViewTime != 0 &&
+    totalViewTime <
+      lazy.UrlbarPrefs.get("events.bounce.maxSecondsFromLastSearch") * 1000
+  ) {
+    tracking.record(totalViewTime);
+  }
+}
+
+/**
  * Tracks and records telemetry events for the given category, if provided,
  * otherwise it's a no-op.
  * It is currently designed around the "urlbar" category, even if it can
@@ -1500,6 +1703,10 @@ export class TelemetryEvent {
       "tabswitch",
       "focus",
     ];
+    if (this._controller.sapName === "smartbar") {
+      // The smartbar CTA can start a session when the input is not focused.
+      validEvents.push("aiwindow-input-cta:on-action");
+    }
     if (!validEvents.includes(event.type)) {
       console.error("Can't start recording from event type: ", event.type);
       return;
@@ -1512,6 +1719,12 @@ export class TelemetryEvent {
         lazy.UrlbarTelemetryUtils.startInteractionType(event, searchString),
       searchString,
     };
+
+    // Engagements that run no query would otherwise reach the provider
+    // notifications with no context at all.
+    if (!this._controller._lastQueryContextWrapper) {
+      this._controller.setLastQueryContextCache(queryContext);
+    }
   }
 
   /**
@@ -1603,7 +1816,6 @@ export class TelemetryEvent {
       // `#internalRecord()`.)
       if (!details.isSessionOngoing) {
         this._startEventInfo = null;
-        this._discarded = false;
       }
     }
   }
@@ -1754,7 +1966,8 @@ export class TelemetryEvent {
    * @param {string} data.searchSource
    *   The search source.
    * @param {object} data.internalDetails
-   *   The interaction details (picked result reconstructed; event/element null).
+   *   The interaction details; `event` and `element` are null on the message
+   *   path.
    * @param {?object[]} data.exposures
    *   The resolved exposure list, or null when the session stays open.
    * @param {?UrlbarResult[]} data.visibleResults
@@ -1772,6 +1985,11 @@ export class TelemetryEvent {
   }) {
     try {
       let { queryContext } = this._controller._lastQueryContextWrapper || {};
+      if (!queryContext) {
+        // start() caches one for every session, so this means a caller ended a
+        // session it never started.
+        console.error(`Recording a ${method} with no query context`);
+      }
       let sap = this.#searchSourceToSap(searchSource);
 
       if (built && sap) {
@@ -1786,27 +2004,6 @@ export class TelemetryEvent {
       // this engagement or abandonment (the candidate was built content-side).
       if (disableBuilt) {
         this.startTrackingDisableSuggest(disableBuilt, searchSource);
-      }
-
-      // On the message path internalDetails.result was reconstructed from
-      // structured clone, which strips data that doesn't survive it (e.g. a Rust
-      // suggestion's UniFFI class) and yields an object distinct from the
-      // parent's authoritative result. Resolve it back to the live result by id
-      // so provider engagement handling -- notably dismissal against the Rust
-      // store -- operates on the live object, and carry the view-assigned
-      // rowIndex the wire preserves so the selection ping's position is right
-      // (the live result never went through a view). visibleResults stay as the
-      // wire results; the impression/abandonment hooks match them by id.
-      // TODO(bug 2055935): remove this or bake the resolution into the actor
-      // result deserialization.
-      let liveResult = queryContext?.results?.find(
-        r => r.id === internalDetails.result?.id
-      );
-      if (liveResult) {
-        if (internalDetails.result.rowIndex != null) {
-          liveResult.rowIndex = internalDetails.result.rowIndex;
-        }
-        internalDetails.result = liveResult;
       }
 
       this._controller.manager.notifyEngagementChange(
@@ -1922,6 +2119,13 @@ export class TelemetryEvent {
    *   The detected intent for the input. Only set when sap is `smartbar`.
    * @param {string} [details.model]
    *   Model selected by the user. Only set when sap is `smartbar`.
+   * @param {?string} [details.engagementSap]
+   *   The search access point. The address bar's `urlbar`, `urlbar_newtab` and
+   *   `urlbar_addonpage` depend on the page loaded at the time the search was
+   *   made. The engagement itself loads a new page, so a recording deferred
+   *   past it passes the sap resolved when the engagement happened. A recording
+   *   made at engagement time omits it, so the sap resolves from `searchSource`
+   *   here.
    */
   #recordSearchEngagementTelemetry(
     method,
@@ -1944,9 +2148,10 @@ export class TelemetryEvent {
       intent = "",
       model = "",
       windowMode,
+      engagementSap,
     }
   ) {
-    let sap = this.#searchSourceToSap(searchSource);
+    let sap = engagementSap ?? this.#searchSourceToSap(searchSource);
     if (!sap) {
       return;
     }
@@ -1958,7 +2163,6 @@ export class TelemetryEvent {
         "Telemetry extra_key `location` is required for smartbar"
       );
     }
-    searchMode = searchMode ?? engagementData.searchMode;
 
     // Distinguish user typed search strings from persisted search terms. The
     // "refined" check compares against the previous session's search words, so
@@ -2219,7 +2423,6 @@ export class TelemetryEvent {
   discard() {
     if (this._startEventInfo) {
       this._startEventInfo = null;
-      this._discarded = true;
     }
   }
 
@@ -2364,127 +2567,113 @@ export class TelemetryEvent {
     return ChromeUtils.now();
   }
 
-  // Bounces still being tracked on the direct path, keyed by the tab's stable
-  // browser id. The browser element is captured while alive so a tab-close
-  // trigger can still reach Interactions for it after the tab is gone.
-  #directBounces = new Map();
-
   /**
    * Start tracking a potential bounce event after the user has engaged
-   * with a URL bar result.
+   * with a URL bar result. The direct path's counterpart to
+   * `startTrackingBuiltBounce()`, which takes an event a child collector has
+   * already built.
    *
-   * @param {number} browserId
-   *   The stable browser id of the tab the engagement happened in.
+   * @param {?number} browserId
+   *   The stable browser id of the tab the engagement happened in, or null when
+   *   the input has no chrome window to read one from.
    * @param {event} event
    *   A DOM event.
    * @param {ActionDetails} details
    *   An object describing interaction details.
    */
   async startTrackingBounceEvent(browserId, event, details) {
-    let startEventInfo = this._startEventInfo;
-
-    // If we are already tracking a bounce, then another engagement
-    // could possibly lead to a bounce.
-    if (this.#directBounces.has(browserId)) {
-      await this.handleBounceEventTrigger(browserId);
-    }
-
-    let browser = this._controller.resolveTargetBrowser(browserId);
-    if (!browser) {
+    let snapshot = lazy.UrlbarTelemetryUtils.collectBounceSnapshot(
+      event,
+      details,
+      this._startEventInfo,
+      this.#engagementData.visibleResults
+    );
+    // There is no snapshot when the engagement has no event to classify, or
+    // when its interaction has already been recorded, as when a navigation
+    // picks the heuristic result the parent resolved for it after recording
+    // the engagement.
+    if (!snapshot) {
       return;
     }
+    let sap = this.#searchSourceToSap(snapshot.searchSource);
+    // There is no sap when the window is closing.
+    if (!sap) {
+      return;
+    }
+    // The input has left the search mode by the time the bounce triggers.
+    snapshot.searchMode ??= this.#engagementData.searchMode;
+    await this.#startTrackingBounce(browserId, viewTime =>
+      this.#recordBounce(snapshot, viewTime, sap)
+    );
+  }
 
-    this.#directBounces.set(browserId, {
-      startTime: Date.now(),
-      snapshot: lazy.UrlbarTelemetryUtils.collectBounceSnapshot(
-        event,
-        details,
-        startEventInfo,
-        this.#engagementData.visibleResults
-      ),
-      browser,
+  /**
+   * Tracks a potential bounce a message-path child collector built. The
+   * collector builds the event at engagement time, since its page can be gone
+   * by the time the bounce triggers: the New Tab search bar navigates the very
+   * tab it lives in, and the trigger then reaches us through a chrome window
+   * input.
+   *
+   * @param {BuiltBounce} payload
+   *   The bounce the child collector built.
+   */
+  async startTrackingBuiltBounce(payload) {
+    let { built, searchSource, browserId } = payload;
+    let sap = this.#searchSourceToSap(searchSource);
+    if (!sap) {
+      return;
+    }
+    await this.#startTrackingBounce(browserId, viewTime => {
+      // view_time is only known now, once Interactions has reported it.
+      built.eventInfo.view_time = (viewTime / 1000).toString();
+      this.#fillAndRecord(built, sap);
     });
   }
 
   /**
-   * Handle a bounce event trigger.
-   * These include closing the tab/window and navigating away via
-   * browser chrome (this includes clicking on history or bookmark entries,
-   * and engaging with the URL bar).
+   * Tracks a bounce for the tab the engagement happened in, triggering any
+   * bounce already tracked for that tab: another engagement there could itself
+   * be a bounce. The new bounce is stored before the earlier one resolves, so
+   * the engagement's load, which follows right away, finds it to claim.
    *
-   * @param {number} browserId
-   *   The stable browser id of the tab the trigger happened in.
+   * @param {?number} browserId
+   *   The stable browser id of the tab the engagement happened in, or null when
+   *   the input has no chrome window to read one from. The tab is then the one
+   *   hosting the input.
+   * @param {(viewTime: number) => void} record
+   *   Records the bounce, given the view time in milliseconds.
    */
-  async handleBounceEventTrigger(browserId) {
-    let tracking = this.#directBounces.get(browserId);
-    if (!tracking) {
+  async #startTrackingBounce(browserId, record) {
+    let browser = this._controller.resolveTargetBrowser(browserId);
+    if (!browser) {
       return;
     }
-
-    const interactions =
-      (await lazy.Interactions.getRecentInteractionsForBrowser(
-        tracking.browser
-      )) ?? [];
-
-    // handleBounceEventTrigger() can run concurrently, so we bail out
-    // if a prior async invocation has already cleared the tracking.
-    if (!this.#directBounces.has(browserId)) {
-      return;
+    let earlier = gTrackedBounces.get(browser);
+    gTrackedBounces.set(browser, {
+      startTime: Date.now(),
+      record,
+      awaitingLoad: true,
+    });
+    if (earlier) {
+      await recordBounceIfShortVisit(browser, earlier);
     }
-
-    let totalViewTime = 0;
-    for (let interaction of interactions) {
-      if (interaction.created_at >= tracking.startTime) {
-        totalViewTime += interaction.totalViewTime || 0;
-      }
-    }
-
-    // If the total view time when the user navigates away after a
-    // URL bar interaction is less than the threshold of
-    // events.bounce.maxSecondsFromLastSearch, we record a bounce event.
-    // If totalViewTime is 0, that means the page didn't load yet, so
-    // we wouldn't record a bounce event.
-    if (
-      totalViewTime != 0 &&
-      totalViewTime <
-        lazy.UrlbarPrefs.get("events.bounce.maxSecondsFromLastSearch") * 1000
-    ) {
-      this.recordBounceEvent(browserId, totalViewTime);
-    }
-
-    this.#directBounces.delete(browserId);
   }
 
   /**
-   * Record a bounce event
+   * Records a bounce telemetry event from a bounce snapshot, the direct path's
+   * recording half.
    *
-   * @param {number} browserId
-   *   The stable browser id of the tab the engagement happened in.
-   * @param {number} viewTime
-   *  The time spent on a tab after a URL bar engagement before
-   *  navigating away via browser chrome or closing the tab.
-   */
-  recordBounceEvent(browserId, viewTime) {
-    let { snapshot } = this.#directBounces.get(browserId);
-    this.#recordBounce(snapshot, viewTime);
-  }
-
-  /**
-   * Records a bounce telemetry event from a bounce snapshot. The parent-side
-   * recording half; fed either by `recordBounceEvent()` on the direct path or
-   * by the snapshot a child collector ships on the message path.
-   *
-   * @param {?object} snapshot
+   * @param {object} snapshot
    *   The bounce snapshot from `UrlbarTelemetryUtils.collectBounceSnapshot()`.
    * @param {number} viewTime
    *   The time spent on the tab before navigating away, in milliseconds.
+   * @param {string} sap
+   *   The sap resolved when the engagement happened. A bounce never resolves
+   *   its own.
    */
-  #recordBounce(snapshot, viewTime) {
-    if (!snapshot) {
-      return;
-    }
-
+  #recordBounce(snapshot, viewTime, sap) {
     this.#recordSearchEngagementTelemetry("bounce", snapshot.startEventInfo, {
+      engagementSap: sap,
       action: snapshot.action,
       numChars: snapshot.numChars,
       numWords: snapshot.numWords,
@@ -2500,75 +2689,5 @@ export class TelemetryEvent {
       windowMode: snapshot.windowMode,
       ...this.#getOptionalSmartbarTelemetry(snapshot.searchSource),
     });
-  }
-
-  // Browsers behind message-path bounces still being tracked, keyed by their
-  // stable browser id, captured while alive so a tab-close trigger can still
-  // resolve one after the tab is gone.
-  #bounceBrowsers = new Map();
-
-  /**
-   * Caches the browser behind a bounce a message-path collector is tracking,
-   * keyed by its stable browser id, while the tab is still alive. On a tab-close
-   * trigger the browser is gone before the async trigger message is handled, so
-   * it can no longer be resolved then; the preserved reference lets
-   * `handleBounceTrigger()` record the bounce anyway. Keyed by browser id rather
-   * than browsing context id because a navigation between tracking and the
-   * trigger can replace the browsing context.
-   *
-   * @param {number} browserId
-   *   The bounce browser's stable browser id.
-   */
-  trackBounceBrowser(browserId) {
-    let browser = this._controller.resolveTargetBrowser(browserId);
-    if (browser) {
-      this.#bounceBrowsers.set(browserId, browser);
-    }
-  }
-
-  /**
-   * Records a bounce shipped by a message-path child collector. The collector
-   * owns the bounce tracking content-side; on a trigger it sends the resolved
-   * snapshot, the tracking start time, the embedder browser's id, and the
-   * content the recording reads. Here we resolve the browser, ask
-   * `Interactions` how long the tab was viewed, and record a bounce if it falls
-   * under the threshold.
-   *
-   * @param {object} payload
-   *   `{built, searchSource, startTime, browserId}` from the child collector,
-   *   where `built` is the Glean event minus `view_time`.
-   */
-  async handleBounceTrigger(payload) {
-    let { built, searchSource, startTime, browserId } = payload;
-    let browser =
-      this.#bounceBrowsers.get(browserId) ??
-      this._controller.resolveTargetBrowser(browserId);
-    this.#bounceBrowsers.delete(browserId);
-    if (!browser || !built) {
-      return;
-    }
-
-    const interactions =
-      (await lazy.Interactions.getRecentInteractionsForBrowser(browser)) ?? [];
-    let totalViewTime = 0;
-    for (let interaction of interactions) {
-      if (interaction.created_at >= startTime) {
-        totalViewTime += interaction.totalViewTime || 0;
-      }
-    }
-
-    if (
-      totalViewTime != 0 &&
-      totalViewTime <
-        lazy.UrlbarPrefs.get("events.bounce.maxSecondsFromLastSearch") * 1000
-    ) {
-      let sap = this.#searchSourceToSap(searchSource);
-      if (!sap) {
-        return;
-      }
-      // view_time is only known now, once Interactions has reported it.
-      built.eventInfo.view_time = (totalViewTime / 1000).toString();
-      this.#fillAndRecord(built, sap);
-    }
   }
 }

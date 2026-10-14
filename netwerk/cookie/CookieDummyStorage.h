@@ -7,8 +7,6 @@
 
 #include "CookieStorage.h"
 
-class nsICookieTransactionCallback;
-
 namespace mozilla {
 namespace net {
 
@@ -23,10 +21,6 @@ class CookieDummyStorage final : public CookieStorage {
 
   void EnsureInitialized() override {}
 
-  nsresult RunInTransaction(nsICookieTransactionCallback* aCallback) override {
-    return NS_OK;
-  }
-
  protected:
   const char* NotificationTopic() const override {
     return "dummy-cookie-changed";
@@ -37,7 +31,7 @@ class CookieDummyStorage final : public CookieStorage {
 
   void RemoveAllInternal() override {}
 
-  void RemoveCookieFromDB(const Cookie& aCookie) override {}
+  void RemoveCookieFromDB(Cookie* aCookie) override {}
 
   already_AddRefed<nsIArray> PurgeCookies(int64_t aCurrentTimeInUsec,
                                           uint16_t aMaxNumberOfCookies,

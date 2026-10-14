@@ -57,6 +57,7 @@ class nsIContent : public nsINode {
   using IMEState = mozilla::widget::IMEState;
   using BindContext = mozilla::dom::BindContext;
   using UnbindContext = mozilla::dom::UnbindContext;
+  static constexpr bool kHasWeakReferenceTearoff = true;
 
   void ConstructUbiNode(void* storage) override;
 

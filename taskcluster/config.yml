@@ -90,6 +90,7 @@ treeherder:
         'DTbc': 'DevTools remote debugging backward compatibility tests'
         'Fetch': 'Fetch and store content'
         'Fxfn': 'Firefox functional tests'
+        'gv-junit': 'GeckoView junit tests'
         'l10n-bump': 'L10n Bumper'
         'M': 'Mochitests'
         'M-f': 'Mochitest failures'
@@ -124,6 +125,8 @@ treeherder:
         'W-pb': 'Web platform tests with private browsing enabled'
         'W-ioi': 'Web platform tests tagged with inc-origin-init'
         'W-ioi-cf': 'Web platform tests tagged with inc-origin-init for confirm failure'
+        'W-oh264': 'Web platform tests with OpenH264 preferred'
+        'W-oh264-cf': 'Web platform tests with OpenH264 preferred for confirm failure'
         'W-pb-ioi': 'Web platform tests with private browsing enabled and tagged with inc-origin-init'
         'X': 'Xpcshell tests'
         'X-f': 'Xpcshell tests that fail on a given config'
@@ -161,10 +164,11 @@ treeherder:
         'TLA64': 'Toolchain builds for Linux AArch64'
         'TM': 'Toolchain builds for OSX'
         'TMA64': 'Toolchain builds for OSX Aarch64'
-        'TMW': 'Toolchain builds for Windows MinGW'
         'TW32': 'Toolchain builds for Windows 32-bits'
         'TW64': 'Toolchain builds for Windows 64-bits'
         'TWA64': 'Toolchain builds for Windows AArch64'
+        'TWM': 'Toolchain builds for Windows MinGW'
+        'WASI': 'Toolchain builds for WASI'
         'WMC32': 'MinGW-Clang builds for Windows 32-bits'
         'WMC64': 'MinGW-Clang builds for Windows 64-bits'
         'Searchfox': 'Searchfox builds'
@@ -201,6 +205,7 @@ treeherder:
         'Wgpu': 'WebGPU standalone'
         'cpp': 'C/C++ checks'
         'pedantic': 'pedantic checks'
+        'legal': 'Licensing and legal checks'
         'text': 'Check on texts'
         'misc': 'Misc checks'
         'js': 'JavaScript checks'
@@ -252,7 +257,9 @@ treeherder:
         'fenix-beta': 'Fenix beta-related tasks'
         'fenix-debug': 'Fenix builds made for testing'
         'fenix-nightly': 'Fenix nightly-related tasks'
+        'fenix-nightly-nobp': 'Fenix nightly builds without baseline profiles'
         'fenix-nightlySim': 'Nightly-related tasks that run on each github push'
+        'fenix-nightlyAsReleaseSim': 'Fenix nightly-as-release performance tasks (nightly built against release-milestone GeckoView)'
         'fenix-release': 'Fenix production-related tasks'
 
         # This list is based on mobile/android/android-components/.buildconfig.yml except the exceptions down below
@@ -272,6 +279,7 @@ treeherder:
         'compose-awesomebar': 'compose-engine'
         'compose-browser-toolbar': 'awesomebar-browser-toolbar'
         'compose-engine': 'compose-engine'
+        'compose-menu': 'compose-menu'
         'compose-tabstray': 'compose-tabstray'
         'concept-accelerometer': 'concept-accelerometer'
         'concept-ai-controls': 'concept-ai-controls'
@@ -299,6 +307,7 @@ treeherder:
         'feature-addons': 'feature-addons'
         'feature-app-links': 'feature-app-links'
         'feature-autofill': 'feature-autofill'
+        'feature-automotive': 'feature-automotive'
         'feature-awesomebar': 'feature-awesomebar'
         'feature-containers': 'feature-containers'
         'feature-contextmenu': 'feature-contextmenu'
@@ -309,6 +318,7 @@ treeherder:
         'feature-fxsuggest': 'feature-fxsuggest'
         'feature-importer': 'feature-importer'
         'feature-password-importer': 'feature-password-importer'
+        'feature-listentopage': 'feature-listentopage'
         'feature-intent': 'feature-intent'
         'feature-ipprotection': 'feature-ipprotection'
         'feature-logins': 'feature-logins'
@@ -329,6 +339,7 @@ treeherder:
         'feature-summarize': 'feature-summarize'
         'feature-syncedtabs': 'feature-syncedtabs'
         'feature-tab-collections': 'feature-tab-collections'
+        'feature-tabgroups-storage': 'feature-tabgroups-storage'
         'feature-tabs': 'feature-tabs'
         'feature-toolbar': 'feature-toolbar'
         'feature-top-sites': 'feature-top-sites'
@@ -416,6 +427,7 @@ treeherder:
         'lib-fetch-httpurlconnecti': 'lib-fetch-httpurlconnection'
         'feature-webcompat-reporte': 'feature-webcompat-reporter'
         'feature-protection-dashbo': 'feature-protection-dashboard'
+        'feature-tabdata-coordinat': 'feature-tabdata-coordinator'
 
         # Groups aren't generated off buildconfig.yml:
         'samples-browser': 'samples-browser'
@@ -576,14 +588,23 @@ partner-urls:
                             staging: 'git@github.com:mozilla-partners/staging-mozilla-EME-free-manifest.git'
 
 
+# Beta and ESR are integration branches, so by default their tasks run at the
+# same priority as autoland. Release managers landing an uplift they intend to
+# ship set the "SHIPPING" flag in Lando, which adds "SHIPPING" to the commit
+# message and raises the priority to get results as quickly as possible.
 task-priority:
     by-project:
         'mozilla-release': 'highest'
-        'mozilla-esr.*': 'very-high'
-        'mozilla-beta': 'high'
+        'mozilla-esr.*':
+            by-shipping:
+                'true': 'very-high'
+                'default': 'low'
+        'mozilla-beta':
+            by-shipping:
+                'true': 'very-high'
+                'default': 'low'
         'mozilla-central': 'medium'
         'autoland': 'low'
-        'mozilla-inbound': 'low'
         'default': 'very-low'
 
 taskgraph:
@@ -595,7 +616,7 @@ taskgraph:
 
 workers:
     aliases:
-        b-linux(|-docker(|-x?large|-updatebot)-amd|-medium|-aarch64|-xlarge|-kvm):
+        b-linux(|-docker(|-x?large|-updatebot)-amd|-medium|-aarch64|-x?large|-kvm):
             provisioner: '{trust-domain}-{level}'
             implementation: docker-worker
             os: linux
@@ -789,7 +810,7 @@ workers:
             implementation: docker-worker
             os: linux
             worker-type: 't-linux-docker-kvm'
-        t-linux-(talos|netperf)(-1804|-2404)?:
+        t-linux-(talos|netperf)-2404:
             provisioner: releng-hardware
             implementation: generic-worker
             os: linux
@@ -835,6 +856,11 @@ workers:
             os: macosx
             worker-type: 'gecko-{alias}'
         t-osx-1500-m-vms:
+            provisioner: releng-hardware
+            implementation: generic-worker
+            os: macosx
+            worker-type: 'gecko-{alias}'
+        t-osx-2700-m4:
             provisioner: releng-hardware
             implementation: generic-worker
             os: macosx

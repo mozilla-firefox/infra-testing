@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import mozilla.components.concept.llm.AttestationFailure
 import mozilla.components.concept.llm.AuthenticationRequired
@@ -1260,4 +1261,116 @@ class SummarizationStoreTest {
         assertEquals(expected, states)
         assertTrue(reportedErrors.isEmpty())
     }
+
+    @Test
+    fun `when feedback is provided on a summary, it is stored`() = runTest {
+        val provider = FakeCloudProvider(preparedState = CloudLlmProvider.State.Ready(FakeLlm.successful))
+        val pageTitle = "Article Headline"
+        val store = summarizedStore(provider, pageTitle)
+
+        val states = mutableListOf<SummarizationState>()
+        backgroundScope.launch {
+            store.stateFlow.toList(states)
+        }
+
+        store.dispatch(ViewAppeared)
+        testScheduler.advanceTimeBy(15.seconds)
+        store.dispatch(SummaryFeedbackProvided(SummaryFeedback.GOOD))
+        testScheduler.advanceTimeBy(1.seconds)
+
+        val document =
+            parser.parse("# $pageTitle\nThis is the article\nThis is some content...\nThis is some *bold* content.\n")
+        assertEquals(Summarized(provider.info, document, SummaryFeedback.GOOD), states.last())
+    }
+
+    @Test
+    fun `when feedback has already been provided, providing it again replaces it`() = runTest {
+        val provider = FakeCloudProvider(preparedState = CloudLlmProvider.State.Ready(FakeLlm.successful))
+        val pageTitle = "Article Headline"
+        val store = summarizedStore(provider, pageTitle)
+
+        val states = mutableListOf<SummarizationState>()
+        backgroundScope.launch {
+            store.stateFlow.toList(states)
+        }
+
+        store.dispatch(ViewAppeared)
+        testScheduler.advanceTimeBy(15.seconds)
+        store.dispatch(SummaryFeedbackProvided(SummaryFeedback.GOOD))
+        testScheduler.advanceTimeBy(1.seconds)
+        store.dispatch(SummaryFeedbackProvided(SummaryFeedback.BAD))
+        testScheduler.advanceTimeBy(1.seconds)
+
+        val document =
+            parser.parse("# $pageTitle\nThis is the article\nThis is some content...\nThis is some *bold* content.\n")
+        assertEquals(Summarized(provider.info, document, SummaryFeedback.BAD), states.last())
+    }
+
+    @Test
+    fun `when feedback is provided before a summary is ready, the state is unchanged`() = runTest {
+        val hangingLlm =
+            object : Llm {
+                override suspend fun prompt(prompt: Prompt): Flow<String> = flow { awaitCancellation() }
+            }
+        val provider = FakeCloudProvider(preparedState = CloudLlmProvider.State.Ready(hangingLlm))
+        val store = summarizedStore(provider, "Article Headline")
+
+        val states = mutableListOf<SummarizationState>()
+        backgroundScope.launch {
+            store.stateFlow.toList(states)
+        }
+
+        store.dispatch(ViewAppeared)
+        testScheduler.advanceTimeBy(1.seconds)
+        store.dispatch(SummaryFeedbackProvided(SummaryFeedback.GOOD))
+        testScheduler.advanceTimeBy(1.seconds)
+
+        assertEquals(Loading(provider.info), states.last())
+    }
+
+    @Test
+    fun `feedback is preserved when navigating to settings and back`() = runTest {
+        val provider = FakeCloudProvider(preparedState = CloudLlmProvider.State.Ready(FakeLlm.successful))
+        val pageTitle = "Article Headline"
+        val store = summarizedStore(provider, pageTitle)
+
+        val states = mutableListOf<SummarizationState>()
+        backgroundScope.launch {
+            store.stateFlow.toList(states)
+        }
+
+        store.dispatch(ViewAppeared)
+        testScheduler.advanceTimeBy(15.seconds)
+        store.dispatch(SummaryFeedbackProvided(SummaryFeedback.BAD))
+        testScheduler.advanceTimeBy(1.seconds)
+        store.dispatch(SettingsClicked)
+        testScheduler.advanceTimeBy(1.seconds)
+        store.dispatch(SettingsBackClicked)
+        testScheduler.advanceTimeBy(1.seconds)
+
+        val document =
+            parser.parse("# $pageTitle\nThis is the article\nThis is some content...\nThis is some *bold* content.\n")
+        assertEquals(Summarized(provider.info, document, SummaryFeedback.BAD), states.last())
+    }
+
+    private fun TestScope.summarizedStore(
+        provider: FakeCloudProvider,
+        pageTitle: String,
+    ) =
+        SummarizationStore(
+            initialState = Inert(true),
+            reducer = ::summarizationReducer,
+            middleware =
+                listOf(
+                    SummarizationMiddleware(
+                        isPageLoadingFlow = MutableStateFlow(false),
+                        llmProvider = provider,
+                        settings = SummarizationSettings.inMemory(hasConsentedToShake = true),
+                        contentProvider = { Result.success(Content(PageMetadata(pageTitle = pageTitle))) },
+                        errorReporter = noopReporter,
+                        scope = backgroundScope,
+                        dispatcher = StandardTestDispatcher(testScheduler),
+                    )
+                ),
+        )
 }

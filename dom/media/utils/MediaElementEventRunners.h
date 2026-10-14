@@ -79,7 +79,7 @@ class nsMediaEventRunner : public nsIRunnable, public nsINamed {
   explicit nsMediaEventRunner(const char* aName, HTMLMediaElement* aElement,
                               const nsAString& aEventName = u"unknown"_ns);
 
-  void Cancel() { mElement = nullptr; }
+  void Cancel();
   NS_IMETHODIMP GetName(nsACString& aName) override {
     aName.AssignASCII(mName);
     return NS_OK;
@@ -88,7 +88,7 @@ class nsMediaEventRunner : public nsIRunnable, public nsINamed {
   nsString EventName() const { return mEventName; }
 
  protected:
-  virtual ~nsMediaEventRunner() = default;
+  virtual ~nsMediaEventRunner();
   bool IsCancelled() const;
   MOZ_CAN_RUN_SCRIPT nsresult FireEvent(const nsAString& aName);
 
@@ -171,7 +171,7 @@ class nsSourceErrorEventRunner : public nsMediaEventRunner {
       : nsMediaEventRunner("nsSourceErrorEventRunner", aElement),
         mSource(aSource),
         mErrorDetails(NS_ConvertUTF8toUTF16(aErrorDetails)) {}
-  NS_IMETHOD Run() override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHOD Run() override;
 
  private:
   virtual ~nsSourceErrorEventRunner() = default;

@@ -17,6 +17,7 @@
 #include "NativeMenuMac.h"
 #import <Carbon/Carbon.h>
 
+#include "ASWebAuthSessionHandler.h"
 #include "CustomCocoaEvents.h"
 #include "gfxPlatform.h"
 #include "nsCOMPtr.h"
@@ -129,6 +130,12 @@ void SetupMacApplicationDelegate(bool* gRestartedByOS) {
       sLaunchStatus == LaunchStatus::Initial,
       "Launch status should be in intial state when setting up delegate");
   sLaunchStatus = LaunchStatus::DelegateIsSetup;
+
+  // Apple requires the session handler to be registered before
+  // applicationDidFinishLaunching returns. We register here, as early as
+  // possible, so auth requests that arrive during startup are queued rather
+  // than dropped.
+  RegisterASWebAuthSessionHandler();
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
@@ -340,9 +347,10 @@ nsTArray<nsCString> TakeStartupURLs() { return std::move(StartupURLs()); }
   nsCOMPtr<nsIAppStartup> appService =
       do_GetService("@mozilla.org/toolkit/app-startup;1");
   if (appService) {
-    bool userAllowedQuit = true;
-    appService->Quit(nsIAppStartup::eForceQuit, 0, &userAllowedQuit);
-    if (!userAllowedQuit) {
+    // Quit does not start a shutdown if the user keeps a window open from a
+    // beforeunload prompt.
+    appService->Quit(nsIAppStartup::eForceQuit, 0);
+    if (!appService->GetShuttingDown()) {
       return NSTerminateCancel;
     }
   }

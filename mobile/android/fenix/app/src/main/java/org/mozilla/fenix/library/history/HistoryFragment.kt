@@ -59,11 +59,8 @@ import androidx.paging.PagingConfig
 import androidx.paging.PagingData
 import com.google.android.material.R as materialR
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import mozilla.components.browser.state.action.AwesomeBarAction
 import mozilla.components.browser.state.action.AwesomeBarAction.EngagementFinished
 import mozilla.components.browser.state.action.EngineAction
@@ -115,6 +112,7 @@ import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.runIfFragmentIsAttached
 import org.mozilla.fenix.ext.setTextColor
+import org.mozilla.fenix.home.toolbar.BrowserToolbarTelemetryMiddleware
 import org.mozilla.fenix.library.LibraryPageFragment
 import org.mozilla.fenix.library.history.HistoryFragmentAction.SearchClicked
 import org.mozilla.fenix.library.history.HistoryFragmentAction.SearchDismissed
@@ -338,16 +336,26 @@ class HistoryFragment :
             R.id.share_history_multi_select -> {
                 val selectedHistory = historyStore.state.mode.selectedItems
                 val shareTabs = mutableListOf<ShareData>()
-
+                val isPrivate = requireComponents.appStore.state.mode.isPrivate
                 for (history in selectedHistory) {
                     when (history) {
                         is History.Regular -> {
-                            shareTabs.add(ShareData(url = history.url, title = history.title))
+                            shareTabs.add(
+                                ShareData(
+                                    url = history.url,
+                                    title = history.title,
+                                    private = isPrivate,
+                                )
+                            )
                         }
                         is History.Group -> {
                             shareTabs.addAll(
                                 history.items.map { metadata ->
-                                    ShareData(url = metadata.url, title = metadata.title)
+                                    ShareData(
+                                        url = metadata.url,
+                                        title = metadata.title,
+                                        private = isPrivate,
+                                    )
                                 }
                             )
                         }
@@ -674,23 +682,18 @@ class HistoryFragment :
     ) {
         historyStore.dispatch(HistoryFragmentAction.EnterDeletionMode)
 
-        withContext(IO) {
-            for (item in items) {
-                when (item) {
-                    is History.Regular -> {
-                        historyStorage.deleteVisitsFor(item.url)
-                    }
-                    is History.Group -> {
-                        historyProvider.deleteMetadataSearchGroup(item)
-                        withContext(Dispatchers.Main) {
-                            browserStore.dispatch(
-                                HistoryMetadataAction.DisbandSearchGroupAction(searchTerm = item.title)
-                            )
-                        }
-                    }
-                    // We won't encounter individual metadata entries outside of groups.
-                    is History.Metadata -> Unit
+        for (item in items) {
+            when (item) {
+                is History.Regular -> {
+                    historyStorage.deleteVisitsFor(item.url)
                 }
+
+                is History.Group -> {
+                    historyProvider.deleteMetadataSearchGroup(item)
+                    browserStore.dispatch(HistoryMetadataAction.DisbandSearchGroupAction(searchTerm = item.title))
+                }
+                // We won't encounter individual metadata entries outside of groups.
+                is History.Metadata -> Unit
             }
         }
 
@@ -778,6 +781,10 @@ class HistoryFragment :
                             settings = requireComponents.settings,
                             scope = lifecycleScope,
                         ),
+                        BrowserToolbarTelemetryMiddleware(
+                            appStore = requireComponents.appStore,
+                            settings = requireComponents.settings,
+                        ),
                     ),
             )
         }
@@ -819,6 +826,8 @@ class HistoryFragment :
                             toolbarStore = toolbarStore,
                             navController = findNavController(),
                             browsingModeManager = (requireActivity() as HomeActivity).browsingModeManager,
+                            shareUseCases = requireComponents.useCases.shareUseCases,
+                            clipboardHandler = requireComponents.clipboardHandler,
                         ),
                     ),
             )

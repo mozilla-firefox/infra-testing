@@ -52,7 +52,7 @@ is_eager = true
 is_css2 = true
 is_eager = true
 [highlight]
-argument = "AtomIdent"
+argument = "HighlightNameSelector"
 [selection]
 [target-text]
 [view-transition]
@@ -79,6 +79,7 @@ argument = "AtomIdent"
 is_element_backed = true
 [checkmark]
 pref = "dom.select.customizable_select.enabled"
+is_flex_or_grid_item = true
 is_tree_abiding = true
 
 # HTML5 Forms pseudo elements

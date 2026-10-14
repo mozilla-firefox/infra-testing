@@ -338,16 +338,6 @@ discopane-notice-recommendations2 =
         extensions you’ve installed, profile preferences, and usage statistics.
 discopane-notice-learn-more = Learn more
 
-# Notice for the colorway theme removal
-colorway-removal-notice-message =
-    .heading = Your colorway theme(s) were removed.
-    .message =
-        { -brand-product-name } updated its colorways collection. We removed
-        the old version(s) from your “Saved Themes” list. Get new versions on
-        the add-ons site.
-colorway-removal-notice-learn-more = Learn more
-colorway-removal-notice-button = Get updated colorways themes
-
 # Notice to make user aware that themes are not applied in forced colors mode.
 # This notice is only visible on Windows.
 forced-colors-theme-notice =
@@ -631,6 +621,7 @@ mlmodel-smart-tab-topic-engine = { -brand-short-name } uses this to suggest name
 mlmodel-smart-tab-embedding-engine = { -brand-short-name } uses this to suggest tabs for your tab groups
 
 mlmodel-formfill-engine = { -brand-short-name } uses this to help fill in address forms
+mlmodel-speech-recognition = { -brand-short-name } uses this for on-device speech recognition
 
 # AI Model will be downloaded on the users device and used locally
 addon-category-mlmodel = On-device AI
@@ -708,6 +699,10 @@ themes-mode-dark =
 # update based on the color scheme mode currently chosen by the operating system.
 themes-mode-device =
   .label = Device
+
+# Accessible name for the group of light/dark/device buttons.
+themes-mode =
+  .aria-label = Appearance
 
 # Heading for the in-product themes picker section in about:addons
 aboutaddons-themes-picker-heading =

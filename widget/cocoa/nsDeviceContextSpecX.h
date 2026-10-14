@@ -40,12 +40,12 @@ class nsDeviceContextSpecX : public nsIDeviceContextSpec {
   PMPageFormat mPageFormat = nullptr;
   PMPrintSettings mPMPrintSettings = nullptr;
   nsCOMPtr<nsIOutputStream> mOutputStream;  // Output stream from settings.
-#ifdef MOZ_ENABLE_SKIA_PDF
   // file "print" output generated if printing via PDF
   nsCOMPtr<nsIFile> mTempFile;
-#endif
+
  private:
   nsresult DoEndDocument();
+  nsresult PrintPDFViaPrintSession(CFURLRef aPDFURL);
 };
 
 #endif  // nsDeviceContextSpecX_h_

@@ -428,6 +428,21 @@ GpuSandboxLevel:
   type: u32
   scope: report
 
+CPUArchitecture:
+  description: >
+    Architecture of the CPU. One of the values described in `system_info.cpu_arch` of
+    https://github.com/rust-minidump/rust-minidump/blob/main/minidump-processor/json-schema.md:
+    "x86", "amd64", "ppc", "ppc64", "sparc", "arm", "arm64", or "unknown".
+  type: string
+  scope: ping
+
+CPUInfo:
+  description: >
+    Information about the CPU, as a string. This typically includes family,
+    model, and stepping.
+  type: string
+  scope: ping
+
 CPUMicrocodeVersion:
   description: >
     Version of the CPU microcode.
@@ -745,7 +760,9 @@ IPCShutdownState:
     IPC shutdown state, can be set to either "RecvShutdown" or
     "SendFinishShutdown" by a content process while it's shutting down.
   type: string
-  scope: report
+  scope: ping
+  bugs:
+    - 2049749
 
 IPCSystemError:
   description: >
@@ -786,19 +803,23 @@ JavaException:
     uncaught Java exception.
   type: string
   scope: ping
+  bugs:
+    - 1904847
+    - 1961011
+    - 2073234
   glean:
     type: object
     # version history (typescript for brevity)
     # # 0
     # {
-    #   messages: string[],
+    #   messages: string[], /* see bug 2073234 */
     #   stack: { file: string, line: number, class_name: string, method_name: string, is_native: boolean }[]
     # }
     #
     # # 1
     # {
     #   throwables: {
-    #     message: string,
+    #     message: string, /* removed; see bug 2073234 */
     #     type_name: string,
     #     stack: { file: string, line: number, class_name: string, method_name: string, is_native: boolean }[]
     #   }[]
@@ -814,9 +835,6 @@ JavaException:
           items:
             type: object
             properties:
-              # The message of the Throwable.
-              message:
-                type: string
               # The java fully qualified type name of the Throwable.
               type_name:
                 type: string
@@ -970,6 +988,14 @@ MemtestOutput:
   type: string
   scope: report
 
+LauncherProcessState:
+  description: >
+    Launcher process enabled state. The integer value of this annotation must
+    match with one of the values in the
+    mozilla::LauncherRegistryInfo::EnableState enum
+  type: u32
+  scope: report
+
 LinuxUnderMemoryPressure:
   description: >
     Set to true if the memory pressure watcher was under memory pressure when
@@ -984,13 +1010,11 @@ LinuxMemoryPSI:
   type: string
   scope: ping
 
-LauncherProcessState:
-  description: >
-    Launcher process enabled state. The integer value of this annotation must
-    match with one of the values in the
-    mozilla::LauncherRegistryInfo::EnableState enum
-  type: u32
-  scope: report
+LinuxLSBDescription:
+  description:
+    The Linux lsb_release description.
+  type: string
+  scope: ping
 
 LowPhysicalMemoryEvents:
   description: >
@@ -1059,6 +1083,19 @@ OOMAllocationSize:
     type: quantity
     unit: bytes
 
+OS:
+  description: >
+    The operating system name. One of the values described in `system_info.os` of
+    https://github.com/rust-minidump/rust-minidump/blob/main/minidump-processor/json-schema.md:
+    "Windows NT", "Mac OS X", "iOS", "Linux", "Solaris", "Android", or "Unknown".
+  type: string
+  scope: ping
+
+OSVersion:
+  description: The operating system version number.
+  type: string
+  scope: ping
+
 PluginFilename:
   description: >
     Plugin filename, only the process holding the plugin has this annotation.
@@ -1082,7 +1119,7 @@ PluginVersion:
 ProcessType:
   description: >
     Type of the process that crashed, the possible values are defined in
-    GeckoProcessTypes.h.
+    GeckoProcessTypes.inc.
   type: string
   scope: ping
 
@@ -1235,6 +1272,17 @@ ShutdownReason:
   type: string
   scope: ping
 
+ShuttingDownThreads:
+  description: >
+    JSON array of the nsThread::Shutdown handshakes still in flight when the
+    process crashed during shutdown. Each entry has the joining and closing
+    thread TID and name, the handshake phase ("Joining", "Recv" or "Ack") and
+    when that phase was entered, in seconds since the Epoch.
+    A single entry of {"error": "contended"} means the thread list was locked
+    and could not be read without blocking.
+  type: string
+  scope: ping
+
 SignalOrigin:
   description: >
     Process name of the source of the signal that caused the crash, if applicable.
@@ -1332,7 +1380,13 @@ StartupTime:
   description: >
     The time when Firefox was launched expressed in seconds since the Epoch.
   type: u64
-  scope: report
+  scope: ping
+  glean:
+    type: timespan
+    time_unit: second
+    custom_convert: duration_seconds
+  bugs:
+    - 2049749
 
 StorageConnectionNotClosed:
   description: >
@@ -1537,7 +1591,9 @@ useragent_locale:
   description: >
     User-agent locale.
   type: string
-  scope: report
+  scope: ping
+  bugs:
+    - 2049749
 
 UserFontRulesExhausted:
   description: >
@@ -1619,6 +1675,29 @@ WindowsErrorReporting:
   scope: ping
   glean:
     metric: crash.windows.error_reporting
+
+WindowsProcessMitigations:
+  description: >
+    A human-readable summary of the Windows process mitigation options configured
+    on the system for this executable, amalgamating the per-application and
+    system-wide values (per-application takes precedence per mitigation). A
+    comma-separated list of "Name=on", "Name=off", or "Name=<variant>" entries
+    (where <variant> names the mitigation's stricter or modified state, e.g.
+    "EmulateAtlThunks" or "StrictMode"); only mitigations that are explicitly
+    configured appear. See WindowsProcessMitigationsBytes for the raw bitmask.
+  type: string
+  scope: report
+
+WindowsProcessMitigationsBytes:
+  description: >
+    The Windows process mitigation options (Exploit Protection "Program
+    settings") configured on the system for this executable, read from the
+    registry at process start independently of any mitigations the process
+    later enables for itself. The value is the compound of the system-wide and
+    path-specific bitmasks, as would appear in regedit (hex-encoded, little
+    endian).
+  type: string
+  scope: report
 
 Winsock_LSP:
   description: >

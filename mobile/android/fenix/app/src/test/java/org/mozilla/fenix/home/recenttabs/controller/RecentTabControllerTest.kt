@@ -5,7 +5,6 @@
 package org.mozilla.fenix.home.recenttabs.controller
 
 import androidx.navigation.NavController
-import androidx.navigation.NavDirections
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.spyk
@@ -107,18 +106,5 @@ class RecentTabControllerTest {
             navController.navigate(R.id.browserFragment)
         }
         assertNotNull(RecentTabs.recentTabOpened.testGetValue())
-    }
-
-    @Test
-    fun handleRecentTabShowAllClickedFromHome() {
-        assertNull(RecentTabs.showAllClicked.testGetValue())
-
-        controller.handleRecentTabShowAllClicked()
-
-        verify {
-            navController.navigate(match<NavDirections> { it.actionId == R.id.action_global_tabManagementFragment })
-        }
-
-        assertNotNull(RecentTabs.showAllClicked.testGetValue())
     }
 }

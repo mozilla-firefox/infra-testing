@@ -10,7 +10,7 @@ minutes of work, spread out over an hour or two.
 - **Memory:** 4GB RAM minimum, 8GB+ recommended.
 - **Disk Space:** At least 30GB of free disk space.
 - **Operating System:** A 64-bit installation of Linux. It is strongly advised
-  that you use a supported distribution; see {ref}`build_hosts`. We also
+  that you use a supported distribution; see {ref}`build-hosts`. We also
   recommend that your system is fully up-to-date.
 
 :::{note}
@@ -20,9 +20,11 @@ community (thanks!). The more esoteric the distro you're using,
 the more likely that you'll need to solve unexpected problems.
 :::
 
+(install-python)=
+
 ## 1. System preparation
 
-To build Firefox, it's necessary to have a Python of version 3.9 or later
+To build Firefox, it's necessary to have a Python of version 3.10 or later
 installed. Python 2 is no longer required to build Firefox, although it is still
 required for running some kinds of tests. Additionally, you will probably need
 Python development files as well to install some pip packages.
@@ -33,8 +35,22 @@ You should be able to install Python and git using your system package manager:
 - For Fedora Linux: `sudo dnf install python3 git`
 
 If you need a version of Python that your package manager doesn't have,
-then you can use [pyenv](https://github.com/pyenv/pyenv), assuming that your
-system is supported.
+then you can install one with [uv](https://docs.astral.sh/uv/):
+
+```shell
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv python install 3.13 --default
+```
+
+This installs `python3.13`, `python3` and `python` executables into
+`~/.local/bin`. Open a new terminal afterwards so that directory is on your
+`PATH`, then run `python3.13 bootstrap.py` in the next step. If `python3.13`
+is still not found, run `uv python update-shell` and open a new terminal again.
+
+The `--default` flag makes `python3` resolve to the uv managed Python, which
+lets `./mach` use it directly. uv marks the flag as experimental. If you would
+rather leave `python3` alone, drop `--default`. Only `python3.13` is installed
+then, and `./mach` finds it on its own, printing a notice each time it does.
 
 ## 2. Bootstrap a copy of the Firefox source code
 
@@ -52,7 +68,7 @@ python3 bootstrap.py
 ### Choosing a build type
 
 If you aren't modifying the Firefox backend, then select one of the
-{ref}`Artifact Mode <understanding-artifact-builds>` options. If you are
+[Artifact Mode](/contributing/build/artifact_builds.md) options. If you are
 building Firefox for Android, you should also see the {ref}`GeckoView Contributor Guide <geckoview-contributor-guide>`.
 
 ## 3. Build
@@ -78,7 +94,7 @@ You can now use the `./mach run` command to run your locally built Firefox!
 
 If your build fails, please reference the steps in the [Troubleshooting section](#troubleshooting).
 
-To customize your build with different options (like optimization levels, debug builds, or project selection), see {ref}`configuring-build-options`.
+To customize your build with different options (like optimization levels, debug builds, or project selection), see [Configuring Build Options](configuring_build_options.md).
 
 ## Now the fun starts
 

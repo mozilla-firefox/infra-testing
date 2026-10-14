@@ -34,6 +34,7 @@
 #include "frontend/ExpressionStatementEmitter.h"  // ExpressionStatementEmitter
 #include "frontend/ForInEmitter.h"                // ForInEmitter
 #include "frontend/ForOfEmitter.h"                // ForOfEmitter
+#include "frontend/FrontendContext.h"             // FrontendContext
 #include "frontend/FunctionEmitter.h"  // FunctionEmitter, FunctionScriptEmitter, FunctionParamsEmitter
 #include "frontend/IfEmitter.h"     // IfEmitter, InternalIfEmitter, CondEmitter
 #include "frontend/LabelEmitter.h"  // LabelEmitter
@@ -1593,6 +1594,12 @@ bool BytecodeEmitter::emitTDZCheckIfNeeded(TaggedParserAtomIndex name,
     return true;
   }
 
+  // `.initializers` is an implementation detail that is always populated
+  // before a constructor can read it.
+  if (name == TaggedParserAtomIndex::WellKnown::dot_initializers_()) {
+    return true;
+  }
+
   Maybe<MaybeCheckTDZ> check =
       innermostTDZCheckCache->needsTDZCheck(this, name);
   if (!check) {
@@ -2162,6 +2169,11 @@ bool BytecodeEmitter::allocateResumeIndex(BytecodeOffset offset,
 bool BytecodeEmitter::allocateTableSwitchResumeIndexRange(
     mozilla::Span<BytecodeOffset> caseOffsets, BytecodeOffset switchOffset,
     uint32_t* firstResumeIndex) {
+  if (caseOffsets.empty()) {
+    // Empty switches don't need adjustment.
+    *firstResumeIndex = 0;
+    return true;
+  }
   auto& list = bytecodeSection().tableSwitchOffsetList();
 
   // The final resume index depends on the number of yield and await ops in the
@@ -2417,6 +2429,10 @@ bool BytecodeEmitter::emitDeclarationInstantiation(ParseNode* body) {
 }
 
 bool BytecodeEmitter::emitScript(ParseNode* body) {
+  if (!fc->checkCompilationCancellation()) {
+    return false;
+  }
+
   setScriptStartOffsetIfUnset(body->pn_pos.begin);
 
   MOZ_ASSERT(inPrologue());
@@ -2565,6 +2581,12 @@ BytecodeEmitter::createImmutableScriptData() {
         sc->asFunctionBox()->memberInitializers().numMemberInitializers;
   }
 
+#ifdef DEBUG
+  uint32_t codeLength = bytecodeSection().code().length();
+  bytecodeSection().tryNoteList().checkTryNotes(codeLength);
+  bytecodeSection().scopeNoteList().checkScopeNotes(codeLength);
+#endif
+
   return ImmutableScriptData::new_(
       fc, mainOffset(), maxFixedSlots, nslots, bodyScopeIndex,
       bytecodeSection().numICEntries(), isFunction, funLength,
@@ -2608,6 +2630,11 @@ bool BytecodeEmitter::getNslots(uint32_t* nslots) const {
 
 bool BytecodeEmitter::emitFunctionScript(FunctionNode* funNode) {
   MOZ_ASSERT(inPrologue());
+
+  if (!fc->checkCompilationCancellation()) {
+    return false;
+  }
+
   ParamsBodyNode* paramsBody = funNode->body();
   FunctionBox* funbox = sc->asFunctionBox();
 

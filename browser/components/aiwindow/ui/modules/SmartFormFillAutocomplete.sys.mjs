@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-import { SUPPORTED_INPUT_TYPES } from "moz-src:///browser/components/aiwindow/ui/modules/SmartFormFillDocument.sys.mjs";
+import { SUPPORTED_INPUT_TYPES } from "chrome://browser/content/aiwindow/modules/SmartFormFillConstants.mjs";
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
@@ -28,8 +28,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
   false
 );
 
-const AUTOFILL_ICON =
-  "chrome://browser/content/aiwindow/assets/sff-autofill-icon.svg";
+const AUTOFILL_ICON = "chrome://browser/skin/smart-window-simplified.svg";
 
 /**
  * @typedef {object} SmartFormFillAutocompleteSource
@@ -47,6 +46,10 @@ const AUTOFILL_ICON =
  *   Primary text displayed for the entry.
  * @property {string} sourcesLabel
  *   Label to use before listing tab sources.
+ * @property {string} sourcesPillsLabel
+ *   Label to list the tab sources.
+ * @property {string} sourcesPillsLabelHover
+ *   Label to edit the tab sources.
  * @property {boolean} loading
  *   Whether the relevant tabs are still loading.
  * @property {string} loadingLabel
@@ -55,8 +58,13 @@ const AUTOFILL_ICON =
  *   The label to show when no relevant tabs were selected.
  * @property {string} [focusElementId]
  *   Identifier for the field associated with the autocomplete search.
+ * @property {string} secondaryActionLabel
+ *   Accessible label for the secondary action. Also used as its tooltip, and
+ *   announced when keyboard users reach it.
  * @property {string} ariaLabel
- *   Accessible label for the entry.
+ *   Accessible label for the entry. The entry is an ARIA option, so this
+ *   replaces its whole subtree and has to carry the state shown visually.
+ * @property {number} availableTabs Number of open tabs available
  */
 
 /**
@@ -75,34 +83,46 @@ class SmartFormFillAutocompleteItem {
     image,
     label,
     sourcesLabel,
+    sourcesPillsLabel,
+    sourcesPillsLabelHover,
     loading,
     loadingLabel,
     emptySourcesLabel,
     focusElementId,
+    secondaryActionLabel,
     ariaLabel,
+    availableTabs,
   }) {
-    this.image = image;
-    this.label = label;
-    this.comment = JSON.stringify({
+    const comment = {
       type: "smartFormFill",
       sourcesLabel,
+      sourcesPillsLabel,
+      sourcesPillsLabelHover,
       ariaLabel,
 
       loading,
       loadingLabel,
       emptySourcesLabel,
+      availableTabs,
 
       fillMessageName: "SmartFormFill:Start",
       fillMessageData: {
         focusElementId,
       },
+    };
 
-      secondaryAction: {
+    if (availableTabs > 1) {
+      comment.secondaryAction = {
         type: "edit",
-        fillMessageName: "FormAutofill:EditSmartFormFillSources",
+        fillMessageName: "SmartFormFill:EditSources",
+        label: secondaryActionLabel,
         fillMessageData: {},
-      },
-    });
+      };
+    }
+
+    this.image = image;
+    this.label = label;
+    this.comment = JSON.stringify(comment);
   }
 }
 
@@ -132,6 +152,12 @@ export const SmartFormFillAutocomplete = {
     inputType,
     focusElementId,
   }) {
+    // A search string means the user typed in the field, so there is no entry
+    // to offer.
+    if (searchString) {
+      return [];
+    }
+
     const isSupportedInput =
       inputType == "textarea" || SUPPORTED_INPUT_TYPES.includes(inputType);
     const smartWindowActive = lazy.AIWindow.isAIWindowActive(
@@ -165,19 +191,30 @@ export const SmartFormFillAutocomplete = {
    *   Stable identifier for the focused form.
    * @param {string} [options.focusElementId]
    *   Identifier for the field associated with the autocomplete search.
+   * @param {number} options.availableTabs Number of current open tabs available
    * @returns {Promise<Array<SmartFormFillAutocompleteItem>>}
    *   An array containing the Smart Form Fill entry.
    */
-  async createItemsAsync({ sffActor, formId, focusElementId }) {
-    const [label, loadingLabel, sourcesLabel] = await lazy.l10n.formatValues([
+  async createItemsAsync({ sffActor, formId, focusElementId, availableTabs }) {
+    const [
+      label,
+      loadingLabel,
+      sourcesLabel,
+      sourcesPillsLabel,
+      editSourcesLabel,
+    ] = await lazy.l10n.formatValues([
       { id: "ai-smart-form-fill-autocomplete-label" },
       { id: "ai-smart-form-fill-autocomplete-loading" },
       { id: "ai-smart-form-fill-autocomplete-sources-label" },
+      {
+        id: "ai-smart-form-fill-autocomplete-tabs-count",
+        args: { tabs: sffActor.getSelectedTabSources(formId).length },
+      },
+      { id: "ai-smart-form-fill-edit-sources" },
     ]);
     const relevantTabsReady = sffActor.areRelevantTabsReady(formId);
-
     const hasSources =
-      relevantTabsReady && sffActor.getRelevantTabSources(formId).length;
+      relevantTabsReady && sffActor.getSelectedTabSources(formId).length;
 
     const loading = !relevantTabsReady;
     const emptySourcesLabel =
@@ -189,15 +226,26 @@ export const SmartFormFillAutocomplete = {
           )
         : null;
 
+    // The row is an ARIA option, so its label replaces the whole subtree. It
+    // has to state which feature the row is, plus the state shown visually.
+    const ariaLabel = [
+      label,
+      loading ? loadingLabel : (emptySourcesLabel ?? sourcesPillsLabel),
+    ].join(" ");
+
     const item = new SmartFormFillAutocompleteItem({
       image: AUTOFILL_ICON,
       label,
       sourcesLabel,
+      sourcesPillsLabel,
+      sourcesPillsLabelHover: editSourcesLabel,
       loading,
       loadingLabel,
       emptySourcesLabel,
       focusElementId,
-      ariaLabel: label,
+      secondaryActionLabel: editSourcesLabel,
+      ariaLabel,
+      availableTabs,
     });
 
     return [item];

@@ -55,21 +55,13 @@ interface StepLogger {
     /** Logs the end of a step with its resulting [StepResult]. */
     fun stepEnd(step: StepDescriptor, result: StepResult)
 
-    /** Emits an informational message (non-step-level). */
-    fun info(msg: String, kv: Map<String, Any?> = emptyMap())
-
-    /** Emits a warning message. */
-    fun warn(msg: String, kv: Map<String, Any?> = emptyMap())
-
-    /** Emits an error message; optionally attaches a [Throwable] stack trace. */
-    fun error(msg: String, kv: Map<String, Any?> = emptyMap(), throwable: Throwable? = null)
-
     /**
-     * Links a screenshot to the current step, ensuring traceability between step log entries and stored image
-     * artifacts.
+     * Any other structured event, by [type]: a screen dump, a captured artifact, anything a consumer needs to correlate
+     * with the steps around it.
      *
-     * @param step Descriptor for which the screenshot was captured.
-     * @param path Absolute path to the PNG file on disk.
+     * This replaced `info`/`warn`/`error`/`attachScreenshot`, four methods with no callers between them. A general
+     * emitter with one real use beats four specific ones with none, and a consumer filtering on `type` does not care
+     * which of them a record came from.
      */
-    fun attachScreenshot(step: StepDescriptor, path: String)
+    fun record(type: String, fields: Map<String, Any?> = emptyMap())
 }

@@ -86,7 +86,7 @@ class TestDefaultLauncherVisible(MarionetteTestCase):
         self.marionette.execute_async_script(
             """
             let resolve = arguments[0];
-            let { BrowserInitState } = ChromeUtils.importESModule("resource:///modules/BrowserGlue.sys.mjs");
+            let { BrowserInitState } = ChromeUtils.importESModule("moz-src:///browser/components/BrowserGlue.sys.mjs");
 
             (async () => {
                 await BrowserInitState.startupIdleTaskPromise;
@@ -152,74 +152,6 @@ class TestDefaultLauncherVisible(MarionetteTestCase):
             "Sidebar launcher remains visible because user showed it in the resumed session",
         )
 
-    def test_new_sidebar_enabled_via_settings(self):
-        self.restart_with_default_prefs({
-            "sidebar.revamp": False,
-            "browser.uiCustomization.state": None,
-        })
-        self.marionette.set_context("chrome")
-        self.wait_for_sidebar_initialized()
-        self.assertFalse(
-            self.marionette.get_pref("sidebar.revamp"),
-            "Before enabling, sidebar.revamp pref should be false",
-        )
-        self.assertFalse(
-            self.is_launcher_visible(),
-            "Sidebar launcher is not visible",
-        )
-        self.assertFalse(
-            self.is_button_visible(),
-            "Sidebar toolbar button is not visible",
-        )
-
-        # Navigate to about:preferences and enable the new sidebar
-        self.marionette.set_context("content")
-        srd_enabled = self.marionette.get_pref("browser.settings-redesign.enabled")
-        self.marionette.navigate(
-            "about:preferences#tabsBrowsing" if srd_enabled else "about:preferences"
-        )
-
-        self.marionette.execute_script(
-            """
-            let el = document.getElementById("browserLayoutShowSidebar");
-            el.click();
-            """
-        )
-
-        self.marionette.set_context("chrome")
-        self.assertTrue(
-            self.marionette.get_pref("sidebar.revamp"),
-            "The sidebar.revamp pref should now be true",
-        )
-
-        # We expect that to add the button to the toolbar
-        Wait(self.marionette).until(
-            lambda _: self.is_button_visible(),
-            message="The toolbar button is visible",
-        )
-
-        # In this scenario, even when the defaultLauncherVisible is False, the launcher
-        # should have been shown
-        self.assertTrue(
-            self.is_launcher_visible(),
-            "The launcher is shown when revamp is enabled by the user",
-        )
-
-        # And it should stay visible on restart
-        self.marionette.restart()
-        self.marionette.set_context("chrome")
-        self.wait_for_sidebar_initialized()
-
-        self.assertTrue(
-            self.marionette.get_pref("sidebar.revamp"),
-            "The sidebar.revamp pref should still be true",
-        )
-
-        self.assertTrue(
-            self.is_launcher_visible(),
-            "Sidebar launcher should still be shown after restart",
-        )
-
     def test_horizontal_hide_launcher_persists(self):
         # With horizontal tabs, checking "Hide sidebar" sets visibility to the
         # switcher-only "hide-launcher" value. This explicit user choice should
@@ -276,6 +208,69 @@ class TestDefaultLauncherVisible(MarionetteTestCase):
             self.marionette.get_pref("sidebar.visibility"),
             "hide-on-close",
             "Legacy horizontal hide-sidebar should migrate to hide-on-close",
+        )
+
+    def test_vertical_hide_sidebar_revealed_launcher_persists(self):
+        # Bug 2065431: with vertical tabs and "hide-sidebar", a launcher the
+        # user reveals with the toolbar button must still be there after a
+        # restart instead of being reset to hidden on every startup.
+        self.restart_with_default_prefs({
+            "sidebar.revamp": True,
+            "sidebar.verticalTabs": True,
+            "sidebar.visibility": "hide-sidebar",
+        })
+        self.marionette.set_context("chrome")
+        self.wait_for_sidebar_initialized()
+
+        self.assertFalse(
+            self.is_launcher_visible(),
+            "Sidebar launcher starts hidden with hide-sidebar",
+        )
+
+        self.click_toolbar_button()
+        Wait(self.marionette).until(
+            lambda _: self.is_launcher_visible(),
+            message="Sidebar launcher should become visible",
+        )
+
+        self.marionette.restart()
+        self.marionette.set_context("chrome")
+        self.wait_for_sidebar_initialized()
+
+        self.assertTrue(
+            self.is_launcher_visible(),
+            "Revealed sidebar launcher should still be visible after restart",
+        )
+
+    def test_vertical_hide_sidebar_hidden_launcher_persists(self):
+        # The converse of the above: a launcher the user leaves hidden must not
+        # come back on restart.
+        self.restart_with_default_prefs({
+            "sidebar.revamp": True,
+            "sidebar.verticalTabs": True,
+            "sidebar.visibility": "hide-sidebar",
+        })
+        self.marionette.set_context("chrome")
+        self.wait_for_sidebar_initialized()
+
+        self.click_toolbar_button()
+        Wait(self.marionette).until(
+            lambda _: self.is_launcher_visible(),
+            message="Sidebar launcher should become visible",
+        )
+        self.click_toolbar_button()
+        Wait(self.marionette).until(
+            lambda _: not self.is_launcher_visible(),
+            message="Sidebar launcher should become hidden again",
+        )
+
+        self.marionette.restart()
+        self.marionette.set_context("chrome")
+        self.wait_for_sidebar_initialized()
+
+        self.assertFalse(
+            self.is_launcher_visible(),
+            "Hidden sidebar launcher should still be hidden after restart",
         )
 
     def test_vertical_tabs_default_hidden(self):

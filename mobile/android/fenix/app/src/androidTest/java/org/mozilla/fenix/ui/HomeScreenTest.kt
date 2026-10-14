@@ -9,6 +9,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.customannotations.Converted
 import org.mozilla.fenix.customannotations.SmokeTest
+import org.mozilla.fenix.helpers.AppAndSystemHelper.isDefaultPinnedShortcutsOnHomepage
 import org.mozilla.fenix.helpers.FenixTestRule
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.RetryTestRule
@@ -48,9 +49,13 @@ class HomeScreenTest {
         homeScreen(composeTestRule) {
             verifyHomeWordmark()
             verifyHomePrivateBrowsingButton()
-            verifyExistingTopSitesTabs("Wikipedia")
-            verifyExistingTopSitesTabs("Google")
-            verifyThoughtProvokingStories(true)
+            if (isDefaultPinnedShortcutsOnHomepage()) {
+                verifyExistingTopSitesTabs("Wikipedia")
+                verifyExistingTopSitesTabs("Google")
+            }
+            // Bug 2072025: the stories section was removed from the homepage and replaced by the
+            // "All stories" button in the header, so this assertion no longer applies.
+            // verifyThoughtProvokingStories(true)
             verifyNavigationToolbar()
             verifyHomeMenuButton()
             verifyTabCounter("0")
@@ -72,13 +77,13 @@ class HomeScreenTest {
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1364362
     @Converted(
-        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.HomeTest#verifyJumpBackInSectionTest"],
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.HomeTest#verifyContinueSectionTest"],
         bug = 2039207,
         since = "2026-05",
     )
     @SmokeTest
     @Test
-    fun verifyJumpBackInSectionTest() {
+    fun verifyContinueSectionTest() {
         composeTestRule.activityRule.applySettingsExceptions {
             it.isRecentlyVisitedFeatureEnabled = false
             it.isPocketEnabled = false
@@ -93,15 +98,10 @@ class HomeScreenTest {
                 verifyUrl(firstWebPage.url.toString())
             }
             .goToHomescreen {
-                verifyJumpBackInSectionIsDisplayed()
-                verifyJumpBackInItemTitle(composeTestRule, firstWebPage.title)
-                verifyJumpBackInItemWithUrl(composeTestRule, firstWebPage.url.toString())
-                verifyJumpBackInShowAllButton()
+                verifyContinueSectionIsDisplayed()
+                verifyContinueItemTitle(composeTestRule, firstWebPage.title)
+                verifyContinueItemWithUrl(composeTestRule, firstWebPage.url.toString())
             }
-            .clickJumpBackInShowAllButton {
-                verifyExistingOpenTabs(firstWebPage.title)
-            }
-            .closeTabDrawer {}
 
         navigationToolbar(composeTestRule) {}
             .enterURLAndEnterToBrowser(secondWebPage.url) {
@@ -109,9 +109,9 @@ class HomeScreenTest {
                 verifyUrl(secondWebPage.url.toString())
             }
             .goToHomescreen {
-                verifyJumpBackInSectionIsDisplayed()
-                verifyJumpBackInItemTitle(composeTestRule, secondWebPage.title)
-                verifyJumpBackInItemWithUrl(composeTestRule, secondWebPage.url.toString())
+                verifyContinueSectionIsDisplayed()
+                verifyContinueItemTitle(composeTestRule, secondWebPage.title)
+                verifyContinueItemWithUrl(composeTestRule, secondWebPage.url.toString())
             }
             .openTabDrawer {
                 closeTabWithTitle(secondWebPage.title)
@@ -121,16 +121,16 @@ class HomeScreenTest {
             .closeTabDrawer {}
 
         homeScreen(composeTestRule) {
-                verifyJumpBackInSectionIsDisplayed()
-                verifyJumpBackInItemTitle(composeTestRule, firstWebPage.title)
-                verifyJumpBackInItemWithUrl(composeTestRule, firstWebPage.url.toString())
+                verifyContinueSectionIsDisplayed()
+                verifyContinueItemTitle(composeTestRule, firstWebPage.title)
+                verifyContinueItemWithUrl(composeTestRule, firstWebPage.url.toString())
             }
             .openTabDrawer {
                 closeTab()
             }
 
         homeScreen(composeTestRule) {
-            verifyJumpBackInSectionIsNotDisplayed()
+            verifyContinueSectionIsNotDisplayed()
         }
     }
 }

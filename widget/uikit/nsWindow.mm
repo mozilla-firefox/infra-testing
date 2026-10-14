@@ -41,6 +41,7 @@
 
 #include "mozilla/BasicEvents.h"
 #include "mozilla/EventForwards.h"
+#include "mozilla/MacStringHelpers.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/TouchEvents.h"
 #include "mozilla/dom/MouseEventBinding.h"
@@ -1255,9 +1256,9 @@ nsresult IOSView::GetInitData(JSContext* aCx,
     mWindow = nullptr;
   }
 
-  if (mOuterWindow) {
-    mOuterWindow->ForceClose();
-    mOuterWindow = nullptr;
+  if (const nsCOMPtr<nsPIDOMWindowOuter> outerWin = std::move(mOuterWindow)) {
+    MOZ_ASSERT(!mOuterWindow);
+    outerWin->ForceClose();
   }
 }
 @end
@@ -1289,12 +1290,12 @@ id<GeckoViewWindow> GeckoViewOpenWindow(NSString* aId,
     chromeFlags += ",private";
   }
 
+  nsAutoString windowId;
+  CopyNSStringToXPCOMString(aId, windowId);
+
   nsCOMPtr<mozIDOMWindowProxy> domWindow;
-  ww->OpenWindow(
-      nullptr, url,
-      nsDependentCString([aId UTF8String],
-                         [aId lengthOfBytesUsingEncoding:NSUTF8StringEncoding]),
-      chromeFlags, iosView, getter_AddRefs(domWindow));
+  ww->OpenWindow(nullptr, url, windowId, chromeFlags, iosView,
+                 getter_AddRefs(domWindow));
   MOZ_RELEASE_ASSERT(domWindow);
 
   nsCOMPtr<nsPIDOMWindowOuter> pdomWindow = nsPIDOMWindowOuter::From(domWindow);

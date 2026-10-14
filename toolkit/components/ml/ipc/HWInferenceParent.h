@@ -6,8 +6,8 @@
 #ifndef TOOLKIT_COMPONENTS_ML_IPC_HWINFERENCEPARENT_H_
 #define TOOLKIT_COMPONENTS_ML_IPC_HWINFERENCEPARENT_H_
 
+#include "mozilla/MozPromise.h"
 #include "mozilla/ProcInfo.h"
-#include "mozilla/StaticPtr.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/ipc/UtilityProcessParent.h"
 #include "mozilla/hwinference/PHWInferenceParent.h"
@@ -15,7 +15,9 @@
 
 namespace mozilla::hwinference {
 
-// HWInference parent process side
+class HWInferenceProcess;
+
+// Main-process side of PHWInference, bound to one process for its lifetime.
 class HWInferenceParent final : public PHWInferenceParent {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(HWInferenceParent, override);
@@ -41,15 +43,39 @@ class HWInferenceParent final : public PHWInferenceParent {
     return ipc::UtilityActorName::HwInference;
   }
 
+  // Called by UtilityProcessManager once the process is up.
   nsresult BindToUtilityProcess(
       const RefPtr<ipc::UtilityProcessParent>& aUtilityParent);
 
-  static RefPtr<HWInferenceParent> GetSingleton();
+  // Resolved once bound, rejected if the process dies or never comes up.
+  RefPtr<GenericNonExclusivePromise> WhenReady() { return mReadyPromise; }
+
+  // Sends aEndpoint once bound. The caller must hold a keep-alive.
+  void StartContentSpeechRecognition(
+      Endpoint<PSpeechRecognitionParent>&& aEndpoint,
+      dom::ContentParentId aChildId);
+
+  // Same for a text generator; aModel is the model file the parent opened.
+  void StartTextGeneration(Endpoint<PTextGenerationChild>&& aEndpoint,
+                           const ipc::FileDescriptor& aModel,
+                           const TextGenerationOptions& aOptions);
 
  private:
   friend PHWInferenceParent;
-  static StaticRefPtr<HWInferenceParent> sInstance;
+  friend class HWInferenceProcess;
+
   ~HWInferenceParent() = default;
+
+  // Runs aSend(*this) once bound, drops it if the process never comes up.
+  template <typename Send>
+  void SendWhenReady(Send&& aSend);
+
+  // Cleared once the owner has taken this actor's last report.
+  HWInferenceProcess* mOwner = nullptr;
+
+  const RefPtr<GenericNonExclusivePromise::Private> mReadyPromise =
+      new GenericNonExclusivePromise::Private(
+          "HWInferenceParent::mReadyPromise");
 };
 
 }  // namespace mozilla::hwinference

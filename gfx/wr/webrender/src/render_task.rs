@@ -19,7 +19,6 @@ use crate::picture::ResolvedSurfaceTexture;
 use crate::tile_cache::MAX_SURFACE_SIZE;
 use crate::transform::GpuTransformId;
 use crate::resource_cache::ImageRequest;
-use std::{usize, f32, i32, u32};
 use crate::renderer::{GpuBufferAddress, GpuBufferBuilder, GpuBufferBuilderF};
 use crate::render_backend::DataStores;
 use crate::render_target::{ResolveOp, RenderTargetKind};
@@ -259,6 +258,24 @@ impl BlurTask {
     // In order to do the blur down-scaling passes without introducing errors, we need the
     // source of each down-scale pass to be a multuple of two. If need be, this inflates
     // the source size so that each down-scale pass will sample correctly.
+    /// The total downscaling factor that `RenderTask::new_blur` applies to a
+    /// source of the given size before blurring it.
+    pub fn downscale_factor(original_size: DeviceSize, mut std_dev: DeviceSize) -> f32 {
+        let mut adjusted_size = original_size;
+        let mut scale_factor = 1.0;
+        while std_dev.width > MAX_BLUR_STD_DEVIATION && std_dev.height > MAX_BLUR_STD_DEVIATION {
+            if adjusted_size.width < MIN_DOWNSCALING_RT_SIZE as f32 ||
+               adjusted_size.height < MIN_DOWNSCALING_RT_SIZE as f32 {
+                break;
+            }
+            std_dev = std_dev * 0.5;
+            scale_factor *= 2.0;
+            adjusted_size = (original_size.to_f32() / scale_factor).ceil();
+        }
+
+        scale_factor
+    }
+
     pub fn adjusted_blur_source_size(original_size: DeviceSize, mut std_dev: DeviceSize) -> DeviceSize {
         let mut adjusted_size = original_size;
         let mut scale_factor = 1.0;
@@ -724,9 +741,9 @@ impl RenderTaskKind {
                     FilterGraphOp::SVGFEDiffuseLightingDistant{..} => {}
                     FilterGraphOp::SVGFEDiffuseLightingPoint{..} => {}
                     FilterGraphOp::SVGFEDiffuseLightingSpot{..} => {}
-                    FilterGraphOp::SVGFEDisplacementMap{scale, x_channel_selector, y_channel_selector} => {
+                    FilterGraphOp::SVGFEDisplacementMap{scale_x, scale_y, x_channel_selector, y_channel_selector} => {
                         let mut writer = gpu_buffer.f32.write_blocks(1);
-                        writer.push_one([x_channel_selector as f32, y_channel_selector as f32, scale, 0.0]);
+                        writer.push_one([x_channel_selector as f32, y_channel_selector as f32, scale_x, scale_y]);
                         filter_task.extra_gpu_data = Some(writer.finish());
                     }
                     FilterGraphOp::SVGFEDropShadow { color, .. } |
@@ -1277,9 +1294,10 @@ impl RenderTask {
                 },
                 FilterGraphOp::SVGFEFlood{..} => op.clone(),
                 FilterGraphOp::SVGFEDisplacementMap{
-                    scale, x_channel_selector, y_channel_selector} => {
+                    scale_x, scale_y, x_channel_selector, y_channel_selector} => {
                     FilterGraphOp::SVGFEDisplacementMap{
-                        scale: scale * subregion_to_device_scale_x,
+                        scale_x: scale_x * subregion_to_device_scale_x,
+                        scale_y: scale_y * subregion_to_device_scale_y,
                         x_channel_selector: *x_channel_selector,
                         y_channel_selector: *y_channel_selector}
                 },

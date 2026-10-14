@@ -12,14 +12,17 @@ import { E10SUtils } from "resource://gre/modules/E10SUtils.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  LoginBreaches: "resource:///modules/LoginBreaches.sys.mjs",
+  LoginBreaches:
+    "moz-src:///browser/components/aboutlogins/LoginBreaches.sys.mjs",
   LoginCSVImport: "resource://gre/modules/LoginCSVImport.sys.mjs",
   LoginExport: "resource://gre/modules/LoginExport.sys.mjs",
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
-  MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
+  MigrationUtils:
+    "moz-src:///browser/components/migration/MigrationUtils.sys.mjs",
   UIState: "resource://services-sync/UIState.sys.mjs",
   FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
-  ChangePasswordURLs: "resource:///modules/ChangePasswordURLs.sys.mjs",
+  ChangePasswordURLs:
+    "moz-src:///browser/components/aboutlogins/ChangePasswordURLs.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "log", () => {
@@ -403,11 +406,7 @@ export class AboutLoginsParent extends JSWindowActorParent {
       reason
     );
 
-    let { name, extra = {}, value = null } = telemetryEvent;
-    if (value) {
-      extra.value = value;
-    }
-    Glean.pwmgr[name].record(extra);
+    lazy.LoginHelper.recordReauthTelemetryEvent(telemetryEvent);
 
     if (!isAuthorized) {
       return;

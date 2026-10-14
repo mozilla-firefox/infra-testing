@@ -15,15 +15,13 @@
 #  include "Logging.h"
 #endif
 
-#include "mozilla/a11y/DocAccessibleChild.h"
-#ifdef MOZ_ENABLE_SKIA_PDF
-#  include "mozilla/a11y/PdfStructTreeBuilder.h"
-#endif
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/Components.h"
 #include "mozilla/EventListenerManager.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_accessibility.h"
+#include "mozilla/a11y/DocAccessibleChild.h"
+#include "mozilla/a11y/PdfStructTreeBuilder.h"
 #include "mozilla/dom/Event.h"  // for Event
 #include "nsContentUtils.h"
 #include "nsCoreUtils.h"
@@ -33,6 +31,10 @@
 #include "nsIWebNavigation.h"
 #include "nsIWebProgress.h"
 #include "xpcAccessibleDocument.h"
+
+#if defined(ANDROID)
+#  include "mozilla/Monitor.h"
+#endif
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -194,7 +196,6 @@ bool DocManager::IsProcessingRefreshDriverNotification() const {
 }
 #endif
 
-#ifdef MOZ_ENABLE_SKIA_PDF
 /* static */
 void DocManager::NotifyOfPrintDocument(dom::Document* aDoc) {
   if (!StaticPrefs::accessibility_tagged_pdf_output_enabled()) {
@@ -250,7 +251,6 @@ void DocManager::NotifyOfPrintDocument(dom::Document* aDoc) {
     }
   }
 }
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 // DocManager protected
@@ -275,6 +275,18 @@ void DocManager::Shutdown() {
   }
 
   ClearDocCache();
+  // Even though remote documents aren't strictly managed by this DocManager
+  // instance, destroy them now because they might depend on platform specific
+  // state which is about to be torn down by PlatformShutdown. Iterate the array
+  // backwards because destroying the document removes it from this array.
+  if (sRemoteDocuments) {
+#if defined(ANDROID)
+    MonitorAutoLock mal(nsAccessibilityService::GetAndroidMonitor());
+#endif
+    for (size_t i = sRemoteDocuments->Length(); i-- > 0;) {
+      (*sRemoteDocuments)[i]->Destroy();
+    }
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -522,11 +534,13 @@ DocAccessible* DocManager::CreateDocOrRootAccessible(Document* aDocument,
   }
 
   // Ignore hidden documents, resource documents, static clone
-  // (printing) documents and documents without a docshell.
+  // (printing) documents, documents without a docshell, and documents that
+  // are no longer current for their WindowGlobal (e.g. the initial about:blank
+  // after its WindowGlobal has been reused for a new document).
   if (!nsCoreUtils::IsDocumentVisibleConsideringInProcessAncestors(aDocument) ||
       aDocument->IsResourceDoc() ||
       (!aAllowStatic && aDocument->IsStaticDocument()) ||
-      !aDocument->IsActive()) {
+      !aDocument->IsActive() || !aDocument->IsCurrentActiveDocument()) {
     return nullptr;
   }
 

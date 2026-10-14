@@ -40,7 +40,7 @@ DistributionCustomizer.prototype = {
         ? Services.dirsvc.get("ProfD", Ci.nsIFile)
         : Services.dirsvc.get("XREAppDist", Ci.nsIFile);
       if (loadFromProfile) {
-        iniFile.leafName = "distribution";
+        iniFile.append("distribution");
       }
       iniFile.append("distribution.ini");
     } catch (ex) {}
@@ -524,10 +524,13 @@ DistributionCustomizer.prototype = {
         }
       } catch (e) {}
       // If a theme was specified in the distribution, and it's a new profile,
-      // set the theme as default.
+      // set the theme as default. Note the distribution will have set a
+      // _default_ value for the theme.
       try {
-        const activeThemeID = Services.prefs.getCharPref(
-          "extensions.activeThemeID"
+        const defaults = Services.prefs.getDefaultBranch(null);
+        const activeThemeID = defaults.getCharPref(
+          "extensions.activeThemeID",
+          null
         );
         if (activeThemeID) {
           lazy.AddonManager.getAddonByID(activeThemeID).then(addon =>

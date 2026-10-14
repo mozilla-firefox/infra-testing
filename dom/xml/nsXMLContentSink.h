@@ -23,6 +23,7 @@ class nsIParser;
 class nsTextNode;
 
 namespace mozilla::dom {
+class Element;
 class NodeInfo;
 class ProcessingInstruction;
 }  // namespace mozilla::dom
@@ -38,11 +39,6 @@ class nsXMLContentSink : public nsContentSink,
                          public nsITransformObserver,
                          public nsIExpatSink {
  public:
-  struct StackNode {
-    nsCOMPtr<nsIContent> mContent;
-    uint32_t mNumFlushed;
-  };
-
   nsXMLContentSink();
 
   nsresult Init(mozilla::dom::Document* aDoc, nsIURI* aURL,
@@ -58,7 +54,8 @@ class nsXMLContentSink : public nsContentSink,
   // nsIContentSink
   NS_IMETHOD WillParse(void) override;
   NS_IMETHOD WillBuildModel() override;
-  NS_IMETHOD DidBuildModel(bool aTerminated) override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHOD
+  DidBuildModel(bool aTerminated) override;
   NS_IMETHOD WillInterrupt(void) override;
   void WillResume() override;
   NS_IMETHOD SetParser(nsParserBase* aParser) override;
@@ -77,11 +74,12 @@ class nsXMLContentSink : public nsContentSink,
   }
 
   // nsITransformObserver
-  nsresult OnDocumentCreated(mozilla::dom::Document* aSourceDocument,
-                             mozilla::dom::Document* aResultDocument) override;
-  nsresult OnTransformDone(mozilla::dom::Document* aSourceDocument,
-                           nsresult aResult,
-                           mozilla::dom::Document* aResultDocument) override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult
+  OnDocumentCreated(mozilla::dom::Document* aSourceDocument,
+                    mozilla::dom::Document* aResultDocument) override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult
+  OnTransformDone(mozilla::dom::Document* aSourceDocument, nsresult aResult,
+                  mozilla::dom::Document* aResultDocument) override;
 
   // nsICSSLoaderObserver
   NS_IMETHOD StyleSheetLoaded(mozilla::StyleSheet* aSheet, bool aWasDeferred,
@@ -124,30 +122,19 @@ class nsXMLContentSink : public nsContentSink,
 
   // aParent is allowed to be null here if this is the root content
   // being closed
-  virtual nsresult CloseElement(nsIContent* aContent);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual nsresult CloseElement(
+      nsIContent* aContent);
 
   virtual nsresult FlushText(bool aReleaseTextNode = true);
 
   nsresult AddContentAsLeaf(nsIContent* aContent);
 
   nsIContent* GetCurrentContent();
-  StackNode* GetCurrentStackNode();
-  nsresult PushContent(nsIContent* aContent);
+  void PushContent(nsIContent* aContent);
   void PopContent();
-  bool HaveNotifiedForCurrentContent() const;
-
-  nsresult FlushTags() override;
-
-  void UpdateChildCounts() override;
-
-  void DidAddContent() {
-    if (!mXSLTProcessor && IsTimeToNotify()) {
-      FlushTags();
-    }
-  }
 
   // nsContentSink override
-  virtual nsresult ProcessStyleLinkFromHeader(
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual nsresult ProcessStyleLinkFromHeader(
       const nsAString& aHref, bool aAlternate, const nsAString& aTitle,
       const nsAString& aIntegrity, const nsAString& aType,
       const nsAString& aMedia, const nsAString& aReferrerPolicy,
@@ -171,11 +158,10 @@ class nsXMLContentSink : public nsContentSink,
 
   nsresult MaybePrettyPrint();
 
-  bool IsMonolithicContainer(mozilla::dom::NodeInfo* aNodeInfo);
-
   nsresult HandleStartElement(const char16_t* aName, const char16_t** aAtts,
                               uint32_t aAttsCount, uint32_t aLineNumber,
-                              uint32_t aColumnNumber, bool aInterruptable);
+                              uint32_t aColumnNumber,
+                              mozilla::dom::FromParser aFromParser);
   nsresult HandleEndElement(const char16_t* aName, bool aInterruptable);
   nsresult HandleCharacterData(const char16_t* aData, uint32_t aLength,
                                bool aInterruptable);
@@ -185,8 +171,11 @@ class nsXMLContentSink : public nsContentSink,
 
   XMLContentSinkState mState = eXMLContentSinkState_InProlog;
 
-  int32_t mNotifyLevel = 0;
   RefPtr<nsTextNode> mLastTextNode;
+
+  // True while FlushText runs. A DOM notification in FlushText can run script
+  // that stops the parser, and then DidBuildModel calls FlushText again.
+  bool mFlushingText = false;
 
   bool mPrettyPrintXML : 1 = true;
   bool mPrettyPrintHasSpecialRoot : 1 = false;
@@ -199,9 +188,10 @@ class nsXMLContentSink : public nsContentSink,
   // XSLT is disabled
   bool mXSLTIsDisabled : 1 = false;
 
-  nsTArray<StackNode> mContentStack;
+  nsTArray<nsCOMPtr<nsIContent>> mContentStack;
 
   nsCOMPtr<nsIDocumentTransformer> mXSLTProcessor;
+  RefPtr<mozilla::dom::Document> mXSLTResultDocument;
 
   // Holds the children in the prolog until the root element is added, after
   // which they're inserted in the document. However, if we're doing an XSLT

@@ -14,6 +14,10 @@ import mozilla.components.feature.prompts.dialog.KEY_PROMPT_UID
 import mozilla.components.feature.prompts.dialog.KEY_SESSION_ID
 import mozilla.components.feature.prompts.dialog.KEY_SHOULD_DISMISS_ON_LOAD
 import mozilla.components.feature.prompts.dialog.TestPromptFeature
+import mozilla.components.feature.prompts.facts.AddressAutofillDialogFacts
+import mozilla.components.support.base.Component
+import mozilla.components.support.base.facts.Action
+import mozilla.components.support.base.facts.processor.CollectionProcessor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -110,5 +114,51 @@ class AddressSaveDialogFragmentTest {
         // then verify that the canceled prompt is the same one for that dialog
         assertNotNull(feature.canceledPrompt)
         assertEquals(promptRequestUID, feature.canceledPrompt?.promptRequestUid)
+    }
+
+    @Test
+    fun `GIVEN an address without a guid WHEN the save fact is emitted THEN the created fact is emitted`() {
+        val fragment =
+            AddressSaveDialogFragment.newInstance(
+                sessionId = sessionId,
+                promptRequestUID = promptRequestUID,
+                shouldDismissOnLoad = false,
+                address = address.copy(guid = ""),
+            )
+
+        CollectionProcessor.withFactCollection { facts ->
+            fragment.emitSaveUpdateFact()
+
+            val fact = facts.single()
+            assertEquals(Component.FEATURE_PROMPTS, fact.component)
+            assertEquals(Action.CONFIRM, fact.action)
+            assertEquals(
+                AddressAutofillDialogFacts.Items.AUTOFILL_ADDRESS_CREATED,
+                fact.item,
+            )
+        }
+    }
+
+    @Test
+    fun `GIVEN an address with a guid WHEN the save fact is emitted THEN the updated fact is emitted`() {
+        val fragment =
+            AddressSaveDialogFragment.newInstance(
+                sessionId = sessionId,
+                promptRequestUID = promptRequestUID,
+                shouldDismissOnLoad = false,
+                address = address,
+            )
+
+        CollectionProcessor.withFactCollection { facts ->
+            fragment.emitSaveUpdateFact()
+
+            val fact = facts.single()
+            assertEquals(Component.FEATURE_PROMPTS, fact.component)
+            assertEquals(Action.CONFIRM, fact.action)
+            assertEquals(
+                AddressAutofillDialogFacts.Items.AUTOFILL_ADDRESS_UPDATED,
+                fact.item,
+            )
+        }
     }
 }

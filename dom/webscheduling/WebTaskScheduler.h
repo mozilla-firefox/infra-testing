@@ -24,10 +24,14 @@ constinit extern uint32_t
     gNumNormalOrHighPriorityQueuesHaveTaskScheduledMainThread;
 
 // https://wicg.github.io/scheduling-apis/#scheduling-state
-class WebTaskSchedulingState {
+//
+// An nsISupports so that the JS object that carries this state along promise
+// reactions (CycleCollectedJSContext.cpp) can report its reference to the
+// cycle collector.
+class WebTaskSchedulingState final : public nsISupports {
  public:
-  NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(WebTaskSchedulingState)
-  NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(WebTaskSchedulingState)
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
+  NS_DECL_CYCLE_COLLECTION_CLASS(WebTaskSchedulingState)
 
   void Reset() {
     mAbortSource = nullptr;
@@ -317,8 +321,8 @@ class WebTaskScheduler : public nsWrapperCache,
                                         const Optional<TaskPriority>& aPriority,
                                         const bool aIsContinuation);
 
-  virtual nsresult SetTimeoutForDelayedTask(WebTask* aTask, uint64_t aDelay,
-                                            EventQueuePriority aPriority) = 0;
+  virtual nsresult SetTimeoutForDelayedTask(WebTask* aTask,
+                                            uint64_t aDelay) = 0;
   virtual bool DispatchEventLoopRunnable(EventQueuePriority aPriority) = 0;
 
   EventQueuePriority GetEventQueuePriority(const TaskPriority& aPriority,
@@ -334,7 +338,7 @@ class WebTaskScheduler : public nsWrapperCache,
 class DelayedWebTaskHandler final : public TimeoutHandler {
  public:
   DelayedWebTaskHandler(JSContext* aCx, WebTaskScheduler* aScheduler,
-                        WebTask* aTask, EventQueuePriority aPriority)
+                        WebTask* aTask)
       : TimeoutHandler(aCx), mScheduler(aScheduler), mWebTask(aTask) {}
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
@@ -343,7 +347,10 @@ class DelayedWebTaskHandler final : public TimeoutHandler {
   MOZ_CAN_RUN_SCRIPT bool Call(const char* /* unused */) override {
     if (mScheduler && mWebTask && mWebTask->isInList()) {
       MOZ_ASSERT(!mWebTask->HasScheduled());
-      if (!mScheduler->DispatchTask(mWebTask, mPriority)) {
+      if (!mScheduler->DispatchTask(
+              mWebTask,
+              mScheduler->GetEventQueuePriority(mWebTask->Priority(),
+                                                false /* aIsContinuation */))) {
         return false;
       }
     }
@@ -355,7 +362,6 @@ class DelayedWebTaskHandler final : public TimeoutHandler {
   WeakPtr<WebTaskScheduler> mScheduler;
   // WebTask gets added to WebTaskQueue, and WebTaskQueue keeps its alive.
   WeakPtr<WebTask> mWebTask;
-  EventQueuePriority mPriority;
 };
 }  // namespace mozilla::dom
 #endif

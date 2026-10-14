@@ -9,6 +9,7 @@
 #include "Pivot.h"
 #include "Relation.h"
 #include "TextLeafRange.h"
+#include "mozilla/Monitor.h"
 #include "mozilla/a11y/CacheConstants.h"
 #include "mozilla/a11y/DocAccessibleParent.h"
 #include "mozilla/a11y/DocManager.h"
@@ -48,6 +49,48 @@ static constexpr uint64_t kNecessaryBoundsDomains =
     CacheDomain::ScrollPosition | CacheDomain::APZ;
 static constexpr uint64_t kNecessaryStateDomains =
     CacheDomain::State | CacheDomain::Viewport;
+
+void RemoteAccessible::AssertActiveThread() const {
+#ifdef ANDROID
+  // The RemoteAccessible tree is touched from both the main thread and the
+  // Android UI thread, but never concurrently. Whichever of those threads is
+  // currently doing so holds nsAccessibilityService::GetAndroidMonitor().
+  //
+  // DocAccessibleParent is exempted from this on the main thread because its
+  // refcount is also touched by generic IPDL actor lifecycle code which can't
+  // be made to acquire this lock; it isn't specific to accessibility. That code
+  // only runs before the doc is reachable from the tree (and thus before it is
+  // reachable from the Android UI thread) or after it has already been removed
+  // from the tree, so it can't race with the Android UI thread.
+  if (!(NS_IsMainThread() && IsDoc())) {
+    nsAccessibilityService::GetAndroidMonitor().AssertCurrentThreadOwns();
+  }
+#else
+  MOZ_ASSERT(NS_IsMainThread());
+#endif
+}
+
+NS_IMETHODIMP_(MozExternalRefCountType) RemoteAccessible::AddRef(void) {
+  MOZ_ASSERT_TYPE_OK_FOR_REFCOUNTING(RemoteAccessible)
+  MOZ_ASSERT(int32_t(mRefCnt) >= 0, "illegal refcnt");
+  AssertActiveThread();
+  ++mRefCnt;
+  NS_LOG_ADDREF(this, mRefCnt, "RemoteAccessible", sizeof(*this));
+  return mRefCnt;
+}
+
+NS_IMETHODIMP_(MozExternalRefCountType) RemoteAccessible::Release(void) {
+  MOZ_ASSERT(int32_t(mRefCnt) > 0, "dup release");
+  AssertActiveThread();
+  --mRefCnt;
+  NS_LOG_RELEASE(this, mRefCnt, "RemoteAccessible");
+  if (mRefCnt == 0) {
+    mRefCnt = 1; /* stabilize */
+    delete this;
+    return 0;
+  }
+  return mRefCnt;
+}
 
 void RemoteAccessible::Shutdown() {
   MOZ_DIAGNOSTIC_ASSERT(!IsDoc());
@@ -164,7 +207,10 @@ Accessible* RemoteAccessible::EmbeddedChildAt(uint32_t aChildIdx) {
 }
 
 LocalAccessible* RemoteAccessible::OuterDocOfRemoteBrowser() const {
-  auto tab = mDoc->Manager();
+  auto* tab = mDoc->GetBrowserParent();
+  if (NS_WARN_IF(!tab)) {
+    return nullptr;
+  }
   dom::Element* frame = tab->GetOwnerElement();
   NS_ASSERTION(frame, "why isn't the tab in a frame!");
   if (!frame) return nullptr;
@@ -215,8 +261,10 @@ bool RemoteAccessible::ApplyCache(CacheUpdateType aUpdateType,
     // Updating the viewport cache means the offscreen state of this
     // document's accessibles has changed. Update the HashSet we use for
     // checking offscreen state here.
-    MOZ_ASSERT(IsDoc(),
-               "Fetched the viewport cache from a non-doc accessible?");
+    if (!IsDoc()) {
+      MOZ_ASSERT_UNREACHABLE("Received viewport cache for non-doc accessible");
+      return false;
+    }
     AsDoc()->mOnScreenAccessibles.Clear();
     for (auto id : *maybeViewportCache) {
       AsDoc()->mOnScreenAccessibles.Insert(id);
@@ -1173,7 +1221,8 @@ Relation RemoteAccessible::RelationByType(RelationType aType) const {
           CacheDomain::Relations |          // relations info, DOMName attribute
           CacheDomain::Value |              // Value
           CacheDomain::DOMNodeIDAndClass |  // DOMNodeID
-          CacheDomain::GroupInfo            // GetOrCreateGroupInfo
+          CacheDomain::GroupInfo |          // GetOrCreateGroupInfo
+          CacheDomain::State                // ERRORMSG relation
           )) {
     return Relation();
   }
@@ -1320,6 +1369,13 @@ Relation RemoteAccessible::RelationByType(RelationType aType) const {
   Relation rel;
   if (!mCachedFields) {
     return rel;
+  }
+
+  if (aType == RelationType::ERRORMSG) {
+    if (auto rawState = mCachedFields->GetAttribute<uint64_t>(CacheKey::State);
+        !rawState || !(*rawState & states::INVALID)) {
+      return rel;
+    }
   }
 
   auto GetDirectRelationFromCache =
@@ -2414,7 +2470,7 @@ bool RemoteAccessible::HasPrimaryAction() const {
 
 void RemoteAccessible::TakeFocus() const {
   (void)mDoc->SendTakeFocus(mID);
-  auto* bp = mDoc->Manager();
+  auto* bp = mDoc->GetBrowserParent();
   MOZ_ASSERT(bp);
   if (nsFocusManager::GetFocusedElementStatic() == bp->GetOwnerElement()) {
     // This remote document tree is already focused. We don't need to do

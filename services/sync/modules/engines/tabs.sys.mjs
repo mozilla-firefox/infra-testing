@@ -279,9 +279,9 @@ TabEngine.prototype = {
       let outgoing = await this._bridge.apply(0);
       // We know we always have exactly 1 record.
       let mine = outgoing[0];
-      this._log.trace("outgoing bso", mine);
       // `this._recordObj` is a `BridgedRecord`, which isn't exported.
       let record = this._recordObj.fromOutgoingBso(this.name, JSON.parse(mine));
+      this._log.trace(`outgoing bso with length ${record.cleartext?.length}`);
 
       Async.checkAppReady();
       // This is a single, device-exclusive record we want to force onto the

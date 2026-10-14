@@ -1,7 +1,4 @@
 [DEFAULT]
-skip-if = [
-  "isolated_process", # Bug 1709948
-]
 subsuite = "media"
 tags = "media-gpu"
 support-files = [
@@ -203,6 +200,7 @@ support-files = [
   "tags_before_cluster.webm^header^",
   "bug1341228_init.webm",
   "bug1341228_cluster.webm",
+  "bug2065262_init.webm",
   "1516754.webm 1516754.webm^headers^",
   "init-trackid2.mp4",
   "init-trackid3.mp4",
@@ -226,9 +224,9 @@ support-files = [
 
 ["test_BufferingWait.html"]
 
-["test_BufferingWait_mp4.html"]
-
 ["test_BufferingWait_OffsetTimestamps_mp4.html"]
+
+["test_BufferingWait_mp4.html"]
 
 ["test_ChangeType.html"]
 
@@ -246,7 +244,6 @@ support-files = [
 skip-if = [
   "os == 'android' && arch == 'aarch64' && debug", # Bug 1776960 - android aarch64 debug
   "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # mac due to bug 1487973
-  "os == 'win'", # bug 1487973,
 ]
 
 ["test_H264_SPS_InvalidDimensions.html"]

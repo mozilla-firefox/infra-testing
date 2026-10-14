@@ -30,6 +30,7 @@
 @import url("chrome://browser/skin/sidebar.css");
 @import url("chrome://browser/skin/aiWindowSidebar.css");
 @import url("chrome://browser/skin/smartwindowGroupTabs.css");
+@import url("chrome://browser/skin/smartwindowMonitor.css");
 @import url("chrome://browser/skin/customizableui/customizeMode.css");
 @import url("chrome://browser/skin/UITour.css");
 @import url("chrome://browser/skin/formautofill-notification.css");
@@ -74,7 +75,7 @@ body {
     direction: rtl;
   }
 
-  &:not([popup-window]) {
+  &:not([popup-window], [mini-window]) {
     /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
     min-width: var(--window-min-width);
     /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
@@ -148,6 +149,22 @@ body {
     --toolbox-background-size: auto, var(--lwt-background-size);
   }
 
+  /* A mini window is a small always-on-top window. */
+  &[mini-window] {
+    @media not (forced-colors) {
+      --mini-window-toolbar-background: light-dark(var(--color-white), var(--color-gray-70));
+
+      --toolbox-background-image: none;
+      --toolbox-background-color: var(--mini-window-toolbar-background);
+      --toolbox-background-color-inactive: var(--mini-window-toolbar-background);
+    }
+
+    --mini-window-slide-duration: 180ms;
+    --mini-window-fade-duration: 140ms;
+    --mini-window-ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+    --mini-window-ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
   --ext-theme-background-transition: background-color 0.1s cubic-bezier(0.17, 0.67, 0.83, 0.67);
 
   --inactive-window-transition: 0.2s ease;
@@ -173,24 +190,18 @@ body {
     color: var(--lwt-text-color);
   }
 
-  @media -moz-pref("browser.nova.enabled") {
-    --chrome-block-radius: 10px;
-
-    @media (-moz-platform: linux) {
-      --chrome-block-radius: env(-moz-gtk-csd-titlebar-radius);
-    }
-
-    @media (-moz-platform: windows) {
-      --chrome-block-radius: 4px;
-    }
-
-    @media (-moz-windows-mica) {
-      --chrome-block-radius: 8px;
-    }
-
-    @media (-moz-mac-tahoe-theme) {
-      --chrome-block-radius: 16px;
-    }
+  --window-border-radius: 10px;
+  @media (-moz-platform: linux) {
+    --window-border-radius: env(-moz-gtk-csd-titlebar-radius);
+  }
+  @media (-moz-platform: windows) {
+    --window-border-radius: 4px;
+  }
+  @media (-moz-windows-mica) {
+    --window-border-radius: 8px;
+  }
+  @media (-moz-mac-tahoe-theme) {
+    --window-border-radius: 16px;
   }
 }
 
@@ -232,6 +243,61 @@ body {
     /* Variables defined in browser-colors.css will be updated to use design tokens, see bug 1952566. */
     /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
     border-bottom-color: var(--chrome-content-separator-color);
+  }
+
+  /* Mini window: the toolbar is pinned to the top of the window and slides in/out
+   * of it.
+   *
+   * MiniWindow watches the top few pixels via MousePosTracker to reveal the bar. CSS
+   * holds the bar open under the pointer or keyboard focus; JS toggles mini-window-revealed
+   * for the timed reveals. */
+  :root[mini-window] & {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline: 0;
+    transform: translateY(-100%);
+    opacity: 0;
+
+    @media (prefers-reduced-motion: no-preference) {
+      transition:
+        transform var(--mini-window-slide-duration) var(--mini-window-ease-emphasized),
+        opacity var(--mini-window-fade-duration) var(--mini-window-ease-standard);
+    }
+
+    @media (prefers-reduced-motion) {
+      transition: opacity 80ms var(--mini-window-ease-standard);
+    }
+
+    &:is(.mini-window-revealed, :hover, :focus-within:not(:-moz-window-inactive)) {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+}
+
+/* The page is pushed down while the bar is shown so the bar never covers it,
+ * and takes the whole window back when it hides.
+ *
+ * This moves the page rather than resizing it: a margin would change the remote
+ * browser's height, reflowing the page and running its resize handlers every
+ * time the bar comes and goes, where a transform costs a composite. The page
+ * keeps the window's full height throughout, so while the bar is up its last
+ * few rows sit below the bottom of the window. */
+:root[mini-window] {
+  #navigator-toolbox:is(.mini-window-revealed, :hover, :focus-within:not(:-moz-window-inactive)) ~ #browser {
+    /* 0 until the bar has been measured, which happens before it is first revealed. */
+    transform: translateY(var(--mini-window-toolbar-height, 0));
+  }
+
+  #browser {
+    @media (prefers-reduced-motion: no-preference) {
+      transition: transform var(--mini-window-slide-duration) var(--mini-window-ease-emphasized);
+    }
+  }
+
+  /* Set for the frame in which the bar is first revealed. */
+  &[mini-window-first-open] :is(#navigator-toolbox, #browser) {
+    transition: none;
   }
 }
 
@@ -306,54 +372,6 @@ body {
   background-size: var(--toolbox-background-size);
 }
 
-@media -moz-pref("browser.nova.enabled") {
-  :root[lwtheme]:not([theme-image-in-toolbox]) #navigator-toolbox {
-    color: inherit;
-  }
-
-  :root[lwtheme]:not([theme-image-in-toolbox]) .chrome-block {
-    color: var(--toolbox-text-color);
-    overflow: clip;
-
-    &:-moz-window-inactive {
-      background-color: var(--toolbox-background-color-inactive);
-      color: var(--toolbox-text-color-inactive);
-    }
-  }
-
-  /* The sidebar panel and the content area round their corners away from the
-   * chrome they sit against, and #browser is what shows through the notches
-   * that leaves, so it needs to be the same color as the blocks above to appear
-   * seamless. */
-  #browser {
-    /* Only the native titlebar color dims with the window; the toolbar color
-     * that the rule below falls back to doesn't. */
-    @media (-moz-native-theme) {
-      &:-moz-window-inactive {
-        background-color: var(--toolbox-background-color-inactive);
-        color: var(--toolbox-text-color-inactive);
-      }
-    }
-  }
-
-  /* Without a native theme --toolbox-background-color is either the system
-   * titlebar color or a lwtheme's accent, and neither matches the toolbars, so
-   * the chrome and the surface it sits on take the toolbar color to appear
-   * seamless instead. */
-  @media not (-moz-native-theme) {
-    /* A lwtheme's toolbar color is allowed to be translucent, so body keeps the
-     * theme's accent to give the chrome an opaque surface to composite over. */
-    :root:not([lwtheme]) body {
-      background-color: var(--toolbar-background-color);
-      color: var(--toolbar-text-color);
-    }
-
-    :root:not([sidebar-expand-on-hover]) #sidebar-container {
-      background-color: transparent;
-    }
-  }
-}
-
 .browser-toolbar {
   appearance: none;
   /* Reset linux padding */
@@ -361,12 +379,9 @@ body {
   border-style: none;
   background-color: transparent;
   color: inherit;
-
-  @media (not -moz-pref("sidebar.verticalTabs")) or (-moz-pref("sidebar.verticalTabs") and -moz-pref("browser.nova.enabled")) {
-    &:not(.browser-titlebar) {
-      background-color: var(--toolbar-background-color);
-      color: var(--toolbar-text-color);
-    }
+  &:not(.browser-titlebar) {
+    background-color: var(--toolbar-background-color);
+    color: var(--toolbar-text-color);
   }
 }
 
@@ -375,8 +390,7 @@ body {
 .browser-titlebar {
   -moz-window-dragging: drag;
 
-  :root[customtitlebar] &,
-  :root[customtitlebar] & .urlbar:popover-open {
+  :root[customtitlebar] & {
     will-change: opacity;
     transition: opacity var(--inactive-window-transition);
 
@@ -484,12 +498,43 @@ body {
   }
 }
 
-/* Popup windows hide all of the browser chrome. Taskbar tabs hide the same
- * thing except for the navigation buttons, which have their own allowlist in
- * toolbarbuttons.css */
+/* Popup windows hide all of the browser chrome. Taskbar tabs and Mini
+ * windows hide the same thing except for the navigation buttons; taskbar tabs
+ * keep theirs via an allowlist in toolbarbuttons.css, mini windows via the
+ * rule below. */
 :root[popup-window] :is(#toolbar-menubar, #PersonalToolbar, .chromeclass-toolbar-additional, .chromeclass-extrachrome),
-:root[taskbartab] :is(#toolbar-menubar, #PersonalToolbar, .chromeclass-extrachrome) {
+:root:is([taskbartab], [mini-window]) :is(#toolbar-menubar, #PersonalToolbar, .chromeclass-extrachrome) {
   display: none;
+}
+
+/* A Mini window is a focused, single-tab utility window (like a taskbar tab):
+ * it keeps only back/forward/reload, the address bar, and the two mini-window
+ * controls. Everything else in the bar goes. */
+:root[mini-window] {
+  .chromeclass-toolbar-additional:not(
+    #back-button,
+    #forward-button,
+    #stop-reload-button,
+    #mini-window-audio-button,
+    #mini-window-restore-button,
+    #mini-window-close-button
+  ) {
+    display: none;
+  }
+
+  /* The app menu and page-action buttons expose tab/window management, add-on
+     and page tools that don't apply to a single popped-out tab. */
+  #PanelUI-button,
+  #page-action-buttons {
+    display: none;
+  }
+
+  /* The reused nav-bar acts as the titlebar here, so there are no window
+     controls or titlebar drag spacers to show. */
+  .titlebar-buttonbox-container,
+  .titlebar-spacer {
+    display: none;
+  }
 }
 
 /* Menu bar */
@@ -593,11 +638,6 @@ body {
   }
 }
 
-/* Share Button */
-.share-more-button {
-  --menuitem-icon: url("chrome://global/skin/icons/more.svg");
-}
-
 /* Bookmarks toolbar */
 
 #PersonalToolbar {
@@ -606,13 +646,6 @@ body {
      area twice. */
   min-height: 0;
   padding-inline: var(--space-small);
-
-  @media -moz-pref("browser.nova.enabled") {
-    :root:not([lwtheme]) &:not([collapsed]) {
-      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
-      border-top: 1px solid var(--chrome-content-separator-color);
-    }
-  }
 
   :root[uidensity="compact"] & {
     padding-inline: var(--space-xxsmall);
@@ -697,9 +730,13 @@ toolbarpaletteitem > #personal-bookmarks > #PlacesToolbar,
   flex-direction: column;
 
   @media -moz-pref("browser.nova.enabled") {
-    --info-bar-margin-block-start: 0;
-    --info-bar-margin-inline: 0;
+    --info-bar-margin: 0;
   }
+}
+
+:root[mini-window] notification-message .notification-button-container {
+  /* Mini Window's can be quite small, so we need to wrap the buttons */
+  flex-wrap: wrap;
 }
 
 .bookmark-item[cutting] {
@@ -827,6 +864,13 @@ menupopup::part(drop-indicator) {
 .private-browsing-indicator-button {
   list-style-image: url("chrome://browser/skin/privatebrowsing/pbm-logo.svg");
   border-radius: var(--border-radius-medium);
+  /* Because --toolbarbutton-outline is set on :root, we have to override the
+     whole shorthand here, not just --toolbarbutton-outline-color. */
+  --toolbarbutton-outline: var(--border-width) solid var(--border-color-interactive-hover);
+
+  @media not (forced-colors) {
+    --toolbarbutton-outline: var(--border-width) solid color-mix(in srgb, var(--color-violet-desaturated-50) 15%, transparent);
+  }
 
   :root:not([privatebrowsingmode="temporary"]) &,
   #navigator-toolbox:not([tabs-hidden]) #nav-bar > & {
@@ -838,21 +882,24 @@ menupopup::part(drop-indicator) {
   }
 
   > .toolbarbutton-icon {
-    --private-browsing-indicator-border-color: var(--border-color-interactive-hover);
     padding: var(--toolbarbutton-padding-inner);
     /* The logo circle uses context-fill; set it here so it isn't washed out by
        the toolbar's default icon fill. */
-    -moz-context-properties: fill;
+    -moz-context-properties: fill, stroke;
     /* Fixed brand purple for the logo circle (matches the SVG fallback and
        about:privatebrowsing); accent tokens are theme-adaptive so unsuitable. */
     /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
     fill: #7338e2;
-    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
-    border: var(--border-width) solid var(--private-browsing-indicator-border-color);
+  }
 
-    @media not (forced-colors) {
-      --private-browsing-indicator-border-color: color-mix(in srgb, var(--color-violet-desaturated-50) 15%, transparent);
-    }
+  &:is(:hover, [open]) > .toolbarbutton-icon {
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    stroke: var(--border-color-interactive-hover);
+  }
+
+  &:is(:hover:active, [open]) > .toolbarbutton-icon {
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    stroke: var(--border-color-interactive-active);
   }
 }
 
@@ -890,6 +937,15 @@ menupopup::part(drop-indicator) {
   .private-browsing-info-description > a {
     display: inline-block;
     margin-block-start: var(--space-xsmall);
+
+    @media not (forced-colors) {
+      /* Increase link text contrast in this specific panel for the in-app
+         private window theme until it's possible to customize that value
+         in a theme manifest. */
+      :root[theme-effective-id="firefox-privatewindow@mozilla.org"] & {
+        --link-color: var(--color-violet-20);
+      }
+    }
   }
 }
 
@@ -919,6 +975,58 @@ menupopup::part(drop-indicator) {
 
 #addon-progress-notification-progressmeter {
   margin: var(--space-xxsmall) var(--space-xsmall);
+}
+
+/* Once the download is over there is nothing left to accept or cancel: the
+ * relabeled secondary button is the only action left. */
+#speech-recognition-model-download-progress-notification:is([model-download-succeeded], [model-download-failed]) {
+  .popup-notification-primary-button {
+    display: none;
+  }
+}
+
+/* Sits above the body text and reads as its heading, so it needs the body's
+ * inline padding and no gap between the two. */
+#speech-recognition-model-download-header {
+  padding-inline: var(--panel-padding);
+  padding-block-start: var(--panel-padding);
+  /* The body container brings its own top padding, which would otherwise leave
+   * the heading floating well above the text it introduces. */
+  margin-block-end: calc(var(--space-small) - var(--panel-padding));
+}
+
+#speech-recognition-model-download-header-text {
+  font-weight: var(--font-weight-heading);
+}
+
+#speech-recognition-model-download-progress-content {
+  margin-block-start: var(--space-small);
+}
+
+/* Same track as the download progress meter, see
+ * browser/themes/shared/downloads/progressmeter.css. */
+.speech-recognition-model-download-progress {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: var(--size-item-xsmall);
+  border: none;
+  border-radius: var(--border-radius-xsmall);
+  background-color: color-mix(in srgb, currentColor 15%, transparent);
+}
+
+.speech-recognition-model-download-progress::-moz-progress-bar {
+  appearance: none;
+  background-color: var(--color-accent-primary);
+  border-radius: var(--border-radius-xsmall);
+}
+
+/* Reserve the line for the remaining-time estimate: it is empty before the
+ * first estimate is available and again once the download is over, and the
+ * panel should not resize each time. */
+#speech-recognition-model-download-progress-status {
+  margin-block-start: var(--space-small);
+  min-height: var(--size-item-small);
 }
 
 #invalid-form-popup {
@@ -978,302 +1086,6 @@ menupopup::part(drop-indicator) {
       }
     }
   }
-}
-
-/* Contextual Feature Recommendation popup-notification */
-
-#cfr-notification-header {
-  width: 100%;
-  display: block;
-  text-align: center;
-  box-shadow: var(--box-shadow-level-1);
-}
-
-#cfr-notification-header-stack {
-  width: 100%;
-}
-
-#cfr-notification-header-label {
-  margin: var(--space-small);
-  font-weight: var(--font-weight-semibold);
-}
-
-#cfr-notification-header-link {
-  margin: var(--space-small);
-  color: inherit;
-  cursor: default;
-  justify-self: end;
-}
-
-#cfr-notification-header-image {
-  width: var(--icon-size-medium);
-  height: var(--icon-size-medium);
-  padding: var(--space-xxsmall);
-  -moz-context-properties: fill, fill-opacity;
-  fill: currentColor;
-  fill-opacity: var(--opacity-deemphasized-strong);
-  list-style-image: url(chrome://global/skin/icons/help.svg);
-
-  &:hover {
-    --header-image-background-color: oklch(from var(--color-gray-50) l c h / 20%);
-
-    background-color: var(--header-image-background-color);
-    border-radius: var(--border-radius-xsmall);
-  }
-}
-
-#contextual-feature-recommendation-notification {
-  width: var(--size-layout-large);
-
-  .popup-notification-icon {
-    margin-inline-end: var(--space-xsmall);
-  }
-
-  .cfr-doorhanger-large-icon {
-    width: var(--size-image-large);
-    height: var(--size-image-large);
-    margin-inline-end: var(--space-medium);
-  }
-
-  .cfr-doorhanger-medium-icon {
-    width: var(--size-image-small);
-    height: var(--size-image-small);
-    margin-inline-end: var(--space-medium);
-  }
-
-  .popup-notification-body-container {
-    width: 100%;
-    padding-bottom: var(--space-xxsmall);
-  }
-
-  popupnotificationcontent {
-    margin-top: 0;
-  }
-
-  description {
-    margin-bottom: 0;
-  }
-
-  &[data-notification-bucket="CFR_MILESTONE_MESSAGE"] {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    background: radial-gradient(circle farthest-side at top right, var(--short-notification-gradient), var(--short-notification-background));
-    width: unset;
-    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
-    max-width: 700px;
-    overflow-wrap: break-word;
-    padding: var(--space-xsmall);
-
-    &:-moz-locale-dir(rtl) {
-      background: radial-gradient(circle farthest-side at top left, var(--short-notification-gradient), var(--short-notification-background));
-    }
-
-    .popup-notification-body-container,
-    .popup-notification-footer-container,
-    #cfr-notification-header-link {
-      display: none;
-    }
-
-    #cfr-notification-header {
-      box-shadow: none;
-    }
-
-    description {
-      font-weight: normal;
-      margin: unset;
-      margin-inline: var(--space-medium);
-    }
-
-    .panel-footer,
-    .popup-notification-header-container {
-      display: inline-flex;
-    }
-
-    .panel-footer {
-      float: inline-end;
-      background-color: transparent;
-      flex-direction: row-reverse;
-      /* Override doorhanger default styles that increase the size of the button */
-      margin: 0;
-    }
-
-    .popup-notification-primary-button {
-      --popup-button-background-color: oklch(from var(--color-gray-20) l c h / 20%);
-
-      background-color: var(--popup-button-background-color);
-      color: white;
-      border: none;
-      border-radius: var(--border-radius-xsmall);
-      margin: var(--space-xsmall);
-      padding: var(--space-xsmall) var(--space-medium);
-      flex: 1;
-      min-height: var(--size-item-medium);
-
-      &::after {
-        content: url(chrome://global/skin/icons/arrow-left-12.svg);
-        -moz-context-properties: fill;
-        fill: currentColor;
-        transform: translateY(2px);
-        float: inline-end;
-      }
-
-      &:-moz-locale-dir(ltr)::after {
-        content: url(chrome://global/skin/icons/arrow-right-12.svg);
-      }
-
-      &:hover {
-        --popup-button-background-color: oklch(from var(--color-gray-20) l c h / 40%);
-      }
-
-      &:hover:active {
-        --popup-button-background-color: oklch(from var(--color-gray-20) l c h / 50%);
-      }
-    }
-
-    .popup-notification-secondary-button {
-      --popup-button-background-color: transparent;
-
-      margin: var(--space-xsmall);
-      border: none;
-      border-radius: var(--border-radius-xsmall);
-      background-image: url(chrome://global/skin/icons/close.svg);
-      background-color: var(--popup-button-background-color);
-      background-repeat: no-repeat;
-      background-position: center;
-      background-size: 10px;
-      -moz-context-properties: fill;
-      fill: white;
-      min-height: var(--size-item-medium);
-      width: var(--size-item-medium);
-      padding: 0;
-      align-self: center;
-      flex: none;
-
-      &:hover {
-        --popup-button-background-color: oklch(from var(--color-gray-20) l c h / 40%);
-      }
-    }
-
-    .popup-notification-header-container {
-      color: white;
-      max-width: unset;
-    }
-  }
-
-  &[data-notification-bucket="CFR_SOCIAL_TRACKING_PROTECTION"] {
-    /* TODO: determine whether this is still needed, see bug 2032531 */
-    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
-    width: 386px;
-  }
-
-  &[data-notification-category="addon_recommendation"] {
-    .popup-notification-description > b {
-      padding-inline-start: var(--space-xsmall);
-    }
-
-    #cfr-notification-footer-learn-more-link {
-      margin-inline-start: var(--space-xsmall);
-    }
-
-    #cfr-notification-feature-steps,
-    #cfr-notification-header-image {
-      display: none;
-    }
-
-    #cfr-notification-header-label {
-      margin-block-end: var(--space-small);
-    }
-  }
-
-  &[data-notification-category="icon_and_message"] {
-    /*
-     * `icon_and_message` CFR doorhanger with: icon, title and subtitle.
-     * No panel header is shown
-     */
-    #cfr-notification-header,
-    .popup-notification-footer-container {
-      display: none;
-    }
-
-    .popup-notification-description {
-      font-weight: var(--font-weight-semibold);
-      margin-bottom: var(--space-large);
-    }
-
-    popupnotificationcontent {
-      display: block; /* This forces the subtitle content to wrap */
-    }
-  }
-}
-
-#cfr-notification-footer-text-and-addon-info {
-  display: block;
-  /* Panel variables will be tokenized in bug 2017979 */
-  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
-  padding: var(--space-small) var(--panel-padding);
-}
-
-#cfr-notification-feature-steps {
-  display: flex;
-  flex-direction: column;
-  margin-top: var(--space-small);
-
-  li {
-    margin-inline-start: var(--space-small);
-    position: relative;
-    display: list-item;
-
-    &:not(:last-child) {
-      margin-bottom: var(--space-xsmall);
-    }
-  }
-}
-
-#cfr-notification-footer-text,
-#cfr-notification-footer-users,
-#cfr-notification-footer-learn-more-link {
-  margin: 0;
-}
-
-#cfr-notification-footer-addon-info {
-  align-items: center;
-  display: flex;
-  margin-block: var(--space-medium) var(--space-small);
-}
-
-#cfr-notification-footer-filled-stars,
-#cfr-notification-footer-empty-stars {
-  -moz-context-properties: fill, fill-opacity;
-  background-image: url(chrome://browser/skin/bookmark.svg);
-  fill: currentColor;
-  fill-opacity: 0.7;
-  height: var(--size-item-small);
-}
-
-#cfr-notification-footer-filled-stars:-moz-locale-dir(rtl),
-#cfr-notification-footer-empty-stars {
-  background-position-x: right;
-}
-
-#cfr-notification-footer-filled-stars,
-#cfr-notification-footer-empty-stars:-moz-locale-dir(rtl) {
-  background-position-x: left;
-}
-
-#cfr-notification-footer-empty-stars[tooltiptext] {
-  margin-inline-end: var(--space-small);
-  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens -- to be addressed in 2033919 */
-  opacity: 0.3;
-}
-
-#cfr-notification-footer-users {
-  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens -- to be addressed in 2033919 */
-  opacity: 0.7;
-}
-
-#cfr-notification-footer-spacer {
-  flex-grow: 1;
 }
 
 /* Sharing tabs warning */
@@ -1637,28 +1449,36 @@ popupnotificationcontent {
 #ai-window-toggle {
   list-style-image: url("chrome://branding/content/about-logo.svg");
   border-radius: var(--border-radius-medium);
-  padding-inline-end: var(--toolbarbutton-padding-inner);
 
-  &:is([cui-areatype="toolbar"]):not([overflowedItem]) > .toolbarbutton-icon {
-    padding: var(--toolbarbutton-padding-inner);
+  /* Add a border to the logo, but only outside of HCM so it's still consistent with the other buttons there */
+  @media -moz-pref("browser.nova.enabled") and (not (forced-colors)) {
+    &[cui-areatype="toolbar"]:not([overflowedItem]) {
+      > .toolbarbutton-badge-stack {
+        padding: var(--toolbarbutton-padding-inner-touch-narrow);
+      }
 
-    @media not -moz-pref("browser.nova.enabled") {
+      &:not(:hover, [open="true"]) > .toolbarbutton-badge-stack::before {
+        display: block;
+        position: absolute;
+        content: "";
+        /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+        inset: calc((100% - 26px) / 2); /* 26px is the expected width of this pseudo element */
+        /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+        border: var(--border-width) solid var(--toolbarbutton-background-color-hover);
+        border-radius: var(--border-radius-circle);
+      }
+    }
+  }
+
+  @media not -moz-pref("browser.nova.enabled") {
+    &[cui-areatype="toolbar"]:not([overflowedItem]) > .toolbarbutton-badge-stack {
       /* The design system does not have any inset box-shadow tokens. */
       /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
       box-shadow: 0 0 16px 4px var(--box-shadow-color-darker-layer-1) inset;
-    }
 
-    @media -moz-pref("browser.nova.enabled") {
-      /* set default color for HCM */
-      --smart-window-toolbarbutton-color: var(--border-color-interactive-hover);
-      --toolbarbutton-background-color-hover: var(--background-color-box);
-      --toolbarbutton-background-color-active: var(--background-color-box);
-      --toolbarbutton-outline-color: var(--smart-window-toolbarbutton-color);
-      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
-      border: var(--border-width) solid var(--smart-window-toolbarbutton-color);
-
-      @media not (forced-colors) {
-        --smart-window-toolbarbutton-color: color-mix(in srgb, var(--color-violet-desaturated-50) 15%, transparent);
+      :root[ai-window] & {
+        /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+        box-shadow: 0 0 16px 4px var(--smartwindow-toggle-shadow-color) inset;
       }
     }
   }
@@ -1668,49 +1488,9 @@ popupnotificationcontent {
     list-style-image: url("chrome://browser/skin/smart-window-simplified.svg");
   }
 
-  :root[ai-window] &[cui-areatype="toolbar"]:not([overflowedItem]) {
-    @media (not (forced-colors)) and -moz-pref("browser.nova.enabled") {
-      /* toolbar button size (--toolbarbutton-icon-size) + 2 x the hover size (--toolbarbutton-padding-inner-compact) */
-      --smart-window-switcher-hover-size: calc(var(--toolbarbutton-icon-size) + 2 * var(--toolbarbutton-padding-inner-compact));
-      &::before {
-        aspect-ratio: 1;
-        background-color: transparent;
-        border-radius: var(--border-radius-circle);
-        content: "";
-        position: absolute;
-        /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
-        width: var(--smart-window-switcher-hover-size);
-        z-index: -1;
-      }
-
-      &:is(:hover, [open])::before {
-        /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
-        background-color: light-dark(color-mix(in srgb, var(--color-violet-desaturated-50) 15%, transparent), var(--color-violet-desaturated-50));
-      }
-    }
-
-    > .toolbarbutton-icon {
-      @media not -moz-pref("browser.nova.enabled") {
-        /* Smart Window icon has additional 2px padding per side, to be slightly smaller than Classic Window icon when used in Switcher */
-        padding: var(--toolbarbutton-padding-inner);
-        /* The design system does not have any inset box-shadow tokens. */
-        /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
-        box-shadow: 0 0 16px 4px var(--smartwindow-toggle-shadow-color) inset;
-      }
-
-      @media -moz-pref("browser.nova.enabled") {
-        /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
-        box-shadow: 0 0 16px 4px var(--background-color-box) inset;
-        --toolbarbutton-background-color-hover: var(--background-color-box);
-        --toolbarbutton-background-color-active: var(--background-color-box);
-        --toolbarbutton-outline-color-hover: var(--smart-window-toolbarbutton-color);
-        --toolbarbutton-outline-color-active: light-dark(
-          color-mix(in srgb, var(--color-violet-desaturated-50) 30%, transparent),
-          var(--color-violet-desaturated-50)
-        );
-        --toolbarbutton-outline-color-selected: var(--smart-window-toolbarbutton-color);
-      }
-    }
+  /* Smart Window toggle in Classic Window */
+  :root:not([ai-window]) & {
+    padding-inline-end: var(--toolbarbutton-padding-inner);
   }
 }
 

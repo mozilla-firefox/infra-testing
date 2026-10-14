@@ -53,8 +53,6 @@ firefox-appdir = "browser"
 
 ["test_Tools_GetOpenTabs.js"]
 
-["test_Tools_GetPageContent.js"]
-
 ["test_Tools_GetTabList.js"]
 
 ["test_Tools_GetUserMemories.js"]

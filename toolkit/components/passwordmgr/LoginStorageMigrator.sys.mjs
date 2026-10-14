@@ -17,11 +17,12 @@ const PREFS = {
   // Kill switch, so the restore can be turned off by pref rollout.
   RESTORE_ENABLED: "signon.storage.rust.restoreEnabled",
   RESTORE_ATTEMPTS: "signon.storage.rust.restoreAttempts",
-  RESTORE_DONE: "signon.storage.rust.restoreDone",
-  // Non-empty exactly when Sync is configured.
-  SYNC_USERNAME: "services.sync.username",
-  // Sync only carries logins while the passwords engine is on.
-  SYNC_PASSWORDS_ENGINE: "services.sync.engine.passwords",
+  // The version RESTORE_ATTEMPTS was spent on; the budget is per version.
+  RESTORE_ATTEMPTS_VERSION: "signon.storage.rust.restoreAttemptsVersion",
+  // The restore version this profile has completed.
+  RESTORE_VERSION: "signon.storage.rust.restoreVersion",
+  // Raising this asks every profile for one more restore pass (bug 2065703).
+  RESTORE_TARGET_VERSION: "signon.storage.rust.restoreTargetVersion",
 };
 
 const MAX_MIGRATION_ATTEMPTS = 10;
@@ -31,7 +32,7 @@ const MAX_LOGINS_TO_RESTORE = 10000;
 
 // Continues the rust mirror's telemetry version sequence (last was 8); the
 // rust_migration_status event is shared with the former mirror.
-const telemetryVersion = "9";
+const telemetryVersion = "10";
 
 // Replace an origin's scheme with `moz-pwmngr-fixed-<prefix extracted from
 // login guid>://`.
@@ -185,7 +186,7 @@ export class LoginStorageMigrator {
   async #executeMigration() {
     this.#logger.log("Starting migration...");
 
-    const t0 = Date.now();
+    const t0 = ChromeUtils.now();
     const runId = Services.uuid.generateUUID();
     const attempt = Services.prefs.getIntPref(PREFS.MIGRATION_ATTEMPTS, 0);
     const primaryPasswordSet = lazy.LoginHelper.isPrimaryPasswordSet();
@@ -279,7 +280,7 @@ export class LoginStorageMigrator {
     } finally {
       recordMigrationStatus({
         runId,
-        duration: Date.now() - t0,
+        duration: Math.round(ChromeUtils.now() - t0),
         numberOfLoginsToMigrate,
         numberOfLoginsMigrated,
         numberOfLoginsQuarantined,
@@ -295,7 +296,7 @@ export class LoginStorageMigrator {
   #completeMigration() {
     Services.prefs.setBoolPref(PREFS.RUST_ACTIVE, true);
     Services.prefs.setIntPref(PREFS.MIGRATION_ATTEMPTS, 0);
-    Services.prefs.setBoolPref(PREFS.RESTORE_DONE, false);
+    Services.prefs.setIntPref(PREFS.RESTORE_VERSION, 0);
     Services.prefs.setIntPref(PREFS.RESTORE_ATTEMPTS, 0);
     return this.#rustStorage;
   }
@@ -332,31 +333,47 @@ export class LoginStorageMigrator {
     return this.#jsonStorage;
   }
 
-  // Rust is no longer the desired backend but is still active. Deactivate it
-  // and reset the attempt budget so a later re-enable starts fresh. Logins
-  // written while Rust was active are restored by #restoreLoginsFromRust.
+  // Rust is no longer the desired backend but is still active. Logins written
+  // while Rust was active are restored by #restoreLoginsFromRust.
   #deactivateRust() {
     this.#logger.log("Deactivating Rust backend");
     Services.prefs.setBoolPref(PREFS.RUST_ACTIVE, false);
-    Services.prefs.setIntPref(PREFS.MIGRATION_ATTEMPTS, 0);
     return this.#jsonStorage;
   }
 
   // Copies logins the JSON store doesn't have out of the disabled Rust store.
-  // The Rust database is left alone; RESTORE_DONE is what makes this a real
-  // no-op from then on, without even the count.
+  // The Rust database is left alone; the recorded restore version is what makes
+  // this a real no-op from then on, without even the count.
+  // Runs whether or not Sync is configured: leaving it to Sync only covers what
+  // reached the server before the switch back, and nothing guarantees a sync
+  // happened in between (bug 2065703).
   // Independent of the returned store and deliberately not awaited: it must not
   // hold up storage initialization, and if it fails nothing is lost - the
   // database stays and the next startup retries. Counting here does not
   // decrypt, so the common case of an empty store never touches the primary
   // password.
   async #restoreLoginsFromRust() {
-    const attempt = Services.prefs.getIntPref(PREFS.RESTORE_ATTEMPTS, 0);
+    const targetVersion = Services.prefs.getIntPref(
+      PREFS.RESTORE_TARGET_VERSION,
+      0
+    );
     if (
-      Services.prefs.getBoolPref(PREFS.RESTORE_DONE, false) ||
-      !Services.prefs.getBoolPref(PREFS.RESTORE_ENABLED, true) ||
-      attempt >= MAX_RESTORE_ATTEMPTS
+      Services.prefs.getIntPref(PREFS.RESTORE_VERSION, 0) >= targetVersion ||
+      !Services.prefs.getBoolPref(PREFS.RESTORE_ENABLED, true)
     ) {
+      return;
+    }
+
+    if (
+      Services.prefs.getIntPref(PREFS.RESTORE_ATTEMPTS_VERSION, 0) <
+      targetVersion
+    ) {
+      Services.prefs.setIntPref(PREFS.RESTORE_ATTEMPTS_VERSION, targetVersion);
+      Services.prefs.setIntPref(PREFS.RESTORE_ATTEMPTS, 0);
+    }
+
+    const attempt = Services.prefs.getIntPref(PREFS.RESTORE_ATTEMPTS, 0);
+    if (attempt >= MAX_RESTORE_ATTEMPTS) {
       return;
     }
 
@@ -371,6 +388,7 @@ export class LoginStorageMigrator {
     let updated = 0;
     let skipped = 0;
     let failed = 0;
+    let toDelete = 0;
     let fatalError = null;
     // Stays null while there is nothing worth reporting, which is the case for
     // every profile that never had the Rust backend enabled.
@@ -379,20 +397,12 @@ export class LoginStorageMigrator {
     try {
       loginsInRust = await this.#rustStorage.countLoginsAsync("", "", "");
       if (!loginsInRust) {
-        Services.prefs.setBoolPref(PREFS.RESTORE_DONE, true);
+        Services.prefs.setIntPref(PREFS.RESTORE_VERSION, targetVersion);
         return;
       }
       if (loginsInRust > MAX_LOGINS_TO_RESTORE) {
-        Services.prefs.setBoolPref(PREFS.RESTORE_DONE, true);
+        Services.prefs.setIntPref(PREFS.RESTORE_VERSION, targetVersion);
         endState = "TooManyLogins";
-        return;
-      }
-      if (
-        Services.prefs.getStringPref(PREFS.SYNC_USERNAME, "") &&
-        Services.prefs.getBoolPref(PREFS.SYNC_PASSWORDS_ENGINE, true)
-      ) {
-        Services.prefs.setBoolPref(PREFS.RESTORE_DONE, true);
-        endState = "SyncSkipped";
         return;
       }
       if (!this.#jsonStorage.isLoggedIn) {
@@ -406,6 +416,18 @@ export class LoginStorageMigrator {
       Services.prefs.setIntPref(PREFS.RESTORE_ATTEMPTS, attempt + 1);
 
       const rustLogins = await this.#rustStorage.getAllLogins(false);
+
+      // What carrying the deletions over would cost: the JSON logins Rust no
+      // longer has, which is everything the user deleted while Rust was
+      // primary plus anything the migration failed to copy. Only counted for
+      // now, so that bug 2072278 can decide whether deleting them is safe.
+      const rustGuids = new Set(
+        rustLogins.map(login => login.QueryInterface(Ci.nsILoginMetaInfo).guid)
+      );
+      const jsonLogins = await this.#jsonStorage.getAllLogins(false);
+      toDelete = jsonLogins.filter(
+        login => !rustGuids.has(login.QueryInterface(Ci.nsILoginMetaInfo).guid)
+      ).length;
 
       for (const rustLogin of rustLogins) {
         // Between two logins is the only point where stopping leaves both
@@ -465,7 +487,7 @@ export class LoginStorageMigrator {
         if (failed) {
           endState = "Incomplete";
         } else {
-          Services.prefs.setBoolPref(PREFS.RESTORE_DONE, true);
+          Services.prefs.setIntPref(PREFS.RESTORE_VERSION, targetVersion);
           endState = "Restored";
         }
       }
@@ -477,12 +499,14 @@ export class LoginStorageMigrator {
       if (endState) {
         this.#logger.log(
           `Restore ${endState}: ${added} added, ${updated} updated, ` +
-            `${skipped} skipped, ${failed} failed`
+            `${skipped} skipped, ${failed} failed, ` +
+            `${toDelete} to delete`
         );
         Glean.pwmgr.rustRestoreStatus.record({
           metric_version: telemetryVersion,
           run_id: runId,
           duration_ms: Math.round(ChromeUtils.now() - startedAt),
+          restore_version: targetVersion,
           attempt,
           state,
           end_state: endState,
@@ -491,6 +515,7 @@ export class LoginStorageMigrator {
           number_of_logins_updated: updated,
           number_of_logins_skipped: skipped,
           number_of_logins_failed: failed,
+          number_of_logins_to_delete: toDelete,
           primary_password_set: lazy.LoginHelper.isPrimaryPasswordSet(),
           error_message: fatalError
             ? normalizeRustStorageErrorMessage(fatalError)

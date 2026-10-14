@@ -28,10 +28,14 @@ ChromeUtils.defineLazyGetter(lazy, "PasswordRulesManager", () => {
 });
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  ChromeMigrationUtils: "resource:///modules/ChromeMigrationUtils.sys.mjs",
+  AutocompleteRemoveRecord:
+    "resource://gre/modules/AutocompleteRemoveRecord.sys.mjs",
+  ChromeMigrationUtils:
+    "moz-src:///browser/components/migration/ChromeMigrationUtils.sys.mjs",
   FirefoxRelay: "resource://gre/modules/FirefoxRelay.sys.mjs",
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
-  MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
+  MigrationUtils:
+    "moz-src:///browser/components/migration/MigrationUtils.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   WebAuthnFeature: "resource://gre/modules/WebAuthnFeature.sys.mjs",
   PasswordGenerator: "resource://gre/modules/shared/PasswordGenerator.sys.mjs",
@@ -394,11 +398,6 @@ export class LoginManagerParent extends JSWindowActorParent {
         return this.doAutocompleteSearch(this.origin, data);
       }
 
-      case "PasswordManager:removeLogin": {
-        await this.#onRemoveLogin(data.login);
-        break;
-      }
-
       // Used by tests to detect that a form-fill has occurred. This redirects
       // to the top-level browsing context.
       case "PasswordManager:formProcessed": {
@@ -427,7 +426,9 @@ export class LoginManagerParent extends JSWindowActorParent {
     lazy.log("#onPasswordEditedOrGenerated: Received PasswordManager.");
     if (gListenerForTests) {
       lazy.log("#onPasswordEditedOrGenerated: Calling gListenerForTests.");
-      gListenerForTests("PasswordEditedOrGenerated", {});
+      gListenerForTests("PasswordEditedOrGenerated", {
+        browsingContext: this.browsingContext,
+      });
     }
     let browser = this.getRootBrowser();
     this._onPasswordEditedOrGenerated(browser, this.origin, data);
@@ -437,26 +438,26 @@ export class LoginManagerParent extends JSWindowActorParent {
     lazy.log("#onIgnorePasswordEdit: Received PasswordManager.");
     if (gListenerForTests) {
       lazy.log("#onIgnorePasswordEdit: Calling gListenerForTests.");
-      gListenerForTests("PasswordIgnoreEdit", {});
+      gListenerForTests("PasswordIgnoreEdit", {
+        browsingContext: this.browsingContext,
+      });
     }
   }
 
   #onShowDoorhanger(data) {
     const browser = this.getRootBrowser();
+    // Read before awaiting: the actor may be destroyed by the time the doorhanger resolves.
+    const browsingContext = this.browsingContext;
     const submitPromise = this.showDoorhanger(browser, this.origin, data);
     if (gListenerForTests) {
       submitPromise.then(() => {
         gListenerForTests("ShowDoorhanger", {
+          browsingContext,
           origin: this.origin,
           data,
         });
       });
     }
-  }
-
-  async #onRemoveLogin(login) {
-    login = lazy.LoginHelper.vanillaObjectToLogin(login);
-    Services.logins.removeLoginAsync(login);
   }
 
   #onOpenImportableLearnMore() {
@@ -1595,11 +1596,103 @@ export class LoginManagerParent extends JSWindowActorParent {
     // Logins do not show previews
   }
 
+  // The dropdown is torn down when the reauthentication or confirmation prompt
+  // takes focus, so bring it back once the flow is over.
+  #reopenAutocompletePopup() {
+    if (!this.manager || this.manager.isClosed) {
+      return;
+    }
+    this.sendAsyncMessage("PasswordManager:repopulateAutocompletePopup");
+  }
+
+  /**
+   * Resolve a guid the dropdown sent us against the logins this origin is
+   * actually allowed to see. The guid reaches us through the row's
+   * `fillMessageData`, which is authored in the content process, so it must
+   * only ever select from a set the parent computed itself.
+   *
+   * @param {origin} origin The document origin, from the parent-side principal.
+   * @param {string} guid The guid of the row the user chose to remove.
+   * @returns {nsILoginInfo?} The stored login, or null when the guid names one
+   *   this origin was never offered.
+   */
+  async #findRemovableLogin(origin, guid) {
+    if (!origin || !guid) {
+      return null;
+    }
+
+    const [login] = await Services.logins.searchLoginsAsync({ guid });
+    if (!login) {
+      return null;
+    }
+
+    const options = {
+      schemeUpgrades: lazy.LoginHelper.schemeUpgrades,
+      acceptDifferentSubdomains:
+        lazy.LoginHelper.includeOtherSubdomainsInLookup,
+    };
+    if (lazy.LoginHelper.relatedRealmsEnabled) {
+      options.acceptRelatedRealms = true;
+      options.relatedRealms =
+        await lazy.LoginRelatedRealmsParent.findRelatedRealms(origin);
+    }
+    return lazy.LoginHelper.isOriginMatching(login.origin, origin, options)
+      ? login
+      : null;
+  }
+
+  async #confirmLoginRemoval(loginGuid) {
+    const browser = this.getRootBrowser();
+    const chromeWindow = this.browsingContext.topChromeWindow;
+
+    // Read before awaiting: the prompts below take focus and the actor may be
+    // destroyed by the time they resolve.
+    const origin = this.origin;
+    const osAuth = await lazy.AutocompleteRemoveRecord.passwordOSAuthStrings();
+    const { isAuthorized } = await lazy.LoginHelper.requestReauth(
+      browser,
+      null,
+      osAuth.message,
+      osAuth.caption,
+      "delete_autocomplete"
+    );
+
+    if (!isAuthorized || !chromeWindow) {
+      return;
+    }
+
+    const confirmed = await lazy.AutocompleteRemoveRecord.confirmRemoval(
+      chromeWindow,
+      "password"
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    // The login may have been removed elsewhere while the prompts were up, and
+    // an unknown guid is also how a forged message is turned away.
+    const login = await this.#findRemovableLogin(origin, loginGuid);
+    if (login) {
+      await Services.logins.removeLoginAsync(login);
+    }
+  }
+
   async onAutoCompleteEntrySelected(message, data) {
     switch (message) {
       // Called when clicking the open preference entry in the autocomplete
       case "PasswordManager:OpenPreferences": {
         this.#onOpenPreferences(data.hostname, data.entryPoint, data.loginGuid);
+        break;
+      }
+
+      case "PasswordManager:DeleteLogin": {
+        try {
+          await this.#confirmLoginRemoval(data?.loginGuid);
+        } catch (ex) {
+          lazy.log("Password removal flow failed:", ex);
+        } finally {
+          this.#reopenAutocompletePopup();
+        }
         break;
       }
 

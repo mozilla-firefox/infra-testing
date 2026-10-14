@@ -30,7 +30,9 @@
 #include "nsILoadInfo.h"
 #include "nsIStreamLoader.h"
 #include "nsIURI.h"
+#include "nsIWritablePropertyBag2.h"
 #include "nsNetUtil.h"
+#include "nsPrintfCString.h"
 #include "nsProxyRelease.h"
 #include "nsContentUtils.h"
 #include "nsIWebProgressListener.h"
@@ -76,7 +78,7 @@ constexpr ContentClassifierFeature kFeatures[] = {
      nsIWebProgressListener::STATE_ALLOWED_TRACKING_CONTENT,
      NS_ERROR_TRACKING_URI, false, true,
      Some(nsIScopedPrefs::PRIVACY_TRACKINGPROTECTION_CONTENT_ENABLED),
-     &ContentClassifierFeatureUtils::IsThirdPartyRequest, nullptr},
+     &ContentClassifierFeatureUtils::IsThirdPartyUnlessAnnotating, nullptr},
     // The annotation variant adds content-track-digest256, which mirrors
     // url-classifier's promotion to STATE_LOADED_LEVEL_2_TRACKING_CONTENT
     // when a content-track-* table matches.
@@ -87,7 +89,7 @@ constexpr ContentClassifierFeature kFeatures[] = {
      nsIWebProgressListener::STATE_REPLACED_TRACKING_CONTENT,
      nsIWebProgressListener::STATE_ALLOWED_TRACKING_CONTENT,
      NS_ERROR_TRACKING_URI, false, true, Nothing(),
-     &ContentClassifierFeatureUtils::IsThirdPartyRequest, nullptr},
+     &ContentClassifierFeatureUtils::IsThirdPartyUnlessAnnotating, nullptr},
     {"social-trackers"_ns, Span<const nsLiteralCString>(kSocialTrackersListIds),
      nsIClassifiedChannel::ClassificationFlags::CLASSIFIED_SOCIALTRACKING,
      nsIWebProgressListener::STATE_LOADED_SOCIALTRACKING_CONTENT,
@@ -96,7 +98,7 @@ constexpr ContentClassifierFeature kFeatures[] = {
      NS_ERROR_SOCIALTRACKING_URI, false, true,
      Some(nsIScopedPrefs::
               PRIVACY_TRACKINGPROTECTION_CONTENT_SOCIALTRACKING_ENABLED),
-     &ContentClassifierFeatureUtils::IsThirdPartyRequest, nullptr},
+     &ContentClassifierFeatureUtils::IsThirdPartyUnlessAnnotating, nullptr},
     {"fingerprinters"_ns, Span<const nsLiteralCString>(kFingerprintersListIds),
      nsIClassifiedChannel::ClassificationFlags::CLASSIFIED_FINGERPRINTING,
      nsIWebProgressListener::STATE_LOADED_FINGERPRINTING_CONTENT,
@@ -105,7 +107,7 @@ constexpr ContentClassifierFeature kFeatures[] = {
      NS_ERROR_FINGERPRINTING_URI, false, true,
      Some(nsIScopedPrefs::
               PRIVACY_TRACKINGPROTECTION_CONTENT_FINGERPRINTING_ENABLED),
-     &ContentClassifierFeatureUtils::IsThirdPartyRequest, nullptr},
+     &ContentClassifierFeatureUtils::IsThirdPartyUnlessAnnotating, nullptr},
     {"email-trackers"_ns, Span<const nsLiteralCString>(kEmailTrackersListIds),
      nsIClassifiedChannel::ClassificationFlags::CLASSIFIED_EMAILTRACKING,
      nsIWebProgressListener::STATE_LOADED_EMAILTRACKING_LEVEL_1_CONTENT,
@@ -114,7 +116,7 @@ constexpr ContentClassifierFeature kFeatures[] = {
      NS_ERROR_EMAILTRACKING_URI, false, true,
      Some(nsIScopedPrefs::
               PRIVACY_TRACKINGPROTECTION_CONTENT_EMAILTRACKING_ENABLED),
-     &ContentClassifierFeatureUtils::IsThirdPartyRequest, nullptr},
+     &ContentClassifierFeatureUtils::IsThirdPartyUnlessAnnotating, nullptr},
     {"cryptominers"_ns, Span<const nsLiteralCString>(kCryptominersListIds),
      nsIClassifiedChannel::ClassificationFlags::CLASSIFIED_CRYPTOMINING,
      nsIWebProgressListener::STATE_LOADED_CRYPTOMINING_CONTENT,
@@ -123,7 +125,7 @@ constexpr ContentClassifierFeature kFeatures[] = {
      NS_ERROR_CRYPTOMINING_URI, false, true,
      Some(nsIScopedPrefs::
               PRIVACY_TRACKINGPROTECTION_CONTENT_CRYPTOMINING_ENABLED),
-     &ContentClassifierFeatureUtils::IsThirdPartyRequest, nullptr},
+     &ContentClassifierFeatureUtils::IsThirdPartyUnlessAnnotating, nullptr},
     {"harmful-addon"_ns, Span<const nsLiteralCString>(kHarmfulAddonListIds),
      nsIClassifiedChannel::ClassificationFlags::CLASSIFIED_TRACKING,
      0,  // mLoadedState: blocking-only feature, not annotated
@@ -136,12 +138,12 @@ constexpr ContentClassifierFeature kFeatures[] = {
      Span<const nsLiteralCString>(kMinorExceptionListIds),
      nsIClassifiedChannel::ClassificationFlags::CLASSIFIED_TRACKING, 0, 0, 0,
      NS_OK, true, true, Nothing(),
-     &ContentClassifierFeatureUtils::IsThirdPartyRequest, nullptr},
+     &ContentClassifierFeatureUtils::IsThirdPartyUnlessAnnotating, nullptr},
     {"major-exceptions"_ns,
      Span<const nsLiteralCString>(kMajorExceptionListIds),
      nsIClassifiedChannel::ClassificationFlags::CLASSIFIED_TRACKING, 0, 0, 0,
      NS_OK, true, true, Nothing(),
-     &ContentClassifierFeatureUtils::IsThirdPartyRequest, nullptr},
+     &ContentClassifierFeatureUtils::IsThirdPartyUnlessAnnotating, nullptr},
     // Test-only features. Their engines are built directly by the HTTP
     // test loader (driven by the *.test_list_urls prefs) and installed
     // into mEngines under these names. They behave like any other
@@ -153,14 +155,14 @@ constexpr ContentClassifierFeature kFeatures[] = {
      nsIWebProgressListener::STATE_ALLOWED_TRACKING_CONTENT,
      NS_ERROR_TRACKING_URI, false, false,
      Some(nsIScopedPrefs::PRIVACY_TRACKINGPROTECTION_CONTENT_TEST_ENABLED),
-     &ContentClassifierFeatureUtils::IsThirdPartyRequest, nullptr},
+     &ContentClassifierFeatureUtils::IsThirdPartyUnlessAnnotating, nullptr},
     {"test_annotate"_ns, Span<const nsLiteralCString>(kTestAnnotateListIds),
      nsIClassifiedChannel::ClassificationFlags::CLASSIFIED_TRACKING,
      nsIWebProgressListener::STATE_LOADED_LEVEL_1_TRACKING_CONTENT,
      nsIWebProgressListener::STATE_REPLACED_TRACKING_CONTENT,
      nsIWebProgressListener::STATE_ALLOWED_TRACKING_CONTENT, NS_OK, false,
-     false, Nothing(), &ContentClassifierFeatureUtils::IsThirdPartyRequest,
-     nullptr},
+     false, Nothing(),
+     &ContentClassifierFeatureUtils::IsThirdPartyUnlessAnnotating, nullptr},
 };
 
 // Prefs that name feature engines built into mEngines.
@@ -242,7 +244,19 @@ NS_IMETHODIMP ContentClassifierProbeReport::GetResults(
 }
 
 NS_IMPL_ISUPPORTS(ContentClassifierService, nsIAsyncShutdownBlocker,
-                  nsIContentClassifierService)
+                  nsIContentClassifierService, nsIMemoryReporter)
+
+MOZ_DEFINE_MALLOC_SIZE_OF(ContentClassifierServiceMallocSizeOf)
+#ifdef MOZ_MEMORY
+MOZ_DEFINE_MALLOC_ENCLOSING_SIZE_OF(
+    ContentClassifierServiceMallocEnclosingSizeOf)
+#else
+// Without jemalloc, MOZ_DEFINE_MALLOC_ENCLOSING_SIZE_OF yields a function that
+// returns 0 for everything. Passing null instead lets the engine fall back to
+// estimates for the parts it can only reach through interior pointers.
+static constexpr MallocSizeOf ContentClassifierServiceMallocEnclosingSizeOf =
+    nullptr;
+#endif
 
 ContentClassifierService::ContentClassifierService()
     : mLock("ContentClassifierService::mLock"),
@@ -255,6 +269,93 @@ ContentClassifierService::ContentClassifierService()
 }
 
 ContentClassifierService::~ContentClassifierService() = default;
+
+NS_IMETHODIMP ContentClassifierService::CollectReports(
+    nsIHandleReportCallback* aHandleReport, nsISupports* aData,
+    bool aAnonymize) {
+  // aAnonymize is ignored because the only variable path segment, the feature
+  // name, is a compile-time literal from kFeatures rather than content data.
+  struct EngineSizes {
+    nsCString mFeatureName;
+    ContentClassifierEngineSizes mSizes;
+  };
+
+  // Measure under the lock but report without it: the callback runs consumer
+  // code, which must not run with the service lock held.
+  nsTArray<EngineSizes> engines;
+  {
+    MutexAutoLock lock(mLock);
+    engines.SetCapacity(mEngines.Count());
+    for (const auto& entry : mEngines) {
+      engines.AppendElement(
+          EngineSizes{nsCString(entry.GetKey()),
+                      entry.GetData()->SizeOfIncludingThis(
+                          ContentClassifierServiceMallocSizeOf,
+                          ContentClassifierServiceMallocEnclosingSizeOf)});
+    }
+  }
+
+  // The paths are per-feature, so MOZ_COLLECT_REPORT is not usable here: it
+  // needs a literal.
+#define REPORT(_path, _amount, _desc)                                    \
+  aHandleReport->Callback(""_ns, _path, KIND_HEAP, UNITS_BYTES, _amount, \
+                          nsLiteralCString(_desc), aData)
+
+  for (const auto& engine : engines) {
+    REPORT(nsPrintfCString("explicit/content-classifier/engines/%s/objects",
+                           engine.mFeatureName.get()),
+           engine.mSizes.objects,
+           "Memory used by the content classifier engine objects.");
+
+    REPORT(
+        nsPrintfCString("explicit/content-classifier/engines/%s/filter-rules",
+                        engine.mFeatureName.get()),
+        engine.mSizes.filter_rules,
+        "Memory used by the parsed filter rules for this feature, held as one "
+        "flatbuffer that the matching engine reads directly.");
+
+    REPORT(
+        nsPrintfCString("explicit/content-classifier/engines/%s/domain-hashes",
+                        engine.mFeatureName.get()),
+        engine.mSizes.domain_hashes,
+        "Memory used by the index from domain hash to filter list position, "
+        "rebuilt in memory each time this feature's rules are loaded.");
+
+    REPORT(
+        nsPrintfCString("explicit/content-classifier/engines/%s/regex-table",
+                        engine.mFeatureName.get()),
+        engine.mSizes.regex_table,
+        "Memory used by the lookup table for the regexes compiled on demand "
+        "while matching. Excludes the compiled regexes themselves, which the "
+        "regex engine gives no way to measure.");
+
+    REPORT(
+        nsPrintfCString("explicit/content-classifier/engines/%s/enabled-tags",
+                        engine.mFeatureName.get()),
+        engine.mSizes.enabled_tags,
+        "Memory used by the tag names enabled on this engine, which gate "
+        "tagged filters.");
+
+    REPORT(
+        nsPrintfCString("explicit/content-classifier/engines/%s/cosmetic-cache",
+                        engine.mFeatureName.get()),
+        engine.mSizes.cosmetic_cache,
+        "Memory owned by the cosmetic filter cache beyond the filter data it "
+        "shares with the matcher. The rules it serves are reported under "
+        "filter-rules, not here.");
+
+    REPORT(nsPrintfCString("explicit/content-classifier/engines/%s/resources",
+                           engine.mFeatureName.get()),
+           engine.mSizes.resources,
+           "Memory used by this engine's redirect and scriptlet resource "
+           "backend. Excludes whatever the backend stores, which Firefox never "
+           "populates.");
+  }
+
+#undef REPORT
+
+  return NS_OK;
+}
 
 // static
 bool ContentClassifierService::IsEnabled() {
@@ -496,6 +597,11 @@ void ContentClassifierService::Init() {
     mInitPhase = InitPhase::InitSucceeded;
   }
 
+  // Weak: a strong registration would have the manager hold a reference,
+  // keeping the service and the engines it owns alive past ClearOnShutdown.
+  // The price is a bare pointer, which BlockShutdown removes.
+  RegisterWeakMemoryReporter(this);
+
   // Lock released; safe to call into JS.
   // Only initialize the RS client if list_names prefs are set,
   // to avoid interfering with the test-only HTTP loading path.
@@ -598,20 +704,26 @@ NS_IMETHODIMP ContentClassifierService::BlockShutdown(
   MOZ_LOG(gContentClassifierLog, LogLevel::Info,
           ("ContentClassifierService::BlockShutdown - shutting down"));
 
+  // Flip the phase before anything else. Every build closure re-checks
+  // mInitPhase under mLock before it touches state, so from here on a
+  // queued closure cannot repopulate what ShutdownRSClient is about to
+  // clear. Clearing mBuildThread also closes the dispatch window for any
+  // subsequent UpdateFeatures call.
+  {
+    MutexAutoLock lock(mLock);
+    mInitPhase = InitPhase::ShutdownStarted;
+    mBuildThread = nullptr;
+  }
+
+  UnregisterWeakMemoryReporter(this);
+
   // ShutdownRSClient clears the filter list data and engines. It also
   // tears down the RS client if one was created (the HTTP-only test
   // path leaves mRSClient null).
   ShutdownRSClient();
 
-  nsCOMPtr<nsISerialEventTarget> buildThread;
   {
     MutexAutoLock lock(mLock);
-
-    mInitPhase = InitPhase::ShutdownStarted;
-    // Clearing mBuildThread closes the dispatch window for any
-    // subsequent UpdateFeatures call. In-flight closures on the queue
-    // are gated by the mInitPhase check above before they touch state.
-    buildThread = std::move(mBuildThread);
 
     Preferences::UnregisterCallback(
         &ContentClassifierService::OnPrefChange,
@@ -640,25 +752,10 @@ NS_IMETHODIMP ContentClassifierService::BlockShutdown(
 
     content_classifier_teardown_domain_resolver();
 
-    if (!buildThread) {
-      RemoveBlocker();
-      return NS_OK;
-    }
+    // Removal is synchronous on purpose. Nothing queued there needs to finish
+    // before shutdown proceeds: closures bail at the mInitPhase check above.
+    RemoveBlocker();
   }
-
-  // Drain mBuildThread, then post back to the main thread to remove
-  // the shutdown blocker. Because mBuildThread is serial, the fence
-  // runs strictly after every already-dispatched build closure, so by
-  // the time FinishShutdown lands no off-thread work is in flight.
-  RefPtr<ContentClassifierService> self = this;
-  buildThread->Dispatch(NS_NewRunnableFunction(
-      "ContentClassifierService::ShutdownFence", [self]() {
-        NS_DispatchToMainThread(NS_NewRunnableFunction(
-            "ContentClassifierService::FinishShutdown", [self]() {
-              MutexAutoLock lock(self->mLock);
-              self->RemoveBlocker();
-            }));
-      }));
 
   return NS_OK;
 }
@@ -697,7 +794,7 @@ void ContentClassifierResult::Accumulate(
 
 ContentClassifierResult ContentClassifierService::ClassifyWithEngines(
     const nsTArray<RefPtr<ContentClassifierEngine>>& aEngines,
-    const ContentClassifierRequest& aRequest, bool aIndependentEngines) {
+    const ContentClassifierRequest& aRequest, ClassifyMode aMode) {
   MOZ_ASSERT(!NS_IsMainThread());
   mLock.AssertCurrentThreadOwns();
   ContentClassifierResult result;
@@ -711,17 +808,19 @@ ContentClassifierResult ContentClassifierService::ClassifyWithEngines(
             ("ClassifyWithEngines - invalid request; returning Miss"));
     return result;
   }
+  const bool annotate = aMode == ClassifyMode::Annotate;
   bool matchedSoFar = false;
   for (const auto& engine : aEngines) {
     if (engine->Feature().mRequestFilter &&
-        !engine->Feature().mRequestFilter(aRequest)) {
+        !engine->Feature().mRequestFilter(aRequest, aMode)) {
       continue;
     }
     ContentClassifierEngineResult er = engine->CheckNetworkRequest(
-        aRequest, aIndependentEngines ? false : matchedSoFar);
+        aRequest, annotate ? false : matchedSoFar,
+        /* aMatchDocumentAsNetworkRequest */ annotate);
     result.Accumulate(er);
     const auto status = result.GetStatus();
-    if (!aIndependentEngines &&
+    if (!annotate &&
         (status == ContentClassifierResult::Status::ImportantException ||
          status == ContentClassifierResult::Status::ImportantHit)) {
       break;
@@ -738,8 +837,46 @@ NS_IMETHODIMP ContentClassifierService::GetName(nsAString& aName) {
   return NS_OK;
 }
 
+static nsLiteralCString InitPhaseToString(InitPhase aPhase) {
+  switch (aPhase) {
+    case InitPhase::NotInited:
+      return "not-inited"_ns;
+    case InitPhase::InitSucceeded:
+      return "init-succeeded"_ns;
+    case InitPhase::InitFailed:
+      return "init-failed"_ns;
+    case InitPhase::ShutdownStarted:
+      return "shutdown-started"_ns;
+    case InitPhase::ShutdownEnded:
+      return "shutdown-ended"_ns;
+  }
+  MOZ_ASSERT_UNREACHABLE("unhandled InitPhase");
+  return "unknown"_ns;
+}
+
 NS_IMETHODIMP ContentClassifierService::GetState(nsIPropertyBag** aState) {
+  NS_ENSURE_ARG_POINTER(aState);
   *aState = nullptr;
+
+  nsCOMPtr<nsIWritablePropertyBag2> bag =
+      do_CreateInstance("@mozilla.org/hash-property-bag;1");
+  NS_ENSURE_TRUE(bag, NS_ERROR_FAILURE);
+
+  InitPhase phase;
+  uint32_t engineCount;
+  {
+    MutexAutoLock lock(mLock);
+    phase = mInitPhase;
+    engineCount = mEngines.Count();
+  }
+
+  nsresult rv =
+      bag->SetPropertyAsACString(u"phase"_ns, InitPhaseToString(phase));
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = bag->SetPropertyAsUint32(u"engines"_ns, engineCount);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  bag.forget(aState);
   return NS_OK;
 }
 
@@ -749,7 +886,7 @@ ContentClassifierResult ContentClassifierService::ClassifyForAnnotate(
   const nsTArray<RefPtr<ContentClassifierEngine>>& engines =
       aRequest.PrivateBrowsing() ? mAnnotateEnginesPBM : mAnnotateEngines;
   ContentClassifierResult result =
-      ClassifyWithEngines(engines, aRequest, /* aIndependentEngines */ true);
+      ClassifyWithEngines(engines, aRequest, ClassifyMode::Annotate);
   MOZ_LOG(gContentClassifierLog, LogLevel::Debug,
           ("ClassifyForAnnotate - url=%s hit=%d exception=%d",
            aRequest.Url().get(), result.Hit(), result.Exception()));
@@ -761,12 +898,10 @@ ContentClassifierResult ContentClassifierService::ClassifyForCancel(
   MutexAutoLock lock(mLock);
   const nsTArray<RefPtr<ContentClassifierEngine>>& engines =
       aRequest.PrivateBrowsing() ? mCancelEnginesPBM : mCancelEngines;
-  // Cancel mode threads matchedSoFar across engines so trailing exception
-  // engines can suppress an earlier hit, but ClassifyWithEngines bails out
-  // as soon as the aggregated status reaches ImportantHit / ImportantException
-  // because either pins the outcome.
+  // ClassifyWithEngines bails out as soon as the aggregated status reaches
+  // ImportantHit / ImportantException because either pins the outcome.
   ContentClassifierResult result =
-      ClassifyWithEngines(engines, aRequest, /* aIndependentEngines */ false);
+      ClassifyWithEngines(engines, aRequest, ClassifyMode::Cancel);
   MOZ_LOG(gContentClassifierLog, LogLevel::Debug,
           ("ClassifyForCancel - url=%s hit=%d exception=%d",
            aRequest.Url().get(), result.Hit(), result.Exception()));
@@ -1086,10 +1221,16 @@ NS_IMETHODIMP ContentClassifierService::ProbeFeature(
     rv = backgroundThread->Dispatch(
         NS_NewRunnableFunction(
             "ContentClassifierService::ProbeFeature",
-            [engine = std::move(engine), request = std::move(request),
-             promiseHolder]() {
-              ContentClassifierEngineResult er = engine->CheckNetworkRequest(
-                  request, /* aPreviouslyMatched */ false);
+            [self = RefPtr{this}, engine = std::move(engine),
+             request = std::move(request), promiseHolder]() {
+              // Matching is done under mLock, as every other engine consumer
+              // does, so that an engine is never in use without it held.
+              ContentClassifierEngineResult er = [&] {
+                MutexAutoLock lock(self->mLock);
+                return engine->CheckNetworkRequest(
+                    request, /* aPreviouslyMatched */ false,
+                    /* aMatchDocumentAsNetworkRequest */ false);
+              }();
               nsCOMPtr<nsIContentClassifierProbeResult> probe =
                   MakeProbeResult(er);
               NS_DispatchToMainThread(NS_NewRunnableFunction(

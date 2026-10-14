@@ -91,7 +91,6 @@ pk11_getKeyTypeFromPKCS11KeyType(CK_KEY_TYPE pk11KeyType)
         case CKK_EC_EDWARDS:
             keyType = edKey;
             break;
-        case CKK_NSS_KYBER:
         case CKK_NSS_ML_KEM:
         case CKK_ML_KEM:
             keyType = kyberKey;
@@ -355,12 +354,6 @@ PK11_ImportPublicKey(PK11SlotInfo *slot, SECKEYPublicKey *pubKey,
                 break;
             case kyberKey:
                 keyType = CKK_ML_KEM;
-#ifndef NSS_DISABLE_KYBER
-                if ((pubKey->u.kyber.params == params_kyber768_round3) ||
-                    (pubKey->u.kyber.params == params_kyber768_round3_test_mode)) {
-                    keyType = CKK_NSS_KYBER;
-                }
-#endif
                 PK11_SETATTRS(attrs, CKA_ENCAPSULATE, &cktrue, sizeof(CK_BBOOL));
                 attrs++;
                 kemParams = seckey_GetMLKEMPkcs11ParamsByKyberParams(
@@ -993,9 +986,6 @@ PK11_ExtractPublicKey(PK11SlotInfo *slot, KeyType keyType, CK_OBJECT_HANDLE id)
             }
 
             switch (pk11KeyType) {
-#ifndef NSS_DISABLE_KYBER
-                case CKK_NSS_KYBER:
-#endif
                 case CKK_NSS_ML_KEM:
                 case CKK_ML_KEM:
                     break;
@@ -1014,6 +1004,10 @@ PK11_ExtractPublicKey(PK11SlotInfo *slot, KeyType keyType, CK_OBJECT_HANDLE id)
             CK_NSS_KEM_PARAMETER_SET_TYPE *pPK11Params = kemParams->pValue;
             pubKey->u.kyber.params = seckey_GetKyberParamsByPkcs11ParamSet(
                 *pPK11Params);
+            if (pubKey->u.kyber.params == params_kyber_invalid) {
+                crv = CKR_OBJECT_HANDLE_INVALID;
+                break;
+            }
             crv = pk11_Attr2SecItem(arena, value, &pubKey->u.kyber.publicValue);
             break;
         case fortezzaKey:
@@ -1157,8 +1151,10 @@ pk11_loadPrivKeyWithFlags(PK11SlotInfo *slot, SECKEYPrivateKey *privKey,
         { CKA_CLASS, NULL, 0 },
         { CKA_KEY_TYPE, NULL, 0 },
         { CKA_ID, NULL, 0 },
-        /* RSA - the attributes below will be replaced for other
-         *       key types.
+        /* RSA - only place the RSA attributes below
+         *       they will be replaced for other
+         *       key types. We assume no key has more attributes
+         *       than RSA.
          */
         { CKA_MODULUS, NULL, 0 },
         { CKA_PRIVATE_EXPONENT, NULL, 0 },
@@ -1169,11 +1165,9 @@ pk11_loadPrivKeyWithFlags(PK11SlotInfo *slot, SECKEYPrivateKey *privKey,
         { CKA_EXPONENT_2, NULL, 0 },
         { CKA_COEFFICIENT, NULL, 0 },
         { CKA_DECRYPT, NULL, 0 },
-        { CKA_DERIVE, NULL, 0 },
         { CKA_SIGN, NULL, 0 },
         { CKA_SIGN_RECOVER, NULL, 0 },
         { CKA_UNWRAP, NULL, 0 },
-        { CKA_DECAPSULATE, NULL, 0 },
         /* reserve space for the attributes that may be
          * specified in attrFlags */
         { CKA_TOKEN, NULL, 0 },
@@ -1181,9 +1175,9 @@ pk11_loadPrivKeyWithFlags(PK11SlotInfo *slot, SECKEYPrivateKey *privKey,
         { CKA_MODIFIABLE, NULL, 0 },
         { CKA_SENSITIVE, NULL, 0 },
         { CKA_EXTRACTABLE, NULL, 0 },
-        { CKA_PARAMETER_SET, NULL, 0 },
-        { CKA_SEED, NULL, 0 },
-#define NUM_RESERVED_ATTRS 5 /* number of reserved attributes above */
+#define NUM_RESERVED_ATTRS 5 /* number of reserved attributes above if \
+                              * new non_rsa attributes are added, you  \
+                              * must adjust this value */
     };
     CK_BBOOL cktrue = CK_TRUE;
     CK_BBOOL ckfalse = CK_FALSE;
@@ -1320,6 +1314,9 @@ pk11_loadPrivKeyWithFlags(PK11SlotInfo *slot, SECKEYPrivateKey *privKey,
         return NULL;
     }
 
+    /* This would be a programming error */
+    PR_ASSERT(count <= (templateSize - NUM_RESERVED_ATTRS));
+
     arena = PORT_NewArena(DER_DEFAULT_CHUNKSIZE);
     if (arena == NULL)
         return NULL;
@@ -1357,14 +1354,13 @@ pk11_loadPrivKeyWithFlags(PK11SlotInfo *slot, SECKEYPrivateKey *privKey,
         return NULL;
     }
 
-    /* try loading the public key */
+    /* try loading the public key. PK11_ImportPublicKey leaves the new object
+     * attached to pubKey, which is what lets SECKEY_DestroyPublicKey clean it
+     * up: it destroys a session object and skips a permanent one. Detaching it
+     * here would strand a session object on the slot with nothing left to
+     * destroy it. */
     if (pubKey) {
         PK11_ImportPublicKey(slot, pubKey, token);
-        if (pubKey->pkcs11Slot) {
-            PK11_FreeSlot(pubKey->pkcs11Slot);
-            pubKey->pkcs11Slot = NULL;
-            pubKey->pkcs11ID = CK_INVALID_HANDLE;
-        }
     }
 
     /* build new key structure */
@@ -1621,7 +1617,7 @@ PK11_GenerateKeyPairWithOpFlags(PK11SlotInfo *slot, CK_MECHANISM_TYPE type,
         case CKM_RSA_PKCS_KEY_PAIR_GEN:
         case CKM_RSA_X9_31_KEY_PAIR_GEN:
             rsaParams = (PK11RSAGenParams *)param;
-            if (rsaParams->pe == 0) {
+            if (rsaParams->pe == 0 || rsaParams->pe > PR_UINT32_MAX) {
                 PORT_SetError(SEC_ERROR_INVALID_ARGS);
                 return NULL;
             }
@@ -1714,9 +1710,7 @@ PK11_GenerateKeyPairWithOpFlags(PK11SlotInfo *slot, CK_MECHANISM_TYPE type,
                 test_mech2.mechanism = CKM_ECDSA;
             }
             break;
-#ifndef NSS_DISABLE_KYBER
         case CKM_NSS_KYBER_KEY_PAIR_GEN:
-#endif
         case CKM_NSS_ML_KEM_KEY_PAIR_GEN:
         case CKM_ML_KEM_KEY_PAIR_GEN:
             kemParams = (CK_NSS_KEM_PARAMETER_SET_TYPE *)param;
@@ -2155,7 +2149,7 @@ SECKEY_SetPublicValue(SECKEYPrivateKey *privKey, const SECItem *publicValue)
                 PORT_SetError(SEC_ERROR_BAD_KEY);
                 break;
             }
-            pubKey.u.mldsa.paramSet = SECKEY_GetMLDSAPkcs11ParamSetByOidTag(paramSet);
+            pubKey.u.mldsa.paramSet = SECKEY_GetMLDSAOidTagByPkcs11ParamSet(paramSet);
             if (pubKey.u.mldsa.paramSet == SEC_OID_UNKNOWN) {
                 PORT_SetError(SEC_ERROR_BAD_KEY);
                 break;

@@ -6,8 +6,8 @@
 const { InfoBar } = ChromeUtils.importESModule(
   "resource:///modules/asrouter/InfoBar.sys.mjs"
 );
-const { CFRMessageProvider } = ChromeUtils.importESModule(
-  "resource:///modules/asrouter/CFRMessageProvider.sys.mjs"
+const { PanelTestProvider } = ChromeUtils.importESModule(
+  "resource:///modules/asrouter/PanelTestProvider.sys.mjs"
 );
 const { ASRouter } = ChromeUtils.importESModule(
   "resource:///modules/asrouter/ASRouter.sys.mjs"
@@ -51,7 +51,7 @@ registerCleanupFunction(() => {
 });
 
 add_task(async function show_and_send_telemetry() {
-  let message = (await CFRMessageProvider.getMessages()).find(
+  let message = (await PanelTestProvider.getMessages()).find(
     m => m.id === "INFOBAR_ACTION_86"
   );
 
@@ -105,7 +105,7 @@ add_task(async function show_and_send_telemetry() {
 
 add_task(async function dismiss_telemetry() {
   let message = {
-    ...(await CFRMessageProvider.getMessages()).find(
+    ...(await PanelTestProvider.getMessages()).find(
       m => m.id === "INFOBAR_ACTION_86"
     ),
   };
@@ -172,7 +172,7 @@ add_task(async function dismiss_telemetry() {
 });
 
 add_task(async function prevent_multiple_messages() {
-  let message = (await CFRMessageProvider.getMessages()).find(
+  let message = (await PanelTestProvider.getMessages()).find(
     m => m.id === "INFOBAR_ACTION_86"
   );
 
@@ -216,7 +216,7 @@ add_task(async function prevent_multiple_messages() {
 });
 
 add_task(async function default_dismissable_button_shows() {
-  let message = (await CFRMessageProvider.getMessages()).find(
+  let message = (await PanelTestProvider.getMessages()).find(
     m => m.id === "INFOBAR_ACTION_86"
   );
   Assert.ok(message, "Found the message");
@@ -243,7 +243,7 @@ add_task(async function default_dismissable_button_shows() {
 
 add_task(
   async function non_dismissable_notification_does_not_show_close_button() {
-    let baseMessage = (await CFRMessageProvider.getMessages()).find(
+    let baseMessage = (await PanelTestProvider.getMessages()).find(
       m => m.id === "INFOBAR_ACTION_86"
     );
     Assert.ok(baseMessage, "Found the base message");
@@ -436,7 +436,7 @@ add_task(async function test_showInfoBarMessage_skipsPrivateWindow() {
 });
 
 add_task(async function test_non_dismissable_button_action() {
-  let baseMessage = (await CFRMessageProvider.getMessages()).find(
+  let baseMessage = (await PanelTestProvider.getMessages()).find(
     m => m.id === "INFOBAR_ACTION_86"
   );
   Assert.ok(baseMessage, "Found the base message");
@@ -505,7 +505,7 @@ add_task(async function test_non_dismissable_button_action() {
 
 // Default experience
 add_task(async function test_dismissable_button_action() {
-  let baseMessage = (await CFRMessageProvider.getMessages()).find(
+  let baseMessage = (await PanelTestProvider.getMessages()).find(
     m => m.id === "INFOBAR_ACTION_86"
   );
   Assert.ok(baseMessage, "Found the base message");
@@ -571,7 +571,7 @@ add_task(async function test_dismissable_button_action() {
 // Two buttons that are both non-primary produce the same event name, so the
 // button identity has to come from event_context.source.
 add_task(async function test_button_click_telemetry_source() {
-  let baseMessage = (await CFRMessageProvider.getMessages()).find(
+  let baseMessage = (await PanelTestProvider.getMessages()).find(
     m => m.id === "INFOBAR_ACTION_86"
   );
 
@@ -641,7 +641,7 @@ add_task(async function test_button_click_telemetry_source() {
 
 add_task(async function test_dismiss_telemetry_source() {
   let message = {
-    ...(await CFRMessageProvider.getMessages()).find(
+    ...(await PanelTestProvider.getMessages()).find(
       m => m.id === "INFOBAR_ACTION_86"
     ),
   };
@@ -675,7 +675,7 @@ add_task(async function test_dismiss_telemetry_source() {
 // click.
 add_task(async function test_disconnected_telemetry_source() {
   let message = {
-    ...(await CFRMessageProvider.getMessages()).find(
+    ...(await PanelTestProvider.getMessages()).find(
       m => m.id === "INFOBAR_ACTION_86"
     ),
   };
@@ -718,7 +718,7 @@ add_task(async function test_disconnected_telemetry_source() {
 });
 
 add_task(async function clear_activeInfobar_on_window_close() {
-  let message = (await CFRMessageProvider.getMessages()).find(
+  let message = (await PanelTestProvider.getMessages()).find(
     m => m.id === "INFOBAR_ACTION_86"
   );
   Assert.ok(message.id, "Found the message");
@@ -1068,7 +1068,7 @@ add_task(async function test_infobar_css_background_fallback_var() {
 add_task(async function test_impression_action_handling() {
   const handleStub = sinon.stub(SpecialMessageActions, "handleAction");
 
-  let message = (await CFRMessageProvider.getMessages()).find(
+  let message = (await PanelTestProvider.getMessages()).find(
     m => m.id === "INFOBAR_ACTION_86"
   );
   Assert.ok(message, "Found base message");
@@ -1115,7 +1115,7 @@ add_task(
   async function test_impression_action_once_allowed_only_on_first_impression() {
     const handleStub = sinon.stub(SpecialMessageActions, "handleAction");
 
-    let message = (await CFRMessageProvider.getMessages()).find(
+    let message = (await PanelTestProvider.getMessages()).find(
       m => m.id === "INFOBAR_ACTION_86"
     );
     Assert.ok(message, "Found base message");
@@ -1177,7 +1177,7 @@ add_task(
 add_task(async function test_impression_action_multi_action_once_and_every() {
   const handleStub = sinon.stub(SpecialMessageActions, "handleAction");
 
-  let message = (await CFRMessageProvider.getMessages()).find(
+  let message = (await PanelTestProvider.getMessages()).find(
     m => m.id === "INFOBAR_ACTION_86"
   );
   Assert.ok(message, "Found base message");
@@ -1245,7 +1245,7 @@ add_task(async function test_impression_action_multi_action_once_and_every() {
 
 add_task(async function test_dismiss_action_on_user_dismissal() {
   let message = {
-    ...(await CFRMessageProvider.getMessages()).find(
+    ...(await PanelTestProvider.getMessages()).find(
       m => m.id === "INFOBAR_ACTION_86"
     ),
   };
@@ -1292,7 +1292,7 @@ add_task(async function test_dismiss_action_on_user_dismissal() {
 
 add_task(async function test_dismiss_action_multi_action() {
   let message = {
-    ...(await CFRMessageProvider.getMessages()).find(
+    ...(await PanelTestProvider.getMessages()).find(
       m => m.id === "INFOBAR_ACTION_86"
     ),
   };
@@ -1350,7 +1350,7 @@ add_task(async function test_dismiss_action_multi_action() {
 
 add_task(async function test_dismiss_action_not_fired_on_tab_close() {
   let message = {
-    ...(await CFRMessageProvider.getMessages()).find(
+    ...(await PanelTestProvider.getMessages()).find(
       m => m.id === "INFOBAR_ACTION_86"
     ),
   };
@@ -1400,7 +1400,7 @@ add_task(async function test_dismiss_action_not_fired_on_tab_close() {
 
 add_task(async function test_no_dismiss_action() {
   let message = {
-    ...(await CFRMessageProvider.getMessages()).find(
+    ...(await PanelTestProvider.getMessages()).find(
       m => m.id === "INFOBAR_ACTION_86"
     ),
   };
@@ -1826,4 +1826,130 @@ add_task(async function dismiss_on_any_pref_in_array_change() {
 
   Services.prefs.clearUserPref(PREF1);
   Services.prefs.clearUserPref(PREF2);
+});
+
+add_task(async function test_remoteText_rerenders() {
+  const win = BrowserWindowTracker.getTopWindow();
+  const doc = win.document;
+  InfoBar.maybeLoadCustomElement(win);
+  InfoBar.maybeInsertFTL(win);
+
+  const el = doc.createElement("remote-text");
+  el.setAttribute("fluent-variable-name", "Ada");
+  el.setAttribute("fluent-remote-id", "cfr-doorhanger-extension-author");
+  doc.documentElement.appendChild(el);
+
+  // Fluent wraps substituted variables in bidi isolation marks.
+  const text = () =>
+    (el.shadowRoot?.textContent ?? "").replace(/[\u2068\u2069]/g, "");
+  await TestUtils.waitForCondition(
+    () => text(),
+    "Initial render is translated"
+  );
+  Assert.equal(text(), "by Ada", "Rendered with the initial variable");
+
+  el.setAttribute("fluent-remote-id", "cfr-doorhanger-extension-heading");
+  await TestUtils.waitForCondition(
+    () => text() !== "by Ada",
+    "Changing fluent-remote-id re-renders the message"
+  );
+  Assert.equal(text(), "Recommended Extension", "Rendered the new message");
+
+  el.setAttribute("fluent-remote-id", "cfr-doorhanger-extension-author");
+  el.setVariable("name", "Grace");
+  await TestUtils.waitForCondition(
+    () => text() !== "Recommended Extension",
+    "setVariable() re-renders the message"
+  );
+  Assert.equal(text(), "by Grace", "Substituted the new variable value");
+
+  el.remove();
+});
+
+add_task(async function test_remoteText_translations_are_sequenced() {
+  const win = BrowserWindowTracker.getTopWindow();
+  const doc = win.document;
+  InfoBar.maybeLoadCustomElement(win);
+  InfoBar.maybeInsertFTL(win);
+
+  const el = doc.createElement("remote-text");
+  el.setAttribute("fluent-variable-name", "First");
+  el.setAttribute("fluent-remote-id", "cfr-doorhanger-extension-author");
+  doc.documentElement.appendChild(el);
+  await TestUtils.waitForCondition(
+    () => el.shadowRoot?.textContent,
+    "Initial render is translated"
+  );
+
+  const sandbox = sinon.createSandbox();
+  const applied = [];
+  const real = RemoteL10n.l10n.translateFragment.bind(RemoteL10n.l10n);
+  let started = 0;
+  let inFlight = 0;
+  let mostInFlight = 0;
+  sandbox
+    .stub(RemoteL10n.l10n, "translateFragment")
+    .callsFake(async fragment => {
+      const nth = ++started;
+      inFlight++;
+      mostInFlight = Math.max(mostInFlight, inFlight);
+      const result = await real(fragment);
+      applied.push(nth);
+      inFlight--;
+      return result;
+    });
+
+  try {
+    // Queue three renders without yielding.
+    for (const name of ["Second", "Third", "Fourth"]) {
+      el.setVariable("name", name);
+    }
+    await TestUtils.waitForCondition(
+      () => applied.length === 3,
+      "All three translations finished"
+    );
+
+    Assert.equal(
+      mostInFlight,
+      1,
+      "Only one translation of an element runs at a time"
+    );
+    Assert.deepEqual(
+      applied,
+      [1, 2, 3],
+      "Translations applied in the order they were rendered"
+    );
+  } finally {
+    sandbox.restore();
+    el.remove();
+  }
+});
+
+add_task(async function test_remoteText_unresolvable_id() {
+  const win = BrowserWindowTracker.getTopWindow();
+  const doc = win.document;
+  InfoBar.maybeLoadCustomElement(win);
+  InfoBar.maybeInsertFTL(win);
+
+  const el = doc.createElement("remote-text");
+  el.setAttribute("fluent-variable-name", "Ada");
+  el.setAttribute("fluent-remote-id", "cfr-doorhanger-extension-author");
+  doc.documentElement.appendChild(el);
+
+  const text = () =>
+    (el.shadowRoot?.textContent ?? "").replace(/[\u2068\u2069]/g, "");
+  await TestUtils.waitForCondition(
+    () => text(),
+    "Initial render is translated"
+  );
+
+  el.setAttribute("fluent-remote-id", "no-such-remote-text-message");
+  await el._translated;
+  Assert.equal(
+    text(),
+    "by Ada",
+    "An unresolvable id leaves the previous text in place"
+  );
+
+  el.remove();
 });

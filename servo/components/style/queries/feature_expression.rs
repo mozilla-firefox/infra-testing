@@ -21,13 +21,13 @@ use crate::selector_map::PrecomputedHashSet;
 use crate::str::{starts_with_ignore_ascii_case, string_as_ascii_lowercase};
 use crate::stylesheets::container_rule::AttrReferenceSet;
 use crate::stylesheets::{CssRuleType, Origin, UrlExtraData};
+use crate::values::DashedIdent;
 use crate::values::computed::{self, CSSPixelLength, ToComputedValue};
 use crate::values::specified::{
     Angle, Integer, Length, Number, Percentage, Ratio, Resolution, Time,
 };
-use crate::values::DashedIdent;
 use crate::{Atom, Zero};
-use cssparser::{Parser, ParserInput, Token};
+use cssparser::{Parser, Token};
 use selectors::kleene_value::KleeneValue;
 use std::cmp::Ordering;
 use std::fmt::{self, Write};
@@ -129,13 +129,12 @@ impl Operator {
         }
     }
 
-    fn parse<'i>(input: &mut Parser<'i, '_>) -> Result<Self, ParseError<'i>> {
-        let location = input.current_source_location();
+    fn parse(input: &mut Parser) -> Result<Self, ParseError> {
         let operator = match *input.next()? {
             Token::Delim('=') => return Ok(Operator::Equal),
             Token::Delim('>') => Operator::GreaterThan,
             Token::Delim('<') => Operator::LessThan,
-            ref t => return Err(location.new_unexpected_token_error(t.clone())),
+            _ => return Err(ParseError::unexpected_token()),
         };
 
         // https://drafts.csswg.org/mediaqueries-4/#mq-syntax:
@@ -199,7 +198,7 @@ impl QueryFeatureExpressionKind {
         T: PartialOrd + Zero,
     {
         match *self {
-            Self::Empty => return !context_value.is_zero(),
+            Self::Empty => !context_value.is_zero(),
             Self::Single(ref value) => {
                 let value = compute(value);
                 let cmp = match context_value.partial_cmp(&value) {
@@ -225,7 +224,7 @@ impl QueryFeatureExpressionKind {
                 ref right,
             } => {
                 debug_assert!(left.is_some() || right.is_some());
-                if let Some((ref op, ref value)) = left {
+                if let Some((op, value)) = left {
                     let value = compute(value);
                     let cmp = match value.partial_cmp(&context_value) {
                         Some(c) => c,
@@ -235,7 +234,7 @@ impl QueryFeatureExpressionKind {
                         return false;
                     }
                 }
-                if let Some((ref op, ref value)) = right {
+                if let Some((op, value)) = right {
                     let value = compute(value);
                     let cmp = match context_value.partial_cmp(&value) {
                         Some(c) => c,
@@ -291,14 +290,14 @@ impl ToCss for QueryFeatureExpression {
                 ref left,
                 ref right,
             } => {
-                if let Some((ref op, ref val)) = left {
+                if let Some((op, val)) = left {
                     val.to_css(dest, Some(self))?;
                     dest.write_char(' ')?;
                     op.to_css(dest)?;
                     dest.write_char(' ')?;
                 }
                 self.write_name(dest)?;
-                if let Some((ref op, ref val)) = right {
+                if let Some((op, val)) = right {
                     dest.write_char(' ')?;
                     op.to_css(dest)?;
                     dest.write_char(' ')?;
@@ -310,13 +309,11 @@ impl ToCss for QueryFeatureExpression {
     }
 }
 
-fn consume_operation_or_colon<'i>(
-    input: &mut Parser<'i, '_>,
-) -> Result<Option<Operator>, ParseError<'i>> {
+fn consume_operation_or_colon(input: &mut Parser) -> Result<Option<Operator>, ParseError> {
     if input.try_parse(|input| input.expect_colon()).is_ok() {
         return Ok(None);
     }
-    Operator::parse(input).map(|op| Some(op))
+    Operator::parse(input).map(Some)
 }
 
 #[allow(unused_variables)]
@@ -327,14 +324,14 @@ fn disabled_by_pref(feature: &Atom, context: &ParserContext) -> bool {
         // the web it is hidden behind a preference (see Bug 1822176).
         if *feature == atom!("prefers-reduced-transparency") {
             return !context.chrome_rules_enabled()
-                && !static_prefs::pref!("layout.css.prefers-reduced-transparency.enabled");
+                && !crate::pref!("layout.css.prefers-reduced-transparency.enabled");
         }
 
         // inverted-colors is always enabled in the ua and chrome. On
         // the web it is hidden behind a preference.
         if *feature == atom!("inverted-colors") {
             return !context.chrome_rules_enabled()
-                && !static_prefs::pref!("layout.css.inverted-colors.enabled");
+                && !crate::pref!("layout.css.inverted-colors.enabled");
         }
     }
     false
@@ -385,13 +382,12 @@ impl QueryFeatureExpression {
         self.feature().flags
     }
 
-    fn parse_feature_name<'i, 't>(
+    fn parse_feature_name(
         context: &ParserContext,
-        input: &mut Parser<'i, 't>,
+        input: &mut Parser,
         feature_type: FeatureType,
-    ) -> Result<(usize, Option<LegacyRange>), ParseError<'i>> {
+    ) -> Result<(usize, Option<LegacyRange>), ParseError> {
         let mut flags = FeatureFlags::empty();
-        let location = input.current_source_location();
         let ident = input.expect_ident()?;
 
         if context.chrome_rules_enabled() {
@@ -418,9 +414,9 @@ impl QueryFeatureExpression {
         let (feature_index, feature) = match feature_type.find_feature(&atom) {
             Some((i, f)) => (i, f),
             None => {
-                return Err(location.new_custom_error(
-                    StyleParseErrorKind::MediaQueryExpectedFeatureName(ident.clone()),
-                ))
+                return Err(ParseError::custom(
+                    StyleParseErrorKind::MediaQueryExpectedFeatureName,
+                ));
             },
         };
 
@@ -428,8 +424,8 @@ impl QueryFeatureExpression {
             || !flags.contains(feature.flags.parsing_requirements())
             || (range.is_some() && !feature.allows_ranges())
         {
-            return Err(location.new_custom_error(
-                StyleParseErrorKind::MediaQueryExpectedFeatureName(ident.clone()),
+            return Err(ParseError::custom(
+                StyleParseErrorKind::MediaQueryExpectedFeatureName,
             ));
         }
 
@@ -440,11 +436,11 @@ impl QueryFeatureExpression {
     ///
     ///   (feature-value <operator> feature-name)
     ///   (feature-value <operator> feature-name <operator> feature-value)
-    fn parse_multi_range_syntax<'i, 't>(
+    fn parse_multi_range_syntax(
         context: &ParserContext,
-        input: &mut Parser<'i, 't>,
+        input: &mut Parser,
         feature_type: FeatureType,
-    ) -> Result<Self, ParseError<'i>> {
+    ) -> Result<Self, ParseError> {
         let start = input.state();
 
         // To parse the values, we first need to find the feature name. We rely
@@ -455,14 +451,12 @@ impl QueryFeatureExpression {
             if let Ok((index, range)) = Self::parse_feature_name(context, input, feature_type) {
                 if range.is_some() {
                     // Ranged names are not allowed here.
-                    return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+                    return Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError));
                 }
                 break index;
             }
             if input.is_exhausted() {
-                return Err(start
-                    .source_location()
-                    .new_custom_error(StyleParseErrorKind::UnspecifiedError));
+                return Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError));
             }
         };
 
@@ -484,7 +478,7 @@ impl QueryFeatureExpression {
         let right = match right_op {
             Some(op) => {
                 if !left_op.is_compatible_with(op) {
-                    return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+                    return Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError));
                 }
                 Some((op, QueryExpressionValue::parse(feature, context, input)?))
             },
@@ -501,11 +495,11 @@ impl QueryFeatureExpression {
     }
 
     /// Parse a feature expression where we've already consumed the parenthesis.
-    pub fn parse_in_parenthesis_block<'i, 't>(
+    pub fn parse_in_parenthesis_block(
         context: &ParserContext,
-        input: &mut Parser<'i, 't>,
+        input: &mut Parser,
         feature_type: FeatureType,
-    ) -> Result<Self, ParseError<'i>> {
+    ) -> Result<Self, ParseError> {
         let (feature_index, range) =
             match input.try_parse(|input| Self::parse_feature_name(context, input, feature_type)) {
                 Ok(v) => v,
@@ -525,9 +519,9 @@ impl QueryFeatureExpression {
                 // Gecko doesn't allow ranged expressions without a
                 // value, so just reject them here too.
                 if range.is_some() {
-                    return Err(
-                        input.new_custom_error(StyleParseErrorKind::RangedExpressionWithNoValue)
-                    );
+                    return Err(ParseError::custom(
+                        StyleParseErrorKind::RangedExpressionWithNoValue,
+                    ));
                 }
 
                 return Ok(Self::new(
@@ -541,25 +535,24 @@ impl QueryFeatureExpression {
 
         let feature = &feature_type.features()[feature_index];
 
-        let value = QueryExpressionValue::parse(feature, context, input).map_err(|err| {
-            err.location
-                .new_custom_error(StyleParseErrorKind::MediaQueryExpectedFeatureValue)
-        })?;
+        let value = QueryExpressionValue::parse(feature, context, input)
+            .map_err(|_| ParseError::custom(StyleParseErrorKind::MediaQueryExpectedFeatureValue))?;
 
         let kind = match range {
             Some(range) => {
                 if operator.is_some() {
-                    return Err(
-                        input.new_custom_error(StyleParseErrorKind::MediaQueryUnexpectedOperator)
-                    );
+                    return Err(ParseError::custom(
+                        StyleParseErrorKind::MediaQueryUnexpectedOperator,
+                    ));
                 }
                 QueryFeatureExpressionKind::LegacyRange(range, value)
             },
             None => match operator {
                 Some(operator) => {
                     if !feature.allows_ranges() {
-                        return Err(input
-                            .new_custom_error(StyleParseErrorKind::MediaQueryUnexpectedOperator));
+                        return Err(ParseError::custom(
+                            StyleParseErrorKind::MediaQueryUnexpectedOperator,
+                        ));
                     }
                     QueryFeatureExpressionKind::Range {
                         left: None,
@@ -727,17 +720,17 @@ impl QueryExpressionValue {
                 .feature()
                 .evaluator
             {
-                Evaluator::Enumerated { serializer, .. } => dest.write_str(&*serializer(value)),
+                Evaluator::Enumerated { serializer, .. } => dest.write_str(&serializer(value)),
                 _ => unreachable!(),
             },
         }
     }
 
-    fn parse<'i, 't>(
+    fn parse(
         for_feature: &QueryFeatureDescription,
         context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<QueryExpressionValue, ParseError<'i>> {
+        input: &mut Parser,
+    ) -> Result<QueryExpressionValue, ParseError> {
         Ok(match for_feature.evaluator {
             Evaluator::OptionalLength(..) | Evaluator::Length(..) => {
                 let length = Length::parse(context, input)?;
@@ -750,7 +743,7 @@ impl QueryExpressionValue {
             Evaluator::BoolInteger(..) => {
                 let integer = Integer::parse(context, input)?;
                 if matches!(integer.resolve(), Some(v) if v != 0 && v != 1) {
-                    return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+                    return Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError));
                 }
                 QueryExpressionValue::BoolInteger(integer)
             },
@@ -777,10 +770,10 @@ impl QueryExpressionValue {
     // or a custom property name.
     // NB: we don't currently implement the <frequency> type anywhere, so it is not
     // parsed here.
-    fn parse_for_style_range<'i, 't>(
+    fn parse_for_style_range(
         context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+        input: &mut Parser,
+    ) -> Result<Self, ParseError> {
         if let Ok(number) = input.try_parse(|i| Number::parse(context, i)) {
             return Ok(Self::Float(number));
         }
@@ -807,31 +800,28 @@ impl QueryExpressionValue {
         }
         input.skip_whitespace();
         let start = input.position();
-        if let Ok(Token::Function(ref name)) = input.next() {
+        if let Ok(Token::Function(name)) = input.next() {
             // Helper to parse the function arg and store the complete expression (function
             // name and parenthesized argument) into a CustomVariableValue.
-            let parse_func =
-                |input: &mut Parser<'i, 't>| -> Result<CustomVariableValue, ParseError<'i>> {
-                    input.parse_nested_block(|i| i.expect_no_error_token().map_err(Into::into))?;
-                    let mut input = ParserInput::new(input.slice_from(start));
-                    CustomVariableValue::parse(
-                        &mut Parser::new(&mut input),
-                        Some(&context.namespaces.prefixes),
-                        context.url_data,
-                    )
-                };
+            let parse_func = |input: &mut Parser| -> Result<CustomVariableValue, ParseError> {
+                input.parse_nested_block(|i| i.expect_no_error_token().map_err(Into::into))?;
+                CustomVariableValue::parse(
+                    &mut Parser::new(input.slice_from(start)),
+                    Some(&context.namespaces.prefixes),
+                    context.url_data,
+                )
+            };
 
             if SubstitutionFunctionKind::from_ident(name).is_ok() {
                 return Ok(Self::Function(Box::new(parse_func(input)?)));
             }
         }
-        Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
+        Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError))
     }
 
     fn collect_attribute_references(&self, references: &mut AttrReferenceSet) {
-        match self {
-            Self::Function(f) => f.collect_attribute_references(references),
-            _ => {},
+        if let Self::Function(f) = self {
+            f.collect_attribute_references(references)
         }
     }
 }
@@ -867,9 +857,9 @@ impl ToCss for QueryStyleRange {
     {
         match self {
             Self::StyleRange2 {
-                ref value1,
-                ref op1,
-                ref value2,
+                value1,
+                op1,
+                value2,
             } => {
                 value1.to_css(dest, None)?;
                 dest.write_char(' ')?;
@@ -878,11 +868,11 @@ impl ToCss for QueryStyleRange {
                 value2.to_css(dest, None)
             },
             Self::StyleRange3 {
-                ref value1,
-                ref op1,
-                ref value2,
-                ref op2,
-                ref value3,
+                value1,
+                op1,
+                value2,
+                op2,
+                value3,
             } => {
                 value1.to_css(dest, None)?;
                 dest.write_char(' ')?;
@@ -906,25 +896,22 @@ impl QueryStyleRange {
     ///
     /// This is only used when parsing @container style() queries; the feature_type
     /// and index is hardcoded (and ignored).
-    pub fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    pub fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         let value1 = QueryExpressionValue::parse_for_style_range(context, input)?;
         let op1 = Operator::parse(input)?;
         let value2 = QueryExpressionValue::parse_for_style_range(context, input)?;
 
-        if let Ok(op2) = input.try_parse(|i| Operator::parse(i)) {
-            if op1.is_compatible_with(op2) {
-                let value3 = QueryExpressionValue::parse_for_style_range(context, input)?;
-                return Ok(Self::StyleRange3 {
-                    value1,
-                    op1,
-                    value2,
-                    op2,
-                    value3,
-                });
-            }
+        if let Ok(op2) = input.try_parse(|i| Operator::parse(i))
+            && op1.is_compatible_with(op2)
+        {
+            let value3 = QueryExpressionValue::parse_for_style_range(context, input)?;
+            return Ok(Self::StyleRange3 {
+                value1,
+                op1,
+                value2,
+                op2,
+                value3,
+            });
         }
 
         Ok(Self::StyleRange2 {
@@ -942,9 +929,9 @@ impl QueryStyleRange {
     ) -> KleeneValue {
         match self {
             QueryStyleRange::StyleRange2 {
-                ref value1,
-                ref op1,
-                ref value2,
+                value1,
+                op1,
+                value2,
             } => Self::compare_values(
                 Self::resolve_value(
                     value1,
@@ -965,11 +952,11 @@ impl QueryStyleRange {
             .into(),
 
             QueryStyleRange::StyleRange3 {
-                ref value1,
-                ref op1,
-                ref value2,
-                ref op2,
-                ref value3,
+                value1,
+                op1,
+                value2,
+                op2,
+                value3,
             } => {
                 let v1 = Self::resolve_value(
                     value1,
@@ -1057,7 +1044,8 @@ impl QueryStyleRange {
                     .stylist
                     .expect("container queries should have a stylist around");
                 let substituted = custom_properties::substitute(
-                    &value,
+                    value,
+                    /* property_id */ None,
                     &sub_funcs,
                     stylist,
                     context,
@@ -1118,8 +1106,7 @@ impl QueryStyleRange {
             /* use_counters = */ None,
             /* attr_taint */ Default::default(),
         );
-        let mut input = ParserInput::new(css_text);
-        QueryExpressionValue::parse_for_style_range(&parser_context, &mut Parser::new(&mut input))
+        QueryExpressionValue::parse_for_style_range(&parser_context, &mut Parser::new(css_text))
             .ok()
             .and_then(|parsed| {
                 Self::resolve_value(&parsed, context, attribute_tracker, visited_set)
@@ -1130,14 +1117,14 @@ impl QueryStyleRange {
         let value1 = value1?;
         let value2 = value2?;
         match (value1, value2) {
-            (Component::Length(v1), Component::Length(v2)) => v1.partial_cmp(&v2),
-            (Component::Number(v1), Component::Number(v2)) => v1.partial_cmp(&v2),
+            (Component::Length(v1), Component::Length(v2)) => v1.partial_cmp(v2),
+            (Component::Number(v1), Component::Number(v2)) => v1.partial_cmp(v2),
             (Component::Resolution(v1), Component::Resolution(v2)) => {
                 v1.dppx().partial_cmp(&v2.dppx())
             },
-            (Component::Percentage(v1), Component::Percentage(v2)) => v1.partial_cmp(&v2),
-            (Component::Angle(v1), Component::Angle(v2)) => v1.partial_cmp(&v2),
-            (Component::Time(v1), Component::Time(v2)) => v1.partial_cmp(&v2),
+            (Component::Percentage(v1), Component::Percentage(v2)) => v1.partial_cmp(v2),
+            (Component::Angle(v1), Component::Angle(v2)) => v1.partial_cmp(v2),
+            (Component::Time(v1), Component::Time(v2)) => v1.partial_cmp(v2),
             (Component::Length(v1), Component::Number(v2)) => {
                 if v2.is_zero() {
                     v1.partial_cmp(&CSSPixelLength::zero())
@@ -1147,7 +1134,7 @@ impl QueryStyleRange {
             },
             (Component::Number(v1), Component::Length(v2)) => {
                 if v1.is_zero() {
-                    CSSPixelLength::zero().partial_cmp(&v2)
+                    CSSPixelLength::zero().partial_cmp(v2)
                 } else {
                     None
                 }

@@ -42,6 +42,13 @@ data object SettingsClicked : SummarizationAction
  */
 data class SettingsLoaded(val settings: SummarizeSettingsState) : SummarizationAction
 
+/**
+ * The user rated the generated summary using the feedback control.
+ *
+ * @param feedback The [SummaryFeedback] the user selected.
+ */
+data class SummaryFeedbackProvided(val feedback: SummaryFeedback) : SummarizationAction
+
 /** The user tapped the back button from settings. */
 data object SettingsBackClicked : SummarizationAction
 

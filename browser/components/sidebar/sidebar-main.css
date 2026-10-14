@@ -15,6 +15,11 @@
 
 :host {
   width: 100%;
+  /* moz-button paints its focus indicator outside the button's border box, so
+   * containers that clip labels have to extend their clip rect by the same
+   * amount, or they slice the indicator. Resolves to 0 where the indicator is
+   * inset (negative offset), which needs no extra room. */
+  --focus-ring-clip-margin: max(0px, calc(var(--focus-outline-offset) + var(--focus-outline-width)));
 }
 
 .wrapper {
@@ -35,7 +40,7 @@
       /* TODO: These --space-* tokens should use semantic names shared with tabs.css */
       width: var(
         --sidebar-expanded-launcher-width,
-        calc(var(--tab-pinned-horizontal-count) * var(--tab-pinned-min-width-expanded) + 2 * var(--tab-pinned-container-margin-inline-expanded) + 1px)
+        calc(var(--tab-pinned-horizontal-count) * var(--tab-pinned-min-width-expanded) + 2 * var(--tab-container-margin-inline-pinned-expanded) + 1px)
       );
     }
 
@@ -48,11 +53,13 @@
 #sidebar-tools-and-extensions-splitter {
   display: block;
   border: none;
+  /* Overrides the default background-color for Win/Linux in splitter.css */
+  background-color: transparent;
   background-image: var(--sidebar-divider-image);
   background-size: var(--sidebar-divider-size);
   background-position: var(--sidebar-divider-position);
   background-repeat: no-repeat;
-  margin-inline: var(--tab-inner-inline-margin);
+  margin-inline: var(--tab-margin-inline-inner);
   margin-block-end: var(--space-small);
   min-height: 2px;
   @media -moz-pref("browser.nova.enabled") {
@@ -74,13 +81,6 @@
       background-image: none;
     }
   }
-
-  /* Collapsing holds the launcher at its expanded width so that clip-path has
-  something to clip, so the divider would otherwise be drawn around the width
-  it is animating away from. Wait for the real width to be restored. */
-  :host([sidebar-ongoing-animations]:not([expanded])) & {
-    background-image: none;
-  }
 }
 
 .actions-list {
@@ -88,7 +88,14 @@
   flex-direction: column;
   align-items: start;
   max-width: 100%;
-  overflow: hidden;
+  overflow: clip;
+  overflow-clip-margin: var(--focus-ring-clip-margin);
+  /* Unlike overflow: hidden, clip doesn't make this a scroll container, so the
+   * automatic minimum size no longer collapses to zero. Restore it explicitly:
+   * collapsed expand-on-hover relies on this list shrinking away so that only
+   * the overflow chevron remains visible. */
+  min-height: 0;
+  min-width: 0;
 
   > moz-button {
     --button-icon-fill: var(--toolbarbutton-icon-fill);
@@ -171,7 +178,8 @@
   flex-shrink: 0;
   justify-content: space-between;
   min-height: calc(var(--button-min-height) + (var(--space-small) * 2));
-  overflow: hidden;
+  overflow: clip;
+  overflow-clip-margin: var(--focus-ring-clip-margin);
 
   :host([expanded]) & {
     flex-direction: row;

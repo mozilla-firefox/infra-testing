@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/// <reference path="./moz-checkbox.tagmap.d.ts" />
+
 import { html, ifDefined } from "../vendor/lit.all.mjs";
 import { MozBaseInputElement } from "../lit-utils.mjs";
 
@@ -26,8 +28,9 @@ import "chrome://global/content/elements/moz-support-link.mjs";
  * @property {string} supportPage - Name of the SUMO support page to link to.
  * @property {string} ariaLabel - The aria-label text when there is no visible label.
  * @property {string} ariaDescription - The aria-description text when there is no visible description.
+ * @property {string} title - The title attribute, mapped onto the inner input.
  */
-export default class MozCheckbox extends MozBaseInputElement {
+export class MozCheckbox extends MozBaseInputElement {
   static properties = {
     checked: { type: Boolean, reflect: true },
   };
@@ -90,6 +93,7 @@ export default class MozCheckbox extends MozBaseInputElement {
         this.hasDescription ? undefined : this.ariaDescription
       )}
       accesskey=${ifDefined(this.accessKey)}
+      title=${ifDefined(this.title)}
     />`;
   }
 }

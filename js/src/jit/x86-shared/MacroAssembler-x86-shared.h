@@ -12,6 +12,7 @@
 #endif
 
 using js::wasm::FaultingCodeRange;
+using js::wasm::FaultingCodeRangePair;
 
 namespace js {
 namespace jit {
@@ -177,10 +178,9 @@ class MacroAssemblerX86Shared : public Assembler {
   void convertInt32ToDouble(Register src, FloatRegister dest) {
     // vcvtsi2sd and friends write only part of their output register, which
     // causes slowdowns on out-of-order processors. Explicitly break
-    // dependencies with vxorpd (and vxorps elsewhere), which are handled
-    // specially in modern CPUs, for this purpose. See sections 8.14, 9.8,
-    // 10.8, 12.9, 13.16, 14.14, and 15.8 of Agner's Microarchitecture
-    // document.
+    // dependencies with vxorps, which is handled specially in modern CPUs,
+    // for this purpose. See sections 8.14, 9.8, 10.8, 12.9, 13.16, 14.14,
+    // and 15.8 of Agner's Microarchitecture document.
     zeroDouble(dest);
     vcvtsi2sd(src, dest, dest);
   }
@@ -401,7 +401,7 @@ class MacroAssemblerX86Shared : public Assembler {
     // Use vmovapd instead of vmovsd to avoid dependencies.
     vmovapd(src, dest);
   }
-  void zeroDouble(FloatRegister reg) { vxorpd(reg, reg, reg); }
+  void zeroDouble(FloatRegister reg) { vxorps(reg, reg, reg); }
   void zeroFloat32(FloatRegister reg) { vxorps(reg, reg, reg); }
   void convertFloat32ToDouble(FloatRegister src, FloatRegister dest) {
     // If we have AVX, pass the source register as src0 to avoid a false
@@ -410,6 +410,18 @@ class MacroAssemblerX86Shared : public Assembler {
   }
   void convertDoubleToFloat32(FloatRegister src, FloatRegister dest) {
     vcvtsd2ss(src, HasAVX() ? src : dest, dest);
+  }
+
+  // ROUNDSD/ROUNDSS read src0 as their merge operand, so pass the source
+  // register as src0 (when we have AVX) to avoid a false dependency on the
+  // output register.
+  void roundDoubleWithMode(X86Encoding::RoundingMode mode, FloatRegister src,
+                           FloatRegister dest) {
+    vroundsd(mode, src, HasAVX() ? src : dest, dest);
+  }
+  void roundFloat32WithMode(X86Encoding::RoundingMode mode, FloatRegister src,
+                            FloatRegister dest) {
+    vroundss(mode, src, HasAVX() ? src : dest, dest);
   }
 
   void convertDoubleToFloat16(FloatRegister src, FloatRegister dest) {
@@ -650,6 +662,41 @@ class MacroAssemblerX86Shared : public Assembler {
     moveSimd128Int(src, dest);
     return dest;
   }
+  // Three-operand SIMD operations require AVX. Without it, we may need to
+  // shuffle the operands to use a two-operand encoding, which requires
+  // dest == lhs. If rhs is already in dest, then commutative operations
+  // can reverse the order of the operands.
+  FloatRegister moveSimd128IntIfNotAVXCommutative(FloatRegister lhs,
+                                                  FloatRegister* rhs,
+                                                  FloatRegister dest) {
+    MOZ_ASSERT(lhs.isSimd128() && rhs->isSimd128() && dest.isSimd128());
+    if (HasAVX()) {
+      return lhs;
+    }
+    if (*rhs == dest) {
+      *rhs = lhs;
+      return dest;
+    }
+    moveSimd128Int(lhs, dest);
+    return dest;
+  }
+  // As above, but non-commutative operations need a scratch register if
+  // rhs is already in dest.
+  FloatRegister moveSimd128IntIfNotAVX(FloatRegister lhs, FloatRegister* rhs,
+                                       FloatRegister dest,
+                                       FloatRegister scratch) {
+    MOZ_ASSERT(lhs.isSimd128() && rhs->isSimd128() && dest.isSimd128());
+    MOZ_ASSERT_IF(*rhs == dest, lhs != scratch && dest != scratch);
+    if (HasAVX() || lhs == dest) {
+      return lhs;
+    }
+    if (*rhs == dest) {
+      moveSimd128Int(*rhs, scratch);
+      *rhs = scratch;
+    }
+    moveSimd128Int(lhs, dest);
+    return dest;
+  }
   FloatRegister selectDestIfAVX(FloatRegister src, FloatRegister dest) {
     MOZ_ASSERT(src.isSimd128() && dest.isSimd128());
     return HasAVX() ? dest : src;
@@ -735,6 +782,37 @@ class MacroAssemblerX86Shared : public Assembler {
       return src;
     }
     moveSimd128Float(src, dest);
+    return dest;
+  }
+  // See moveSimd128IntIfNotAVXCommutative.
+  FloatRegister moveSimd128FloatIfNotAVXCommutative(FloatRegister lhs,
+                                                    FloatRegister* rhs,
+                                                    FloatRegister dest) {
+    MOZ_ASSERT(lhs.isSimd128() && rhs->isSimd128() && dest.isSimd128());
+    if (HasAVX()) {
+      return lhs;
+    }
+    if (*rhs == dest) {
+      *rhs = lhs;
+      return dest;
+    }
+    moveSimd128Float(lhs, dest);
+    return dest;
+  }
+  // See moveSimd128IntIfNotAVX.
+  FloatRegister moveSimd128FloatIfNotAVX(FloatRegister lhs, FloatRegister* rhs,
+                                         FloatRegister dest,
+                                         FloatRegister scratch) {
+    MOZ_ASSERT(lhs.isSimd128() && rhs->isSimd128() && dest.isSimd128());
+    MOZ_ASSERT_IF(*rhs == dest, lhs != scratch && dest != scratch);
+    if (HasAVX() || lhs == dest) {
+      return lhs;
+    }
+    if (*rhs == dest) {
+      moveSimd128Float(*rhs, scratch);
+      *rhs = scratch;
+    }
+    moveSimd128Float(lhs, dest);
     return dest;
   }
   FloatRegister moveSimd128FloatIfEqual(FloatRegister src, FloatRegister dest,
@@ -919,7 +997,7 @@ class MacroAssemblerX86Shared : public Assembler {
 
   bool maybeInlineSimd128Int(const SimdConstant& v, const FloatRegister& dest) {
     if (v.isZeroBits()) {
-      vpxor(dest, dest, dest);
+      vxorps(dest, dest, dest);
       return true;
     }
     if (v.isOneBits()) {

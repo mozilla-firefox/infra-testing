@@ -13,10 +13,13 @@
 #include "SFNTData.h"
 #include "ScaledFontBase.h"
 #include "Tools.h"
+#include "gfxOTSUtils.h"
+#include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/dom/CanvasRenderingContextHelper.h"
 #include "mozilla/ipc/SerializeToBytesUtil.h"
 #include "mozilla/layers/BuildConstants.h"
 #include "mozilla/layers/LayersSurfaces.h"
+#include "nsXULAppAPI.h"
 
 namespace mozilla {
 namespace gfx {
@@ -317,7 +320,7 @@ class RecordedStrokeLine : public RecordedEventDerived<RecordedStrokeLine>,
 class RecordedStrokeCircle : public RecordedEventDerived<RecordedStrokeCircle>,
                              public RecordedStrokeOptionsMixin {
  public:
-  RecordedStrokeCircle(Circle aCircle, const Pattern& aPattern,
+  RecordedStrokeCircle(Path::Circle aCircle, const Pattern& aPattern,
                        const StrokeOptions& aStrokeOptions,
                        const DrawOptions& aOptions)
       : RecordedEventDerived(STROKECIRCLE),
@@ -342,7 +345,7 @@ class RecordedStrokeCircle : public RecordedEventDerived<RecordedStrokeCircle>,
   template <class S>
   MOZ_IMPLICIT RecordedStrokeCircle(S& aStream);
 
-  Circle mCircle;
+  Path::Circle mCircle;
   PatternStorage mPattern;
   StrokeOptions mStrokeOptions;
   DrawOptions mOptions;
@@ -380,7 +383,7 @@ class RecordedFill : public RecordedEventDerived<RecordedFill> {
 
 class RecordedFillCircle : public RecordedEventDerived<RecordedFillCircle> {
  public:
-  RecordedFillCircle(Circle aCircle, const Pattern& aPattern,
+  RecordedFillCircle(Path::Circle aCircle, const Pattern& aPattern,
                      const DrawOptions& aOptions)
       : RecordedEventDerived(FILLCIRCLE),
         mCircle(aCircle),
@@ -403,7 +406,7 @@ class RecordedFillCircle : public RecordedEventDerived<RecordedFillCircle> {
   template <class S>
   MOZ_IMPLICIT RecordedFillCircle(S& aStream);
 
-  Circle mCircle;
+  Path::Circle mCircle;
   PatternStorage mPattern;
   DrawOptions mOptions;
 };
@@ -1620,7 +1623,7 @@ class RecordedScaledFontCreation
     : public RecordedEventDerived<RecordedScaledFontCreation> {
  public:
   static void FontInstanceDataProc(const uint8_t* aData, uint32_t aSize,
-                                   const FontVariation* aVariations,
+                                   const wr::FontVariation* aVariations,
                                    uint32_t aNumVariations, void* aBaton) {
     auto recordedScaledFontCreation =
         static_cast<RecordedScaledFontCreation*>(aBaton);
@@ -1646,7 +1649,7 @@ class RecordedScaledFontCreation
   std::string GetName() const override { return "ScaledFont Creation"; }
 
   void SetFontInstanceData(const uint8_t* aData, uint32_t aSize,
-                           const FontVariation* aVariations,
+                           const wr::FontVariation* aVariations,
                            uint32_t aNumVariations);
 
  private:
@@ -1656,7 +1659,7 @@ class RecordedScaledFontCreation
   ReferencePtr mUnscaledFont;
   Float mGlyphSize;
   RecordedEventArray<uint8_t> mInstanceData;
-  RecordedEventArray<FontVariation> mVariations;
+  RecordedEventArray<wr::FontVariation> mVariations;
 
   template <class S>
   MOZ_IMPLICIT RecordedScaledFontCreation(S& aStream);
@@ -3297,7 +3300,7 @@ inline bool RecordedDrawSurfaceDescriptor::PlayEvent(
   }
 
   RefPtr<SourceSurface> surface =
-      aTranslator->LookupSourceSurfaceFromSurfaceDescriptor(mDesc);
+      aTranslator->LookupSourceSurfaceFromSurfaceDescriptor(dt, mDesc);
   if (!surface) {
     return false;
   }
@@ -4152,8 +4155,33 @@ inline bool RecordedFontData::PlayEvent(Translator* aTranslator) const {
     return false;
   }
 
+  const uint8_t* data = mData.data();
+  uint32_t length = mData.size();
+
+  UniqueFreePtr<uint8_t> sanitized;
+  if (XRE_IsParentProcess() || XRE_IsGPUProcess()) {
+    size_t lengthHint =
+        gfxOTSContext::GuessSanitizedFontSize(data, length, false);
+    if (!lengthHint) {
+      gfxCriticalNote << "Could not determine type of recorded font of size "
+                      << length;
+      return false;
+    }
+
+    gfxOTSExpandingMemoryStream<gfxOTSMozAlloc> output(lengthHint);
+    gfxOTSContext otsContext;
+    if (!otsContext.Process(&output, data, length)) {
+      gfxCriticalNote << "Failed sanitizing recorded font of size " << length;
+      return false;
+    }
+
+    length = output.Tell();
+    sanitized.reset(static_cast<uint8_t*>(output.forget()));
+    data = sanitized.get();
+  }
+
   RefPtr<NativeFontResource> fontResource = Factory::CreateNativeFontResource(
-      mData.data(), mData.size(), mType, aTranslator->GetFontContext());
+      data, length, mType, aTranslator->GetFontContext());
   if (!fontResource) {
     return false;
   }
@@ -4386,7 +4414,7 @@ inline void RecordedScaledFontCreation::OutputSimpleEventInfo(
 }
 
 inline void RecordedScaledFontCreation::SetFontInstanceData(
-    const uint8_t* aData, uint32_t aSize, const FontVariation* aVariations,
+    const uint8_t* aData, uint32_t aSize, const wr::FontVariation* aVariations,
     uint32_t aNumVariations) {
   if (aSize) {
     mInstanceData.Assign(aData, aSize);

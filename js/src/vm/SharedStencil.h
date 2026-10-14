@@ -83,7 +83,6 @@ struct TryNote {
         return true;
       case TryNoteKind::Catch:
       case TryNoteKind::Finally:
-      case TryNoteKind::ForOfIterClose:
       case TryNoteKind::Destructuring:
         return false;
     }
@@ -282,6 +281,8 @@ class MutableScriptFlags : public EnumFlags<MutableScriptFlagsEnum> {
   _(ImmutableFlags, selfHosted, SelfHosted)                                   \
   _(ImmutableFlags, forceStrict, ForceStrict)                                 \
   _(ImmutableFlags, hasNonSyntacticScope, HasNonSyntacticScope)               \
+  _(ImmutableFlags, allowRedeclaringExistingLexicalBinding,                   \
+    AllowRedeclaringExistingLexicalBinding)                                   \
   _(ImmutableFlags, noScriptRval, NoScriptRval)                               \
   _(ImmutableFlags, treatAsRunOnce, TreatAsRunOnce)                           \
   _(ImmutableFlags, strict, Strict)                                           \

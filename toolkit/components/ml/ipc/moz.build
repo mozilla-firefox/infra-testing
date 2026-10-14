@@ -9,21 +9,22 @@ with Files("**"):
 
 EXPORTS.mozilla.hwinference += [
     "HWInferenceChild.h",
-    "HWInferenceManagerChild.h",
-    "HWInferenceManagerParent.h",
+    "HWInferenceLog.h",
     "HWInferenceParent.h",
+    "HWInferenceProcess.h",
+    "HWInferenceTypes.h",
+    "ModelFileUtils.h",
 ]
 
 UNIFIED_SOURCES += [
     "HWInferenceChild.cpp",
-    "HWInferenceManagerChild.cpp",
-    "HWInferenceManagerParent.cpp",
     "HWInferenceParent.cpp",
+    "HWInferenceProcess.cpp",
+    "ModelFileUtils.cpp",
 ]
 
 IPDL_SOURCES = [
     "PHWInference.ipdl",
-    "PHWInferenceManager.ipdl",
 ]
 
 LOCAL_INCLUDES += [

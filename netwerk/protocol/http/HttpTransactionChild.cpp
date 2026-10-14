@@ -142,7 +142,7 @@ mozilla::ipc::IPCResult HttpTransactionChild::RecvResumePump() {
 mozilla::ipc::IPCResult HttpTransactionChild::RecvInit(
     const uint32_t& aCaps, const HttpConnectionInfoCloneArgs& aArgs,
     const nsHttpRequestHead& aReqHeaders, const Maybe<IPCStream>& aRequestBody,
-    const uint64_t& aReqContentLength,
+    const uint64_t& aReqContentLength, const bool& aRequestBodyIsStreaming,
     const uint64_t& aTopLevelOuterContentWindowId,
     const HttpTrafficCategory& aHttpTrafficCategory,
     const uint64_t& aRequestContextID, const ClassOfService& aClassOfService,
@@ -159,6 +159,7 @@ mozilla::ipc::IPCResult HttpTransactionChild::RecvInit(
   }
 
   mTransaction = new nsHttpTransaction();
+  mTransaction->SetRequestBodyIsStreaming(aRequestBodyIsStreaming);
   mChannelId = aChannelId;
   mIsDocumentLoad = aIsDocumentLoad;
   mRedirectStart = aRedirectStart;
@@ -421,13 +422,13 @@ HttpTransactionChild::OnStartRequest(nsIRequest* aRequest) {
       HttpVersion version = head->Version();
       mProtocolVersion.Assign(nsHttp::GetProtocolVersion(version));
     }
-    optionalHead = Some(*head);
-
     if (GetOpaqueResponseBlockedReason(*head) ==
         OpaqueResponseBlockedReason::BLOCKED_SHOULD_SNIFF) {
       RefPtr<nsInputStreamPump> pump = do_QueryObject(mTransactionPump);
       pump->PeekStream(GetDataForSniffer, &dataForSniffer);
     }
+
+    optionalHead.emplace(std::move(*head));
   }
 
   Maybe<nsCString> optionalAltSvcUsed;

@@ -49,7 +49,7 @@ In the {ref}`markup view  <page-inspector-ui-tour-html-pane>`:
 - Press {kbd}`Backspace` or {kbd}`Del` with a node selected to delete it.
 - {kbd}`Alt` + click on a node to expand or collapse it and all its descendants.
 - Click on the last {ref}`breadcrumb button <page-inspector-how-to-examine-and-edit-html-breadcrumbs>` to scroll the selection into view in the inspector.
-- Click the "ev" icon besides a node to {doc}`see all event listeners attached to it <../page_inspector/examine_event_listeners/index>`.
+- Click the "ev" icon besides a node to {doc}`see all event listeners attached to it <../page_inspector/how_to/examine_event_listeners/index>`.
 - Press {kbd}`S` with a node selected to see it in the page (same as right-click a node and click {ref}`Scroll Into View  <page-inspector-how-to-examine-and-edit-scroll-into-view>`).
 - Right-click a node and click {ref}`Use in Console <page-inspector-how-to-examine-and-edit-html-use-in-console>` to {doc}`command line <../web_console/the_command_line_interpreter/index>` as `tempN` variable.
 
@@ -74,10 +74,10 @@ In all panels:
 
 In the {doc}`command line <../web_console/the_command_line_interpreter/index>`:
 
-- {ref}`$0 <web_console_helpers_$0>` references the currently selected node.
-- {ref}`$() <web_console_helpers_$>` is a shortcut to [document.querySelector()](https://developer.mozilla.org/en-US/docs/Web/API/Document/querySelector)
-- {ref}`$$() <web_console_helpers_$$>` returns an array with the results from [document.querySelectorAll()](https://developer.mozilla.org/en-US/docs/Web/API/Document/querySelectorAll).
-- {ref}`$$$() <web_console_helpers_$$$>` returns an array of all the elements matching the selector, even when they are in the shadow DOM.
+- {ref}`$0 <web-console-helpers-0>` references the currently selected node.
+- {ref}`$() <web-console-helpers-dollar>` is a shortcut to [document.querySelector()](https://developer.mozilla.org/en-US/docs/Web/API/Document/querySelector)
+- {ref}`$$() <web-console-helpers-1>` returns an array with the results from [document.querySelectorAll()](https://developer.mozilla.org/en-US/docs/Web/API/Document/querySelectorAll).
+- {ref}`$$$() <web-console-helpers-2>` returns an array of all the elements matching the selector, even when they are in the shadow DOM.
 - {ref}`copy  <web-console-helpers-copy>` copies anything as a string.
 - Right-click a node in the Inspector and click {ref}`Use in Console  <page-inspector-how-to-examine-and-edit-html-use-in-console>` to create a {ref}`temp*N*  <web-console-helpers-tempn>` variable for it.
 - [console.table()](https://developer.mozilla.org/en-US/docs/Web/API/console/table) displays tabular data as table.

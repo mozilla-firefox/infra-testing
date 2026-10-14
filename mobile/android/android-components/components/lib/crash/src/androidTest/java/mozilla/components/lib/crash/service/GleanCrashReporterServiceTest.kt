@@ -315,6 +315,9 @@ class GleanCrashReporterServiceTest {
             )
             assertEquals("main", get("crash.process_type")?.jsonPrimitive?.content)
             assertEquals("d462c4b4-a9f8-4244-b526-7435fcdc4403", get("crash.event_id")?.jsonPrimitive?.content)
+            assertEquals("Android", get("crash.os")?.jsonPrimitive?.content)
+            assertNotNull(get("crash.os_version"))
+            assertNotNull(get("crash.cpu_architecture"))
             assertEquals(
                 "fatal native crash",
                 get("crash.crash_type")?.jsonPrimitive?.content,
@@ -381,6 +384,9 @@ class GleanCrashReporterServiceTest {
             )
             assertEquals("main", get("crash.process_type")?.jsonPrimitive?.content)
             assertEquals("2b341259-e273-47a8-8a31-86c7ebe2e6f8", get("crash.event_id")?.jsonPrimitive?.content)
+            assertEquals("Android", get("crash.os")?.jsonPrimitive?.content)
+            assertNotNull(get("crash.os_version"))
+            assertNotNull(get("crash.cpu_architecture"))
             assertEquals(
                 "uncaught exception",
                 get("crash.crash_type")?.jsonPrimitive?.content,
@@ -396,24 +402,16 @@ class GleanCrashReporterServiceTest {
                 assertEquals(2, arr.size)
                 val first = arr.get(0).jsonObject.toMutableMap()
                 val second = arr.get(1).jsonObject.toMutableMap()
+
+                // "message" fields should not be present and are intentionally omitted
                 assertNotNull(first.remove("stack"))
                 assertEquals(
-                    JsonObject(
-                        mapOf(
-                            "type_name" to JsonPrimitive("java.lang.RuntimeException"),
-                            "message" to JsonPrimitive("Test"),
-                        )
-                    ),
+                    JsonObject(mapOf("type_name" to JsonPrimitive("java.lang.RuntimeException"))),
                     first,
                 )
                 assertNotNull(second.remove("stack"))
                 assertEquals(
-                    JsonObject(
-                        mapOf(
-                            "type_name" to JsonPrimitive("java.io.IOException"),
-                            "message" to JsonPrimitive("IO"),
-                        )
-                    ),
+                    JsonObject(mapOf("type_name" to JsonPrimitive("java.io.IOException"))),
                     second,
                 )
             }

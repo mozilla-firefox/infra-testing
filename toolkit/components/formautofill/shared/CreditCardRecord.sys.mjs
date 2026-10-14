@@ -13,6 +13,28 @@ import { FormAutofillNameUtils } from "resource://gre/modules/shared/FormAutofil
  */
 export class CreditCardRecord {
   /**
+   * The fields a store keeps encrypted, mapped to the field its ciphertext is
+   * kept under.
+   */
+  static #ENCRYPTED_FIELDS = {
+    "cc-number": "cc-number-encrypted",
+  };
+
+  /**
+   * Where a record keeps the ciphertext of an encrypted field.
+   *
+   * @param {string} field An encrypted field, e.g. "cc-number".
+   * @returns {string} The field its ciphertext is kept under.
+   */
+  static ciphertextField(field) {
+    const ciphertextField = this.#ENCRYPTED_FIELDS[field];
+    if (!ciphertextField) {
+      throw new Error(`${field} is not stored encrypted`);
+    }
+    return ciphertextField;
+  }
+
+  /**
    * Computes derived fields from the basic fields in the CreditCard object.
    *
    * @param {object} creditCard The credit card object

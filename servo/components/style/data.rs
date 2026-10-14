@@ -10,7 +10,7 @@ use crate::dom::TElement;
 use crate::invalidation::element::invalidator::InvalidationResult;
 use crate::invalidation::element::restyle_hints::RestyleHint;
 use crate::properties::ComputedValues;
-use crate::selector_parser::{PseudoElement, RestyleDamage, EAGER_PSEUDO_COUNT};
+use crate::selector_parser::{EAGER_PSEUDO_COUNT, PseudoElement, RestyleDamage};
 use crate::style_resolver::{PrimaryStyle, ResolvedElementStyles, ResolvedStyle};
 use crate::values::specified::TreeCountingFunction;
 #[cfg(feature = "gecko")]
@@ -100,7 +100,7 @@ impl fmt::Debug for EagerPseudoArray {
                     f,
                     "{:?}: {:?}, ",
                     PseudoElement::from_eager_index(i),
-                    &values.rules
+                    values.rules
                 )?;
             }
         }
@@ -110,7 +110,7 @@ impl fmt::Debug for EagerPseudoArray {
 
 // Can't use [None; EAGER_PSEUDO_COUNT] here because it complains
 // about Copy not being implemented for our Arc type.
-const EMPTY_PSEUDO_ARRAY: &'static EagerPseudoArrayInner = &[None, None, None, None];
+const EMPTY_PSEUDO_ARRAY: &EagerPseudoArrayInner = &[None, None, None, None];
 
 impl EagerPseudoStyles {
     /// Returns whether there are any pseudo styles.
@@ -189,7 +189,7 @@ impl ElementStyles {
 
     /// Whether this element `display` value is `none`.
     pub fn is_display_none(&self) -> bool {
-        self.primary().get_box().clone_display().is_none()
+        self.primary().get_box().get_display().is_none()
     }
 
     /// Whether this element uses viewport units.
@@ -213,7 +213,7 @@ impl ElementStyles {
         });
 
         for pseudo_style in self.pseudos.as_array() {
-            if let Some(ref pseudo_style) = pseudo_style {
+            if let Some(pseudo_style) = pseudo_style {
                 usage = std::cmp::max(usage, usage_from_flags(pseudo_style.flags));
                 // Also check cached lazy pseudos on eager pseudo styles.
                 pseudo_style.each_cached_lazy_pseudo(|style| {
@@ -227,7 +227,7 @@ impl ElementStyles {
 
     /// Whether this element uses sibling-count() or sibling-index().
     pub fn uses_tree_counting_function(&self, t: TreeCountingFunction) -> bool {
-        let usage_from_flags = |flags: ComputedValueFlags| -> bool {
+        let usage_from_flags = |flags: ComputedValueFlags| {
             if t == TreeCountingFunction::SiblingCount
                 && flags.intersects(ComputedValueFlags::USES_SIBLING_COUNT)
             {
@@ -241,16 +241,36 @@ impl ElementStyles {
             false
         };
 
-        let primary = self.primary();
-        let mut usage = usage_from_flags(primary.flags);
+        if usage_from_flags(self.primary().flags) {
+            return true;
+        }
 
-        for pseudo_style in self.pseudos.as_array() {
-            if let Some(ref pseudo_style) = pseudo_style {
-                usage |= usage_from_flags(pseudo_style.flags);
+        for pseudo_style in self.pseudos.as_array().iter().flatten() {
+            if usage_from_flags(pseudo_style.flags) {
+                return true;
             }
         }
 
-        usage
+        false
+    }
+
+    /// Whether this element's styles use an element-scoped `random()`.
+    pub fn uses_element_scoped_random(&self) -> bool {
+        let usage_from_flags = |flags: ComputedValueFlags| {
+            flags.intersects(ComputedValueFlags::USES_ELEMENT_SCOPED_RANDOM)
+        };
+
+        if usage_from_flags(self.primary().flags) {
+            return true;
+        }
+
+        for pseudo_style in self.pseudos.as_array().iter().flatten() {
+            if usage_from_flags(pseudo_style.flags) {
+                return true;
+            }
+        }
+
+        false
     }
 
     #[cfg(feature = "gecko")]
@@ -356,7 +376,7 @@ impl<'a> Deref for ElementDataRef<'a> {
     type Target = ElementData;
     #[inline]
     fn deref(&self) -> &Self::Target {
-        &*self.v
+        self.v
     }
 }
 
@@ -431,19 +451,19 @@ fn needs_to_recascade_self(hint: RestyleHint, style: &ComputedValues) -> bool {
     {
         return true;
     }
-    return false;
+    false
 }
 
 impl ElementData {
     /// Invalidates style for this element, its descendants, and later siblings,
     /// based on the snapshot of the element that we took when attributes or
     /// state changed.
-    pub fn invalidate_style_if_needed<'a, E: TElement>(
+    pub fn invalidate_style_if_needed<E: TElement>(
         &mut self,
         element: E,
         shared_context: &SharedStyleContext,
         stack_limit_checker: Option<&StackLimitChecker>,
-        selector_caches: &'a mut SelectorCaches,
+        selector_caches: &mut SelectorCaches,
     ) -> InvalidationResult {
         // In animation-only restyle we shouldn't touch snapshot at all.
         if shared_context.traversal_flags.for_animation_only() {
@@ -600,7 +620,7 @@ impl ElementData {
         if needs_to_recascade_self(hint, style) {
             return Some(RestyleKind::CascadeOnly);
         }
-        return None;
+        None
     }
 
     /// Drops any restyle state from the element.
@@ -675,7 +695,7 @@ impl ElementData {
             .styles
             .primary()
             .get_box()
-            .clone_container_type()
+            .get_container_type()
             .is_normal()
         {
             return false;

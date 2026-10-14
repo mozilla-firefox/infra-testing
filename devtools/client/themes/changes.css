@@ -19,9 +19,9 @@
 }
 
 :root.theme-dark {
-  --diff-add-background-color: rgba(18, 188, 0, 0.15);
+  --diff-add-background-color: rgb(18 188 0 / 0.15);
   --diff-add-text-color: #12bc00;
-  --diff-remove-background-color: rgba(255, 0, 57, 0.15);
+  --diff-remove-background-color: rgb(255 0 57 / 0.15);
   --diff-remove-text-color: #ff0039;
   --diff-source-background: #222225;
 }
@@ -102,6 +102,7 @@
   fill: currentColor;
   padding-block: 4px;
   padding-inline: 25px 5px;
+  user-select: none;
 }
 
 .changes__copy-all-changes-button:dir(rtl) {
@@ -140,6 +141,7 @@
   position: absolute;
   right: 5px;
   top: 2px;
+  user-select: none;
 }
 
 .changes__copy-rule-button:active {

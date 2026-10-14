@@ -851,6 +851,24 @@ class Shims {
     url: dstUrl,
     tabId,
   }) {
+    try {
+      const tab = await browser.tabs.get(tabId);
+      const currentTabUrlOrigin = new URL(tab.url).origin;
+      const dstOrigin = new URL(dstUrl).origin;
+      if (
+        currentTabUrlOrigin &&
+        dstOrigin &&
+        currentTabUrlOrigin == dstOrigin
+      ) {
+        debugLog(
+          `Already at dst page ${dstUrl}. Not running storage access shim`
+        );
+        return;
+      }
+    } catch (err) {
+      console.error(`Error getting active tab: ${err}`);
+    }
+
     debugLog("Detected redirect", { srcUrl, dstUrl, tabId });
 
     // Check if a shim needs to request storage access for this redirect. This
@@ -936,7 +954,6 @@ class Shims {
       message !== "getOptions" &&
       message !== "optIn" &&
       message !== "embedClicked" &&
-      message !== "smartblockEmbedReplaced" &&
       message !== "smartblockGetFluentString" &&
       message !== "checkFacebookLoginStatus" &&
       message !== "shouldShowEmbedContentInPlaceholders"
@@ -986,8 +1003,6 @@ class Shims {
       }
     } else if (message === "embedClicked") {
       browser.trackingProtection.openProtectionsPanel(id);
-    } else if (message === "smartblockEmbedReplaced") {
-      browser.trackingProtection.incrementSmartblockEmbedShownTelemetry();
     } else if (message === "smartblockGetFluentString") {
       return await browser.trackingProtection.getSmartBlockEmbedFluentString(
         id,
@@ -1154,6 +1169,11 @@ class Shims {
 
     const { frameId, originUrl, requestId, tabId, type, url } = details;
 
+    // For sub_frame requests frameId identifies the frame being navigated,
+    // not the one holding it, so shim scripts have to be injected into the
+    // parent frame instead.
+    let shimFrameId = type === "sub_frame" ? details.parentFrameId : frameId;
+
     // Ignore requests unrelated to tabs
     if (tabId < 0) {
       return undefined;
@@ -1250,11 +1270,18 @@ class Shims {
 
       let needConsoleMessage = true;
 
+      // Non-navigation requests of any type can also fire from inside a
+      // nested frame instead of the one with the embed markup, so remap
+      // shimFrameId to the parent frame in that case too.
+      if (shimToApply.isSmartblockEmbedShim && frameId !== 0) {
+        shimFrameId = details.parentFrameId;
+      }
+
       if (shimToApply.isSmartblockEmbedShim) {
         try {
           await browser.tabs.executeScript(tabId, {
             file: `/lib/smartblock_embeds_helper.js`,
-            frameId,
+            frameId: shimFrameId,
             runAt: "document_start",
           });
         } catch (_) {}
@@ -1264,7 +1291,7 @@ class Shims {
         try {
           await browser.tabs.executeScript(tabId, {
             file: `/shims/${runFirst}`,
-            frameId,
+            frameId: shimFrameId,
             runAt: "document_start",
           });
           shimToApply.setActiveOnTab(tabId);
@@ -1276,7 +1303,7 @@ class Shims {
         try {
           await browser.tabs.executeScript(tabId, {
             file: "/lib/shim_messaging_helper.js",
-            frameId,
+            frameId: shimFrameId,
             runAt: "document_start",
           });
           const origin = new URL(originUrl).origin;
