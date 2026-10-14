@@ -42,12 +42,33 @@ suites:
         tests:
             Dom-size: ""
 
+    browser/components/genai/tests/browser:
+        description: "Performance tests for GenAI features on Firefox Desktop"
+        tests:
+            "browser_link_preview_perf.js": ""
+
+    browser/components/urlbar/tests/browser-ml:
+        description: "Performance tests for urlbar features on Firefox Desktop"
+        tests:
+            "browser_urlbar_semantic_history_perf.js": ""
+            "browser_quicksuggest_ml_perf.js": ""
+
+    browser/components/tabbrowser/test/browser/smarttabgrouping/performance:
+        description: "End-to-end performance tests for Smart Tab Grouping"
+        tests:
+            "browser_smart_tab_grouping_perf.js": ""
+
     browser/components/translations/tests/browser:
         description: "Performance tests for Translations models on Firefox Desktop"
         tests:
             "Full-Page Translations Base Model": ""
             "Full-Page Translations BaseMemory Model": ""
             "Full-Page Translations Tiny Model": ""
+
+    browser/extensions/formautofill/test/browser/performance:
+        description: "Performance tests for Form Autofill on Firefox Desktop"
+        tests:
+            "browser_formautofill_ml_perf.js": ""
 
     dom/serviceworkers/test/performance:
         description: "Performance tests running through Mochitest for Service Workers"
@@ -56,6 +77,11 @@ suites:
             "Service Worker Fetch": ""
             "Service Worker Registration": ""
             "Service Worker Update": ""
+
+    dom/media/webspeech/recognition/test:
+        description: "Performance tests for on-device speech recognition"
+        tests:
+            "browser_speech_recognition_perf.js": ""
 
     toolkit/components/ml/tests/browser:
         description: "Performance tests running through Mochitest for ML Models"
@@ -70,7 +96,6 @@ suites:
             "browser_ml_smart_tab_perf.js": ""
             "browser_ml_llama_smollm2_smoke.js": ""
             "browser_ml_llama_summarizer_perf.js": ""
-            "ML Security Orchestrator Performance Tests": ""
 
     intl/benchmarks/test/xpcshell:
         description: "Performance tests running through XPCShell for Intl code"
@@ -100,8 +125,14 @@ suites:
             "browser_reflowPseudoelements.js": ""
             "browser_removeManySpellingErrors.js": ""
             "browser_implicitRoleARIAExpanded.js": ""
+            "browser_panManySVGShapes.js": ""
 
     toolkit/components/places/tests/browser/performance:
         description: "Performance tests for Toolkit: Places"
         tests:
             "Calculate Frecency Speed": ""
+
+    browser/components/aiwindow/ui/test/browser_perf:
+        description: "Performance tests for Smart Window on Firefox Desktop"
+        tests:
+            "browser_smartwindow_perf.js": ""

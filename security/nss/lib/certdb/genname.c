@@ -213,7 +213,8 @@ CERT_DestroyGeneralNameList(CERTGeneralNameList *list)
     if (list != NULL) {
         lock = list->lock;
         PR_Lock(lock);
-        if (--list->refCount <= 0 && list->arena != NULL) {
+        PORT_ReleaseAssert(list->refCount > 0);
+        if (--list->refCount == 0 && list->arena != NULL) {
             PORT_FreeArena(list->arena, PR_FALSE);
             PR_Unlock(lock);
             PR_DestroyLock(lock);
@@ -827,17 +828,6 @@ loser:
     return SECFailure;
 }
 
-CERTGeneralNameList *
-CERT_DupGeneralNameList(CERTGeneralNameList *list)
-{
-    if (list != NULL) {
-        PR_Lock(list->lock);
-        list->refCount++;
-        PR_Unlock(list->lock);
-    }
-    return list;
-}
-
 /* Allocate space and copy CERTNameConstraint from src to dest */
 CERTNameConstraint *
 CERT_CopyNameConstraint(PLArenaPool *arena, CERTNameConstraint *dest,
@@ -1069,8 +1059,8 @@ cert_ExtractDNEmailAddrs(CERTGeneralName *name, PLArenaPool *arena)
                     goto loser;
                 nameList = cert_CombineNamesLists(nameList, newName);
             } /* handle one email AVA */
-        }     /* loop over AVAs */
-    }         /* loop over RDNs */
+        } /* loop over AVAs */
+    } /* loop over RDNs */
     /* combine new names with old one. */
     (void)cert_CombineNamesLists(name, nameList);
     /* TODO: unmark arena */
@@ -1510,51 +1500,6 @@ cert_CompareNameWithConstraints(const CERTGeneralName *name,
     return SECFailure;
 }
 
-/* Add and link a CERTGeneralName to a CERTNameConstraint list. Most
-** likely the CERTNameConstraint passed in is either the permitted
-** list or the excluded list of a CERTNameConstraints.
-*/
-SECStatus
-CERT_AddNameConstraintByGeneralName(PLArenaPool *arena,
-                                    CERTNameConstraint **constraints,
-                                    CERTGeneralName *name)
-{
-    SECStatus rv;
-    CERTNameConstraint *current = NULL;
-    CERTNameConstraint *first = *constraints;
-    void *mark = NULL;
-
-    mark = PORT_ArenaMark(arena);
-
-    current = PORT_ArenaZNew(arena, CERTNameConstraint);
-    if (current == NULL) {
-        rv = SECFailure;
-        goto done;
-    }
-
-    rv = cert_CopyOneGeneralName(arena, &current->name, name);
-    if (rv != SECSuccess) {
-        goto done;
-    }
-
-    current->name.l.prev = current->name.l.next = &(current->name.l);
-
-    if (first == NULL) {
-        *constraints = current;
-        PR_INIT_CLIST(&current->l);
-    } else {
-        PR_INSERT_BEFORE(&current->l, &first->l);
-    }
-
-done:
-    if (rv == SECFailure) {
-        PORT_ArenaRelease(arena, mark);
-    } else {
-        PORT_ArenaUnmark(arena, mark);
-    }
-    return rv;
-}
-
 /*
  * Here we define a list of name constraints to be imposed on
  * certain certificates, most importantly root certificates.
@@ -1581,11 +1526,10 @@ done:
         siBuffer, (unsigned char *)str, sizeof(str) - 1 \
     }
 
-#define NAME_CONSTRAINTS_ENTRY(CA)                   \
-    {                                                \
-        STRING_TO_SECITEM(CA##_SUBJECT_DN)           \
-        ,                                            \
-            STRING_TO_SECITEM(CA##_NAME_CONSTRAINTS) \
+#define NAME_CONSTRAINTS_ENTRY(CA)               \
+    {                                            \
+        STRING_TO_SECITEM(CA##_SUBJECT_DN),      \
+        STRING_TO_SECITEM(CA##_NAME_CONSTRAINTS) \
     }
 
 /* clang-format off */

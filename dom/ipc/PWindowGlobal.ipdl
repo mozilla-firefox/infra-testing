@@ -14,6 +14,9 @@ include "mozilla/ipc/URIUtils.h";
 include protocol PBrowser;
 include protocol PInProcess;
 include protocol PBrowserBridge;
+#ifdef ACCESSIBILITY
+include protocol PDocAccessible;
+#endif
 include protocol PDigitalCredential;
 include protocol PSerialManager;
 include protocol PWebAuthnTransaction;
@@ -32,6 +35,7 @@ include "mozilla/layers/LayersMessageUtils.h";
 
 using mozilla::dom::JSActorMessageKind from "mozilla/dom/JSActor.h";
 using mozilla::gfx::IntRect from "mozilla/gfx/Rect.h";
+using mozilla::CSSSize from "Units.h";
 using mozilla::gfx::CrossProcessPaintFlags from "mozilla/gfx/CrossProcessPaint.h";
 [MoveOnly] using mozilla::gfx::PaintFragment from "mozilla/gfx/CrossProcessPaint.h";
 using nscolor from "nsColor.h";
@@ -77,6 +81,9 @@ struct IPCWebShareData
 async protocol PWindowGlobal
 {
   manager PBrowser or PInProcess;
+#ifdef ACCESSIBILITY
+  manages PDocAccessible;
+#endif
   manages PDigitalCredential;
   manages PPrefetchRecord;
   manages PSerialManager;
@@ -260,6 +267,17 @@ parent:
   async PWebAuthnTransaction();
   async PWebIdentity();
 
+#ifdef ACCESSIBILITY
+  /**
+   * Tell the parent process a new accessible document has been created for
+   * this WindowGlobal. For in-process iframes, aParentAcc is the id of the
+   * embedder accessible in its containing document. Otherwise, it should be 0.
+   * The containing document itself is determined using the WindowGlobal tree.
+   * aIsPrintDoc indicates whether this document is a static clone created for printing.
+   */
+  async PDocAccessible(uint64_t aParentAcc, bool aIsPrintDoc);
+#endif
+
 child:
   async NotifyAudioSessionStateChanged(AudioSessionState aState);
 
@@ -268,6 +286,13 @@ child:
   async ProcessCloseRequest(MaybeDiscardedBrowsingContext aFocused);
 
   async GetModelContextTools() returns (nsresult rv, IPCModelContextToolDefinition[] tools);
+
+  /**
+   * Request full content size of the top document's root element in CSS pixels,
+   * and the document's window.devicePixelRatio.
+   */
+  async GetContentMetrics()
+      returns (CSSSize size, float devicePixelRatio);
 
   async InvokeModelContextTool(nsCString toolName, StructuredCloneData input)
       returns (CopyableErrorResult rv, nullable StructuredCloneData output);

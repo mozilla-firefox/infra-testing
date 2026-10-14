@@ -4,16 +4,25 @@
 
 package org.mozilla.fenix.widget
 
+import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.view.View
+import android.widget.FrameLayout
 import io.mockk.Runs
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
+import kotlin.test.assertNotNull
+import mozilla.components.browser.state.search.RegionState
+import mozilla.components.browser.state.search.SearchEngine
+import mozilla.components.browser.state.state.BrowserState
+import mozilla.components.browser.state.state.SearchState
+import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -149,6 +158,84 @@ class SearchWidgetProviderTest {
     }
 
     @Test
+    fun `GIVEN lens integration disabled WHEN createLensSearchIntent is called THEN it returns null`() {
+        val widgetProvider = SearchWidgetProvider()
+        val context: Context = mockk {
+            every { components.settings.googleLensIntegrationEnabled } returns false
+        }
+
+        assertNull(widgetProvider.createLensSearchIntent(context))
+    }
+
+    @Test
+    fun `GIVEN lens user pref disabled WHEN createLensSearchIntent is called THEN it returns null`() {
+        val widgetProvider = SearchWidgetProvider()
+        val context: Context = mockk {
+            every { components.settings.googleLensIntegrationEnabled } returns true
+            every { components.settings.googleLensIntegrationUserEnabled } returns false
+        }
+
+        assertNull(widgetProvider.createLensSearchIntent(context))
+    }
+
+    @Test
+    fun `GIVEN a non-Google default engine WHEN createLensSearchIntent is called THEN it returns null`() {
+        val widgetProvider = SearchWidgetProvider()
+        val context = contextWithDefaultEngine("bing")
+
+        assertNull(widgetProvider.createLensSearchIntent(context))
+    }
+
+    @Test
+    fun `GIVEN lens enabled and Google is the default engine WHEN createLensSearchIntent is called THEN it returns an intent`() {
+        val widgetProvider = SearchWidgetProvider()
+        val context = contextWithDefaultEngine("google-b-1-m")
+
+        assertNotNull(widgetProvider.createLensSearchIntent(context))
+    }
+
+    @Test
+    fun `GIVEN the widget was drawn without the lens button WHEN it is redrawn with and then without a lens intent THEN the lens button is shown and then hidden`() {
+        val widgetProvider = SearchWidgetProvider()
+        val view =
+            widgetProvider.createLargeRemoteViews(lensSearchIntent = null).apply(testContext, FrameLayout(testContext))
+        assertEquals(View.GONE, view.findViewById<View>(R.id.button_search_widget_lens).visibility)
+
+        widgetProvider.createLargeRemoteViews(lensSearchIntent = pendingIntent()).reapply(testContext, view)
+        assertEquals(View.VISIBLE, view.findViewById<View>(R.id.button_search_widget_lens).visibility)
+
+        widgetProvider.createLargeRemoteViews(lensSearchIntent = null).reapply(testContext, view)
+        assertEquals(View.GONE, view.findViewById<View>(R.id.button_search_widget_lens).visibility)
+    }
+
+    private fun SearchWidgetProvider.createLargeRemoteViews(lensSearchIntent: PendingIntent?) =
+        createRemoteViews(
+            testContext,
+            R.layout.search_widget_large,
+            pendingIntent(),
+            null,
+            lensSearchIntent,
+            "Search",
+        )
+
+    private fun pendingIntent() = PendingIntent.getActivity(testContext, 0, Intent(), PendingIntent.FLAG_IMMUTABLE)
+
+    private fun contextWithDefaultEngine(engineId: String): Context {
+        val searchState =
+            SearchState(
+                region = RegionState("US", "US"),
+                regionSearchEngines =
+                    listOf(SearchEngine(engineId, "Engine", mockk(), type = SearchEngine.Type.BUNDLED)),
+                regionDefaultSearchEngineId = engineId,
+            )
+        val store = BrowserStore(BrowserState(search = searchState))
+        every { testContext.components.settings.googleLensIntegrationEnabled } returns true
+        every { testContext.components.settings.googleLensIntegrationUserEnabled } returns true
+        every { testContext.components.core.store } returns store
+        return testContext
+    }
+
+    @Test
     fun `GIVEN widgets set on screen shown WHEN updateAllWidgets is called THEN it sends a broadcast to update all widgets`() {
         val widgetManager: AppWidgetManager = mockk()
         val componentNameCaptor = slot<ComponentName>()
@@ -219,6 +306,7 @@ class SearchWidgetProviderTest {
     fun `GIVEN not knowing search widget is installed WHEN a widget is updated THEN record telemetry and persist that the widget is installed`() {
         val settings = Settings(testContext)
         every { testContext.components.settings } returns settings
+        every { testContext.components.core.store } returns BrowserStore(BrowserState())
         val widgetProvider = SearchWidgetProvider()
         assertFalse(settings.searchWidgetInstalled)
 

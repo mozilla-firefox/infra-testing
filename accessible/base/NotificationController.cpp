@@ -14,8 +14,8 @@
 #include "mozilla/PerfStats.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ProfilerMarkers.h"
-#include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/WindowGlobalChild.h"
 #include "mozilla/glean/AccessibleMetrics.h"
 #include "nsAccessibilityService.h"
 #include "nsEventShell.h"
@@ -341,6 +341,7 @@ void NotificationController::DropMutationEvent(AccTreeMutationEvent* aEvent) {
     MOZ_ASSERT(hideEvent);
 
     if (hideEvent->NeedsShutdown()) {
+      mDocument->UncacheChildrenInSubtree(aEvent->GetAccessible());
       mDocument->ShutdownChildrenInSubtree(aEvent->GetAccessible());
     }
   } else {
@@ -774,6 +775,15 @@ void NotificationController::WillRefresh(mozilla::TimeStamp aTime) {
     }
 #endif
 
+    if (!mDocument->DocumentNode()->IsCurrentActiveDocument()) {
+      // Our document is no longer current for its WindowGlobal; e.g. we're
+      // the initial about:blank and a new document has replaced us in that
+      // WindowGlobal. Shut ourselves down instead of building an accessibility
+      // tree (and IPC actor) nobody will use.
+      mDocument->Shutdown();
+      return;
+    }
+
     mDocument->DoInitialUpdate();
     if (AppShutdown::IsShutdownImpending()) {
       return;
@@ -1082,17 +1092,13 @@ void NotificationController::WillRefresh(mozilla::TimeStamp aTime) {
         continue;
       }
 
-      ipcDoc = new DocAccessibleChild(childDoc, parentIPCDoc->Manager());
-      childDoc->SetIPCDoc(ipcDoc);
-
-      nsCOMPtr<nsIBrowserChild> browserChild =
-          do_GetInterface(mDocument->DocumentNode()->GetDocShell());
-      if (browserChild) {
-        static_cast<BrowserChild*>(browserChild.get())
-            ->SendPDocAccessibleConstructor(
-                ipcDoc, parentIPCDoc, id,
-                childDoc->DocumentNode()->GetBrowsingContext(),
-                childDoc->IsPrintDoc());
+      if (WindowGlobalChild* wgc =
+              childDoc->DocumentNode()->GetWindowGlobalChild()) {
+        RefPtr<DocAccessibleChild> newIpcDoc =
+            new DocAccessibleChild(childDoc, wgc);
+        childDoc->SetIPCDoc(newIpcDoc);
+        wgc->SendPDocAccessibleConstructor(newIpcDoc, id,
+                                           childDoc->IsPrintDoc());
       }
     }
   }

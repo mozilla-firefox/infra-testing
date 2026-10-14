@@ -57,7 +57,6 @@
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/Exceptions.h"
-#include "mozilla/dom/FeaturePolicyUtils.h"
 #include "mozilla/dom/FunctionBinding.h"
 #include "mozilla/dom/IndexedDatabaseManager.h"
 #include "mozilla/dom/JSExecutionManager.h"
@@ -69,6 +68,7 @@
 #include "mozilla/dom/PRemoteWorkerDebuggerParent.h"
 #include "mozilla/dom/Performance.h"
 #include "mozilla/dom/PerformanceStorageWorker.h"
+#include "mozilla/dom/PermissionsPolicyUtils.h"
 #include "mozilla/dom/PolicyContainer.h"
 #include "mozilla/dom/PromiseDebugging.h"
 #include "mozilla/dom/ReferrerInfo.h"
@@ -176,26 +176,6 @@ const nsIID kDEBUGWorkerEventTargetIID = {
     {0xba, 0x87, 0x3b, 0x3b, 0x5b, 0x1d, 0x5, 0xfb}};
 
 #endif
-
-template <class T>
-class UniquePtrComparator {
-  using A = UniquePtr<T>;
-  using B = T*;
-
- public:
-  bool Equals(const A& a, const A& b) const {
-    return (a && b) ? (*a == *b) : (!a && !b);
-  }
-  bool LessThan(const A& a, const A& b) const {
-    return (a && b) ? (*a < *b) : !!b;
-  }
-};
-
-template <class T>
-inline UniquePtrComparator<T> GetUniquePtrComparator(
-    const nsTArray<UniquePtr<T>>&) {
-  return UniquePtrComparator<T>();
-}
 
 // This class is used to wrap any runnables that the worker receives via the
 // nsIEventTarget::Dispatch() method (either from NS_DispatchToCurrentThread or
@@ -1661,11 +1641,10 @@ nsresult WorkerPrivate::DispatchLockHeld(
     return NS_ERROR_UNEXPECTED;
   }
 
-  // Postpone the debuggee runnable dispatching while remote debugger
-  // registration
-  if (runnable->IsDebuggeeRunnable() && !mDebuggerReady &&
-      !mRemoteDebuggerReady &&
-      (!mRemoteDebuggerRegistered && XRE_IsParentProcess())) {
+  // Suspend the debuggee while the debugger has asked us to, through either the
+  // local or the remote mechanism.
+  if (runnable->IsDebuggeeRunnable() &&
+      !(mDebuggerReady && mRemoteDebuggerReady)) {
     MOZ_RELEASE_ASSERT(!aSyncLoopTarget);
     mDelayedDebuggeeRunnables.AppendElement(runnable);
     return NS_OK;
@@ -1782,6 +1761,7 @@ void WorkerPrivate::BindRemoteWorkerDebuggerChild() {
     MutexAutoLock lock(mMutex);
     MOZ_ASSERT_DEBUG_OR_FUZZING(!mRemoteDebugger);
     mRemoteDebugger = std::move(debugger);
+    mRemoteDebuggerBindingDone = true;
     mDebuggerBindingCondVar.Notify();
   }
 }
@@ -1798,6 +1778,11 @@ void WorkerPrivate::CreateRemoteDebuggerEndpoints() {
                               !mDebuggerParentEp.IsValid() &&
                               !mDebuggerChildEp.IsValid());
 
+  // A fresh endpoint pair means the worker thread has to bind again, so
+  // EnableRemoteDebugger must wait for it again. This runs on both the
+  // construction and the Thaw path.
+  mRemoteDebuggerBindingDone = false;
+
   (void)NS_WARN_IF(NS_FAILED(PRemoteWorkerDebugger::CreateEndpoints(
       &mDebuggerParentEp, &mDebuggerChildEp)));
 }
@@ -1810,8 +1795,7 @@ void WorkerPrivate::SetIsRemoteDebuggerRegistered(const bool& aRegistered) {
     MOZ_ASSERT(mRemoteDebuggerRegistered != aRegistered);
 
     mRemoteDebuggerRegistered = aRegistered;
-    bool debuggerRegistered = mDebuggerRegistered && mRemoteDebuggerRegistered;
-    if (mRemoteDebuggerReady && mDebuggerReady && debuggerRegistered) {
+    if (mRemoteDebuggerReady && mDebuggerReady) {
       LOGV(
           ("WorkerPrivate::SetIsRemoteDebuggerRegistered [%p] dispatching "
            "the delayed debuggee runnables",
@@ -1841,6 +1825,7 @@ void WorkerPrivate::SetIsRemoteDebuggerRegistered(const bool& aRegistered) {
     // here since Worker quickly shutdown or initialization fails in
     // WorkerThreadPrimaryRunnable::Run().
     mRemoteDebuggerRegistered = aRegistered;
+    mRemoteDebuggerBindingDone = true;
   }
   if (unregisteredDebugger) {
     unregisteredDebugger->Close();
@@ -1869,7 +1854,7 @@ void WorkerPrivate::SetIsRemoteDebuggerReady(const bool& aReady) {
 
   mRemoteDebuggerReady = aReady;
 
-  if (mRemoteDebuggerReady && mDebuggerReady && debuggerRegistered) {
+  if (mRemoteDebuggerReady && mDebuggerReady) {
     LOGV(
         ("WorkerPrivate::SetIsRemoteDebuggerReady [%p] dispatching "
          "the delayed debuggee runnables",
@@ -1908,7 +1893,9 @@ void WorkerPrivate::EnableRemoteDebugger() {
   mozilla::ipc::Endpoint<PRemoteWorkerDebuggerParent> parentEp;
   {
     MutexAutoLock lock(mMutex);
-    if (!mRemoteDebugger) {
+    // CondVar::Wait may wake spuriously; falling through would skip the
+    // registration below and leave this worker permanently undebuggable.
+    while (!mRemoteDebuggerBindingDone) {
       mDebuggerBindingCondVar.Wait();
     }
     // If Worker Thread never run the event loop, i.e. JSContext initilaization
@@ -1968,7 +1955,9 @@ void WorkerPrivate::EnableRemoteDebugger() {
     // loop that needs this (parent) thread would deadlock, since a sync loop
     // does not otherwise drain the debugger queue (bug 2053827).
     mProcessDebuggerIPCHandshake = true;
-    if (!mRemoteDebuggerRegistered) {
+    // mRemoteDebugger is cleared and the condvar notified when the worker
+    // finishes, so this terminates whether or not registration succeeds.
+    while (!mRemoteDebuggerRegistered && mRemoteDebugger) {
       mDebuggerBindingCondVar.Wait();
     }
     mProcessDebuggerIPCHandshake = false;
@@ -2907,6 +2896,7 @@ WorkerPrivate::WorkerPrivate(
       mChildEp(std::move(aChildEp)),
       mRemoteDebuggerRegistered(false),
       mRemoteDebuggerReady(true),
+      mRemoteDebuggerBindingDone(false),
       mProcessDebuggerIPCHandshake(false),
       mIsQueued(false),
       // Route the worker through the RemoteWorkerDebugger, including top-level
@@ -3392,10 +3382,7 @@ nsresult WorkerPrivate::SetIsDebuggerReady(bool aReady) {
 
   mDebuggerReady = aReady;
 
-  bool debuggerRegistered = mDebuggerRegistered && (mRemoteDebuggerRegistered ||
-                                                    XRE_IsParentProcess());
-
-  if (aReady && debuggerRegistered) {
+  if (mDebuggerReady && mRemoteDebuggerReady) {
     // Dispatch all the delayed runnables without releasing the lock, to ensure
     // that the order in which debuggee runnables execute is the same as the
     // order in which they were originally dispatched.
@@ -3653,7 +3640,7 @@ nsresult WorkerPrivate::GetLoadInfo(
       loadInfo.mUseRegularPrincipal = document->UseRegularPrincipal();
       loadInfo.mUsingStorageAccess = document->UsingStorageAccess();
       loadInfo.mSerialAllowed =
-          FeaturePolicyUtils::IsFeatureAllowed(document, u"serial"_ns);
+          PermissionsPolicyUtils::IsFeatureAllowed(document, u"serial"_ns);
       loadInfo.mShouldResistFingerprinting =
           document->ShouldResistFingerprinting(
               RFPTarget::IsAlwaysEnabledForPrecompute);

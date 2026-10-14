@@ -3,12 +3,6 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 
 "use strict";
 
-add_setup(async function () {
-  await SpecialPowers.pushPrefEnv({
-    set: [["test.wait300msAfterTabSwitch", true]],
-  });
-});
-
 // Tests that closing a pip window will not focus on the originating video's window.
 add_task(async function test_close_button_focus() {
   // initialize
@@ -75,4 +69,37 @@ add_task(async function test_unpip_button_focus() {
   // close windows
   await BrowserTestUtils.closeWindow(win1);
   await BrowserTestUtils.closeWindow(win2);
+});
+
+// Tests that closing the PiP window with the close button does not change the
+// selected tab in the originating window when a different tab is in front.
+add_task(async function close_doesNotSelectBackgroundOriginatingTab() {
+  let videoID = "with-controls";
+  let pipTab = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_PAGE);
+  let pipBrowser = pipTab.linkedBrowser;
+  await ensureVideosReady(pipBrowser);
+
+  let pipWin = await triggerPictureInPicture(pipBrowser, videoID);
+  ok(pipWin, "Got Picture-in-Picture window.");
+
+  // Bring a different tab to the front so the originating tab is in the background.
+  let otherTab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    TEST_PAGE
+  );
+  is(gBrowser.selectedTab, otherTab, "A different tab is selected.");
+
+  let pipClosed = BrowserTestUtils.domWindowClosed(pipWin);
+  let closeButton = pipWin.document.getElementById("close");
+  EventUtils.synthesizeMouseAtCenter(closeButton, {}, pipWin);
+  await pipClosed;
+
+  is(
+    gBrowser.selectedTab,
+    otherTab,
+    "Closing the player did not change the selected tab."
+  );
+
+  BrowserTestUtils.removeTab(otherTab);
+  BrowserTestUtils.removeTab(pipTab);
 });

@@ -10,6 +10,7 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/SyncRunnable.h"
+#include "mozilla/TimeStamp.h"
 #include "mozilla/dom/PContent.h"
 #include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
 #include "mozilla/net/AltSvcTransactionChild.h"
@@ -454,13 +455,12 @@ void AltSvcMapping::GetConnectionInfo(
 
   // http:// without the mixed-scheme attribute needs to be segmented in the
   // connection manager connection information hash with this attribute
-  if (!mHttps && !mMixedScheme) {
-    ci->SetInsecureScheme(true);
-  }
-  if (StaticPrefs::network_http_happy_eyeballs_enabled() && !pi) {
-    ci->SetHappyEyeballsEnabled(true);
-  }
-  ci->SetPrivate(mPrivate);
+  ci = ci->Mutate()
+           .SetInsecureScheme(!mHttps && !mMixedScheme)
+           .SetHappyEyeballsEnabled(
+               StaticPrefs::network_http_happy_eyeballs_enabled() && !pi)
+           .SetPrivate(mPrivate)
+           .Finalize();
   ci.forget(outCI);
 }
 
@@ -812,8 +812,13 @@ already_AddRefed<AltSvcMapping> AltSvcCache::LookupMapping(
     return nullptr;
   }
 
-  if (mapping->TTL() <= 0) {
+  int32_t ttl = mapping->TTL();
+  if (ttl <= 0) {
     LOG(("AltSvcCache::LookupMapping %p expired hit - MISS\n", this));
+    if (mapping->IsHttp3() && mapping->NPNToken() == "h3"_ns) {
+      glean::http::altsvc_h3_expired_staleness.AccumulateRawDuration(
+          TimeDuration::FromSeconds(-ttl));
+    }
     (void)mStorage->Remove(key, mapping->Private()
                                     ? nsIDataStorage::DataType::Private
                                     : nsIDataStorage::DataType::Persistent);
@@ -930,12 +935,13 @@ void AltSvcCache::UpdateAltServiceMapping(
   // remote-DNS proxy. TODO: handle this in the Happy Eyeballs code once it
   // supports establishing proxy connections.
   if (StaticPrefs::network_http_happy_eyeballs_enabled() && !pi) {
-    ci->SetHappyEyeballsEnabled(true);
     // Validating an h3 alternate must establish an h3 connection; don't let
     // Happy Eyeballs race h1/h2 and settle on a non-h3 connection.
-    if (map->IsHttp3()) {
-      ci->SetHttp3Only(true);
-    }
+    ci = ci->Mutate()
+             .SetHappyEyeballsEnabled(true)
+             .SetHttp3Policy(map->IsHttp3() ? Http3Policy::Only
+                                            : ci->GetHttp3Policy())
+             .Finalize();
   }
 
   MOZ_ASSERT(map->HTTPS());
@@ -1175,10 +1181,11 @@ void Http3FirstAltSvcMapping::GetConnectionInfo(
   RefPtr<nsHttpConnectionInfo> ci = new nsHttpConnectionInfo(
       mOriginHost, mOriginPort, mNPNToken, mUsername, pi, originAttributes,
       mAlternateHost, mAlternatePort, mIsHttp3, false);
-  if (StaticPrefs::network_http_happy_eyeballs_enabled() && !pi) {
-    ci->SetHappyEyeballsEnabled(true);
-  }
-  ci->SetPrivate(mPrivate);
+  ci = ci->Mutate()
+           .SetHappyEyeballsEnabled(
+               StaticPrefs::network_http_happy_eyeballs_enabled() && !pi)
+           .SetPrivate(mPrivate)
+           .Finalize();
   ci.forget(outCI);
 }
 

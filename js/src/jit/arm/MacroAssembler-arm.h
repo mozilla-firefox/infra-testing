@@ -7,12 +7,15 @@
 
 #include "mozilla/DebugOnly.h"
 
+#include <type_traits>
+
 #include "jit/arm/Assembler-arm.h"
 #include "jit/MoveResolver.h"
 #include "vm/BytecodeUtil.h"
 #include "wasm/WasmBuiltins.h"
 #include "wasm/WasmCodegenTypes.h"
 
+using js::wasm::FaultingCodeRange;
 using js::wasm::FaultingCodeRangePair;
 
 namespace js {
@@ -131,10 +134,11 @@ class MacroAssemblerARM : public Assembler {
   void wasmTruncateToInt32(FloatRegister input, Register output,
                            MIRType fromType, bool isUnsigned, bool isSaturating,
                            Label* oolEntry);
-  void outOfLineWasmTruncateToIntCheck(FloatRegister input, MIRType fromType,
-                                       MIRType toType, TruncFlags flags,
-                                       Label* rejoin,
-                                       const wasm::TrapSiteDesc& trapSiteDesc);
+  void outOfLineWasmTruncateToIntCheck(
+      FloatRegister input, MIRType fromType, MIRType toType, TruncFlags flags,
+      Label* rejoin, const wasm::TrapSiteDesc& trapSiteDesc,
+      wasm::StackMap* stackMapForTraps,
+      wasm::StackMapRegistry* stackMapRegistry);
 
   // Somewhat direct wrappers for the low-level assembler funcitons
   // bitops. Attempt to encode a virtual alu instruction using two real
@@ -565,14 +569,22 @@ class MacroAssemblerARM : public Assembler {
   }
 
   // `outAny` is valid if and only if `out64` == Register64::Invalid().
-  void wasmLoadImpl(const wasm::MemoryAccessDesc& access, Register memoryBase,
-                    Register ptr, Register ptrScratch, AnyRegister outAny,
-                    Register64 out64);
+  //
+  // The first FaultingCodeRange of the returned value is always valid, except
+  // possibly in case of OOM.  The second one is only valid if a 64-bit
+  // transaction was requested *and* that was done as two 32-bit transactions.
+  FaultingCodeRangePair wasmLoadImpl(const wasm::MemoryAccessDesc& access,
+                                     Register memoryBase, Register ptr,
+                                     Register ptrScratch, AnyRegister outAny,
+                                     Register64 out64);
 
   // `valAny` is valid if and only if `val64` == Register64::Invalid().
-  void wasmStoreImpl(const wasm::MemoryAccessDesc& access, AnyRegister valAny,
-                     Register64 val64, Register memoryBase, Register ptr,
-                     Register ptrScratch);
+  //
+  // Same return convention as ::wasmLoadImpl applies.
+  FaultingCodeRangePair wasmStoreImpl(const wasm::MemoryAccessDesc& access,
+                                      AnyRegister valAny, Register64 val64,
+                                      Register memoryBase, Register ptr,
+                                      Register ptrScratch);
 
  private:
   // Implementation for transferMultipleByRuns so we can use different
@@ -699,6 +711,22 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM {
     ScratchRegisterScope scratch(asMasm());
     Imm32 totSpace = Imm32(extraSpace.value + 4);
     ma_dtr(IsLoad, sp, totSpace, reg, scratch, PostIndex);
+  }
+
+  template <typename... Regs>
+  void pushRegs(const Regs&... regs) {
+    static_assert((std::is_convertible_v<Regs, Register> && ...));
+    static_assert(sizeof...(Regs) > 0);
+
+    (push(regs), ...);
+  }
+
+  template <typename... Regs>
+  void popRegs(const Regs&... regs) {
+    static_assert((std::is_convertible_v<Regs, Register> && ...));
+    static_assert(sizeof...(Regs) > 0);
+
+    (pop(regs), ...);
   }
 
   CodeOffset toggledJump(Label* label);

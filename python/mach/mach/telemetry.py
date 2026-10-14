@@ -169,11 +169,15 @@ def resolve_is_employee_by_credentials(topsrcdir: Path):
 
 
 def resolve_is_employee_by_vcs(topsrcdir: Path):
-    from mozversioncontrol import InvalidRepoPath, get_repository_object
+    from mozversioncontrol import (
+        InvalidRepoPath,
+        StaleWorkspaceError,
+        get_repository_object,
+    )
 
     try:
         vcs = get_repository_object(str(topsrcdir))
-    except InvalidRepoPath:
+    except (InvalidRepoPath, StaleWorkspaceError):
         return None
 
     email = vcs.get_user_email()

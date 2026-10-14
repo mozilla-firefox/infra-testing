@@ -4,13 +4,9 @@
 
 package org.mozilla.focus.activity.robots
 
-import androidx.test.espresso.Espresso.onView
-import androidx.test.espresso.action.ViewActions.click
-import androidx.test.espresso.assertion.ViewAssertions.matches
-import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
-import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiSelector
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.mozilla.focus.R
 import org.mozilla.focus.helpers.TestHelper.appName
@@ -19,6 +15,7 @@ import org.mozilla.focus.helpers.TestHelper.mDevice
 import org.mozilla.focus.helpers.TestHelper.packageName
 import org.mozilla.focus.helpers.TestHelper.waitingTime
 import org.mozilla.focus.helpers.TestHelper.waitingTimeShort
+import org.mozilla.focus.topsites.TOP_SITES_ROW_TEST_TAG
 
 class HomeScreenRobot {
 
@@ -41,6 +38,16 @@ class HomeScreenRobot {
 
     fun verifyPageShortcutExists(title: String) {
         assertTrue(topSitesList.getChild(UiSelector().textContains(title)).waitForExists(waitingTime))
+    }
+
+    fun verifyPageShortcutsAreCentered() {
+        val shortcutsRow = topSitesList.getChild(UiSelector().resourceId(TOP_SITES_ROW_TEST_TAG))
+        assertTrue(shortcutsRow.waitForExists(waitingTime))
+        assertEquals(
+            topSitesList.visibleBounds.exactCenterX(),
+            shortcutsRow.visibleBounds.exactCenterX(),
+            1f,
+        )
     }
 
     fun longTapPageShortcut(title: String) {
@@ -94,7 +101,9 @@ class HomeScreenRobot {
     class Transition {
         fun openMainMenu(interact: ThreeDotMainMenuRobot.() -> Unit): ThreeDotMainMenuRobot.Transition {
             editURLBar.waitForExists(waitingTime)
-            mainMenu.check(matches(isDisplayed())).perform(click())
+            assertTrue(mainMenu.waitForExists(waitingTime))
+            mainMenu.click()
+            mDevice.waitForIdle()
 
             ThreeDotMainMenuRobot().interact()
             return ThreeDotMainMenuRobot.Transition()
@@ -126,7 +135,8 @@ fun homeScreen(interact: HomeScreenRobot.() -> Unit): HomeScreenRobot.Transition
 private val editURLBar =
     mDevice.findObject(UiSelector().resourceId("$packageName:id/mozac_browser_toolbar_edit_url_view"))
 
-private val mainMenu = onView(withId(R.id.menuView))
+private val mainMenu
+    get() = mDevice.findObject(UiSelector().description(getStringResource(R.string.content_description_menu)))
 
 /** ******* First Run Locators */
 private val firstSlideTitle =

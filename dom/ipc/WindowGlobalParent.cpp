@@ -6,6 +6,14 @@
 
 #include <algorithm>
 
+#ifdef ACCESSIBILITY
+#  include "mozilla/a11y/DocAccessibleParent.h"
+#  include "mozilla/a11y/Platform.h"
+#  include "nsAccessibilityService.h"
+#  if defined(XP_WIN)
+#    include "mozilla/a11y/nsWinUtils.h"
+#  endif
+#endif
 #include "MMPrinter.h"
 #include "mozilla/AntiTrackingUtils.h"
 #include "mozilla/AsyncEventDispatcher.h"
@@ -204,6 +212,19 @@ already_AddRefed<WindowGlobalParent> WindowGlobalParent::CreateDisconnected(
   return wgp.forget();
 }
 
+void WindowGlobalParent::InitFromContentProcess(const FieldValues& aRequested,
+                                                ContentParent* aSource) {
+  MOZ_ASSERT(GetContentParent() == aSource);
+  MOZ_DIAGNOSTIC_ASSERT(!BrowsingContext()->GetWindowContexts().Contains(this),
+                        "must reconcile before Init registers this context");
+
+  Transaction correction;
+  Transaction::ReconcileInitialFields(this, FieldValues(aRequested), aSource,
+                                      correction);
+  Init();
+  correction.SendCorrection(this, aSource);
+}
+
 void WindowGlobalParent::Init() {
   MOZ_ASSERT(Manager(), "Should have a manager!");
 
@@ -218,12 +239,6 @@ void WindowGlobalParent::Init() {
     cp = static_cast<ContentParent*>(Manager()->Manager());
     processId = cp->ChildID();
   }
-
-  MOZ_DIAGNOSTIC_ASSERT(
-      !BrowsingContext()->GetParent() ||
-          BrowsingContext()->GetEmbedderInnerWindowId(),
-      "When creating a non-root WindowGlobalParent, the WindowGlobalParent "
-      "for our embedder should've already been created.");
 
   // Ensure we have a document URI
   if (!mDocumentURI) {
@@ -317,6 +332,12 @@ already_AddRefed<WindowGlobalParent> WindowGlobalParent::GetByInnerWindowId(
   return WindowContext::GetById(aInnerWindowId).downcast<WindowGlobalParent>();
 }
 
+/* static */
+WindowGlobalParent* WindowGlobalParent::Cast(WindowContext* aContext) {
+  MOZ_RELEASE_ASSERT(XRE_IsParentProcess());
+  return static_cast<WindowGlobalParent*>(aContext);
+}
+
 already_AddRefed<WindowGlobalChild> WindowGlobalParent::GetChildActor() {
   if (!CanSend()) {
     return nullptr;
@@ -326,17 +347,12 @@ already_AddRefed<WindowGlobalChild> WindowGlobalParent::GetChildActor() {
 }
 
 BrowserParent* WindowGlobalParent::GetBrowserParent() const {
-  if (IsInProcess() || !CanSend()) {
-    return nullptr;
-  }
-  return static_cast<BrowserParent*>(Manager());
+  return IsInProcess() ? nullptr : static_cast<BrowserParent*>(Manager());
 }
 
-ContentParent* WindowGlobalParent::GetContentParent() {
-  if (IsInProcess() || !CanSend()) {
-    return nullptr;
-  }
-  return static_cast<ContentParent*>(Manager()->Manager());
+ContentParent* WindowGlobalParent::GetContentParent() const {
+  BrowserParent* browserParent = GetBrowserParent();
+  return browserParent ? browserParent->Manager() : nullptr;
 }
 
 already_AddRefed<nsFrameLoader> WindowGlobalParent::GetRootFrameLoader() {
@@ -351,13 +367,13 @@ already_AddRefed<nsFrameLoader> WindowGlobalParent::GetRootFrameLoader() {
 }
 
 uint64_t WindowGlobalParent::ContentParentId() {
-  RefPtr<BrowserParent> browserParent = GetBrowserParent();
-  return browserParent ? browserParent->Manager()->ChildID() : 0;
+  ContentParent* contentParent = GetContentParent();
+  return contentParent ? contentParent->ChildID() : 0;
 }
 
 int32_t WindowGlobalParent::OsPid() {
-  RefPtr<BrowserParent> browserParent = GetBrowserParent();
-  return browserParent ? browserParent->Manager()->Pid() : -1;
+  ContentParent* contentParent = GetContentParent();
+  return contentParent ? contentParent->Pid() : -1;
 }
 
 // A WindowGlobalPaernt is the root in its process if it has no parent, or its
@@ -643,6 +659,18 @@ IPCResult WindowGlobalParent::RecvDestroy() {
   if (CanSend()) {
     RefPtr<BrowserParent> browserParent = GetBrowserParent();
     if (!browserParent || !browserParent->IsDestroyed()) {
+#ifdef ACCESSIBILITY
+      // Destroy the accessibility actor (if any) before we start tearing down
+      // this instance so that accessibility can still access information such
+      // as the owner element. For example, this allows us to gracefully fire
+      // accessibility events notifying of the destruction.
+      if (auto* docAcc = a11y::DocAccessibleParent::GetFrom(this)) {
+#  if defined(ANDROID)
+        MonitorAutoLock mal(nsAccessibilityService::GetAndroidMonitor());
+#  endif
+        docAcc->Destroy();
+      }
+#endif
       (void)Send__delete__(this);
     }
   }
@@ -656,16 +684,16 @@ IPCResult WindowGlobalParent::RecvRawMessage(const JSActorMessageMeta& aMeta,
   return IPC_OK();
 }
 
-const nsACString& WindowGlobalParent::GetRemoteType() const {
-  if (RefPtr<BrowserParent> browserParent = GetBrowserParent()) {
-    return browserParent->Manager()->GetRemoteType();
+const RemoteType& WindowGlobalParent::GetRemoteType() const {
+  if (ContentParent* contentParent = GetContentParent()) {
+    return contentParent->GetRemoteType();
   }
 
-  return NOT_REMOTE_TYPE;
+  return RemoteType::NotRemote();
 }
 
 void WindowGlobalParent::GetRemoteType(nsACString& aRemoteType) const {
-  aRemoteType = GetRemoteType();
+  aRemoteType = GetRemoteType().Stringify();
 }
 
 void WindowGlobalParent::NotifyContentBlockingEvent(
@@ -1307,9 +1335,8 @@ already_AddRefed<mozilla::dom::Promise> WindowGlobalParent::DrawSnapshot(
   }
 
   nscolor color;
-  if (NS_WARN_IF(!ServoCSSParser::ComputeColor(nullptr, NS_RGB(0, 0, 0),
-                                               aBackgroundColor, &color,
-                                               nullptr, nullptr))) {
+  if (NS_WARN_IF(
+          !ServoCSSParser::ComputeColor(nullptr, aBackgroundColor, &color))) {
     aRv = NS_ERROR_FAILURE;
     return nullptr;
   }
@@ -1323,11 +1350,8 @@ already_AddRefed<mozilla::dom::Promise> WindowGlobalParent::DrawSnapshot(
     flags |= gfx::CrossProcessPaintFlags::ResetScrollPosition;
   }
 
-  if (!gfx::CrossProcessPaint::Start(this, aRect, (float)aScale, color, flags,
-                                     promise)) {
-    aRv = NS_ERROR_FAILURE;
-    return nullptr;
-  }
+  gfx::CrossProcessPaint::Start(this, aRect, (float)aScale, color, flags,
+                                promise);
   return promise.forget();
 }
 
@@ -1363,8 +1387,7 @@ mozilla::ipc::IPCResult WindowGlobalParent::RecvExpectPageUseCounters(
   // page use counters.  This causes us to wait for this window to go away
   // (in WindowGlobalParent::ActorDestroy) before reporting the page use
   // counters via Telemetry.
-  RefPtr<WindowGlobalParent> page =
-      static_cast<WindowGlobalParent*>(aTop.GetMaybeDiscarded());
+  RefPtr<WindowGlobalParent> page = Cast(aTop.GetMaybeDiscarded());
   if (!page || page->mSentPageUseCounters) {
     MOZ_LOG(gUseCountersLog, LogLevel::Debug,
             (" > too late, won't report page use counters for this straggler"));
@@ -1648,8 +1671,8 @@ mozilla::ipc::IPCResult WindowGlobalParent::RecvSetDocumentDomain(
     return IPC_FAIL(this, "Sandbox disallows domain setting.");
   }
 
-  // Might need to do a featurepolicy check here, like we currently do in the
-  // child process?
+  // Might need to do a permissions policy check here, like we currently do in
+  // the child process?
 
   nsCOMPtr<nsIURI> uri;
   mDocumentPrincipal->GetDomain(getter_AddRefs(uri));
@@ -1868,40 +1891,6 @@ void WindowGlobalParent::ActorDestroy(ActorDestroyReason aWhy) {
 
   if (GetBrowsingContext()->IsTopContent() &&
       !mDocumentPrincipal->SchemeIs("about")) {
-    // Record the page load
-    uint32_t pageLoaded = 1;
-    glean::mixed_content::unblock_counter.AccumulateSingleSample(pageLoaded);
-
-    // Record the mixed content status of the docshell in Telemetry
-    enum {
-      NO_MIXED_CONTENT = 0,  // There is no Mixed Content on the page
-      MIXED_DISPLAY_CONTENT =
-          1,  // The page attempted to load Mixed Display Content
-      MIXED_ACTIVE_CONTENT =
-          2,  // The page attempted to load Mixed Active Content
-      MIXED_DISPLAY_AND_ACTIVE_CONTENT = 3  // The page attempted to load Mixed
-                                            // Display & Mixed Active Content
-    };
-
-    bool hasMixedDisplay =
-        mSecurityState &
-        (nsIWebProgressListener::STATE_LOADED_MIXED_DISPLAY_CONTENT |
-         nsIWebProgressListener::STATE_BLOCKED_MIXED_DISPLAY_CONTENT);
-    bool hasMixedActive =
-        mSecurityState &
-        (nsIWebProgressListener::STATE_LOADED_MIXED_ACTIVE_CONTENT |
-         nsIWebProgressListener::STATE_BLOCKED_MIXED_ACTIVE_CONTENT);
-
-    uint32_t mixedContentLevel = NO_MIXED_CONTENT;
-    if (hasMixedDisplay && hasMixedActive) {
-      mixedContentLevel = MIXED_DISPLAY_AND_ACTIVE_CONTENT;
-    } else if (hasMixedActive) {
-      mixedContentLevel = MIXED_ACTIVE_CONTENT;
-    } else if (hasMixedDisplay) {
-      mixedContentLevel = MIXED_DISPLAY_CONTENT;
-    }
-    glean::mixed_content::page_load.AccumulateSingleSample(mixedContentLevel);
-
     if (GetDocTreeHadMedia()) {
       glean::media::element_in_page_count.Add(1);
     }
@@ -1929,8 +1918,7 @@ void WindowGlobalParent::ActorDestroy(ActorDestroyReason aWhy) {
   // at end-of-page.
   MaybeReportContentBlockingLog();
   if (!IsInProcess()) {
-    RefPtr<BrowserParent> browserParent =
-        static_cast<BrowserParent*>(Manager());
+    RefPtr<BrowserParent> browserParent = GetBrowserParent();
     if (browserParent) {
       nsCOMPtr<nsILoadContext> loadContext = browserParent->GetLoadContext();
       if (loadContext && !loadContext->UsePrivateBrowsing() &&
@@ -2023,8 +2011,8 @@ nsIGlobalObject* WindowGlobalParent::GetParentObject() {
 }
 
 nsIDOMProcessParent* WindowGlobalParent::GetDomProcess() {
-  if (RefPtr<BrowserParent> browserParent = GetBrowserParent()) {
-    return browserParent->Manager();
+  if (ContentParent* contentParent = GetContentParent()) {
+    return contentParent;
   }
   return InProcessParent::Singleton();
 }
@@ -2048,9 +2036,7 @@ bool WindowGlobalParent::ShouldTrackSiteOriginTelemetry() {
     return false;
   }
 
-  RefPtr<BrowserParent> browserParent = GetBrowserParent();
-  if (!browserParent ||
-      !IsWebRemoteType(browserParent->Manager()->GetRemoteType())) {
+  if (!GetRemoteType().IsWeb()) {
     return false;
   }
 
@@ -2249,6 +2235,151 @@ WindowGlobalParent::AllocPDigitalCredentialParent() {
   return MakeAndAddRef<DigitalCredentialParent>();
 }
 
+#ifdef ACCESSIBILITY
+already_AddRefed<a11y::PDocAccessibleParent>
+WindowGlobalParent::AllocPDocAccessibleParent(const uint64_t&, const bool&) {
+  return a11y::DocAccessibleParent::New();
+}
+
+mozilla::ipc::IPCResult WindowGlobalParent::RecvPDocAccessibleConstructor(
+    a11y::PDocAccessibleParent* aDoc, const uint64_t& aParentID,
+    const bool& aIsPrintDoc) {
+#  if defined(ANDROID)
+  MonitorAutoLock mal(nsAccessibilityService::GetAndroidMonitor());
+#  endif
+  if (ManagedPDocAccessibleParent().Count() > 1) {
+    return IPC_FAIL(
+        this, "Attempt to construct second PDocAccessible for a PWindowGlobal");
+  }
+  auto doc = static_cast<a11y::DocAccessibleParent*>(aDoc);
+  doc->SetIsPrintDoc(aIsPrintDoc);
+  auto allow = doc->ShouldAllowConstruction();
+  if (allow == a11y::DocAccessibleParent::AllowConstruction::Disallow) {
+    return IPC_FAIL(
+        this,
+        "Attempt to construct PDocAccessible when accessibility not in use");
+  }
+  if (allow == a11y::DocAccessibleParent::AllowConstruction::AllowButIgnore) {
+    doc->MarkAsShutdown();
+    return IPC_OK();
+  }
+
+  if (GetBrowsingContext()->IsDiscarded() || !IsCurrentGlobal()) {
+    // This document is about to die, so ignore it. This is particularly
+    // important on Android because we must never have more than one active top
+    // level DocAccessible at the same time there.
+    doc->MarkAsShutdown();
+    return IPC_OK();
+  }
+
+  RefPtr<WindowGlobalParent> embedderWgp =
+      GetBrowsingContext()->GetEmbedderWindowGlobal();
+  if (NS_WARN_IF(!IsTop() && (!embedderWgp || embedderWgp->IsDiscarded()))) {
+    // This is an iframe, but it doesn't have a valid embedder WindowGlobal.
+    // This can happen if the parent BrowsingContext navigated somewhere else
+    // while the embedded document was loading. This isn't an error, but it does
+    // mean this embedded document is about to die and its content process just
+    // hasn't caught up yet. Just ignore this document.
+    doc->MarkAsShutdown();
+    return IPC_OK();
+  }
+
+  if (!IsProcessRoot()) {
+    // Iframe document rendered in the same process as its embedder.
+    // A document should never directly be the parent of another document.
+    // There should always be an outer doc accessible child of the outer
+    // document containing the child.
+    MOZ_ASSERT(aParentID);
+    if (!aParentID) {
+      return IPC_FAIL(this, "No parent specified for same-process iframe");
+    }
+
+    MOZ_ASSERT(embedderWgp);
+    auto* parentDoc = a11y::DocAccessibleParent::GetFrom(
+        embedderWgp, /* aAllowShutdown */ true);
+    if (!parentDoc) {
+      return IPC_FAIL(this,
+                      "Same-process embedder's PDocAccessible doesn't exist");
+    }
+    if (parentDoc->IsShutdown()) {
+      // This can happen if parentDoc is an OOP iframe, but its embedder has
+      // been destroyed. (DocAccessibleParent::Destroy destroys any child
+      // documents.) The OOP iframe (and anything it embeds) will die soon
+      // anyway, so mark this document as shutdown and ignore it.
+      doc->MarkAsShutdown();
+      return IPC_OK();
+    }
+
+    mozilla::ipc::IPCResult added = parentDoc->AddChildDoc(doc, aParentID);
+    if (!added) {
+      return added;
+    }
+
+#  ifdef XP_WIN
+    if (a11y::nsWinUtils::IsWindowEmulationStarted()) {
+      doc->SetEmulatedWindowHandle(parentDoc->GetEmulatedWindowHandle());
+    }
+#  endif
+
+    return IPC_OK();
+  }
+
+  // This document is at the top level in its content process. That means it
+  // makes no sense to get an id for an accessible that is its parent.
+  MOZ_ASSERT(!aParentID);
+  if (aParentID) {
+    return IPC_FAIL(
+        this, "Doc at top level of its process shouldn't have a remote parent");
+  }
+  // Sometimes, we can get a new top level DocAccessibleParent before the
+  // previous WindowGlobalParent (and its own top level DocAccessibleParent)
+  // gets destroyed. The previous one will die pretty shortly anyway, so just
+  // destroy its DocAccessibleParent now. We do this because some platforms
+  // (e.g. Android) require that there is only ever a single platform wrapper
+  // for a top level document at a time.
+  for (dom::WindowContext* wc : GetBrowsingContext()->GetWindowContexts()) {
+    if (wc == this) {
+      continue;
+    }
+    WindowGlobalParent* otherWgp = wc->Canonical();
+    if (auto* otherDoc = a11y::DocAccessibleParent::GetFrom(otherWgp)) {
+      MOZ_ASSERT(otherDoc->IsTopLevelInContentProcess());
+      otherDoc->Destroy();
+    }
+  }
+
+  if (BrowserBridgeParent* bridge =
+          GetBrowserParent()->GetBrowserBridgeParent()) {
+    // Iframe document rendered in a different process to its embedder.
+    doc->SetTopLevelInContentProcess();
+    if (!doc->IsPrintDoc()) {
+      a11y::ProxyCreated(doc);
+    }
+    // It's possible the embedder accessible hasn't been set yet; e.g.
+    // a hidden iframe. In that case, embedderDoc will be null and this will
+    // be handled when the embedder is set.
+    if (a11y::DocAccessibleParent* embedderDoc =
+            bridge->GetEmbedderAccessibleDoc()) {
+      mozilla::ipc::IPCResult added = embedderDoc->AddChildDoc(bridge);
+      if (!added) {
+        return added;
+      }
+    }
+    return IPC_OK();
+  }
+
+  MOZ_ASSERT(IsTop());
+  doc->SetTopLevel();
+  a11y::DocManager::RemoteDocAdded(doc);
+#  ifdef XP_WIN
+  if (!aIsPrintDoc) {
+    doc->MaybeInitWindowEmulation();
+  }
+#  endif
+  return IPC_OK();
+}
+#endif  // ACCESSIBILITY
+
 already_AddRefed<PPrefetchRecordParent>
 WindowGlobalParent::AllocPPrefetchRecordParent(
     const SpeculativePrefetchArgs& aArgs) {
@@ -2258,27 +2389,11 @@ WindowGlobalParent::AllocPPrefetchRecordParent(
 }
 
 RefPtr<PrefetchMatchPromise> WindowGlobalParent::WaitForMatchingPrefetchRecord(
-    nsIURI* aURI, TimeDuration aTimeout) {
-  // Implements "wait for a matching prefetch record". The full algorithm
-  // runs "in parallel" and loops until a match completes, no ongoing record
-  // could still satisfy the navigation, or aTimeout elapses. Since a
-  // navigation can only be delayed by prefetches that are still ongoing
-  // *right now*, we only need to register a waiter (below) when such a
-  // record exists; otherwise the loop's first iteration already resolves
-  // synchronously.
+    nsIURI* aURI) {
+  // Implements the waiting half of "wait for a matching prefetch record";
+  // the caller has already checked for a completed match (steps 5.1.1-5.1.2).
   // Spec:
   // https://wicg.github.io/nav-speculation/prefetch.html#wait-for-a-matching-prefetch-record
-
-  // Steps 5.1.1-5.1.2: "Let completeRecord be the result of finding a
-  // matching complete prefetch record ... If completeRecord is not null,
-  // return completeRecord."
-  if (PrefetchRecordParent* match = FindMatchingPrefetchRecord(aURI)) {
-    LOG_SPECRULES(
-        ("WindowGlobalParent::WaitForMatchingPrefetchRecord: "
-         "this=%p fast match rec=%p",
-         this, match));
-    return PrefetchMatchPromise::CreateAndResolve(RefPtr{match}, __func__);
-  }
 
   // Steps 5.1.3-5.1.5: build potentialRecords (ongoing records that could
   // still satisfy aURI) and, "if potentialRecords is empty, return null"
@@ -2286,16 +2401,19 @@ RefPtr<PrefetchMatchPromise> WindowGlobalParent::WaitForMatchingPrefetchRecord(
   if (!HasPotentialPrefetchMatch(aURI)) {
     LOG_SPECRULES(
         ("WindowGlobalParent::WaitForMatchingPrefetchRecord: "
-         "this=%p no potential records, resolving nullptr",
+         "this=%p no potential records",
          this));
-    return PrefetchMatchPromise::CreateAndResolve(nullptr, __func__);
+    return nullptr;
   }
 
   // Otherwise "wait until the state of any element of ... prefetch records
   // changes" and re-run the loop: PrefetchMatchWaiter re-checks for a match
-  // (or gives up) each time NotifyPrefetchStateChanged fires, until aTimeout.
-  RefPtr<PrefetchMatchWaiter> waiter =
-      PrefetchMatchWaiter::Create(this, aURI, aTimeout);
+  // (or gives up) each time NotifyPrefetchStateChanged fires, until the
+  // dom.speculation_rules.wait_timeout_ms timeout.
+  RefPtr<PrefetchMatchWaiter> waiter = PrefetchMatchWaiter::Create(
+      this, aURI,
+      TimeDuration::FromMilliseconds(
+          StaticPrefs::dom_speculation_rules_wait_timeout_ms()));
   mPrefetchWaiters.AppendElement(waiter);
   LOG_SPECRULES(
       ("WindowGlobalParent::WaitForMatchingPrefetchRecord: "

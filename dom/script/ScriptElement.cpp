@@ -47,6 +47,8 @@ ScriptElement::ScriptAvailable(nsresult aResult, nsIScriptElement* aElement,
     if (parser) {
       parser->IncrementScriptNestingLevel();
     }
+    // XXX Cannot dispatch the error event asynchronously? Then, we can drop
+    // MOZ_CAN_RUN_SCRIPT from the script loaders.
     nsresult rv = FireErrorEvent();
     if (parser) {
       parser->DecrementScriptNestingLevel();
@@ -58,10 +60,9 @@ ScriptElement::ScriptAvailable(nsresult aResult, nsIScriptElement* aElement,
 
 /* virtual */
 nsresult ScriptElement::FireErrorEvent() {
-  nsIContent* cont = GetAsContent();
-
-  return nsContentUtils::DispatchTrustedEvent(
-      cont->OwnerDoc(), cont, u"error"_ns, CanBubble::eNo, Cancelable::eNo);
+  const nsCOMPtr<nsIContent> cont = GetAsContent();
+  return nsContentUtils::DispatchTrustedEvent(cont, u"error"_ns, CanBubble::eNo,
+                                              Cancelable::eNo);
 }
 
 NS_IMETHODIMP
@@ -87,7 +88,8 @@ ScriptElement::ScriptEvaluated(nsresult aResult, nsIScriptElement* aElement,
 }
 
 void ScriptElement::CharacterDataChanged(nsIContent* aContent,
-                                         const CharacterDataChangeInfo& aInfo) {
+                                         const CharacterDataChangeInfo& aInfo)
+    MOZ_CAN_RUN_SCRIPT_BOUNDARY {
   if (!nsContentUtils::IsInSameAnonymousTree(GetAsContent(), aContent)) {
     return;
   }
@@ -97,7 +99,8 @@ void ScriptElement::CharacterDataChanged(nsIContent* aContent,
 
 void ScriptElement::AttributeChanged(Element* aElement, int32_t aNameSpaceID,
                                      nsAtom* aAttribute, AttrModType aModType,
-                                     const nsAttrValue* aOldValue) {
+                                     const nsAttrValue* aOldValue)
+    MOZ_CAN_RUN_SCRIPT_BOUNDARY {
   if (aElement != GetAsContent()) {
     return;
   }
@@ -123,7 +126,8 @@ void ScriptElement::AttributeChanged(Element* aElement, int32_t aNameSpaceID,
 }
 
 void ScriptElement::ContentAppended(nsIContent* aFirstNewContent,
-                                    const ContentAppendInfo& aInfo) {
+                                    const ContentAppendInfo& aInfo)
+    MOZ_CAN_RUN_SCRIPT_BOUNDARY {
   if (!nsContentUtils::IsInSameAnonymousTree(GetAsContent(),
                                              aFirstNewContent)) {
     return;
@@ -137,7 +141,8 @@ void ScriptElement::ContentAppended(nsIContent* aFirstNewContent,
 }
 
 void ScriptElement::ContentInserted(nsIContent* aChild,
-                                    const ContentInsertInfo& aInfo) {
+                                    const ContentInsertInfo& aInfo)
+    MOZ_CAN_RUN_SCRIPT_BOUNDARY {
   if (!nsContentUtils::IsInSameAnonymousTree(GetAsContent(), aChild)) {
     return;
   }
@@ -159,6 +164,9 @@ void ScriptElement::ContentWillBeRemoved(nsIContent* aChild,
 
 bool ScriptElement::MaybeProcessScript(nsCOMPtr<nsIParser> aParser) {
   nsIContent* cont = GetAsContent();
+  MOZ_ASSERT(cont->IsScriptElement(),
+             "nsINode::IsScriptElement should return true if the node inherits "
+             "ScriptElement");
 
   NS_ASSERTION(cont->DebugGetSlots()->mMutationObservers.contains(this),
                "You forgot to add self as observer");
@@ -241,8 +249,11 @@ bool ScriptElement::MaybeProcessScript(const nsAString& aSourceText) {
       // to process. However, we must perform a microtask checkpoint afterwards,
       // as per https://html.spec.whatwg.org/#clean-up-after-running-script
       if (mKind == JS::loader::ScriptKind::eClassic && !mExternal) {
-        nsContentUtils::AddScriptRunner(NS_NewRunnableFunction(
-            "ScriptElement::MaybeProcessScript", []() { nsAutoMicroTask mt; }));
+        nsContentUtils::AddScriptRunner(
+            NS_NewRunnableFunction("ScriptElement::MaybeProcessScript",
+                                   [doc = RefPtr{cont->OwnerDoc()}]() {
+                                     nsAutoMicroTaskForDocument mt(doc);
+                                   }));
       }
       return false;
     }

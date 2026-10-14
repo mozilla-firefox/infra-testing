@@ -60,13 +60,22 @@ TRR::GetPriority(uint32_t* aPriority) {
   return NS_OK;
 }
 
+// static
+already_AddRefed<nsIEventTarget> TRR::DefaultTarget() {
+  if (!TRRService::Get()) {
+    return nullptr;
+  }
+  return TRRService::Get()->MainThreadOrTRRTarget();
+}
+
 // when firing off a normal A or AAAA query
 TRR::TRR(AHostResolver* aResolver, nsHostRecord* aRec, enum TrrType aType)
     : mozilla::Runnable("TRR"),
       mRec(aRec),
       mHostResolver(aResolver),
       mType(aType),
-      mOriginSuffix(aRec->originSuffix) {
+      mOriginSuffix(aRec->originSuffix),
+      mTarget(DefaultTarget()) {
   mHost = aRec->host;
   mPB = aRec->pb;
   MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess() || XRE_IsSocketProcess(),
@@ -83,14 +92,16 @@ TRR::TRR(AHostResolver* aResolver, nsHostRecord* aRec, nsCString& aHost,
       mType(aType),
       mPB(aPB),
       mCnameLoop(aLoopCount),
-      mOriginSuffix(aRec ? aRec->originSuffix : ""_ns) {
+      mOriginSuffix(aRec ? aRec->originSuffix : ""_ns),
+      mTarget(DefaultTarget()) {
   MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess() || XRE_IsSocketProcess(),
                         "TRR must be in parent or socket process");
 }
 
 // to verify a domain
 TRR::TRR(AHostResolver* aResolver, nsACString& aHost, enum TrrType aType,
-         const nsACString& aOriginSuffix, bool aPB, bool aUseFreshConnection)
+         const nsACString& aOriginSuffix, bool aPB, bool aUseFreshConnection,
+         nsIEventTarget* aTarget)
     : mozilla::Runnable("TRR"),
       mHost(aHost),
       mRec(nullptr),
@@ -98,7 +109,8 @@ TRR::TRR(AHostResolver* aResolver, nsACString& aHost, enum TrrType aType,
       mType(aType),
       mPB(aPB),
       mOriginSuffix(aOriginSuffix),
-      mUseFreshConnection(aUseFreshConnection) {
+      mUseFreshConnection(aUseFreshConnection),
+      mTarget(aTarget) {
   MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess() || XRE_IsSocketProcess(),
                         "TRR must be in parent or socket process");
 }
@@ -693,6 +705,11 @@ bool TRR::HasUsableResponse() {
 nsresult TRR::FollowCname(nsIChannel* aChannel) {
   nsresult rv = NS_OK;
   nsAutoCString cname;
+  // True when at least one link of the chain we are following is an HTTPS
+  // AliasMode TargetName rather than a plain CNAME. Only then does RFC 9460
+  // require us to chase the target ourselves.
+  bool aliasFollow =
+      mHTTPSAliasFollow || GetOrCreateDNSPacket()->CnameIsHTTPSAlias();
   while (NS_SUCCEEDED(rv) && mDNS.mAddresses.IsEmpty() && !mCname.IsEmpty() &&
          mCnameLoop > 0) {
     mCnameLoop--;
@@ -711,6 +728,8 @@ nsresult TRR::FollowCname(nsIChannel* aChannel) {
       LOG(("TRR::FollowCname DohDecode %x\n", (int)rv));
       HandleDecodeError(rv);
     }
+    aliasFollow = aliasFollow || (!mCname.IsEmpty() &&
+                                  GetOrCreateDNSPacket()->CnameIsHTTPSAlias());
   }
 
   // restore mCname as DohDecode() change it
@@ -722,10 +741,10 @@ nsresult TRR::FollowCname(nsIChannel* aChannel) {
 
   bool ra = mPacket && mPacket->RecursionAvailable().unwrapOr(false);
   LOG(("ra = %d", ra));
-  if (rv == NS_ERROR_UNKNOWN_HOST && ra && mType != TRRTYPE_HTTPSSVC) {
+  if (rv == NS_ERROR_UNKNOWN_HOST && ra && !aliasFollow) {
     // If recursion is available, but no addresses have been returned,
     // we can just return a failure here.
-    // This optimization is only valid for A/AAAA CNAME chains: a recursive
+    // This optimization is only valid for CNAME chains: a recursive
     // resolver that follows a CNAME already inlines the target's addresses.
     // It does not hold for HTTPS AliasMode, since recursive resolvers do not
     // chase the SVCB/HTTPS alias, so we must query the TargetName ourselves.
@@ -746,10 +765,10 @@ nsresult TRR::FollowCname(nsIChannel* aChannel) {
   trr->SetPurpose(mPurpose);
   // Recursive resolvers do not chase HTTPS AliasMode targets, so following the
   // TargetName is an HTTPS alias follow. Remember this so that a target with no
-  // HTTPS record still yields an AliasMode record instead of failing.
-  if (mType == TRRTYPE_HTTPSSVC) {
-    trr->mHTTPSAliasFollow = true;
-  }
+  // HTTPS record still yields an AliasMode record instead of failing. A plain
+  // CNAME is not an alias follow: a target without an HTTPS record simply has
+  // no HTTPS RR.
+  trr->mHTTPSAliasFollow = aliasFollow;
   if (!TRRService::Get()) {
     return NS_ERROR_FAILURE;
   }
@@ -964,35 +983,13 @@ TRR::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInputStream,
 }
 
 void TRR::Cancel(nsresult aStatus) {
-  bool isTRRServiceChannel = false;
-  nsCOMPtr<nsIHttpChannelInternal> httpChannelInternal(
-      do_QueryInterface(mChannel));
-  if (httpChannelInternal) {
-    nsresult rv =
-        httpChannelInternal->GetIsTRRServiceChannel(&isTRRServiceChannel);
-    if (NS_FAILED(rv)) {
-      isTRRServiceChannel = false;
-    }
-  }
-  // nsHttpChannel can be only canceled on the main thread.
-  RefPtr<nsHttpChannel> httpChannel = do_QueryObject(mChannel);
-  if (isTRRServiceChannel && !XRE_IsSocketProcess() && !httpChannel) {
-    if (TRRService::Get()) {
-      nsCOMPtr<nsIThread> thread = TRRService::Get()->TRRThread();
-      if (thread && !thread->IsOnCurrentThread()) {
-        thread->Dispatch(NS_NewRunnableFunction(
-            "TRR::Cancel",
-            [self = RefPtr(this), aStatus]() { self->Cancel(aStatus); }));
-        return;
-      }
-    }
-  } else {
-    if (!NS_IsMainThread()) {
-      NS_DispatchToMainThread(NS_NewRunnableFunction(
-          "TRR::Cancel",
-          [self = RefPtr(this), aStatus]() { self->Cancel(aStatus); }));
-      return;
-    }
+  // mChannel is only accessed on mTarget, so it must not be touched before we
+  // get there.
+  if (mTarget && !mTarget->IsOnCurrentThread()) {
+    mTarget->Dispatch(NS_NewRunnableFunction(
+        "TRR::Cancel",
+        [self = RefPtr(this), aStatus]() { self->Cancel(aStatus); }));
+    return;
   }
 
   if (mCancelled) {

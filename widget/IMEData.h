@@ -378,7 +378,6 @@ struct NativeIMEContext final {
   void InitWithRawNativeIMEContext(void* aRawNativeIMEContext);
 
   bool operator==(const NativeIMEContext& aOther) const = default;
-  bool operator!=(const NativeIMEContext& aOther) const = default;
 
   friend auto format_as(const NativeIMEContext& aContext) {
     return fmt::format("{{ mRawNativeIMEContext={}, mOriginProcessID={} }}",
@@ -775,6 +774,7 @@ struct IMENotification final {
 
     bool mIsInitialized;
     bool mHasRange;
+    // FIXME: Use RangeDirection enum class.
     bool mReversed;
     bool mCausedByComposition;
     bool mCausedBySelectionEvent;

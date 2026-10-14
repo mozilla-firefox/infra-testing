@@ -107,8 +107,19 @@ add_task(async function test_dialog_opens() {
       Assert.ok(dialog, "Dialog element exists");
       Assert.ok(dialog.open, "Dialog is open");
 
-      // Check dialog title exists and is localized (avoid asserting on copy)
-      const title = dialog.querySelector(".modal-title");
+      // The form is an agent-monitor-item create card
+      const card = dialog.querySelector("agent-monitor-item");
+      Assert.ok(card, "Create card exists");
+      Assert.equal(
+        card.getAttribute("mode"),
+        "create",
+        "Card is in create mode"
+      );
+      await (card.wrappedJSObject || card).updateComplete;
+      const cardShadow = card.shadowRoot;
+
+      // Check card title exists and is localized (avoid asserting on copy)
+      const title = cardShadow.querySelector(".monitor-card-state-title");
       Assert.ok(title, "Dialog title element exists");
       Assert.ok(
         title.hasAttribute("data-l10n-id"),
@@ -116,13 +127,11 @@ add_task(async function test_dialog_opens() {
       );
 
       // Check that form elements exist
-      const nameInput = dialog.querySelector("moz-input-text");
-      const alertTextarea = dialog.querySelector("moz-textarea");
-      const pageInput = dialog.querySelector("moz-input-url");
-      const cancelButton = dialog.querySelector(
-        'moz-button[data-l10n-id="ai-tasks-alert-cancel-button"]'
-      );
-      const startButton = dialog.querySelector(
+      const nameInput = cardShadow.querySelector("moz-input-text");
+      const alertTextarea = cardShadow.querySelector("moz-textarea");
+      const pageInput = cardShadow.querySelector("moz-input-url");
+      const cancelButton = cardShadow.querySelector("#cancel-create-button");
+      const startButton = cardShadow.querySelector(
         'moz-button[data-l10n-id="ai-tasks-alert-create-button"]'
       );
 
@@ -132,10 +141,10 @@ add_task(async function test_dialog_opens() {
       Assert.ok(cancelButton, "Cancel button exists");
       Assert.ok(startButton, "Create alert button exists");
 
-      // Check that start button is initially disabled
+      // Validation runs on submit so it can surface per-field errors.
       Assert.ok(
-        startButton.hasAttribute("disabled"),
-        "Start button is initially disabled"
+        !startButton.hasAttribute("disabled"),
+        "Start button is enabled"
       );
 
       // Close the dialog
@@ -184,68 +193,80 @@ add_task(async function test_form_validation() {
       await new Promise(resolve => content.setTimeout(resolve, 100));
 
       const dialog = aiTasks.shadowRoot.querySelector("dialog");
-      const nameInput = dialog.querySelector("moz-input-text");
-      const alertTextarea = dialog.querySelector("moz-textarea");
-      const pageInput = dialog.querySelector("moz-input-url");
-      const addPageButton = dialog.querySelector(".add-page-btn");
-      const startButton = dialog.querySelector(
+      const card = dialog.querySelector("agent-monitor-item");
+      const cardJS = card.wrappedJSObject || card;
+      await cardJS.updateComplete;
+      const cardShadow = card.shadowRoot;
+
+      // The card is content, so its Lit properties are only reachable through
+      // the waived wrapper.
+      const setInputValue = (element, value) => {
+        const elementJS = element.wrappedJSObject || element;
+        elementJS.value = value;
+        element.dispatchEvent(new content.Event("input", { bubbles: true }));
+      };
+
+      const nameInput = cardShadow.querySelector("moz-input-text");
+      const alertTextarea = cardShadow.querySelector("moz-textarea");
+      const pageInput = cardShadow.querySelector("moz-input-url");
+      const addPageButton = cardShadow.querySelector(".add-page-btn");
+      const startButton = cardShadow.querySelector(
         'moz-button[data-l10n-id="ai-tasks-alert-create-button"]'
       );
 
-      // Start button should be disabled initially
+      const errorIds = () =>
+        [...cardShadow.querySelectorAll(".error-message")]
+          .map(el => el.getAttribute("data-l10n-id"))
+          .sort();
+
+      // Submitting an empty form reveals every missing field error.
       Assert.ok(
-        startButton.hasAttribute("disabled"),
-        "Start button initially disabled"
+        !startButton.hasAttribute("disabled"),
+        "Start button is enabled"
       );
 
-      // Get the component reference for property access
-      const aiTasksJS = aiTasks.wrappedJSObject || aiTasks;
+      startButton.click();
+      await cardJS.updateComplete;
 
-      // Fill in name (optional field)
-      nameInput.value = "Test Monitor";
-      nameInput.dispatchEvent(new content.Event("input", { bubbles: true }));
+      Assert.deepEqual(
+        errorIds(),
+        [
+          "ai-tasks-alert-error-condition-required",
+          "ai-tasks-alert-error-name-required",
+          "ai-tasks-alert-error-no-pages",
+        ],
+        "Submitting empty surfaces name, condition and pages errors"
+      );
+      Assert.ok(dialog.open, "Dialog stays open while the form is invalid");
 
-      // Update the component's monitorName property directly as well
-      aiTasksJS.monitorName = "Test Monitor";
-
-      // Start button should still be disabled (need alert description and URL)
+      // Filling each field clears its own error.
+      setInputValue(nameInput, "Test Monitor");
+      await cardJS.updateComplete;
       Assert.ok(
-        startButton.hasAttribute("disabled"),
-        "Start button still disabled without alert description"
+        !cardShadow.querySelector(
+          "[data-l10n-id='ai-tasks-alert-error-name-required']"
+        ),
+        "Name error clears once a name is entered"
       );
 
-      // Fill in alert description
-      alertTextarea.value = "Watch for price changes";
-      alertTextarea.dispatchEvent(
-        new content.Event("input", { bubbles: true })
-      );
-
-      // Update the component's alertDescription property directly as well
-      aiTasksJS.alertDescription = "Watch for price changes";
-
-      // Start button should still be disabled (need URL)
+      setInputValue(alertTextarea, "Watch for price changes");
+      await cardJS.updateComplete;
       Assert.ok(
-        startButton.hasAttribute("disabled"),
-        "Start button still disabled without URL"
+        !cardShadow.querySelector(
+          "[data-l10n-id='ai-tasks-alert-error-condition-required']"
+        ),
+        "Condition error clears once a description is entered"
       );
 
-      // Add a URL - set value and trigger input event
-      pageInput.value = "https://example.com";
-      pageInput.dispatchEvent(new content.Event("input", { bubbles: true }));
-
-      // Update the component's pendingUrl property directly as well
-      aiTasksJS.pendingUrl = "https://example.com";
-
-      // Wait a tick for the component to update
-      await new Promise(resolve => content.setTimeout(resolve, 50));
-
-      // Click the plus button to add the URL
+      setInputValue(pageInput, "https://example.com");
+      await cardJS.updateComplete;
       addPageButton.click();
 
-      // Wait for URL pill to appear
       await ContentTaskUtils.waitForCondition(
         () => {
-          const pills = aiTasks.shadowRoot.querySelectorAll(".page-pill");
+          const pills = cardShadow.querySelectorAll(
+            ".page-pills-row ai-website-chip"
+          );
           return pills && Boolean(pills.length);
         },
         "URL pill should appear after adding URL",
@@ -254,14 +275,20 @@ add_task(async function test_form_validation() {
       );
 
       // Check that URL pill exists
-      const pagePill = aiTasks.shadowRoot.querySelector(".page-pill");
+      const pagePill = cardShadow.querySelector(
+        ".page-pills-row ai-website-chip"
+      );
       Assert.ok(pagePill, "URL pill should exist");
 
       // Check that the pill contains the expected URL text
-      const pillText = pagePill.querySelector(".page-pill-url");
       Assert.ok(
-        pillText && pillText.textContent.includes("example.com"),
+        pagePill.getAttribute("label").includes("example.com"),
         "URL pill should display the domain"
+      );
+
+      Assert.ok(
+        !cardShadow.querySelector(".error-message"),
+        "All errors are cleared once the form is complete"
       );
 
       // Now start button should be enabled
@@ -273,10 +300,7 @@ add_task(async function test_form_validation() {
       );
 
       // Close dialog
-      const cancelButton = dialog.querySelector(
-        'moz-button[data-l10n-id="ai-tasks-alert-cancel-button"]'
-      );
-      cancelButton.click();
+      cardShadow.querySelector("#cancel-create-button").click();
       await new Promise(resolve => content.setTimeout(resolve, 100));
     });
   } finally {
@@ -333,29 +357,32 @@ add_task(async function test_monitor_creation() {
         );
 
         const dialog = aiTasks.shadowRoot.querySelector("dialog");
-        const nameInput = dialog.querySelector("moz-input-text");
-        const alertTextarea = dialog.querySelector("moz-textarea");
-        const pageInput = dialog.querySelector("moz-input-url");
-        const startButton = dialog.querySelector(
+        const card = dialog.querySelector("agent-monitor-item");
+        const cardJS = card.wrappedJSObject || card;
+        await cardJS.updateComplete;
+        const cardShadow = card.shadowRoot;
+
+        // The card is content, so its Lit properties are only reachable through
+        // the waived wrapper.
+        const setInputValue = (element, value) => {
+          const elementJS = element.wrappedJSObject || element;
+          elementJS.value = value;
+          element.dispatchEvent(new content.Event("input", { bubbles: true }));
+        };
+
+        const nameInput = cardShadow.querySelector("moz-input-text");
+        const alertTextarea = cardShadow.querySelector("moz-textarea");
+        const pageInput = cardShadow.querySelector("moz-input-url");
+        const startButton = cardShadow.querySelector(
           'moz-button[data-l10n-id="ai-tasks-alert-create-button"]'
         );
 
-        // Fill in the form using both DOM and component properties
-        nameInput.value = "Product Monitor";
-        nameInput.dispatchEvent(new content.Event("input", { bubbles: true }));
-        aiTasksJS.monitorName = "Product Monitor";
+        // Fill in the form
+        setInputValue(nameInput, "Product Monitor");
+        setInputValue(alertTextarea, "Test monitor for price changes");
+        setInputValue(pageInput, "https://example.com/product");
 
-        alertTextarea.value = "Test monitor for price changes";
-        alertTextarea.dispatchEvent(
-          new content.Event("input", { bubbles: true })
-        );
-        aiTasksJS.alertDescription = "Test monitor for price changes";
-
-        pageInput.value = "https://example.com/product";
-        pageInput.dispatchEvent(new content.Event("input", { bubbles: true }));
-        aiTasksJS.pendingUrl = "https://example.com/product";
-
-        // Press Enter to add the URL to pageUrls
+        // Press Enter to add the URL to the watched pages
         pageInput.dispatchEvent(
           new content.KeyboardEvent("keydown", {
             key: "Enter",
@@ -365,7 +392,9 @@ add_task(async function test_monitor_creation() {
 
         // Wait for URL pill to appear
         await ContentTaskUtils.waitForCondition(() => {
-          const pills = aiTasks.shadowRoot.querySelectorAll(".page-pill");
+          const pills = cardShadow.querySelectorAll(
+            ".page-pills-row ai-website-chip"
+          );
           return pills && Boolean(pills.length);
         }, "URL pill should appear");
 

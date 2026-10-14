@@ -36,13 +36,18 @@ Preferences.addAll([
   { id: "browser.urlbar.showSearchSuggestionsFirst", type: "bool" },
   { id: "browser.urlbar.showSearchTerms.enabled", type: "bool" },
   { id: "browser.urlbar.showSearchTerms.featureGate", type: "bool" },
-  { id: "browser.search.separatePrivateDefault", type: "bool" },
-  { id: "browser.search.separatePrivateDefault.ui.enabled", type: "bool" },
+  { id: "browser.search.separatePrivateDefault.enabled", type: "bool" },
+  { id: "browser.search.separatePrivateDefault.featureGate", type: "bool" },
   { id: "browser.urlbar.suggest.trending", type: "bool" },
   { id: "browser.urlbar.trending.featureGate", type: "bool" },
   { id: "browser.urlbar.recentsearches.featureGate", type: "bool" },
   { id: "browser.urlbar.suggest.recentsearches", type: "bool" },
   { id: "browser.urlbar.scotchBonnet.enableOverride", type: "bool" },
+  {
+    id: "browser.urlbar.resultMenu.keyboardAccessible",
+    type: "bool",
+    inverted: true,
+  },
 
   // Suggest Section.
   { id: "browser.urlbar.suggest.bookmark", type: "bool" },
@@ -190,6 +195,11 @@ Preferences.addSetting({
 });
 
 Preferences.addSetting({
+  id: "skipResultMenuOnTab",
+  pref: "browser.urlbar.resultMenu.keyboardAccessible",
+});
+
+Preferences.addSetting({
   id: "searchShowSearchTermCheckbox",
   pref: "browser.urlbar.showSearchTerms.enabled",
   deps: ["scotchBonnetEnabled", "showSearchTermsFeatureGate"],
@@ -217,12 +227,12 @@ Preferences.addSetting({
 
 Preferences.addSetting({
   id: "separatePrivateDefaultUI",
-  pref: "browser.search.separatePrivateDefault.ui.enabled",
+  pref: "browser.search.separatePrivateDefault.featureGate",
 });
 
 Preferences.addSetting({
   id: "browserSeparateDefaultEngine",
-  pref: "browser.search.separatePrivateDefault",
+  pref: "browser.search.separatePrivateDefault.enabled",
   deps: ["separatePrivateDefaultUI"],
   visible: ({ separatePrivateDefaultUI }) => {
     return separatePrivateDefaultUI.value;
@@ -1147,6 +1157,18 @@ SettingGroupManager.registerGroups({
       },
     ],
   },
+  addressBarNavigation: {
+    inProgress: true,
+    l10nId: "addressbar-navigation-group",
+    subcategory: "addressBarNavigation",
+    headingLevel: 2,
+    items: [
+      {
+        id: "skipResultMenuOnTab",
+        l10nId: "addressbar-skip-result-menu-on-tab",
+      },
+    ],
+  },
   searchSuggestions: {
     l10nId: "search-suggestions-header-2",
     headingLevel: 2,
@@ -1193,9 +1215,7 @@ SettingGroupManager.registerGroups({
         l10nId: "addressbar-header-1",
         supportPage: "firefox-suggest",
         control: "moz-fieldset",
-        controlAttrs: {
-          headinglevel: 2,
-        },
+        headingLevel: 2,
         items: [
           {
             id: "historySuggestion",
@@ -1250,9 +1270,7 @@ SettingGroupManager.registerGroups({
             id: "dismissedSuggestionsDescription",
             l10nId: "addressbar-dismissed-suggestions-label-2",
             control: "moz-fieldset",
-            controlAttrs: {
-              headinglevel: 3,
-            },
+            headingLevel: 3,
             items: [
               {
                 id: "restoreDismissedSuggestions",

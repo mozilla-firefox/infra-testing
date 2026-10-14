@@ -3,12 +3,12 @@
 * file, You can obtain one at http://mozilla.org/MPL/2.0/.
 */
 
+use crate::ads::{AdCallbacks, AdImage, AdSpoc, AdTile};
 use crate::http_cache::RequestHash;
 use crate::telemetry::Telemetry;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::collections::HashMap;
-use url::Url;
 
 #[derive(Debug, PartialEq, Serialize)]
 pub struct AdResponse<A: AdResponseValue> {
@@ -82,85 +82,6 @@ impl<A: AdResponseValue> AdResponse<A> {
     }
 }
 
-// TODO: Remove this allow(dead_code) when cache invalidation is re-enabled behind Nimbus experiment
-#[allow(dead_code)]
-pub fn pop_request_hash_from_url(url: &mut Url) -> Option<RequestHash> {
-    let mut request_hash = None;
-    let mut query = url::form_urlencoded::Serializer::new(String::new());
-
-    for (key, value) in url.query_pairs() {
-        if key == "request_hash" {
-            request_hash = Some(RequestHash::from(value.as_ref()));
-        } else {
-            query.append_pair(&key, &value);
-        }
-    }
-
-    let query_string = query.finish();
-    if query_string.is_empty() {
-        url.set_query(None);
-    } else {
-        url.set_query(Some(&query_string));
-    }
-    request_hash
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct AdImage {
-    pub alt_text: Option<String>,
-    pub block_key: String,
-    pub callbacks: AdCallbacks,
-    pub format: String,
-    pub image_url: String,
-    pub url: String,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct AdSpoc {
-    pub block_key: String,
-    pub callbacks: AdCallbacks,
-    pub caps: SpocFrequencyCaps,
-    pub domain: String,
-    pub excerpt: String,
-    pub format: String,
-    pub image_url: String,
-    pub ranking: SpocRanking,
-    pub sponsor: String,
-    pub sponsored_by_override: Option<String>,
-    pub title: String,
-    pub url: String,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct AdTile {
-    pub block_key: String,
-    pub callbacks: AdCallbacks,
-    pub format: String,
-    pub image_url: String,
-    pub name: String,
-    pub url: String,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct SpocFrequencyCaps {
-    pub cap_key: String,
-    pub day: u32,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct SpocRanking {
-    pub priority: u32,
-    pub personalization_models: Option<HashMap<String, u32>>,
-    pub item_score: f64,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct AdCallbacks {
-    pub click: Url,
-    pub impression: Url,
-    pub report: Option<Url>,
-}
-
 pub trait AdResponseValue: DeserializeOwned {
     fn callbacks_mut(&mut self) -> &mut AdCallbacks;
     fn cap_key(&self) -> Option<String> {
@@ -192,10 +113,32 @@ impl AdResponseValue for AdTile {
 
 #[cfg(test)]
 mod tests {
+    use crate::ads::{SpocFrequencyCaps, SpocRanking};
     use crate::ffi::telemetry::MozAdsTelemetryWrapper;
 
     use super::*;
     use serde_json::{from_str, json};
+    use url::Url;
+    use url_macro::url;
+
+    #[test]
+    fn a_malformed_url_is_a_deserialization_error() {
+        let response = json!({
+            "block_key": "abc123",
+            "callbacks": {
+                "click": "https://buyanvilseveryday.test/click",
+                "impression": "https://buyanvilseveryday.test/impression"
+            },
+            "format": "Leaderboard",
+            "image_url": "not a url",
+            "url": "https://buyanvilseveryday.test"
+        })
+        .to_string();
+
+        // Before these fields were typed as `Url`, this parsed and handed
+        // "not a url" straight to the caller.
+        assert!(from_str::<AdImage>(&response).is_err());
+    }
 
     #[test]
     fn test_moz_ad_full() {
@@ -225,8 +168,8 @@ mod tests {
                     report: Some(Url::parse("https://buyanvilseveryday.test/report").unwrap()),
                 },
                 format: "Leaderboard".into(),
-                image_url: "https://buyanvilseveryday.test/img.png".into(),
-                url: "https://buyanvilseveryday.test".into(),
+                image_url: url!("https://buyanvilseveryday.test/img.png"),
+                url: url!("https://buyanvilseveryday.test"),
             }
         );
     }
@@ -259,8 +202,8 @@ mod tests {
                     report: None,
                 },
                 format: "Leaderboard".into(),
-                image_url: "https://example.test/image.png".into(),
-                url: "https://example.test/item".into(),
+                image_url: url!("https://example.test/image.png"),
+                url: url!("https://example.test/item"),
             }
         );
     }
@@ -341,8 +284,8 @@ mod tests {
             data: HashMap::from([(
                 "valid_ad".to_string(),
                 vec![AdImage {
-                    url: "https://ads.fakeexample.org/example_ad_3".to_string(),
-                    image_url: "https://ads.fakeexample.org/example_image_3".to_string(),
+                    url: url!("https://ads.fakeexample.org/example_ad_3"),
+                    image_url: url!("https://ads.fakeexample.org/example_image_3"),
                     format: "skyscraper".to_string(),
                     block_key: "abc123".into(),
                     alt_text: Some("An ad for a pet duck".to_string()),
@@ -398,8 +341,8 @@ mod tests {
                         report: None,
                     },
                     format: "billboard".to_string(),
-                    image_url: "https://example.com/image1.png".to_string(),
-                    url: "https://example.com/ad1".to_string(),
+                    image_url: url!("https://example.com/image1.png"),
+                    url: url!("https://example.com/ad1"),
                 },
                 AdImage {
                     alt_text: Some("Second ad".to_string()),
@@ -410,8 +353,8 @@ mod tests {
                         report: None,
                     },
                     format: "billboard".to_string(),
-                    image_url: "https://example.com/image2.png".to_string(),
-                    url: "https://example.com/ad2".to_string(),
+                    image_url: url!("https://example.com/image2.png"),
+                    url: url!("https://example.com/ad2"),
                 },
             ],
         );
@@ -426,8 +369,8 @@ mod tests {
                     report: None,
                 },
                 format: "skyscraper".to_string(),
-                image_url: "https://example.com/image3.png".to_string(),
-                url: "https://example.com/ad3".to_string(),
+                image_url: url!("https://example.com/image3.png"),
+                url: url!("https://example.com/ad3"),
             }],
         );
         response.data.insert("placement_3".to_string(), vec![]);
@@ -463,8 +406,8 @@ mod tests {
                             report: Some(Url::parse("https://example.com/report").unwrap()),
                         },
                         format: "billboard".to_string(),
-                        image_url: "https://example.com/image1.png".to_string(),
-                        url: "https://example.com/ad1".to_string(),
+                        image_url: url!("https://example.com/image1.png"),
+                        url: url!("https://example.com/ad1"),
                     },
                     AdImage {
                         alt_text: None,
@@ -475,8 +418,8 @@ mod tests {
                             report: Some(Url::parse("https://example.com/report").unwrap()),
                         },
                         format: "billboard".to_string(),
-                        image_url: "https://example.com/image2.png".to_string(),
-                        url: "https://example.com/ad2".to_string(),
+                        image_url: url!("https://example.com/image2.png"),
+                        url: url!("https://example.com/ad2"),
                     },
                 ],
             )]),
@@ -543,8 +486,8 @@ mod tests {
                         domain: "1.example.com".into(),
                         excerpt: "excerpt1".into(),
                         format: "format1".into(),
-                        image_url: "https://example.com/image1.png".into(),
-                        url: "https://example.com/ad1".into(),
+                        image_url: url!("https://example.com/image1.png"),
+                        url: url!("https://example.com/ad1"),
                         ranking: SpocRanking {
                             priority: 1,
                             personalization_models: None,
@@ -568,8 +511,8 @@ mod tests {
                         domain: "2.example.com".into(),
                         excerpt: "excerpt2".into(),
                         format: "format2".into(),
-                        image_url: "https://example.com/image2.png".into(),
-                        url: "https://example.com/ad2".into(),
+                        image_url: url!("https://example.com/image2.png"),
+                        url: url!("https://example.com/ad2"),
                         ranking: SpocRanking {
                             priority: 2,
                             personalization_models: None,
@@ -617,8 +560,8 @@ mod tests {
                         report: None,
                     },
                     format: "billboard".to_string(),
-                    image_url: "https://example.com/image.png".to_string(),
-                    url: "https://example.com/ad".to_string(),
+                    image_url: url!("https://example.com/image.png"),
+                    url: url!("https://example.com/ad"),
                 }],
             )]),
         };
@@ -642,25 +585,5 @@ mod tests {
             .query()
             .unwrap_or("")
             .contains("request_hash=abc123def456"));
-    }
-
-    #[test]
-    fn test_pop_request_hash_from_url() {
-        let mut url_with_hash =
-            Url::parse("https://example.com/callback?request_hash=abc123def456&other=param")
-                .unwrap();
-        let extracted = pop_request_hash_from_url(&mut url_with_hash);
-        assert_eq!(extracted, Some(RequestHash::from("abc123def456")));
-        assert_eq!(url_with_hash.query(), Some("other=param"));
-
-        let mut url_without_hash = Url::parse("https://example.com/callback?other=param").unwrap();
-        let extracted_none = pop_request_hash_from_url(&mut url_without_hash);
-        assert_eq!(extracted_none, None);
-        assert_eq!(url_without_hash.query(), Some("other=param"));
-
-        let mut url_no_query = Url::parse("https://example.com/callback").unwrap();
-        let extracted_empty = pop_request_hash_from_url(&mut url_no_query);
-        assert_eq!(extracted_empty, None);
-        assert_eq!(url_no_query.query(), None);
     }
 }

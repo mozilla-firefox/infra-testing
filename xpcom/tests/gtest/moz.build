@@ -13,6 +13,7 @@ UNIFIED_SOURCES += [
     "TestBase64.cpp",
     "TestCallTemplates.cpp",
     "TestCloneInputStream.cpp",
+    "TestCollectorLogLoading.cpp",
     "TestCOMPtrEq.cpp",
     "TestCRT.cpp",
     "TestDafsa.cpp",
@@ -72,6 +73,7 @@ UNIFIED_SOURCES += [
     "TestThreadPoolListener.cpp",
     "TestThreadUtils.cpp",
     "TestThrottledEventQueue.cpp",
+    "TestTimerThreadMonitor.cpp",
     "TestTimeStamp.cpp",
     "TestTokenizer.cpp",
     "TestUTF.cpp",
@@ -159,6 +161,11 @@ if CONFIG["MOZ_MEMORY"]:
         "TestAllocReplacement.cpp",
     ]
 
+if CONFIG["MOZ_DIAGNOSTIC_ASSERT_ENABLED"]:
+    UNIFIED_SOURCES += [
+        "TestThreadShutdownAnnotations.cpp",
+    ]
+
 SOURCES += [
     "TestAsyncPlatformPipes.cpp",
     "TestCOMArray.cpp",
@@ -172,6 +179,7 @@ SOURCES += [
 
 LOCAL_INCLUDES += [
     "../../base",
+    "../../threads",
     "/toolkit/components/telemetry/tests/gtest",
     "/xpcom/components",
 ]
@@ -202,3 +210,8 @@ TEST_HARNESS_FILES.gtest += [
 FINAL_LIBRARY = "xul-gtest"
 
 include("/ipc/chromium/chromium-config.mozbuild")
+
+SOURCE_HEADERS += [
+    "Helpers.h",
+    "UTFStrings.h",
+]

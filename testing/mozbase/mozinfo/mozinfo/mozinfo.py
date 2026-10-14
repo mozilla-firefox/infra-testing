@@ -110,6 +110,15 @@ elif sys.platform in ("solaris", "sunos5"):
 else:
     os_version = version = unknown
 
+info["apple_silicon"] = False
+if (
+    info["os"] == "mac"
+    and float(os_version) > 10.15
+    and processor == "arm"
+    and bits == "64bit"
+):
+    info["apple_silicon"] = True
+
 info["apple_catalina"] = False
 if info["os"] == "mac" and float(os_version) == 10.15:
     info["apple_catalina"] = True
@@ -143,15 +152,6 @@ info["version"] = version
 info["os_version"] = StringVersion(os_version)
 info["is_ubuntu"] = "Ubuntu" in version
 
-
-def _apple_silicon(info):
-    # Apple silicon iff the target is arm64 macOS.  Derive from the (possibly
-    # merged) target processor rather than the harness interpreter's
-    # architecture, which is x86_64 when tests run under a fetched x86_64 python
-    # on Apple silicon and would otherwise make this wrongly False.
-    return info.get("os") == "mac" and info.get("processor") == "aarch64"
-
-
 # processor type and bits
 if processor in ["i386", "i686"]:
     if bits == "32bit":
@@ -175,8 +175,6 @@ info.update({
 
 if info.get("arch", "") != "aarch64":
     info["arch"] = info["processor"]
-
-info["apple_silicon"] = _apple_silicon(info)
 
 
 if info["os"] == "linux":
@@ -214,8 +212,6 @@ def sanitize(info):
 
     if info.get("arch", "") != "aarch64":
         info["arch"] = info["processor"]
-
-    info["apple_silicon"] = _apple_silicon(info)
 
 
 # method for updating information

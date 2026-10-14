@@ -78,14 +78,16 @@ nsresult BrowserBridgeParent::InitWithProcess(
 
   // Construct the BrowserParent object for our subframe.
   auto browserParent = MakeRefPtr<BrowserParent>(
-      aContentParent, aTabId, *aParentBrowser, browsingContext, aChromeFlags);
-  browserParent->SetBrowserBridgeParent(this);
+      aContentParent, aTabId, aWindowInit.context().mOuterWindowId,
+      *aParentBrowser, browsingContext, aChromeFlags);
 
   ContentProcessManager* cpm = ContentProcessManager::GetSingleton();
   if (!cpm) {
     return NS_ERROR_UNEXPECTED;
   }
-  cpm->RegisterRemoteFrame(browserParent);
+  if (NS_WARN_IF(!cpm->RegisterRemoteFrame(browserParent))) {
+    return NS_ERROR_UNEXPECTED;
+  }
 
   // Open a remote endpoint for our PBrowser actor.
   ManagedEndpoint<PBrowserChild> childEp =
@@ -122,8 +124,10 @@ nsresult BrowserBridgeParent::InitWithProcess(
     return NS_ERROR_FAILURE;
   }
 
-  // Set our BrowserParent object to the newly created browser.
+  // Set our BrowserParent object to the newly created browser. Don't set the
+  // back pointer any earlier, as Destroy() only clears it once we own it.
   mBrowserParent = std::move(browserParent);
+  mBrowserParent->SetBrowserBridgeParent(this);
   mBrowserParent->SetOwnerElement(aParentBrowser->GetOwnerElement());
   mBrowserParent->InitRendering();
 
@@ -145,9 +149,12 @@ BrowserParent* BrowserBridgeParent::Manager() {
 
 void BrowserBridgeParent::Destroy() {
   if (mBrowserParent) {
+    // We only ever set the back pointer together with mBrowserParent, so
+    // clearing it below cannot clobber another bridge's pointer.
+    MOZ_ASSERT(mBrowserParent->GetBrowserBridgeParent() == this);
 #ifdef ACCESSIBILITY
-    if (mEmbedderAccessibleDoc && !mEmbedderAccessibleDoc->IsShutdown()) {
-      mEmbedderAccessibleDoc->RemovePendingOOPChildDoc(this);
+    if (a11y::DocAccessibleParent* embedderDoc = GetEmbedderAccessibleDoc()) {
+      embedderDoc->RemovePendingOOPChildDoc(this);
     }
 #endif
     mBrowserParent->Destroy();
@@ -278,38 +285,26 @@ a11y::DocAccessibleParent* BrowserBridgeParent::GetDocAccessibleParent() {
   return docAcc && !docAcc->IsShutdown() ? docAcc : nullptr;
 }
 
-IPCResult BrowserBridgeParent::RecvSetEmbedderAccessible(
-    PDocAccessibleParent* aDoc, uint64_t aID) {
+IPCResult BrowserBridgeParent::RecvSetEmbedderAccessible(uint64_t aID) {
 #  if defined(ANDROID)
   MonitorAutoLock mal(nsAccessibilityService::GetAndroidMonitor());
 #  endif
-  if (!aDoc && !mEmbedderAccessibleDoc) {
-    return IPC_FAIL(this, "Embedder doc shouldn't be cleared if it wasn't set");
-  }
-  if (mEmbedderAccessibleDoc && aDoc && mEmbedderAccessibleDoc != aDoc) {
+  if (!aID && !mEmbedderAccessibleID) {
     return IPC_FAIL(this,
-                    "Embedder doc shouldn't change from one doc to another");
-  }
-  if (aDoc && aDoc->Manager() != Manager()) {
-    return IPC_FAIL(this, "Embedder doc not managed by our PBrowser");
-  }
-  if (!aDoc && mEmbedderAccessibleDoc &&
-      !mEmbedderAccessibleDoc->IsShutdown()) {
-    // We're clearing the embedder doc, so remove the pending child doc addition
-    // (if any).
-    mEmbedderAccessibleDoc->RemovePendingOOPChildDoc(this);
-  }
-  mEmbedderAccessibleDoc = static_cast<a11y::DocAccessibleParent*>(aDoc);
-  mEmbedderAccessibleID = aID;
-  if (!aDoc) {
-    if (aID) {
-      return IPC_FAIL(this, "Attempt to clear embedder but id given");
-    }
-    return IPC_OK();
+                    "Embedder accessible shouldn't be cleared if it wasn't "
+                    "set");
   }
   if (!aID) {
-    return IPC_FAIL(this, "Attempt to set embedder without id");
+    // We're clearing the embedder accessible, so remove the pending child
+    // doc addition (if any).
+    if (a11y::DocAccessibleParent* embedderDoc = GetEmbedderAccessibleDoc()) {
+      embedderDoc->RemovePendingOOPChildDoc(this);
+    }
+    mEmbedderAccessibleID = 0;
+    return IPC_OK();
   }
+
+  mEmbedderAccessibleID = aID;
   if (GetDocAccessibleParent()) {
     // The embedded DocAccessibleParent has already been created. This can
     // happen if, for example, an iframe is hidden and then shown or an iframe
@@ -318,15 +313,34 @@ IPCResult BrowserBridgeParent::RecvSetEmbedderAccessible(
     // received *before* we receive the accessibility hide and show events. This
     // is okay; DocAccessibleParent will store this as a pending OOP child
     // document and add it when the new OuterDocAccessible arrives.
-    mEmbedderAccessibleDoc->AddChildDoc(this);
+    RefPtr<WindowGlobalParent> embedderWgp =
+        GetBrowsingContext()->GetEmbedderWindowGlobal();
+    if (!embedderWgp || embedderWgp->IsDiscarded()) {
+      // The embedder WindowGlobalParent is discarded, which means its actor
+      // and thus its PDocAccessibleParent actor have been destroyed. The
+      // embedder's content process hasn't caught up yet, so its
+      // PDocAccessibleChild is still alive. Just ignore this.
+      return IPC_OK();
+    }
+    auto* embedderDoc = a11y::DocAccessibleParent::GetFrom(
+        embedderWgp, /* aAllowShutdown */ true);
+    if (!embedderDoc) {
+      return IPC_FAIL(this, "Embedder's PDocAccessible doesn't exist");
+    }
+    if (!embedderDoc->IsShutdown()) {
+      embedderDoc->AddChildDoc(this);
+    }
   }
   return IPC_OK();
 }
 
 a11y::DocAccessibleParent* BrowserBridgeParent::GetEmbedderAccessibleDoc() {
-  return mEmbedderAccessibleDoc && !mEmbedderAccessibleDoc->IsShutdown()
-             ? mEmbedderAccessibleDoc.get()
-             : nullptr;
+  if (!mEmbedderAccessibleID) {
+    return nullptr;
+  }
+  RefPtr<WindowGlobalParent> embedderWgp =
+      GetBrowsingContext()->GetEmbedderWindowGlobal();
+  return a11y::DocAccessibleParent::GetFrom(embedderWgp);
 }
 #endif
 

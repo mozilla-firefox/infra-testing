@@ -20,17 +20,20 @@
 #include "js/PropertyAndElement.h"  // JS_DefineProperty
 #include "js/Transcoding.h"  // JS::TranscodeRange, JS::TranscodeResult, JS::IsTranscodeFailureResult
 #include "js/Utility.h"
-#include "js/experimental/CompileScript.h"  // JS::FrontendContext, JS::NewFrontendContext, JS::DestroyFrontendContext, JS::SetNativeStackQuota, JS::ThreadStackQuotaForSize, JS::CompilationStorage, JS::CompileGlobalScriptToStencil, JS::CompileModuleScriptToStencil, JS::DecodeStencil, JS::PrepareForInstantiate
+#include "js/experimental/CompileScript.h"  // JS::FrontendContext, JS::NewFrontendContext, JS::DestroyFrontendContext, JS::SetNativeStackQuota, JS::ThreadStackQuotaForSize, JS::CompilationStorage, JS::CompileGlobalScriptToStencil, JS::CompileModuleScriptToStencil, JS::DecodeStencil, JS::PrepareForInstantiate, JS::AllowCancellingCompilation, JS::RequestFrontendCompilationCancellation
 #include "js/experimental/JSStencil.h"  // JS::Stencil, JS::InstantiationStorage, JS::StartCollectingDelazifications, JS::IsStencilCacheable
 #include "js/loader/LoadedScript.h"
 #include "js/loader/ModuleLoadRequest.h"
 #include "js/loader/ModuleLoaderBase.h"
 #include "js/loader/ScriptLoadRequest.h"
+#include "mozilla/AppShutdown.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ConsoleReportCollector.h"
 #include "mozilla/CycleCollectedJSContext.h"
+#include "mozilla/Encoding.h"
 #include "mozilla/EventQueue.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/Logging.h"
@@ -43,6 +46,7 @@
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_javascript.h"
 #include "mozilla/StaticPrefs_network.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/TaskController.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
@@ -274,30 +278,31 @@ ScriptLoader::~ScriptLoader() {
   mObservers.Clear();
 
   if (mParserBlockingRequest) {
-    FireScriptAvailable(NS_ERROR_ABORT, mParserBlockingRequest);
+    const RefPtr<ScriptLoadRequest> parserBlockRequest = mParserBlockingRequest;
+    FireScriptAvailable(NS_ERROR_ABORT, parserBlockRequest);
   }
 
-  for (ScriptLoadRequest* req = mXSLTRequests.getFirst(); req;
+  for (RefPtr<ScriptLoadRequest> req = mXSLTRequests.getFirst(); req;
        req = req->getNext()) {
     FireScriptAvailable(NS_ERROR_ABORT, req);
   }
 
-  for (ScriptLoadRequest* req = mDeferRequests.getFirst(); req;
+  for (RefPtr<ScriptLoadRequest> req = mDeferRequests.getFirst(); req;
        req = req->getNext()) {
     FireScriptAvailable(NS_ERROR_ABORT, req);
   }
 
-  for (ScriptLoadRequest* req = mLoadingAsyncRequests.getFirst(); req;
+  for (RefPtr<ScriptLoadRequest> req = mLoadingAsyncRequests.getFirst(); req;
        req = req->getNext()) {
     FireScriptAvailable(NS_ERROR_ABORT, req);
   }
 
-  for (ScriptLoadRequest* req = mLoadedAsyncRequests.getFirst(); req;
+  for (RefPtr<ScriptLoadRequest> req = mLoadedAsyncRequests.getFirst(); req;
        req = req->getNext()) {
     FireScriptAvailable(NS_ERROR_ABORT, req);
   }
 
-  for (ScriptLoadRequest* req =
+  for (RefPtr<ScriptLoadRequest> req =
            mNonAsyncExternalScriptInsertedRequests.getFirst();
        req; req = req->getNext()) {
     FireScriptAvailable(NS_ERROR_ABORT, req);
@@ -552,9 +557,10 @@ nsresult ScriptLoader::CheckContentPolicy(nsIScriptElement* aElement,
   nsContentPolicyType contentPolicyType =
       ScriptLoadRequestToContentPolicyType(aRequest);
 
-  nsCOMPtr<nsINode> requestingNode;
-  if (aElement) {
-    requestingNode = do_QueryInterface(aElement);
+  nsCOMPtr<nsINode> requestingNode = do_QueryInterface(aElement);
+  if (!requestingNode) {
+    MOZ_ASSERT(aRequest->IsModuleRequest());
+    requestingNode = mDocument;
   }
   nsCOMPtr<nsILoadInfo> secCheckLoadInfo = MOZ_TRY(net::LoadInfo::Create(
       mDocument->NodePrincipal(),  // loading principal
@@ -640,15 +646,17 @@ nsIURI* ScriptLoader::GetBaseURI() const {
 
 class ScriptRequestProcessor : public Runnable {
  private:
-  RefPtr<ScriptLoader> mLoader;
-  RefPtr<ScriptLoadRequest> mRequest;
+  MOZ_KNOWN_LIVE const RefPtr<ScriptLoader> mLoader;
+  MOZ_KNOWN_LIVE const RefPtr<ScriptLoadRequest> mRequest;
 
  public:
   ScriptRequestProcessor(ScriptLoader* aLoader, ScriptLoadRequest* aRequest)
       : Runnable("dom::ScriptRequestProcessor"),
         mLoader(aLoader),
         mRequest(aRequest) {}
-  NS_IMETHOD Run() override { return mLoader->ProcessRequest(mRequest); }
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHOD Run() override {
+    return mLoader->ProcessRequest(mRequest);
+  }
 };
 
 void ScriptLoader::RunScriptWhenSafe(ScriptLoadRequest* aRequest) {
@@ -670,7 +678,7 @@ nsresult ScriptLoader::RestartLoad(ScriptLoadRequest* aRequest) {
   if (aRequest->IsModuleRequest()) {
     rv = aRequest->AsModuleRequest()->RestartModuleLoad();
   } else {
-    rv = StartLoad(aRequest, Nothing());
+    rv = StartLoad(aRequest);
   }
   if (NS_FAILED(rv)) {
     return rv;
@@ -681,14 +689,12 @@ nsresult ScriptLoader::RestartLoad(ScriptLoadRequest* aRequest) {
   return NS_BINDING_RETARGETED;
 }
 
-nsresult ScriptLoader::StartLoad(
-    ScriptLoadRequest* aRequest,
-    const Maybe<nsAutoString>& aCharsetForPreload) {
+nsresult ScriptLoader::StartLoad(ScriptLoadRequest* aRequest) {
   if (aRequest->IsModuleRequest()) {
     return aRequest->AsModuleRequest()->StartModuleLoad();
   }
 
-  return StartClassicLoad(aRequest, aCharsetForPreload);
+  return StartClassicLoad(aRequest);
 }
 
 static nsSecurityFlags CORSModeToSecurityFlags(CORSMode aCORSMode) {
@@ -702,9 +708,7 @@ static nsSecurityFlags CORSModeToSecurityFlags(CORSMode aCORSMode) {
   return securityFlags;
 }
 
-void ScriptLoader::OnDelayedReady(
-    ScriptLoadRequest* aRequest,
-    const Maybe<nsAutoString>& aCharsetForPreload) {
+void ScriptLoader::OnDelayedReady(ScriptLoadRequest* aRequest) {
   if (!mDocument) {
     return;
   }
@@ -721,19 +725,16 @@ void ScriptLoader::OnDelayedReady(
   ProcessPendingRequests();
 }
 
-nsresult ScriptLoader::StartClassicLoad(
-    ScriptLoadRequest* aRequest,
-    const Maybe<nsAutoString>& aCharsetForPreload) {
+nsresult ScriptLoader::StartClassicLoad(ScriptLoadRequest* aRequest) {
   if (aRequest->IsRetrievedFromMemoryCache()) {
     // NOTE: The network event need to be dispatched in the current call stack,
     //       in order to reflect it in the DevTools Network Monitor.
-    EmulateNetworkEvents(aRequest, aCharsetForPreload);
+    EmulateNetworkEvents(aRequest);
 
     nsCOMPtr<nsIRunnable> runnable =
-        mozilla::NewRunnableMethod<RefPtr<ScriptLoadRequest>,
-                                   const Maybe<nsAutoString>>(
+        mozilla::NewRunnableMethod<RefPtr<ScriptLoadRequest>>(
             "ScriptLoader::OnDelayedReady", this, &ScriptLoader::OnDelayedReady,
-            aRequest, aCharsetForPreload);
+            aRequest);
     mDocument->Dispatch(runnable.forget());
     return NS_OK;
   }
@@ -756,7 +757,7 @@ nsresult ScriptLoader::StartClassicLoad(
 
   nsSecurityFlags securityFlags = CORSModeToSecurityFlags(aRequest->CORSMode());
 
-  nsresult rv = StartLoadInternal(aRequest, securityFlags, aCharsetForPreload);
+  nsresult rv = StartLoadInternal(aRequest, securityFlags);
 
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1001,8 +1002,7 @@ inline nsLiteralString GetInitiatorType(ScriptLoadRequest* aRequest) {
 
 // static
 nsresult ScriptLoader::PrepareHttpRequestAndInitiatorType(
-    nsIChannel* aChannel, ScriptLoadRequest* aRequest,
-    const Maybe<nsAutoString>& aCharsetForPreload) {
+    nsIChannel* aChannel, ScriptLoadRequest* aRequest) {
   nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(aChannel));
   nsresult rv = NS_OK;
 
@@ -1016,11 +1016,14 @@ nsresult ScriptLoader::PrepareHttpRequestAndInitiatorType(
     MOZ_ASSERT(NS_SUCCEEDED(rv));
 
     nsAutoString hintCharset;
-    if (!aRequest->GetScriptLoadContext()->IsPreload() &&
-        aRequest->GetScriptLoadContext()->HasScriptElement()) {
-      aRequest->GetScriptLoadContext()->GetHintCharset(hintCharset);
-    } else if (aCharsetForPreload.isSome()) {
-      hintCharset = aCharsetForPreload.ref();
+    if (!aRequest->GetScriptLoadContext()->IsPreload()) {
+      if (aRequest->GetScriptLoadContext()->HasScriptElement()) {
+        aRequest->GetScriptLoadContext()->GetHintCharset(hintCharset);
+      }
+    } else if (aRequest->mClassicScriptHintEncoding) {
+      nsAutoCString charset;
+      aRequest->mClassicScriptHintEncoding->Name(charset);
+      hintCharset = NS_ConvertUTF8toUTF16(charset);
     }
 
     rv = httpChannel->SetClassicScriptHintCharset(hintCharset);
@@ -1069,9 +1072,8 @@ void ScriptLoader::NotifyPreloadCoalescing(ModuleLoadRequest* aRequest) {
   context->NotifyPreloadCoalescingResult();
 }
 
-nsresult ScriptLoader::StartLoadInternal(
-    ScriptLoadRequest* aRequest, nsSecurityFlags securityFlags,
-    const Maybe<nsAutoString>& aCharsetForPreload) {
+nsresult ScriptLoader::StartLoadInternal(ScriptLoadRequest* aRequest,
+                                         nsSecurityFlags securityFlags) {
   nsCOMPtr<nsIChannel> channel;
   nsresult rv = CreateChannelForScriptLoading(
       getter_AddRefs(channel), mDocument, aRequest, securityFlags);
@@ -1113,8 +1115,7 @@ nsresult ScriptLoader::StartLoadInternal(
 
   PrepareRequestPriorityAndRequestDependencies(channel, aRequest);
 
-  rv =
-      PrepareHttpRequestAndInitiatorType(channel, aRequest, aCharsetForPreload);
+  rv = PrepareHttpRequestAndInitiatorType(channel, aRequest);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIIncrementalStreamLoader> loader;
@@ -1196,9 +1197,7 @@ RequestPriority FetchPriorityToRequestPriority(
 }
 }  // namespace
 
-void ScriptLoader::NotifyObserversForCachedScript(
-    ScriptLoadRequest* aRequest,
-    const Maybe<nsAutoString>& aCharsetForPreload) {
+void ScriptLoader::NotifyObserversForCachedScript(ScriptLoadRequest* aRequest) {
   nsCOMPtr<nsIObserverService> obsService = services::GetObserverService();
 
   if (!obsService->HasObservers("http-on-resource-cache-response")) {
@@ -1238,8 +1237,7 @@ void ScriptLoader::NotifyObserversForCachedScript(
 
   PrepareLoadInfoForScriptLoading(channel, aRequest);
 
-  rv =
-      PrepareHttpRequestAndInitiatorType(channel, aRequest, aCharsetForPreload);
+  rv = PrepareHttpRequestAndInitiatorType(channel, aRequest);
   if (NS_FAILED(rv)) {
     return;
   }
@@ -1260,7 +1258,8 @@ already_AddRefed<ScriptLoadRequest> ScriptLoader::CreateLoadRequest(
     CORSMode aCORSMode, const nsAString& aNonce,
     RequestPriority aRequestPriority, const SRIMetadata& aIntegrity,
     ReferrerPolicy aReferrerPolicy, ParserMetadata aParserMetadata,
-    ScriptLoadRequestType aRequestType) {
+    ScriptLoadRequestType aRequestType,
+    const Encoding* aClassicScriptPreloadHintEncoding) {
   nsIURI* referrer = mDocument->GetDocumentURIAsReferrer();
   RefPtr<ScriptFetchOptions> fetchOptions =
       new ScriptFetchOptions(aCORSMode, aNonce, aRequestPriority,
@@ -1280,8 +1279,26 @@ already_AddRefed<ScriptLoadRequest> ScriptLoader::CreateLoadRequest(
              (StaticPrefs::dom_speculation_rules_enabled() &&
               aKind == ScriptKind::eSpeculationRules));
 
-  RefPtr<ScriptLoadRequest> request =
-      new ScriptLoadRequest(aKind, aIntegrity, referrer, context);
+  const Encoding* classicScriptHintEncoding = nullptr;
+  if (aKind == ScriptKind::eClassic) {
+    if (aRequestType == ScriptLoadRequestType::Preload) {
+      classicScriptHintEncoding = aClassicScriptPreloadHintEncoding;
+    } else {
+      MOZ_ASSERT(aClassicScriptPreloadHintEncoding == nullptr);
+
+      nsAutoString classicScriptHintCharset;
+      aElement->GetScriptCharset(classicScriptHintCharset);
+      if (!classicScriptHintCharset.IsEmpty()) {
+        classicScriptHintEncoding =
+            Encoding::ForLabel(classicScriptHintCharset);
+      }
+    }
+  } else {
+    MOZ_ASSERT(aClassicScriptPreloadHintEncoding == nullptr);
+  }
+
+  RefPtr<ScriptLoadRequest> request = new ScriptLoadRequest(
+      aKind, aIntegrity, referrer, context, classicScriptHintEncoding);
 
   TryUseCache(aReferrerPolicy, fetchOptions, aURI, request, aElement, aNonce,
               aRequestType);
@@ -1335,6 +1352,52 @@ void ScriptLoader::TryUseCache(ReferrerPolicy aReferrerPolicy,
          this, aRequest->getLoadedScript(), aRequest,
          aRequest->URI()->GetSpecOrDefault().get()));
     return;
+  }
+
+  if (aRequest->IsClassicScript() &&
+      cacheResult.mCompleteValue->DependsOnClassicScriptHintEncoding() &&
+      cacheResult.mCompleteValue->ClassicScriptEncoding() !=
+          GetClassicScriptFallbackEncoding(aRequest)) {
+    // See ScriptLoadHandler::TrySetDecoder for the
+    // DependsOnClassicScriptHintEncoding flag handling.
+    //
+    // If this branch is taken, there are multiple cases:
+    //   (a) If the request has hint charset, the hint charset should be used
+    //       for decoding the script.  The cache entry is decoded with different
+    //       encoding, and thus this cache entry shouldn't be used.
+    //   (b) If the request has no hint charset, either the document's charset
+    //       or the fallback windows-1252 should be used.
+    //     (b-1) For script preloads performed during the speculative loading,
+    //           the document's charset might not have been reflecting the
+    //           actual document's encoding yet.  In that case, tentatively
+    //           use the in-memory cache for the preload, and let the actual
+    //           script load decide whether to use the preload or not.
+    //           NOTE: Do the same for the case where the the encoding
+    //                 accidentally match due to the uninitialized encoding
+    //                 (UTF-8).
+    //     (b-2) For regular loads, the cache entry is decoded with the
+    //           different encoding, and thus this cache entry shouldn't be
+    //           used.
+    if (aRequestType == ScriptLoadRequestType::Preload &&
+        !aRequest->mClassicScriptHintEncoding && mDocument &&
+        mDocument->GetDocumentCharacterSetSource() == 0) {
+      // This is the (b-1) case above.
+      LOG(
+          ("ScriptLoader (%p): Using in-memory cache with different encoding "
+           "for "
+           "ScriptLoadRequest(%p) for preload without hint charset, performed "
+           "while the document encoding is uninitialized.",
+           this, aRequest));
+    } else {
+      // This is the (a) and (b-2) case above.
+      aRequest->NoCacheEntryFound(aReferrerPolicy, aFetchOptions, aURI);
+      LOG(
+          ("ScriptLoader (%p): Created LoadedScript (%p) for "
+           "ScriptLoadRequest(%p) because cache has different encoding %s.",
+           this, aRequest->getLoadedScript(), aRequest,
+           aRequest->URI()->GetSpecOrDefault().get()));
+      return;
+    }
   }
 
   if (!cacheResult.mCompleteValue->IsSRIMetadataReusableBy(
@@ -1404,14 +1467,12 @@ void ScriptLoader::TryUseCache(ReferrerPolicy aReferrerPolicy,
   return;
 }
 
-void ScriptLoader::EmulateNetworkEvents(
-    ScriptLoadRequest* aRequest,
-    const Maybe<nsAutoString>& aCharsetForPreload) {
+void ScriptLoader::EmulateNetworkEvents(ScriptLoadRequest* aRequest) {
   MOZ_ASSERT(aRequest->IsRetrievedFromMemoryCache());
   MOZ_ASSERT(aRequest->mNetworkMetadata);
   MOZ_ASSERT(!aRequest->IsWasmBytes());
 
-  NotifyObserversForCachedScript(aRequest, aCharsetForPreload);
+  NotifyObserversForCachedScript(aRequest);
 
   {
     nsAutoCString name;
@@ -1588,10 +1649,11 @@ bool ScriptLoader::ProcessExternalScript(nsIScriptElement* aElement,
     ReferrerPolicy referrerPolicy = GetReferrerPolicy(aElement);
     ParserMetadata parserMetadata = GetParserMetadata(aElement);
 
-    request = CreateLoadRequest(
-        aScriptKind, scriptURI, aElement, VoidString(), principal, ourCORSMode,
-        nonce, FetchPriorityToRequestPriority(fetchPriority), sriMetadata,
-        referrerPolicy, parserMetadata, ScriptLoadRequestType::External);
+    request = CreateLoadRequest(aScriptKind, scriptURI, aElement, VoidString(),
+                                principal, ourCORSMode, nonce,
+                                FetchPriorityToRequestPriority(fetchPriority),
+                                sriMetadata, referrerPolicy, parserMetadata,
+                                ScriptLoadRequestType::External, nullptr);
 
     PROFILER_MARKER("ScriptLoader::ProcessExternalScript CreateLoadRequest", JS,
                     {mozilla::MarkerStack::Capture()}, FlowMarker,
@@ -1607,7 +1669,7 @@ bool ScriptLoader::ProcessExternalScript(nsIScriptElement* aElement,
     LOG(("ScriptLoadRequest (%p): Created request for external script",
          request.get()));
 
-    nsresult rv = StartLoad(request, Nothing());
+    nsresult rv = StartLoad(request);
     if (NS_FAILED(rv)) {
       ReportErrorToConsole(request, rv);
 
@@ -1833,7 +1895,7 @@ bool ScriptLoader::ProcessInlineScript(nsIScriptElement* aElement,
       mDocument->NodePrincipal(), corsMode, nonce,
       FetchPriorityToRequestPriority(fetchPriority),
       SRIMetadata(),  // SRI doesn't apply
-      referrerPolicy, parserMetadata, ScriptLoadRequestType::Inline);
+      referrerPolicy, parserMetadata, ScriptLoadRequestType::Inline, nullptr);
   request->GetScriptLoadContext()->mIsInline = true;
   request->GetScriptLoadContext()->mLineNo = aElement->GetScriptLineNumber();
   request->GetScriptLoadContext()->mColumnNo =
@@ -1864,7 +1926,7 @@ bool ScriptLoader::ProcessInlineScript(nsIScriptElement* aElement,
       mModuleLoader->DisallowImportMaps();
     }
 
-    ModuleLoadRequest* modReq = request->AsModuleRequest();
+    ModuleLoadRequest* const modReq = request->AsModuleRequest();
     if (aElement->GetParserCreated() != NOT_FROM_PARSER) {
       if (aElement->GetScriptAsync()) {
         AddAsyncRequest(modReq);
@@ -1875,12 +1937,7 @@ bool ScriptLoader::ProcessInlineScript(nsIScriptElement* aElement,
 
     // This calls OnFetchComplete directly since there's no need to start
     // fetching an inline script.
-    nsresult rv = modReq->OnFetchComplete(NS_OK);
-    if (NS_FAILED(rv)) {
-      ReportErrorToConsole(modReq, rv);
-      HandleLoadError(modReq, rv);
-    }
-
+    modReq->OnFetchComplete(NS_OK);
     return false;
   }
 
@@ -2042,19 +2099,39 @@ ScriptLoadRequest* ScriptLoader::LookupPreloadRequest(
     request->SetReady();
   }
 
-  nsString preloadCharset(mPreloads[i].mCharset);
   mPreloads.RemoveElementAt(i);
 
   // Double-check that the charset the preload used is the same as the charset
   // we have now.
   nsAutoString elementCharset;
   aElement->GetScriptCharset(elementCharset);
+  const Encoding* elementEncoding = Encoding::ForLabel(elementCharset);
 
   // Bug 1832361: charset and crossorigin attributes shouldn't affect matching
   // of module scripts and modulepreload
-  if (!request->IsModuleRequest() &&
-      (!elementCharset.Equals(preloadCharset) ||
+  if (request->IsClassicScript() &&
+      (request->mClassicScriptHintEncoding != elementEncoding ||
        aElement->GetCORSMode() != request->CORSMode())) {
+    // Drop the preload.
+    request->Cancel();
+    return nullptr;
+  }
+
+  // At the point of script preload, the document's charset might be different
+  // in the following situation:
+  //   1. Document's charset is set to "uninitialied" UTF-8
+  //   2. Speculative load performs a script preload
+  //   3. Script preload uses the "uninitialied" charset as a fallback encoding
+  //      when looking up an in-memory cache entry
+  //   4. An in-memory cache entry is found for the preload
+  //   5. Document's charset is set to different one, by auto-detection etc
+  //   6. Actual script load is performed
+  //
+  // In this case, we should re-validate the fallback encoding.
+  if (request->IsRetrievedFromMemoryCache() &&
+      request->getLoadedScript()->DependsOnClassicScriptHintEncoding() &&
+      request->getLoadedScript()->ClassicScriptEncoding() !=
+          GetClassicScriptFallbackEncoding(elementEncoding)) {
     // Drop the preload.
     request->Cancel();
     return nullptr;
@@ -2196,13 +2273,17 @@ class OffThreadCompilationCompleteTask : public Task {
   }
 #endif
 
-  TaskResult Run() override {
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY TaskResult Run() override {
     MOZ_ASSERT(NS_IsMainThread());
 
     RefPtr<ScriptLoadContext> context = mRequest->GetScriptLoadContext();
 
     if (!context->mCompileOrDecodeTask) {
-      // Request has been cancelled by MaybeCancelOffThreadScript.
+      // Request has been cancelled by MaybeCancelOffThreadScript, which nulls
+      // the task. This task depends on that cancelled one, so it has finished
+      // by now and is only kept alive by the list of cancelled tasks, along
+      // with its FrontendContext and its result.
+      CompileOrDecodeTask::ForgetFinishedCancelledTasks();
       return TaskResult::Complete;
     }
 
@@ -2212,6 +2293,8 @@ class OffThreadCompilationCompleteTask : public Task {
       ProfilerString8View scriptSourceString;
       if (mRequest->IsFetchedAsTextSource()) {
         scriptSourceString = "ScriptCompileOffThread";
+      } else if (mRequest->IsWasmBytes()) {
+        scriptSourceString = "WasmCompileOffThread";
       } else {
         MOZ_ASSERT(mRequest->IsRetrievedAsSerializedStencil());
         scriptSourceString = "DecodeStencilOffThread";
@@ -2224,10 +2307,9 @@ class OffThreadCompilationCompleteTask : public Task {
                            profilerLabelString);
     }
 
-    (void)mLoader->ProcessOffThreadRequest(mRequest);
-
-    mRequest = nullptr;
-    mLoader = nullptr;
+    const RefPtr<ScriptLoadRequest> request = std::move(mRequest);
+    const RefPtr<ScriptLoader> loader = std::move(mLoader);
+    (void)loader->ProcessOffThreadRequest(request);
     return TaskResult::Complete;
   }
 
@@ -2257,6 +2339,7 @@ class OffThreadCompilationCompleteTask : public Task {
 //       (bug 1846160).
 static constexpr size_t OffThreadMinimumTextLength = 5 * 1000;
 static constexpr size_t OffThreadMinimumSerializedStencilLength = 5 * 1000;
+static constexpr size_t OffThreadMinimumWasmLength = 16 * 1024;
 
 nsresult ScriptLoader::AttemptOffThreadScriptCompile(
     ScriptLoadRequest* aRequest, bool* aCouldCompileOut) {
@@ -2315,9 +2398,18 @@ nsresult ScriptLoader::AttemptOffThreadScriptCompile(
       return NS_OK;
     }
   } else if (aRequest->IsWasmBytes()) {
-    // See Bug 2007696, off-thread compilation of wasm modules is
-    // not yet implemented.
-    return NS_OK;
+    if (!StaticPrefs::javascript_options_parallel_parsing() ||
+        aRequest->WasmBytes().length() < OffThreadMinimumWasmLength) {
+      TRACE_FOR_TEST(aRequest, "compile:main thread");
+      return NS_OK;
+    }
+
+    // Only source phase modules are compiled off-thread. Compilation of
+    // evaluation phase modules is not yet implemented (Bug 2030454).
+    if (!aRequest->AsModuleRequest()->IsSourcePhaseRequest(cx)) {
+      TRACE_FOR_TEST(aRequest, "compile:main thread");
+      return NS_OK;
+    }
   } else {
     MOZ_ASSERT(aRequest->IsRetrievedAsSerializedStencil());
 
@@ -2344,6 +2436,8 @@ nsresult ScriptLoader::AttemptOffThreadScriptCompile(
   TaskController::Get()->AddTask(compileOrDecodeTask.forget());
   TaskController::Get()->AddTask(completeTask.forget());
 
+  TRACE_FOR_TEST(aRequest, "compile:off thread");
+
   aRequest->GetScriptLoadContext()->BlockOnload(mDocument);
 
   // Once the compilation is finished, the completeTask will be run on
@@ -2367,20 +2461,115 @@ nsresult ScriptLoader::AttemptOffThreadScriptCompile(
   return NS_OK;
 }
 
-CompileOrDecodeTask::CompileOrDecodeTask()
+CompileOrDecodeTask::CompileOrDecodeTask(Type aType)
     : Task(Kind::OffMainThreadOnly, EventQueuePriority::Normal),
       mMutex("CompileOrDecodeTask"),
+      mType(aType) {}
+
+Task::TaskResult CompileOrDecodeTask::Run() {
+  MutexAutoLock lock(mMutex);
+
+  if (mIsCancelled) {
+    mMayStillRun = false;
+    return TaskResult::Complete;
+  }
+
+  TaskResult result = RunTask();
+  // An interrupted task runs again later, so it is still worth waiting for.
+  mMayStillRun = result != TaskResult::Complete;
+  return result;
+}
+
+void CompileOrDecodeTask::Cancel() {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(!mIsCancelled);
+
+  mIsCancelled = true;
+  CancelTask();
+  TrackCancelled();
+}
+
+void CompileOrDecodeTask::WaitForRunningTask() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  MutexAutoLock lock(mMutex);
+}
+
+// Cancelled tasks that may still be running. A running one is waited for at
+// shutdown, so it cannot outlive the frontend state that JS_ShutDown frees.
+static StaticAutoPtr<nsTArray<RefPtr<CompileOrDecodeTask>>> sCancelledTasks;
+
+void CompileOrDecodeTask::ForgetFinishedCancelledTasks() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  if (!sCancelledTasks) {
+    return;
+  }
+
+  sCancelledTasks->RemoveElementsBy(
+      [](const RefPtr<CompileOrDecodeTask>& aTask) {
+        return !aTask->MayStillRun();
+      });
+}
+
+void CompileOrDecodeTask::EnsureCancelledTasksList() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  if (sCancelledTasks) {
+    return;
+  }
+
+  sCancelledTasks = new nsTArray<RefPtr<CompileOrDecodeTask>>();
+
+  RunOnShutdown(
+      [] {
+        for (const RefPtr<CompileOrDecodeTask>& task : *sCancelledTasks) {
+          task->WaitForRunningTask();
+        }
+        sCancelledTasks = nullptr;
+      },
+      ShutdownPhase::XPCOMShutdownThreads);
+}
+
+void CompileOrDecodeTask::TrackCancelled() {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(mIsCancelled, "Only Cancel tracks a task");
+
+  if (!MayStillRun()) {
+    return;
+  }
+
+  if (AppShutdown::IsInOrBeyond(ShutdownPhase::XPCOMShutdownThreads)) {
+    WaitForRunningTask();
+    return;
+  }
+
+  EnsureCancelledTasksList();
+  ForgetFinishedCancelledTasks();
+  sCancelledTasks->AppendElement(this);
+}
+
+StencilCompileOrDecodeTask::StencilCompileOrDecodeTask(Type aType)
+    : CompileOrDecodeTask(aType),
       mOptions(JS::OwningCompileOptions::ForFrontendContext()) {}
 
-CompileOrDecodeTask::~CompileOrDecodeTask() {
+StencilCompileOrDecodeTask::~StencilCompileOrDecodeTask() {
   if (mFrontendContext) {
     JS::DestroyFrontendContext(mFrontendContext);
     mFrontendContext = nullptr;
   }
 }
 
-nsresult CompileOrDecodeTask::InitFrontendContext() {
-  mFrontendContext = JS::NewFrontendContext();
+void StencilCompileOrDecodeTask::CancelTask() {
+  // Decode has no poll points, so only compilation actually aborts.
+  if (mFrontendContext) {
+    JS::RequestFrontendCompilationCancellation(mFrontendContext);
+  }
+}
+
+nsresult StencilCompileOrDecodeTask::InitFrontendContext() {
+  mFrontendContext =
+      JS::NewFrontendContext(JS::AllowCancellingCompilation::Yes);
   if (!mFrontendContext) {
     mIsCancelled = true;
     return NS_ERROR_OUT_OF_MEMORY;
@@ -2388,8 +2577,7 @@ nsresult CompileOrDecodeTask::InitFrontendContext() {
   return NS_OK;
 }
 
-void CompileOrDecodeTask::DidRunTask(const MutexAutoLock& aProofOfLock,
-                                     RefPtr<JS::Stencil>&& aStencil) {
+void StencilCompileOrDecodeTask::DidRunTask(RefPtr<JS::Stencil>&& aStencil) {
   if (aStencil) {
     if (!JS::PrepareForInstantiate(mFrontendContext, *aStencil,
                                    mInstantiationStorage)) {
@@ -2400,7 +2588,7 @@ void CompileOrDecodeTask::DidRunTask(const MutexAutoLock& aProofOfLock,
   mStencil = std::move(aStencil);
 }
 
-already_AddRefed<JS::Stencil> CompileOrDecodeTask::StealResult(
+already_AddRefed<JS::Stencil> StencilCompileOrDecodeTask::StealResult(
     JSContext* aCx, JS::InstantiationStorage* aInstantiationStorage) {
   JS::FrontendContext* fc = mFrontendContext;
   mFrontendContext = nullptr;
@@ -2434,22 +2622,15 @@ already_AddRefed<JS::Stencil> CompileOrDecodeTask::StealResult(
   return mStencil.forget();
 }
 
-void CompileOrDecodeTask::Cancel() {
-  MOZ_ASSERT(NS_IsMainThread());
-
-  MutexAutoLock lock(mMutex);
-
-  mIsCancelled = true;
-}
-
 enum class CompilationTarget { Script, Module };
 
 template <CompilationTarget target>
-class ScriptOrModuleCompileTask final : public CompileOrDecodeTask {
+class ScriptOrModuleCompileTask final : public StencilCompileOrDecodeTask {
  public:
   explicit ScriptOrModuleCompileTask(
       ScriptLoader::MaybeSourceText&& aMaybeSource)
-      : CompileOrDecodeTask(), mMaybeSource(std::move(aMaybeSource)) {}
+      : StencilCompileOrDecodeTask(Type::Compile),
+        mMaybeSource(std::move(aMaybeSource)) {}
 
   nsresult Init(JS::CompileOptions& aOptions) {
     nsresult rv = InitFrontendContext();
@@ -2463,15 +2644,10 @@ class ScriptOrModuleCompileTask final : public CompileOrDecodeTask {
     return NS_OK;
   }
 
-  TaskResult Run() override {
-    MutexAutoLock lock(mMutex);
-
-    if (IsCancelled(lock)) {
-      return TaskResult::Complete;
-    }
+  TaskResult RunTask() override MOZ_REQUIRES(mMutex) {
     RefPtr<JS::Stencil> stencil = Compile();
 
-    DidRunTask(lock, std::move(stencil));
+    DidRunTask(std::move(stencil));
     return TaskResult::Complete;
   }
 
@@ -2513,10 +2689,17 @@ using ScriptCompileTask =
 using ModuleCompileTask =
     class ScriptOrModuleCompileTask<CompilationTarget::Module>;
 
-class ScriptDecodeTask final : public CompileOrDecodeTask {
+class ScriptDecodeTask final : public StencilCompileOrDecodeTask {
  public:
-  explicit ScriptDecodeTask(const JS::TranscodeRange& aRange)
-      : mRange(aRange) {}
+  ScriptDecodeTask(JS::TranscodeBuffer&& aSRIAndSerializedStencil,
+                   size_t aSerializedStencilOffset)
+      : StencilCompileOrDecodeTask(Type::Decode),
+        mSRIAndSerializedStencil(std::move(aSRIAndSerializedStencil)),
+        mSerializedStencilOffset(aSerializedStencilOffset) {}
+
+  JS::TranscodeBuffer TakeBuffer() {
+    return std::move(mSRIAndSerializedStencil);
+  }
 
   nsresult Init(JS::DecodeOptions& aOptions) {
     nsresult rv = InitFrontendContext();
@@ -2530,29 +2713,28 @@ class ScriptDecodeTask final : public CompileOrDecodeTask {
     return NS_OK;
   }
 
-  TaskResult Run() override {
-    MutexAutoLock lock(mMutex);
-
-    if (IsCancelled(lock)) {
-      return TaskResult::Complete;
-    }
-
+  TaskResult RunTask() override MOZ_REQUIRES(mMutex) {
     RefPtr<JS::Stencil> stencil = Decode();
 
-    JS::OwningCompileOptions compileOptions(
-        (JS::OwningCompileOptions::ForFrontendContext()));
     mOptions.steal(std::move(mDecodeOptions));
 
-    DidRunTask(lock, std::move(stencil));
+    DidRunTask(std::move(stencil));
     return TaskResult::Complete;
   }
 
  private:
+  // The stencil, after the SRI which precedes it in the buffer.
+  JS::TranscodeRange Range() const {
+    return JS::TranscodeRange(
+        mSRIAndSerializedStencil.begin() + mSerializedStencilOffset,
+        mSRIAndSerializedStencil.length() - mSerializedStencilOffset);
+  }
+
   already_AddRefed<JS::Stencil> Decode() {
     // NOTE: JS::DecodeStencil doesn't need the stack quota.
 
     RefPtr<JS::Stencil> stencil;
-    mResult = JS::DecodeStencil(mFrontendContext, mDecodeOptions, mRange,
+    mResult = JS::DecodeStencil(mFrontendContext, mDecodeOptions, Range(),
                                 getter_AddRefs(stencil));
     return stencil.forget();
   }
@@ -2568,18 +2750,75 @@ class ScriptDecodeTask final : public CompileOrDecodeTask {
  private:
   JS::OwningDecodeOptions mDecodeOptions;
 
-  JS::TranscodeRange mRange;
+  // A cancelled task drops these with its result.
+  JS::TranscodeBuffer mSRIAndSerializedStencil;
+
+  const size_t mSerializedStencilOffset;
 };
+
+ScriptDecodeTask* CompileOrDecodeTask::AsScriptDecodeTask() {
+  MOZ_ASSERT(IsDecodeTask());
+  return static_cast<ScriptDecodeTask*>(this);
+}
+
+JS::TranscodeBuffer StencilCompileOrDecodeTask::TakeSRIAndSerializedStencil() {
+  return AsScriptDecodeTask()->TakeBuffer();
+}
+
+nsresult WasmCompileTask::Init(JSContext* aCx, JS::CompileOptions& aOptions) {
+  mCompileArgs = JS::BuildCompileArgsForESM(aCx, aOptions);
+  if (!mCompileArgs) {
+    mIsCancelled = true;
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+
+  return NS_OK;
+}
+
+Task::TaskResult WasmCompileTask::RunTask() {
+  mCompileResult =
+      JS::CompileForESM(*mCompileArgs, mBytes.begin(), mBytes.length());
+
+  return TaskResult::Complete;
+}
+
+bool WasmCompileTask::StealResult(JSContext* aCx,
+                                  JS::MutableHandle<JSObject*> aModuleOut) {
+  JS::Rooted<JSObject*> wasmModuleObject(aCx);
+
+  MutexAutoLock lock(mMutex);
+  if (!JS::FinishCompileForESM(aCx, *mCompileArgs, mCompileResult,
+                               &wasmModuleObject)) {
+    return false;
+  }
+
+  aModuleOut.set(JS::CreateWasmSourcePhaseModule(aCx, wasmModuleObject));
+  return !!aModuleOut;
+}
 
 nsresult ScriptLoader::CreateOffThreadTask(
     JSContext* aCx, ScriptLoadRequest* aRequest, JS::CompileOptions& aOptions,
     CompileOrDecodeTask** aCompileOrDecodeTask) {
-  if (aRequest->IsRetrievedAsSerializedStencil()) {
-    JS::TranscodeRange range = aRequest->SerializedStencil();
-    JS::DecodeOptions decodeOptions(aOptions);
-    RefPtr<ScriptDecodeTask> decodeTask = new ScriptDecodeTask(range);
-    nsresult rv = decodeTask->Init(decodeOptions);
+  if (aRequest->IsWasmBytes()) {
+    RefPtr<WasmCompileTask> compileTask =
+        new WasmCompileTask(std::move(aRequest->WasmBytes()));
+    nsresult rv = compileTask->Init(aCx, aOptions);
     NS_ENSURE_SUCCESS(rv, rv);
+    compileTask.forget(aCompileOrDecodeTask);
+    return NS_OK;
+  }
+
+  if (aRequest->IsRetrievedAsSerializedStencil()) {
+    JS::DecodeOptions decodeOptions(aOptions);
+    RefPtr<ScriptDecodeTask> decodeTask =
+        new ScriptDecodeTask(aRequest->TakeSRIAndSerializedStencil(),
+                             aRequest->GetSerializedStencilOffset());
+    nsresult rv = decodeTask->Init(decodeOptions);
+    if (NS_FAILED(rv)) {
+      aRequest->RestoreSRIAndSerializedStencil(
+          decodeTask->TakeSRIAndSerializedStencil());
+      return rv;
+    }
     decodeTask.forget(aCompileOrDecodeTask);
     return NS_OK;
   }
@@ -2661,7 +2900,8 @@ nsresult ScriptLoader::ProcessOffThreadRequest(ScriptLoadRequest* aRequest) {
   if (aRequest->IsModuleRequest()) {
     MOZ_ASSERT(aRequest->GetScriptLoadContext()->mCompileOrDecodeTask);
     ModuleLoadRequest* request = aRequest->AsModuleRequest();
-    return request->OnFetchComplete(NS_OK);
+    request->OnFetchComplete(NS_OK);
+    return NS_OK;
   }
 
   // Element may not be ready yet if speculatively compiling, so process the
@@ -2802,21 +3042,21 @@ nsresult ScriptLoader::ProcessRequest(ScriptLoadRequest* aRequest) {
 
 void ScriptLoader::FireScriptAvailable(nsresult aResult,
                                        ScriptLoadRequest* aRequest) {
+  const nsCOMPtr<nsIScriptElement> scriptElement =
+      aRequest->GetScriptLoadContext()->GetScriptElementForObserver();
+  const nsCOMPtr<nsIURI> uri = aRequest->URI();
   for (int32_t i = 0; i < mObservers.Count(); i++) {
     nsCOMPtr<nsIScriptLoaderObserver> obs = mObservers[i];
-    obs->ScriptAvailable(
-        aResult,
-        aRequest->GetScriptLoadContext()->GetScriptElementForObserver(),
-        aRequest->GetScriptLoadContext()->mIsInline, aRequest->URI(),
-        aRequest->GetScriptLoadContext()->mLineNo);
+    obs->ScriptAvailable(aResult, scriptElement,
+                         aRequest->GetScriptLoadContext()->mIsInline, uri,
+                         aRequest->GetScriptLoadContext()->mLineNo);
   }
 
-  bool isInlineClassicScript = aRequest->GetScriptLoadContext()->mIsInline &&
-                               !aRequest->IsModuleRequest();
-  RefPtr<nsIScriptElement> scriptElement =
-      aRequest->GetScriptLoadContext()->GetScriptElementForObserver();
+  const bool isInlineClassicScript =
+      aRequest->GetScriptLoadContext()->mIsInline &&
+      !aRequest->IsModuleRequest();
   scriptElement->ScriptAvailable(aResult, scriptElement, isInlineClassicScript,
-                                 aRequest->URI(),
+                                 uri,
                                  aRequest->GetScriptLoadContext()->mLineNo);
 }
 
@@ -3004,6 +3244,18 @@ ScriptLoader::DiskCacheStrategy ScriptLoader::GetDiskCacheStrategy() {
   return strategy;
 }
 
+// https://html.spec.whatwg.org/#creating-a-javascript-module-script
+// Step 1: If scripting is disabled, the module script is created from the
+// empty source instead of the fetched source.
+static bool IsScriptingDisabled(ModuleLoadRequest* aRequest) {
+  // ModuleLoaderBase::CreateModuleScript fails before compiling anything if
+  // AutoJSAPI cannot be initialized with the global, so it is alive here.
+  nsIGlobalObject* global = aRequest->mLoader->GetGlobalObject();
+  MOZ_ASSERT(global && global->GetGlobalJSObject());
+
+  return !xpc::Scriptability::AllowedIfExists(global->GetGlobalJSObject());
+}
+
 void ScriptLoader::CalculateCacheFlag(ScriptLoadRequest* aRequest) {
   using mozilla::TimeDuration;
   using mozilla::TimeStamp;
@@ -3057,6 +3309,18 @@ void ScriptLoader::CalculateCacheFlag(ScriptLoadRequest* aRequest) {
         return;
       }
 #endif
+
+      if (IsScriptingDisabled(moduleLoadRequest)) {
+        LOG(("ScriptLoadRequest (%p): Bytecode-cache: Skip all: empty module",
+             aRequest));
+        aRequest->MarkNotCacheable();
+        // Without the in-memory cache, the LoadedScript is used only by this
+        // request, so drop its disk cache reference and the SRI data here.
+        if (!UsesMemoryCache()) {
+          aRequest->getLoadedScript()->DropDiskCacheReferenceAndSRI();
+        }
+        return;
+      }
     } else {
       LOG(("ScriptLoadRequest (%p): Bytecode-cache: Skip all: synthetic module",
            aRequest));
@@ -3826,6 +4090,28 @@ nsCString& ScriptLoader::BytecodeMimeTypeFor(
   return nsContentUtils::JSScriptBytecodeMimeType();
 }
 
+const Encoding* ScriptLoader::GetClassicScriptFallbackEncoding(
+    const ScriptLoadRequest* aRequest) {
+  return GetClassicScriptFallbackEncoding(aRequest->mClassicScriptHintEncoding);
+}
+
+const Encoding* ScriptLoader::GetClassicScriptFallbackEncoding(
+    const Encoding* aClassicScriptHintEncoding) {
+  if (aClassicScriptHintEncoding) {
+    return aClassicScriptHintEncoding;
+  }
+
+  // Get the charset from the charset of the document.
+  if (mDocument) {
+    return mDocument->GetDocumentCharacterSet();
+  }
+
+  // Curiously, there are various callers that don't pass aDocument. The
+  // fallback in the old code was ISO-8859-1, which behaved like
+  // windows-1252.
+  return WINDOWS_1252_ENCODING;
+}
+
 nsresult ScriptLoader::MaybePrepareForDiskCacheAfterExecute(
     ScriptLoadRequest* aRequest, nsresult aRv) {
   MOZ_ASSERT(!aRequest->IsWasmBytes());
@@ -3853,7 +4139,8 @@ nsresult ScriptLoader::MaybePrepareForDiskCacheAfterExecute(
   }
 
   TRACE_FOR_TEST(aRequest, "diskcache:register");
-  MOZ_ASSERT(aRequest->GetSRILength() == aRequest->SRI().length());
+  MOZ_ASSERT(aRequest->GetSerializedStencilOffset() ==
+             aRequest->SRI().length() + LoadedScript::EncodingHeaderSize);
   RegisterForDiskCache(aRequest);
 
   return aRv;
@@ -4197,14 +4484,27 @@ bool ScriptLoader::EncodeAndCompress(
     JS::FrontendContext* aFc, const JS::loader::LoadedScript* aLoadedScript,
     JS::Stencil* aStencil, const JS::TranscodeBuffer& aSRI,
     Vector<uint8_t>& aCompressed) {
-  size_t SRILength = aSRI.length();
-  MOZ_ASSERT(JS::IsTranscodingBytecodeOffsetAligned(SRILength));
+  size_t alignedSRILength = aSRI.length();
+  MOZ_ASSERT(JS::IsTranscodingBytecodeOffsetAligned(alignedSRILength));
 
   JS::TranscodeBuffer SRIAndSerializedStencil;
   if (!SRIAndSerializedStencil.appendAll(aSRI)) {
     LOG(("LoadedScript (%p): Cannot allocate buffer", aLoadedScript));
     return false;
   }
+
+  MOZ_ASSERT(
+      JS::IsTranscodingBytecodeOffsetAligned(LoadedScript::EncodingHeaderSize));
+
+  if (!SRIAndSerializedStencil.growBy(LoadedScript::EncodingHeaderSize)) {
+    LOG(("LoadedScript (%p): Cannot allocate buffer", aLoadedScript));
+    return false;
+  }
+
+  LoadedScript::EncodingHeader header;
+  aLoadedScript->WriteIntoEncodingHeader(&header);
+  memcpy(SRIAndSerializedStencil.begin() + alignedSRILength, &header,
+         LoadedScript::EncodingHeaderSize);
 
   JS::TranscodeResult result =
       JS::EncodeStencil(aFc, aStencil, SRIAndSerializedStencil);
@@ -4219,8 +4519,9 @@ bool ScriptLoader::EncodeAndCompress(
   }
 
   // TODO probably need to move this to a helper thread
-  if (!ScriptBytecodeCompress(SRIAndSerializedStencil, SRILength,
-                              aCompressed)) {
+  if (!ScriptBytecodeCompress(
+          SRIAndSerializedStencil,
+          alignedSRILength + LoadedScript::EncodingHeaderSize, aCompressed)) {
     return false;
   }
 
@@ -4349,7 +4650,8 @@ void ScriptLoader::ProcessPendingRequestsAsync() {
   }
 }
 
-void ProcessPendingRequestsCallback(nsITimer* aTimer, void* aClosure) {
+void ProcessPendingRequestsCallback(nsITimer* aTimer, void* aClosure)
+    MOZ_CAN_RUN_SCRIPT_BOUNDARY {
   RefPtr<ScriptLoader> sl = static_cast<ScriptLoader*>(aClosure);
   sl->ProcessPendingRequests(true);
 }
@@ -4450,9 +4752,11 @@ void ScriptLoader::ProcessPendingRequests(bool aAllowBypassingParserBlocking) {
 
   if (mDeferCheckpointReached && mDocument && !mParserBlockingRequest &&
       mNonAsyncExternalScriptInsertedRequests.isEmpty() &&
-      mXSLTRequests.isEmpty() && mDeferRequests.isEmpty() &&
-      MaybeRemovedDeferRequests()) {
-    return ProcessPendingRequests();
+      mXSLTRequests.isEmpty() && mDeferRequests.isEmpty()) {
+    const RefPtr<ScriptLoader> self = this;
+    if (self->MaybeRemovedDeferRequests()) {
+      return self->ProcessPendingRequests();
+    }
   }
 
   if (mDeferCheckpointReached && mDocument && !mParserBlockingRequest &&
@@ -4819,15 +5123,15 @@ nsresult ScriptLoader::SaveSRIHash(
   MOZ_ASSERT(srilen == len);
 
   MOZ_ASSERT(sri.length() == len);
-  aRequest->SetSRILength(len);
 
-  if (aRequest->GetSRILength() != len) {
-    // The serialized stencil is aligned in the buffer, and space might be
-    // reserved for padding after the SRI hash.
-    if (!sri.resize(aRequest->GetSRILength())) {
+  size_t alignedSRILength = JS::AlignTranscodingBytecodeOffset(len);
+  if (alignedSRILength != len) {
+    if (!sri.resize(alignedSRILength)) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
   }
+
+  aRequest->SetAlignedSRILength(alignedSRILength);
 
   return NS_OK;
 }
@@ -5276,7 +5580,8 @@ nsresult ScriptLoader::PrepareLoadedRequest(ScriptLoadRequest* aRequest,
     }
 
     // Otherwise compile it right away and start fetching descendents.
-    return request->OnFetchComplete(NS_OK);
+    request->OnFetchComplete(NS_OK);
+    return NS_OK;
   }
 
   // The script is now loaded and ready to run.
@@ -5361,6 +5666,11 @@ void ScriptLoader::PreloadURI(
   const auto requestPriority = FetchPriorityToRequestPriority(
       nsGenericHTMLElement::ToFetchPriority(aFetchPriority));
 
+  const Encoding* classicScriptHintEncoding = nullptr;
+  if (scriptKind == ScriptKind::eClassic) {
+    classicScriptHintEncoding = Encoding::ForLabel(aCharset);
+  }
+
   // For link type "modulepreload":
   // https://html.spec.whatwg.org/multipage/links.html#link-type-modulepreload
   // Step 11. Let options be a script fetch options whose cryptographic nonce is
@@ -5377,7 +5687,7 @@ void ScriptLoader::PreloadURI(
       sriMetadata, aReferrerPolicy,
       aLinkPreload ? ParserMetadata::NotParserInserted
                    : ParserMetadata::ParserInserted,
-      ScriptLoadRequestType::Preload);
+      ScriptLoadRequestType::Preload, classicScriptHintEncoding);
   request->GetScriptLoadContext()->mIsInline = false;
   request->GetScriptLoadContext()->mScriptFromHead = aScriptFromHead;
   request->GetScriptLoadContext()->SetScriptMode(aDefer, aAsync, aLinkPreload);
@@ -5391,8 +5701,7 @@ void ScriptLoader::PreloadURI(
          request.get(), url.get()));
   }
 
-  nsAutoString charset(aCharset);
-  nsresult rv = StartLoad(request, Some(charset));
+  nsresult rv = StartLoad(request);
   if (NS_FAILED(rv)) {
     return;
   }
@@ -5416,7 +5725,6 @@ void ScriptLoader::PreloadURI(
 
   PreloadInfo* pi = mPreloads.AppendElement();
   pi->mRequest = request;
-  pi->mCharset = aCharset;
 }
 
 void ScriptLoader::AddDeferRequest(ScriptLoadRequest* aRequest) {
@@ -5480,7 +5788,7 @@ void ScriptLoader::MaybeMoveToLoadedList(ScriptLoadRequest* aRequest) {
 bool ScriptLoader::MaybeRemovedDeferRequests() {
   if (mDeferRequests.isEmpty() && mDocument && mBlockingDOMContentLoaded) {
     mBlockingDOMContentLoaded = false;
-    mDocument->UnblockDOMContentLoaded();
+    mDocument->UnblockDOMContentLoaded(/* aFireSync = */ true);
     return true;
   }
   return false;

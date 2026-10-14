@@ -282,6 +282,7 @@ module.exports = {
     "stylelint-plugin-mozilla/no-base-design-tokens": true,
     "stylelint-plugin-mozilla/no-has-selector": true,
     "stylelint-plugin-mozilla/use-design-tokens": true,
+    "stylelint-plugin-mozilla/use-paired-color-tokens": true,
   },
 
   overrides: [
@@ -424,6 +425,7 @@ module.exports = {
         "browser/fxr/**",
         // Android does not use design tokens
         "mobile/android/**",
+        "toolkit/themes/mobile/global/aboutLicense.css",
         // Docs do not use design tokens
         "docs/**",
         // DOM does not use design tokens

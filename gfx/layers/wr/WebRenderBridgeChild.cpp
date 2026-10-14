@@ -281,14 +281,15 @@ Maybe<wr::FontInstanceKey> WebRenderBridgeChild::GetFontKeyForScaledFont(
 
           Maybe<wr::FontInstanceOptions> options;
           Maybe<wr::FontInstancePlatformOptions> platformOptions;
-          std::vector<FontVariation> variations;
+          std::vector<wr::FontVariation> variations;
           aScaledFont->GetWRFontInstanceOptions(&options, &platformOptions,
                                                 &variations);
 
           aResources.AddFontInstance(
               instanceKey, fontKey.value(), aScaledFont->GetSize(),
               options.ptrOr(nullptr), platformOptions.ptrOr(nullptr),
-              Range<const FontVariation>(variations.data(), variations.size()));
+              Range<const wr::FontVariation>(variations.data(),
+                                             variations.size()));
 
           entry.Insert(instanceKey);
         }
@@ -329,7 +330,7 @@ void WebRenderBridgeChild::RemoveExpiredFontKeys(
   if (mFontInstanceKeysDeleted != counter) {
     mFontInstanceKeysDeleted = counter;
     for (auto iter = mFontInstanceKeys.Iter(); !iter.Done(); iter.Next()) {
-      if (!iter.Key()) {
+      if (iter.Key().IsDead()) {
         aResourceUpdates.DeleteFontInstance(iter.Data());
         iter.Remove();
       }
@@ -339,7 +340,7 @@ void WebRenderBridgeChild::RemoveExpiredFontKeys(
   if (mFontKeysDeleted != counter) {
     mFontKeysDeleted = counter;
     for (auto iter = mFontKeys.Iter(); !iter.Done(); iter.Next()) {
-      if (!iter.Key()) {
+      if (iter.Key().IsDead()) {
         aResourceUpdates.DeleteFont(iter.Data());
         iter.Remove();
       }

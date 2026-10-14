@@ -12,6 +12,8 @@
 #include "LoadedScript.h"
 #include "ModuleLoaderBase.h"
 
+#include "js/Modules.h"
+
 namespace JS::loader {
 
 #undef LOG
@@ -37,7 +39,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(ModuleLoadRequest,
                                                ScriptLoadRequest)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mReferrerScript)
+  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mReferrerValue)
   NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mModuleRequestObj)
   NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mPayload)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
@@ -46,7 +48,8 @@ ModuleLoadRequest::ModuleLoadRequest(
     ModuleType aModuleType, const mozilla::dom::SRIMetadata& aIntegrity,
     nsIURI* aReferrer, LoadContextBase* aContext, Kind aKind,
     ModuleLoaderBase* aLoader, ModuleLoadRequest* aRootModule)
-    : ScriptLoadRequest(ScriptKind::eModule, aIntegrity, aReferrer, aContext),
+    : ScriptLoadRequest(ScriptKind::eModule, aIntegrity, aReferrer, aContext,
+                        nullptr),
       mKind(aKind),
       mModuleType(aModuleType),
       mIsDynamicImport(aKind == Kind::DynamicImport),
@@ -57,7 +60,7 @@ ModuleLoadRequest::ModuleLoadRequest(
 }
 
 ModuleLoadRequest::~ModuleLoadRequest() {
-  MOZ_ASSERT(!mReferrerScript);
+  MOZ_ASSERT(mReferrerValue.isUndefined());
   MOZ_ASSERT(!mModuleRequestObj);
   MOZ_ASSERT(mPayload.isUndefined());
 
@@ -66,6 +69,12 @@ ModuleLoadRequest::~ModuleLoadRequest() {
 
 nsIGlobalObject* ModuleLoadRequest::GetGlobalObject() {
   return mLoader->GetGlobalObject();
+}
+
+bool ModuleLoadRequest::IsSourcePhaseRequest(JSContext* aCx) const {
+  Rooted<JSObject*> moduleRequest(aCx, mModuleRequestObj);
+  // moduleRequest can be null if ClearImport() has been called.
+  return moduleRequest && JS::ModuleRequestIsSourcePhase(aCx, moduleRequest);
 }
 
 bool ModuleLoadRequest::IsErrored() const {
@@ -96,10 +105,6 @@ void ModuleLoadRequest::ModuleLoaded() {
 
   mModuleScript = mLoader->GetFetchedModule(ModuleMapKey(URI(), mModuleType));
 
-  if (FetchInfo()->IsForModulePreload() != mLoadContext->IsPreload()) {
-    FetchInfo()->SetForModulePreload(mLoadContext->IsPreload());
-  }
-
   // A module script fetched during preload can be reused by a normal load whose
   // top-level request never matched a preload entry, so the preload-promotion
   // path never clears the module script's preload flag. Clear it here so the
@@ -108,23 +113,6 @@ void ModuleLoadRequest::ModuleLoaded() {
   if (!mLoadContext->IsPreload() && mModuleScript->ForPreload()) {
     mModuleScript->SetForPreload(false);
   }
-}
-
-void ModuleLoadRequest::LoadFailed() {
-  // We failed to load the source text or an error occurred unrelated to the
-  // content of the module (e.g. OOM).
-
-  LOG(("ScriptLoadRequest (%p): Module load failed", this));
-
-  if (IsCanceled()) {
-    return;
-  }
-
-  MOZ_ASSERT(IsFetching());
-  MOZ_ASSERT(!mModuleScript);
-
-  Cancel();
-  LoadFinished();
 }
 
 void ModuleLoadRequest::ModuleErrored() {
@@ -175,12 +163,12 @@ void ModuleLoadRequest::NotifyModuleWaitFinished() {
   }
 }
 
-void ModuleLoadRequest::SetImport(Handle<JSScript*> aReferrerScript,
+void ModuleLoadRequest::SetImport(Handle<Value> aReferrer,
                                   Handle<JSObject*> aModuleRequestObj,
                                   Handle<Value> aPayload) {
   MOZ_ASSERT(mPayload.isUndefined());
 
-  mReferrerScript = aReferrerScript;
+  mReferrerValue = aReferrer;
   mModuleRequestObj = aModuleRequestObj;
   mPayload = aPayload;
 
@@ -188,7 +176,7 @@ void ModuleLoadRequest::SetImport(Handle<JSScript*> aReferrerScript,
 }
 
 void ModuleLoadRequest::ClearImport() {
-  mReferrerScript = nullptr;
+  mReferrerValue = UndefinedValue();
   mModuleRequestObj = nullptr;
   mPayload = UndefinedValue();
 }

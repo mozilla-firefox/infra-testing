@@ -170,8 +170,8 @@ int sqlite3_T_blob(sqlite3_context* aCtx, const void* aData, int aSize) {
   return SQLITE_OK;
 }
 
-int sqlite3_T_array(sqlite3_context* aCtx, const void* aData, int aSize,
-                    int aType) {
+int sqlite3_T_array(sqlite3_context* /*aCtx*/, const void* /*aData*/,
+                    int /*aSize*/, int /*aType*/) {
   // Not supported for now.
   return SQLITE_MISUSE;
 }
@@ -707,7 +707,7 @@ class AsyncBackupDatabaseFile final : public Runnable, public nsITimerCallback {
   }
 
   NS_IMETHOD
-  Notify(nsITimer* aTimer) override { return DoStep(); }
+  Notify(nsITimer* /*aTimer*/) override { return DoStep(); }
 
  private:
   nsresult DoStep() {
@@ -965,8 +965,11 @@ nsIEventTarget* Connection::getAsyncExecutionTarget() {
   NS_ENSURE_TRUE(IsOnCurrentSerialEventTarget(eventTargetOpenedOn), nullptr);
 
   // Don't return the asynchronous event target if we are shutting down.
-  if (mAsyncExecutionThreadShuttingDown) {
-    return nullptr;
+  {
+    MutexAutoLock lockedScope(sharedAsyncExecutionMutex);
+    if (mAsyncExecutionThreadShuttingDown) {
+      return nullptr;
+    }
   }
 
   // Create the async event target if there's none yet.
@@ -1092,6 +1095,10 @@ nsresult Connection::initialize(const nsACString& aStorageKey,
   int srv = ::sqlite3_open_v2(path.get(), &mDBConn, mFlags,
                               basevfs::GetVFSName(true));
   if (srv != SQLITE_OK) {
+    {
+      MutexAutoLock lockedScope(sharedAsyncExecutionMutex);
+      mConnectionClosed = true;
+    }
     ::sqlite3_close(mDBConn);
     mDBConn = nullptr;
     nsresult rv = convertResultCode(srv);
@@ -1121,6 +1128,11 @@ nsresult Connection::initialize(nsIFile* aDatabaseFile) {
   NS_ASSERTION(!connectionReady(),
                "Initialize called on already opened database!");
   AUTO_PROFILER_LABEL("Connection::initialize", OTHER);
+
+  auto failGuard = MakeScopeExit([&]() {
+    MutexAutoLock lockedScope(sharedAsyncExecutionMutex);
+    mConnectionClosed = true;
+  });
 
   // Do not set mFileURL here since this is database does not have an associated
   // URL.
@@ -1235,6 +1247,7 @@ nsresult Connection::initialize(nsIFile* aDatabaseFile) {
   RecordOpenStatus(rv);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  failGuard.release();
   return NS_OK;
 }
 
@@ -1243,6 +1256,11 @@ nsresult Connection::initialize(nsIFileURL* aFileURL) {
   NS_ASSERTION(!connectionReady(),
                "Initialize called on already opened database!");
   AUTO_PROFILER_LABEL("Connection::initialize", OTHER);
+
+  auto failGuard = MakeScopeExit([&]() {
+    MutexAutoLock lockedScope(sharedAsyncExecutionMutex);
+    mConnectionClosed = true;
+  });
 
   nsCOMPtr<nsIFile> databaseFile;
   nsresult rv = aFileURL->GetFile(getter_AddRefs(databaseFile));
@@ -1268,20 +1286,20 @@ nsresult Connection::initialize(nsIFileURL* aFileURL) {
   // through a plaintext VFS.
   bool mustEncrypt = false;
 
-  MOZ_ALWAYS_TRUE(
-      URLParams::Parse(query, true,
-                       [&hasKey, &hasDirectoryLockId](
-                           const nsACString& aName, const nsACString& aValue) {
-                         if (aName.EqualsLiteral("key")) {
-                           hasKey = true;
-                           return true;
-                         }
-                         if (aName.EqualsLiteral("directoryLockId")) {
-                           hasDirectoryLockId = true;
-                           return true;
-                         }
-                         return true;
-                       }));
+  MOZ_ALWAYS_TRUE(URLParams::Parse(
+      query, true,
+      [&hasKey, &hasDirectoryLockId](const nsACString& aName,
+                                     const nsACString& /*aValue*/) {
+        if (aName.EqualsLiteral("key")) {
+          hasKey = true;
+          return true;
+        }
+        if (aName.EqualsLiteral("directoryLockId")) {
+          hasDirectoryLockId = true;
+          return true;
+        }
+        return true;
+      }));
 
   if (StaticPrefs::security_storage_encryption_sqlite_enabled()) {
     // A key already in the URL means the caller is opening an encrypted DB
@@ -1322,10 +1340,11 @@ nsresult Connection::initialize(nsIFileURL* aFileURL) {
         hasKey = true;
       }
     }
-    // hasKey now decides whether we open through obfsvfs (see the VFS
-    // selection below); keep mDatabaseEncrypted and the page size in step.
-    SetDatabaseEncrypted(hasKey);
   }
+  // hasKey decides whether we open through obfsvfs (see the VFS selection
+  // below), whether the key came from the caller's URL or from the encryption
+  // policy; keep mDatabaseEncrypted and the page size in step.
+  SetDatabaseEncrypted(hasKey);
 
   // Conservative fail-closed: a database the encryption policy says must be
   // encrypted opens through obfsvfs with its key, or not at all -- it must
@@ -1357,6 +1376,7 @@ nsresult Connection::initialize(nsIFileURL* aFileURL) {
   RecordOpenStatus(rv);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  failGuard.release();
   return NS_OK;
 }
 
@@ -1364,7 +1384,10 @@ nsresult Connection::initializeInternal() {
   MOZ_ASSERT(mDBConn);
   auto guard = MakeScopeExit([&]() { initializeFailed(); });
 
-  mConnectionClosed = false;
+  {
+    MutexAutoLock lockedScope(sharedAsyncExecutionMutex);
+    mConnectionClosed = false;
+  }
 
 #ifdef MOZ_SQLITE_FTS3_TOKENIZER
   DebugOnly<int> srv2 =
@@ -1415,6 +1438,22 @@ nsresult Connection::initializeInternal() {
   if (srv != SQLITE_OK) {
     return convertResultCode(srv);
   }
+
+  // obfsvfs only encrypts the main database, rollback journal and WAL. SQLite
+  // otherwise spills statement subjournals, sorter runs and temp tables to
+  // plaintext files on builds without an in-memory SQLITE_TEMP_STORE default,
+  // so keep all temporary storage in memory for encrypted databases. The
+  // condition mirrors the SQLITE_TEMP_STORE block in
+  // third_party/sqlite3/src/moz.build.
+#if !defined(ANDROID) && !defined(HAVE_64BIT_BUILD)
+  if (mDatabaseEncrypted) {
+    srv = executeSql(mDBConn,
+                     MOZ_STORAGE_UNIQUIFY_QUERY_STR "PRAGMA temp_store = 2;");
+    if (srv != SQLITE_OK) {
+      return convertResultCode(srv);
+    }
+  }
+#endif
 
   // Register our built-in SQL functions.
   srv = registerFunctions(mDBConn);
@@ -1607,7 +1646,12 @@ nsresult Connection::ensureOperationSupported(
 }
 
 bool Connection::isConnectionReadyOnThisThread() {
-  MOZ_ASSERT_IF(connectionReady(), !mConnectionClosed);
+#ifdef DEBUG
+  {
+    MutexAutoLock lockedScope(sharedAsyncExecutionMutex);
+    MOZ_ASSERT_IF(connectionReady(), !mConnectionClosed);
+  }
+#endif
   if (mAsyncExecutionThread && mAsyncExecutionThread->IsOnCurrentThread()) {
     return true;
   }
@@ -1624,17 +1668,26 @@ bool Connection::isClosed() {
   return mConnectionClosed;
 }
 
-bool Connection::isClosed(MutexAutoLock& lock) { return mConnectionClosed; }
+bool Connection::isClosed(MutexAutoLock& /*lock*/) {
+  sharedAsyncExecutionMutex.AssertCurrentThreadOwns();
+  return mConnectionClosed;
+}
 
 bool Connection::isAsyncExecutionThreadAvailable() {
   MOZ_ASSERT(IsOnCurrentSerialEventTarget(eventTargetOpenedOn));
+  MutexAutoLock lockedScope(sharedAsyncExecutionMutex);
   return mAsyncExecutionThread && !mAsyncExecutionThreadShuttingDown;
 }
 
 void Connection::shutdownAsyncThread() {
   MOZ_ASSERT(IsOnCurrentSerialEventTarget(eventTargetOpenedOn));
   MOZ_ASSERT(mAsyncExecutionThread);
-  MOZ_ASSERT(mAsyncExecutionThreadShuttingDown);
+#ifdef DEBUG
+  {
+    MutexAutoLock lockedScope(sharedAsyncExecutionMutex);
+    MOZ_ASSERT(mAsyncExecutionThreadShuttingDown);
+  }
+#endif
 
   MOZ_ALWAYS_SUCCEEDS(mAsyncExecutionThread->Shutdown());
   mAsyncExecutionThread = nullptr;
@@ -3201,17 +3254,17 @@ Connection::GetQuotaObjects(QuotaObject** aDatabaseQuotaObject,
 SQLiteMutex& Connection::GetSharedDBMutex() { return sharedDBMutex; }
 
 uint32_t Connection::GetTransactionNestingLevel(
-    const mozilla::storage::SQLiteMutexAutoLock& aProofOfLock) {
+    const mozilla::storage::SQLiteMutexAutoLock& /*aProofOfLock*/) {
   return mTransactionNestingLevel;
 }
 
 uint32_t Connection::IncreaseTransactionNestingLevel(
-    const mozilla::storage::SQLiteMutexAutoLock& aProofOfLock) {
+    const mozilla::storage::SQLiteMutexAutoLock& /*aProofOfLock*/) {
   return ++mTransactionNestingLevel;
 }
 
 uint32_t Connection::DecreaseTransactionNestingLevel(
-    const mozilla::storage::SQLiteMutexAutoLock& aProofOfLock) {
+    const mozilla::storage::SQLiteMutexAutoLock& /*aProofOfLock*/) {
   return --mTransactionNestingLevel;
 }
 

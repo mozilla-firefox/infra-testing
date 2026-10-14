@@ -37,13 +37,23 @@ fun summarizationReducer(state: SummarizationState, action: SummarizationAction)
                         info = state.info,
                         document = state.document,
                         settingsState = action.settings,
+                        feedback = state.feedback,
                     )
                 else -> state
             }
         is SettingsBackClicked ->
             when (state) {
                 is SummarizationState.Settings ->
-                    SummarizationState.Summarized(info = state.info, document = state.document)
+                    SummarizationState.Summarized(
+                        info = state.info,
+                        document = state.document,
+                        feedback = state.feedback,
+                    )
+                else -> state
+            }
+        is SummaryFeedbackProvided ->
+            when (state) {
+                is SummarizationState.Summarized -> state.copy(feedback = action.feedback)
                 else -> state
             }
         is SummarizeSettingsActionWrapper ->

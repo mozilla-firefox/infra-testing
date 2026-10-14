@@ -135,6 +135,21 @@ mapping:
         destinations:
             - ${year}/${month}/${upload_date}-${branch}
             - latest-${branch}
+    RPM-KEY:
+        <<: *default
+        from:
+            - repackage-rpm-signing
+        description: "Public GPG Key used to sign the .rpm packages, without the revoked subkeys that rpm chokes on"
+        pretty_name: RPM-KEY
+        checksums_path: RPM-KEY
+        only_for_platforms:
+            - linux64-shippable
+            - linux64-aarch64-shippable
+            - linux64-devedition
+            - linux64-aarch64-devedition
+        destinations:
+            - ${year}/${month}/${upload_date}-${branch}
+            - latest-${branch}
     target.crashreporter-symbols.zip:
         <<: *default
         description: "Crashreporter symbols to be consumed by Socorro"
@@ -150,6 +165,30 @@ mapping:
         description: "Various compile and moz_app flags baked together in a json file"
         pretty_name: firefox-${version}.${locale}.${filename_platform}.mozinfo.json
         checksums_path: firefox-${version}.${locale}.${filename_platform}.mozinfo.json
+    sbom.json:
+        <<: *default
+        description: "CycloneDX software bill of materials describing the build"
+        not_for_platforms:
+            - macosx64-shippable
+            - macosx64-devedition
+        pretty_name: firefox-${version}.${locale}.${filename_platform}.sbom.json
+        checksums_path: firefox-${version}.${locale}.${filename_platform}.sbom.json
+    sbom-x86_64.json:
+        <<: *default
+        description: "CycloneDX software bill of materials describing the x86_64 half of the universal build"
+        only_for_platforms:
+            - macosx64-shippable
+            - macosx64-devedition
+        pretty_name: firefox-${version}.${locale}.${filename_platform}.sbom-x86_64.json
+        checksums_path: firefox-${version}.${locale}.${filename_platform}.sbom-x86_64.json
+    sbom-aarch64.json:
+        <<: *default
+        description: "CycloneDX software bill of materials describing the aarch64 half of the universal build"
+        only_for_platforms:
+            - macosx64-shippable
+            - macosx64-devedition
+        pretty_name: firefox-${version}.${locale}.${filename_platform}.sbom-aarch64.json
+        checksums_path: firefox-${version}.${locale}.${filename_platform}.sbom-aarch64.json
     target.txt:
         <<: *default
         description: "File containing buildid and revision"

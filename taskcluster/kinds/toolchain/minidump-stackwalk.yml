@@ -23,7 +23,6 @@ linux64-minidump-stackwalk:
     treeherder:
         symbol: TL(stackwalk)
     run:
-        clone-with: hg
         arguments: ['x86_64-unknown-linux-gnu']
     fetches:
         toolchain:
@@ -35,7 +34,6 @@ linux64-aarch64-minidump-stackwalk:
     treeherder:
         symbol: TLA64(stackwalk)
     run:
-        clone-with: hg
         arguments: ['aarch64-unknown-linux-gnu']
     fetches:
         toolchain:
@@ -47,7 +45,6 @@ macosx64-minidump-stackwalk:
     treeherder:
         symbol: TM(stackwalk)
     run:
-        clone-with: hg
         arguments: ['x86_64-apple-darwin']
     fetches:
         toolchain:
@@ -59,7 +56,6 @@ macosx64-aarch64-minidump-stackwalk:
     treeherder:
         symbol: TMA64(stackwalk)
     run:
-        clone-with: hg
         arguments: ['aarch64-apple-darwin']
     fetches:
         toolchain:
@@ -70,8 +66,9 @@ macosx64-aarch64-minidump-stackwalk:
 win32-minidump-stackwalk:
     treeherder:
         symbol: TW32(stackwalk)
+    attributes:
+        local-toolchain: false
     run:
-        clone-with: hg
         arguments: ['i686-pc-windows-msvc']
     fetches:
         toolchain:
@@ -83,8 +80,18 @@ win64-minidump-stackwalk:
     treeherder:
         symbol: TW64(stackwalk)
     run:
-        clone-with: hg
         arguments: ['x86_64-pc-windows-msvc']
+    fetches:
+        toolchain:
+            - linux64-clang-toolchain
+            - linux64-rust-windows-toolchain
+            - vs-toolchain
+
+win64-aarch64-minidump-stackwalk:
+    treeherder:
+        symbol: TWA64(stackwalk)
+    run:
+        arguments: ['aarch64-pc-windows-msvc']
     fetches:
         toolchain:
             - linux64-clang-toolchain
@@ -96,7 +103,6 @@ win64-minidump-stackwalk:
 linux64-breakpad-injector:
     description: "breakpad injector toolchain build"
     run:
-        clone-with: hg
         script: build-breakpad-injector.sh
         toolchain-artifact: public/build/injector.tar.zst
         sparse-profile: null
@@ -112,4 +118,4 @@ linux64-breakpad-injector:
     fetches:
         toolchain:
             - linux64-clang-toolchain
-            - linux64-toolchain-sysroot
+            - sysroot-x86_64-linux-gnu

@@ -145,6 +145,33 @@ mapping:
         pretty_name: firefox-${version}.mozinfo.json
         checksums_path: ${path_platform}/${locale}/firefox-${version}.mozinfo.json
         expiry: "1 year"
+    sbom.json:
+        <<: *default
+        description: "CycloneDX software bill of materials describing the build"
+        not_for_platforms:
+            - macosx64-shippable
+            - macosx64-devedition
+        pretty_name: firefox-${version}.sbom.json
+        checksums_path: ${path_platform}/${locale}/firefox-${version}.sbom.json
+        expiry: "1 year"
+    sbom-x86_64.json:
+        <<: *default
+        description: "CycloneDX software bill of materials describing the x86_64 half of the universal build"
+        only_for_platforms:
+            - macosx64-shippable
+            - macosx64-devedition
+        pretty_name: firefox-${version}.sbom-x86_64.json
+        checksums_path: ${path_platform}/${locale}/firefox-${version}.sbom-x86_64.json
+        expiry: "1 year"
+    sbom-aarch64.json:
+        <<: *default
+        description: "CycloneDX software bill of materials describing the aarch64 half of the universal build"
+        only_for_platforms:
+            - macosx64-shippable
+            - macosx64-devedition
+        pretty_name: firefox-${version}.sbom-aarch64.json
+        checksums_path: ${path_platform}/${locale}/firefox-${version}.sbom-aarch64.json
+        expiry: "1 year"
     target_info.txt:
         <<: *default
         description: "File containing the buildID"
@@ -405,6 +432,21 @@ mapping:
             - repackage-deb
         update_balrog_manifest: false
         expiry: "1 year"
+    RPM-KEY:
+        <<: *default
+        description: "Public GPG Key used to sign the .rpm packages, without the revoked subkeys that rpm chokes on"
+        locale_prefix: ''
+        only_for_platforms:
+            - linux64-shippable
+            - linux64-aarch64-shippable
+            - linux64-devedition
+            - linux64-aarch64-devedition
+        pretty_name: RPM-KEY
+        checksums_path: RPM-KEY
+        from:
+            - repackage-rpm-signing
+        destinations:
+            - ${version}-candidates/build${build_number}
     target.rpm:
         <<: *default
         description: "Firefox as a .rpm package"

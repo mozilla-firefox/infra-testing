@@ -19,11 +19,11 @@ origin:
 
   # Human-readable identifier for this version/release
   # Generally "version NNN", "tag SSS", "bookmark SSS"
-  release: 1dac06e8c0442c466b431935a2e385ea07796689 (Fri Aug 14 19:49:04 2026).
+  release: 9456b062277d2809c97f4633c116ffa8d485afdd (Wed Oct 07 23:10:15 2026).
 
   # Revision to pull in
   # Must be a long or short commit SHA (long preferred)
-  revision: 1dac06e8c0442c466b431935a2e385ea07796689
+  revision: 9456b062277d2809c97f4633c116ffa8d485afdd
 
   # The package's license, where possible using the mnemonic from
   # https://spdx.org/licenses/
@@ -49,6 +49,7 @@ vendoring:
 
   exclude:
     - ".*"
+    - "vpython.*"
 
   patches:
     - 00_fix_build_errors.patch

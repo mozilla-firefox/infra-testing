@@ -183,9 +183,9 @@ def is_windows(target, host):
 
 include("windows-toolchain.configure", when=is_windows)
 
+
 @depends(android_toolchain_flags, windows_toolchain_flags)
-def extra_toolchain_flags(android_toolchain_flags,
-                          windows_toolchain_flags):
+def extra_toolchain_flags(android_toolchain_flags, windows_toolchain_flags):
     return (android_toolchain_flags or []) + (windows_toolchain_flags or [])
 
 
@@ -567,9 +567,7 @@ def get_compiler_info(configure_cache, compiler, language, wrapper=[]):
     """
     )
 
-    result = try_preprocess(
-        configure_cache, compiler, language, check, wrapper=wrapper
-    )
+    result = try_preprocess(configure_cache, compiler, language, check, wrapper=wrapper)
 
     if not result:
         raise FatalCheckError("Unknown compiler or compiler not supported.")
@@ -685,13 +683,6 @@ def check_compiler(
         else:
             flags.append("-std=gnu++20")
 
-        # gcc 10 defines C++20's __cplusplus as 201709L instead of 202002L.
-        # Redefine as C++20's final vesion for gcc 10 so modern C++20 code's
-        # __cplusplus version checks work as expected.
-        if info.type == "gcc" and info.version < Version("11.0.0"):
-            flags.append("-U__cplusplus")
-            flags.append("-D__cplusplus=202002L")
-
     # Check compiler target
     # --------------------------------------------------------------------
     has_target = False
@@ -699,7 +690,11 @@ def check_compiler(
         # This makes clang define __ANDROID_API__ and use versioned library
         # directories from the NDK.
         toolchain = "%s%d" % (target.toolchain, android_version)
-    elif target.kernel == "WASI" and info.type == "clang" and info.version >= Version("22.1"):
+    elif (
+        target.kernel == "WASI"
+        and info.type == "clang"
+        and info.version >= Version("22.1")
+    ):
         # The wasm32-wasi target was renamed to wasm32-wasip1 in LLVM 22.1.
         toolchain = "wasm32-wasip1"
     else:
@@ -745,9 +740,7 @@ def check_compiler(
             flags.append("-m32")
         elif (info.cpu, target.cpu) in same_arch:
             flags.append("-m64")
-        elif info.type == "clang-cl" and target.cpu == "aarch64":
-            flags.append("--target=%s" % toolchain)
-        elif info.type == "clang":
+        elif info.type in ("clang", "clang-cl"):
             flags.append("--target=%s" % toolchain)
 
     return namespace(
@@ -799,6 +792,7 @@ def rust_search_path(rust_path, original_path):
     rust_search_path,
     target,
     original_path,
+    ios_sdk,
 )
 @imports("os")
 @imports(_from="mach.util", _import="get_virtualenv_base_dir")
@@ -809,6 +803,7 @@ def altered_path(
     rust_search_path,
     target,
     original_path,
+    ios_sdk,
 ):
     # Trim trailing empty entries so a stray `;;` in the input doesn't
     # surface as a blank PATH entry.
@@ -827,6 +822,9 @@ def altered_path(
         path = strip_trailing_empty_entries(original_path)
     # cargo needs the rust search path to find cargo-$subcommand.
     path.extend(strip_trailing_empty_entries(rust_search_path))
+    # Put build/macosx/xcrun first in PATH.
+    if ios_sdk:
+        path.insert(0, os.path.join(build_env.topsrcdir, "build", "macosx"))
 
     # Bug 2040992: Strip mach virtualenv entries so any prepended venvs
     # (from intermediate ./mach activations along the build chain) don't
@@ -1226,9 +1224,7 @@ def sysroot(host_or_target, target_sysroot=None):
     sysroot_input = depends(opt, when=when)(lambda x: x)
     bootstrap_sysroot = depends(bootstrap_when, sysroot_input)(
         # Only bootstrap when no flag was explicitly given (either --with or --without)
-        lambda bootstrap, input: bootstrap
-        and not input
-        and input.origin == "default"
+        lambda bootstrap, input: bootstrap and not input and input.origin == "default"
     )
 
     @depends(
@@ -1377,7 +1373,7 @@ sccache_environment = sccache_config(
 
 
 def minimum_gcc_version():
-    return Version("10.1.0")
+    return Version("11.1.0")
 
 
 @template
@@ -1863,13 +1859,6 @@ option(
 )
 
 
-# No-op to enable depending on --enable-linker from default_elfhack in
-# toolkit/moz.configure.
-@depends("--enable-linker", when=is_linker_option_enabled)
-def enable_linker(linker):
-    return linker
-
-
 @template
 def select_linker_tmpl(host_or_target):
     if host_or_target is target:
@@ -2202,21 +2191,19 @@ def die_on_old_libstdcxx():
 
 try_compile(
     includes=["cstddef"],
-    body="\n".join(
-        [
-            # _GLIBCXX_RELEASE showed up in libstdc++ 7.
-            "#if defined(__GLIBCXX__) && !defined(_GLIBCXX_RELEASE)",
-            "#  error libstdc++ not new enough",
-            "#endif",
-            "#if defined(_GLIBCXX_RELEASE)",
-            "#  if _GLIBCXX_RELEASE < %d" % minimum_gcc_version().major,
-            "#    error libstdc++ not new enough",
-            "#  else",
-            "     (void) 0",
-            "#  endif",
-            "#endif",
-        ]
-    ),
+    body="\n".join([
+        # _GLIBCXX_RELEASE showed up in libstdc++ 7.
+        "#if defined(__GLIBCXX__) && !defined(_GLIBCXX_RELEASE)",
+        "#  error libstdc++ not new enough",
+        "#endif",
+        "#if defined(_GLIBCXX_RELEASE)",
+        "#  if _GLIBCXX_RELEASE < %d" % minimum_gcc_version().major,
+        "#    error libstdc++ not new enough",
+        "#  else",
+        "     (void) 0",
+        "#  endif",
+        "#endif",
+    ]),
     check_msg="for new enough STL headers from libstdc++",
     when=needs_libstdcxx_newness_check,
     onerror=die_on_old_libstdcxx,
@@ -2369,6 +2356,21 @@ set_define("_LIBCPP_ALWAYS_INLINE", libcxx_override_visibility.empty)
 
 set_define("_LIBCPP_HIDE_FROM_ABI", libcxx_override_visibility.hide_from_abi)
 
+
+# _LIBCPP_EXPORTED_FROM_ABI has no #ifndef guard in __config, so disable the
+# annotations rather than override it. wasi only: elsewhere libc++ uses them for
+# symbols another DSO provides, like the sanitizer runtime's annotations.
+@depends(target, using_libcxx)
+def libcxx_disable_visibility_annotations(target, using_libcxx):
+    return using_libcxx and target.os == "WASI"
+
+
+set_define(
+    "_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS",
+    True,
+    when=libcxx_disable_visibility_annotations,
+)
+
 # TODO: remove this once we target C++23, where clang always define it, see bug 1880762
 set_define("_LIBCPP_REMOVE_TRANSITIVE_INCLUDES", True, when=using_libcxx)
 
@@ -2480,18 +2482,6 @@ set_config("PREPROCESS_OPTION", preprocess_option)
 set_config(
     "PPC_VMX_FLAGS",
     ["-maltivec"],
-    when=depends(target.cpu)(lambda cpu: cpu.startswith("ppc")),
-)
-
-set_config(
-    "PPC_VSX_FLAGS",
-    ["-mvsx"],
-    when=depends(target.cpu)(lambda cpu: cpu.startswith("ppc")),
-)
-
-set_config(
-    "PPC_VSX3_FLAGS",
-    ["-mvsx", "-mcpu=power9"],
     when=depends(target.cpu)(lambda cpu: cpu.startswith("ppc")),
 )
 
@@ -2644,7 +2634,6 @@ def msan_flags(c_compiler, compilation_flags, linker_flags):
 
 
 set_define("MOZ_MSAN", True, when=msan)
-set_config("MOZ_MSAN", True, when=msan)
 
 # TSAN
 # ==============================================================
@@ -2711,11 +2700,13 @@ def ubsan(options, optimize):
 def ubsan_flags(ubsan_checks, c_compiler, compilation_flags, linker_flags, build_env):
     ubsan_txt = os.path.join(build_env.topobjdir, "ubsan_blacklist.txt")
     with open(ubsan_txt, "w") as out_fd:
-        for blacklist in sorted(glob(
-            os.path.join(
-                build_env.topsrcdir, "build", "sanitizers", "ubsan_*_blacklist.txt"
+        for blacklist in sorted(
+            glob(
+                os.path.join(
+                    build_env.topsrcdir, "build", "sanitizers", "ubsan_*_blacklist.txt"
+                )
             )
-        )):
+        ):
             with open(blacklist) as in_fd:
                 shutil.copyfileobj(in_fd, out_fd)
 
@@ -2803,9 +2794,10 @@ def ub_unsigned_overflow_san_flags(
     compilation_flags.cflags.extend(flags)
     compilation_flags.cxxflags.extend(flags)
     if c_compiler.type != "clang-cl":
-        linker_flags.ldflags.extend(
-            ["-fsanitize=unsigned-integer-overflow", "-rdynamic"]
-        )
+        linker_flags.ldflags.extend([
+            "-fsanitize=unsigned-integer-overflow",
+            "-rdynamic",
+        ])
 
 
 #
@@ -2818,6 +2810,43 @@ set_config("MOZ_UBSAN", any_ubsan)
 # We only want to include windows.configure when we are compiling on
 # Windows, or for Windows.
 include("windows.configure", when=is_windows)
+
+# llvm-dlltool (Windows only)
+# ==============================================================
+
+
+@depends(build_project, target, "--enable-compile-environment")
+def check_for_llvm_dlltool(build_project, target, compile_environment):
+    if build_project != "browser":
+        return
+
+    if target.os != "WINNT":
+        return
+
+    return compile_environment
+
+
+llvm_dlltool = check_prog(
+    "LLVM_DLLTOOL",
+    ("llvm-dlltool",),
+    what="llvm-dlltool",
+    when=check_for_llvm_dlltool,
+    paths=clang_search_path,
+)
+
+
+@depends(target, when=llvm_dlltool)
+def llvm_dlltool_flags(target):
+    arch = {
+        "x86": "i386",
+        "x86_64": "i386:x86-64",
+        "aarch64": "arm64",
+    }[target.cpu]
+
+    return ["-m", arch]
+
+
+set_config("LLVM_DLLTOOL_FLAGS", llvm_dlltool_flags)
 
 # Security Hardening
 # ==============================================================
@@ -2850,7 +2879,6 @@ def security_hardening_cflags(
     hardening_flag, asan, debug, optimize, c_compiler, target
 ):
     compiler_is_gccish = c_compiler.type in ("gcc", "clang")
-    mingw_clang = c_compiler.type == "clang" and target.os == "WINNT"
 
     flags = []
     ldflags = []
@@ -2880,9 +2908,15 @@ def security_hardening_cflags(
             if (
                 c_compiler.type == "clang"
                 and target.os not in ("WINNT", "OSX", "OpenBSD", "iOS")
-                and ((c_compiler.version >= "11.0.1" and target.cpu in ("x86", "x86_64", "ppc64", "s390x"))
-                    or
-                     (c_compiler.version >= "18.1.0" and target.cpu == "aarch64"))
+                and (
+                    (
+                        c_compiler.version >= "11.0.1"
+                        and target.cpu in ("x86", "x86_64", "ppc64", "s390x")
+                    )
+                    or (c_compiler.version >= "18.1.0" and target.cpu == "aarch64")
+                    or (c_compiler.version >= "22.1.8" and target.cpu == "riscv64")
+                    or (c_compiler.version >= "23.1.0" and target.cpu == "loongarch64")
+                )
             ):
                 flags.append("-fstack-clash-protection")
                 ldflags.append("-fstack-clash-protection")
@@ -2909,12 +2943,6 @@ def security_hardening_cflags(
             # Cannot use level 3 because we have many uses of the [0] GNU syntax.
             # Cannot use level 2 because sqlite3 and icu use the [1] GNU syntax.
             flags.append("-fstrict-flex-arrays=1")
-
-        # ASLR ------------------------------------------------
-        # ASLR (dynamicbase) is enabled by default in clang-cl; but the
-        # mingw-clang build requires it to be explicitly enabled
-        if mingw_clang:
-            ldflags.append("-Wl,--dynamicbase")
 
         # Control Flow Guard (CFG) ----------------------------
         if (
@@ -3124,6 +3152,10 @@ def coverage_cflags(target, c_compiler, build_env):
             "-coverage-no-function-names-in-data",
         ]
 
+    # We only apply the patch adding -fprofile-abs-path starting with Clang 22
+    if c_compiler.type in ("clang", "clang-cl") and c_compiler.version >= "22.0.0":
+        cflags += ["-fprofile-abs-path"]
+
     exclude = []
     if target.os == "WINNT" and c_compiler.type == "clang-cl":
         # VS files
@@ -3257,6 +3289,22 @@ def as_outoption(as_info):
 
 
 set_config("ASOUTOPTION", as_outoption)
+
+
+@depends(as_info, debug_flags)
+def debug_asflags(as_info, debug_flags):
+    if as_info.type == "masm":
+        # Unintuitively, -Zi for ml/ml64 is equivalent to -Z7 for cl.exe.
+        # -Zi for cl.exe has a different purpose, so this is only used here.
+        return ["-Zi"]
+    if as_info.type == "armasm":
+        # armasm64 accepts a paucity of options compared to ml/ml64.
+        return []
+    return debug_flags
+
+
+set_config("MOZ_DEBUG_ASFLAGS", debug_asflags)
+
 
 # clang plugin handling
 # ==============================================================
@@ -3510,15 +3558,6 @@ def libfuzzer_flags(value, tsan, enable_js_fuzzilli):
     return namespace(
         no_link_flag_supported=no_link_flag_supported,
         use_flags=use_flags,
-    )
-
-
-@depends(libfuzzer_flags, when=enable_libfuzzer)
-def sancov(libfuzzer_flags):
-    return any(
-        flag.startswith(head)
-        for head in ("-fsanitize-coverage", "-fsanitize=fuzzer")
-        for flag in libfuzzer_flags.use_flags
     )
 
 
@@ -3792,9 +3831,10 @@ def path_remappings(target, build_env, sysroot_path, windows_sdk_dir, vc_path):
     if sysroot_path:
         path_remappings.append((sysroot_path, "k:/" if win else "/sysroot/"))
     if windows_sdk_dir:
-        path_remappings.append(
-            (windows_sdk_dir.path, "k:/" if win else "/windows_sdk/")
-        )
+        path_remappings.append((
+            windows_sdk_dir.path,
+            "k:/" if win else "/windows_sdk/",
+        ))
     if vc_path:
         path_remappings.append((vc_path, "v:/" if win else "/vc/"))
 
@@ -3834,13 +3874,19 @@ set_config("SSE_FLAGS", ["-msse"])
 set_config("SSE2_FLAGS", ["-msse2"])
 set_config("SSSE3_FLAGS", ["-mssse3"])
 set_config("SSE4_2_FLAGS", ["-msse4.2"])
-set_config("FMA_FLAGS", ["-mfma"])
 set_config("AVX2_FLAGS", ["-mavx2"])
 set_config(
     "AVXVNNI_FLAGS",
     ["-mavxvnni"],
     try_compile(
-        check_msg="for -mavxvnni support", flags=["-mavxvnni"], when=is_intel_target
+        check_msg="for -mavxvnni support",
+        flags=["-mavxvnni"],
+        includes=["immintrin.h"],
+        body="""
+          __m256i a = _mm256_set1_epi32(1);
+          return _mm256_extract_epi32(_mm256_dpbusd_avx_epi32(a, a, a), 0);
+        """,
+        when=is_intel_target,
     ),
 )
 set_config(
@@ -3849,6 +3895,11 @@ set_config(
     try_compile(
         check_msg="for -mavx512bw support",
         flags=["-mavx512bw", "-mavx512f", "-mavx512dq", "-mavx512cd"],
+        includes=["immintrin.h"],
+        body="""
+          __m512i a = _mm512_set1_epi8(1);
+          return _mm512_cvtsi512_si32(_mm512_maddubs_epi16(a, a));
+        """,
         when=is_intel_target,
     ),
 )
@@ -3861,6 +3912,11 @@ set_config(
     try_compile(
         check_msg="for -mavx512vnni support",
         flags=["-mavx512vnni", "-mavx512bw", "-mavx512f", "-mavx512dq", "-mavx512cd"],
+        includes=["immintrin.h"],
+        body="""
+          __m512i a = _mm512_set1_epi8(1);
+          return _mm512_cvtsi512_si32(_mm512_dpbusd_epi32(a, a, a));
+        """,
         when=is_intel_target,
     ),
 )
@@ -3872,6 +3928,11 @@ set_config(
     try_compile(
         check_msg="for i8mm target feature",
         flags=["-march=armv8.2-a+i8mm"],
+        includes=["arm_neon.h"],
+        body="""
+          int8x16_t a = vdupq_n_s8(1);
+          return vgetq_lane_s32(vmmlaq_s32(vdupq_n_s32(0), a, a), 0);
+        """,
         when=is_aarch64_target,
     ),
 )
@@ -3882,6 +3943,11 @@ set_config(
     try_compile(
         check_msg="for ARM SVE2 target feature",
         flags=["-march=armv9-a+sve2"],
+        includes=["arm_sve.h"],
+        body="""
+          svint32_t a = svdup_n_s32(1);
+          return svaddv_s32(svptrue_b32(), svaba_s32(a, a, a));
+        """,
         when=is_aarch64_target,
     ),
 )
@@ -3892,9 +3958,19 @@ set_config(
     try_compile(
         check_msg="for ARM dotprod target feature",
         flags=["-march=armv8.2-a+dotprod"],
+        includes=["arm_neon.h"],
+        body="""
+          int8x16_t a = vdupq_n_s8(1);
+          return vgetq_lane_s32(vdotq_s32(vdupq_n_s32(0), a, a), 0);
+        """,
         when=is_aarch64_target,
     ),
 )
+
+
+# LoongArch SIMD and Advanced SIMD Extensions
+set_config("LSX_FLAGS", ["-mlsx"])
+set_config("LASX_FLAGS", ["-mlasx"])
 
 
 @depends(target, c_compiler)
@@ -3911,11 +3987,16 @@ def htmlaccel_config(target, c_compiler):
     #
     # aarch64 does not need extra flags.
     #
+    # loongarch64 needs -mlsx to explicitly enable LSX on ABI 1.0
+    # toolchains.
+    #
     # clang-cl doesn't tolerate -flax-vector-conversions but GCC requires it.
     #
     # -mavx2 doesn't change codegen vs. -mavx. AVX2 and BMI always co-occur
     # in Intel CPUs, but there are AMD CPUs that have AVX and BMI without
     # AVX2.
+    if target.cpu == "loongarch64":
+        return ["-mlsx"]
     if target.cpu != "x86_64":
         return []
     if c_compiler.type == "gcc":

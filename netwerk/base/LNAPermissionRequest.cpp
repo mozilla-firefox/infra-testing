@@ -9,12 +9,13 @@
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/FeaturePolicy.h"
+#include "mozilla/dom/PermissionsPolicy.h"
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/glean/NetwerkMetrics.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"
 #include "nsIConsoleService.h"
+#include "nsIContentPolicy.h"
 #include "nsIIOService.h"
 #include "nsIOService.h"
 #include "nsIPermissionManager.h"
@@ -148,13 +149,13 @@ LNAPermissionRequest::NotifyShown() {
 nsresult LNAPermissionRequest::RequestPermission() {
   MOZ_ASSERT(NS_IsMainThread());
 
-  // Enforce Feature Policy for Local Network Access (Bug 1978550)
+  // Enforce Permissions Policy for Local Network Access (Bug 1978550)
   if (!mLoadInfo) {
     NS_WARNING("LNA permission request without load info");
     return Cancel();
   }
 
-  // Retrieve the canonical browsing context for feature policy checks
+  // Retrieve the canonical browsing context for permissions policy checks
   RefPtr<dom::CanonicalBrowsingContext> bc;
   if (mBrowsingContext) {
     bc = mBrowsingContext->Canonical();
@@ -168,15 +169,17 @@ nsresult LNAPermissionRequest::RequestPermission() {
       return Cancel();
     }
   } else {
-    Maybe<dom::FeaturePolicyInfo> fpInfo = bc->GetContainerFeaturePolicy();
-    // Feature Policy is populated in the canonical browsing context via
-    // HTMLIFrameElement::MaybeStoreCrossOriginFeaturePolicy() (for <iframe>)
-    // nsObjectLoadingContent::MaybeStoreCrossOriginFeaturePolicy() (for
+    Maybe<dom::PermissionsPolicyInfo> fpInfo =
+        bc->GetContainerPermissionsPolicy();
+    // Permissions Policy is populated in the canonical browsing context via
+    // HTMLIFrameElement::MaybeStoreCrossOriginPermissionsPolicy() (for
+    // <iframe>)
+    // nsObjectLoadingContent::MaybeStoreCrossOriginPermissionsPolicy() (for
     // <object>/<embed>)
-    // Hence, it's safe to ignore feature policy when it's missing as that
+    // Hence, it's safe to ignore permissions policy when it's missing as that
     // would only mean the request is from a top-level document, which should
     // be allowed to request local network access without being blocked by
-    // feature policy.
+    // permissions policy.
     if (fpInfo.isSome()) {
       nsAutoString featureName;
       if (mType.Equals(LOOPBACK_NETWORK_PERMISSION_KEY)) {
@@ -186,7 +189,7 @@ nsresult LNAPermissionRequest::RequestPermission() {
       }
 
       if (fpInfo->mInheritedDeniedFeatureNames.Contains(featureName)) {
-        NS_WARNING("Feature policy denying the request");
+        NS_WARNING("Permissions policy denying the request");
         return Cancel();
       }
     }
@@ -215,15 +218,22 @@ nsresult LNAPermissionRequest::RequestPermission() {
 
   // For shared and service workers, do not show a permission prompt.
   // Only grant access if the origin already has a persistent LNA permission.
+  //
+  // Notification icons are fetched without a requesting node, and possibly
+  // long after the page that created the notification is gone, so there is no
+  // context to prompt in either.
+  bool isNotificationIcon = mLoadInfo->InternalContentPolicyType() ==
+                            nsIContentPolicy::TYPE_INTERNAL_IMAGE_NOTIFICATION;
   Maybe<dom::ClientInfo> clientInfo = mLoadInfo->GetClientInfo();
-  if (clientInfo.isSome() &&
-      (clientInfo->Type() == dom::ClientType::Sharedworker ||
-       clientInfo->Type() == dom::ClientType::Serviceworker)) {
+  if (isNotificationIcon ||
+      (clientInfo.isSome() &&
+       (clientInfo->Type() == dom::ClientType::Sharedworker ||
+        clientInfo->Type() == dom::ClientType::Serviceworker))) {
     nsCOMPtr<nsIPermissionManager> permMgr =
         mozilla::components::PermissionManager::Service();
     if (!permMgr || !mPrincipal) {
       NS_WARNING(
-          "LNA worker permission check failed: no permission manager or "
+          "LNA non-prompting permission check failed: no permission manager or "
           "principal");
       return Cancel();
     }
@@ -234,14 +244,20 @@ nsresult LNAPermissionRequest::RequestPermission() {
       return Allow(JS::UndefinedHandleValue);
     }
     // Log the denial to the browser console so developers can diagnose why
-    // worker fetch requests are being blocked.
+    // these requests are being blocked.
     nsCOMPtr<nsIConsoleService> console =
         do_GetService(NS_CONSOLESERVICE_CONTRACTID);
     if (console && mPrincipal) {
       nsAutoCString origin;
       mPrincipal->GetOrigin(origin);
       nsAutoString msg;
-      msg.AppendLiteral("Local Network Access blocked: worker from origin ");
+      msg.AppendLiteral("Local Network Access blocked: ");
+      if (isNotificationIcon) {
+        msg.AppendLiteral("notification icon load");
+      } else {
+        msg.AppendLiteral("worker");
+      }
+      msg.AppendLiteral(" from origin ");
       msg.Append(NS_ConvertUTF8toUTF16(origin));
       msg.AppendLiteral(" attempted ");
       msg.Append(NS_ConvertUTF8toUTF16(mType));

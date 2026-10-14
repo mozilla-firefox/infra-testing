@@ -4,11 +4,11 @@
 #ifndef mozilla_dom_HTMLTableRowElement_h
 #define mozilla_dom_HTMLTableRowElement_h
 
+#include "mozilla/dom/ContentList.h"
 #include "nsGenericHTMLElement.h"
 
 namespace mozilla::dom {
 
-class ContentList;
 class HTMLTableSectionElement;
 
 class HTMLTableRowElement final : public nsGenericHTMLElement {
@@ -61,7 +61,7 @@ class HTMLTableRowElement final : public nsGenericHTMLElement {
                       nsIPrincipal* aMaybeScriptedPrincipal,
                       nsAttrValue& aResult) override;
   nsMapRuleToAttributesFunc GetAttributeMappingFunction() const override;
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
+  bool IsNoNamespaceAttrMapped(const nsAtom* aAttribute) const override;
 
   nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 

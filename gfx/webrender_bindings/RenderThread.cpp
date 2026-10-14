@@ -37,6 +37,7 @@
 #ifdef XP_WIN
 #  include "GLContextEGL.h"
 #  include "GLLibraryEGL.h"
+#  include "mozilla/WindowsUserHandleValidation.h"
 #  include "mozilla/gfx/DeviceManagerDx.h"
 #  include "mozilla/webrender/DCLayerTree.h"
 #  include "mozilla/widget/WinCompositorWindowThread.h"
@@ -75,7 +76,7 @@ LazyLogModule gRenderThreadLog("RenderThread");
 #define LOG(...) MOZ_LOG(gRenderThreadLog, LogLevel::Debug, (__VA_ARGS__))
 
 static StaticRefPtr<RenderThread> sRenderThread;
-static mozilla::BackgroundHangMonitor* sBackgroundHangMonitor;
+[[maybe_unused]] static mozilla::BackgroundHangMonitor* sBackgroundHangMonitor;
 #ifdef DEBUG
 static bool sRenderThreadEverStarted = false;
 #endif
@@ -197,6 +198,9 @@ void RenderThread::Start(uint32_t aNamespace) {
             nsThread* nsthread = static_cast<nsThread*>(thread.get());
             nsthread->SetUseHangMonitor(true);
             nsthread->SetPriority(nsISupportsPriority::PRIORITY_HIGH);
+#ifdef XP_WIN
+            mozilla::ForceToGuiThreadAndFixTebValidateHandlesFlag();
+#endif
           }),
       {.stackSize = stackSize});
 
@@ -921,10 +925,10 @@ void RenderThread::UpdateAndRender(
                           renderer->GetCompositorBridge(), info, aStartId,
                           aStartTime, start, end, render, *aStats));
 
-  RefPtr<layers::Fence> fence;
+  RefPtr<layers::Fence> readFence;
 
   if (latestFrameId.IsValid()) {
-    fence = renderer->GetAndResetReleaseFence();
+    readFence = renderer->GetAndResetReadFence();
 
     // Wait for GPU after posting NotifyDidRender, since the wait is not
     // necessary for the NotifyDidRender.
@@ -953,7 +957,7 @@ void RenderThread::UpdateAndRender(
   // this code at all; it would bail out at the mRenderers.find check above.
   MOZ_ASSERT(pipelineMgr);
   pipelineMgr->NotifyPipelinesUpdated(info, latestFrameId, lastCompletedFrameId,
-                                      std::move(fence));
+                                      std::move(readFence));
 }
 
 void RenderThread::Pause(wr::WindowId aWindowId) {

@@ -34,7 +34,7 @@ MInstruction* jit::NewWasmDefaultConstant(TempAllocator& alloc,
     case wasm::ValType::F64:
       return MWasmFloatConstant::NewDouble(alloc, 0.0);
     case wasm::ValType::V128:
-#ifdef ENABLE_WASM_SIMD
+#ifdef ENABLE_JIT_SIMD
       return MWasmFloatConstant::NewSimd128(alloc, SimdConstant::Zero());
 #else
       MOZ_CRASH();
@@ -48,7 +48,7 @@ MInstruction* jit::NewWasmDefaultConstant(TempAllocator& alloc,
 }
 
 HashNumber MWasmFloatConstant::valueHash() const {
-#ifdef ENABLE_WASM_SIMD
+#ifdef ENABLE_JIT_SIMD
   return ConstantValueHash(type(), u.bits_[0] ^ u.bits_[1]);
 #else
   return ConstantValueHash(type(), u.bits_[0]);
@@ -57,7 +57,7 @@ HashNumber MWasmFloatConstant::valueHash() const {
 
 bool MWasmFloatConstant::congruentTo(const MDefinition* ins) const {
   return ins->isWasmFloatConstant() && type() == ins->type() &&
-#ifdef ENABLE_WASM_SIMD
+#ifdef ENABLE_JIT_SIMD
          u.bits_[1] == ins->toWasmFloatConstant()->u.bits_[1] &&
 #endif
          u.bits_[0] == ins->toWasmFloatConstant()->u.bits_[0];
@@ -401,7 +401,7 @@ bool MWasmLoadGlobalCell::congruentTo(const MDefinition* ins) const {
   return congruentIfOperandsEqual(other);
 }
 
-#ifdef ENABLE_WASM_SIMD
+#ifdef ENABLE_JIT_SIMD
 MDefinition* MWasmTernarySimd128::foldsTo(TempAllocator& alloc) {
   if (simdOp() == wasm::SimdOp::V128Bitselect) {
     if (v2()->op() == MDefinition::Opcode::WasmFloatConstant) {
@@ -516,6 +516,62 @@ static bool MatchPmaddubswSequence(MWasmBinarySimd128* lhs,
   return true;
 }
 
+static bool IsZeroSimd128(MDefinition* def) {
+  return def->isWasmFloatConstant() &&
+         def->toWasmFloatConstant()->toSimd128().isZeroBits();
+}
+
+static wasm::SimdOp TestBitsOp(wasm::SimdOp op) {
+  switch (op) {
+    case wasm::SimdOp::I8x16Ne:
+      return wasm::SimdOp::MozI8x16TestBits;
+    case wasm::SimdOp::I16x8Ne:
+      return wasm::SimdOp::MozI16x8TestBits;
+    case wasm::SimdOp::I32x4Ne:
+      return wasm::SimdOp::MozI32x4TestBits;
+    case wasm::SimdOp::I64x2Ne:
+      return wasm::SimdOp::MozI64x2TestBits;
+    default:
+      return wasm::SimdOp::Limit;
+  }
+}
+
+// Match ne(and(a, b), 0) where the and has no other use.
+static MWasmBinarySimd128* MatchTestBitsSequence(MWasmBinarySimd128* ins) {
+  MDefinition* bits;
+  if (IsZeroSimd128(ins->rhs())) {
+    bits = ins->lhs();
+  } else if (IsZeroSimd128(ins->lhs())) {
+    bits = ins->rhs();
+  } else {
+    return nullptr;
+  }
+  if (!bits->isWasmBinarySimd128() ||
+      bits->toWasmBinarySimd128()->simdOp() != wasm::SimdOp::V128And ||
+      !bits->hasOneUse()) {
+    return nullptr;
+  }
+  return bits->toWasmBinarySimd128();
+}
+
+// GVN merges equal constants, so a zero is often shared. Specializing each use
+// of a shared zero is still a win on ARM64, which has compare-against-zero
+// forms that need no register.
+static bool CanSpecializeConstantOperand(MDefinition* constant,
+                                         wasm::SimdOp op) {
+  if (constant->hasOneUse()) {
+    return true;
+  }
+#  if defined(JS_CODEGEN_ARM64)
+  return constant->toWasmFloatConstant()->toSimd128().isZeroBits();
+#  elif defined(JS_CODEGEN_LOONG64)
+  return AssemblerLOONG64::CanEncodeSimdCompareImmediateFor(
+      op, constant->toWasmFloatConstant()->toSimd128());
+#  else
+  return false;
+#  endif
+}
+
 MDefinition* MWasmBinarySimd128::foldsTo(TempAllocator& alloc) {
   if (simdOp() == wasm::SimdOp::I8x16Swizzle && rhs()->isWasmFloatConstant()) {
     // Specialize swizzle(v, constant) as shuffle(mask, v, zero) to trigger all
@@ -539,6 +595,16 @@ MDefinition* MWasmBinarySimd128::foldsTo(TempAllocator& alloc) {
     return BuildWasmShuffleSimd128(alloc, shuffleMask, lhs(), zero);
   }
 
+  // Fold ne(and(a, b), 0) into one test-bits operation. This has to come
+  // before the constant specialization below, which would take the zero.
+  if (canTestBits() && TestBitsOp(simdOp()) != wasm::SimdOp::Limit) {
+    if (MWasmBinarySimd128* bitAnd = MatchTestBitsSequence(this)) {
+      return MWasmBinarySimd128::New(alloc, bitAnd->lhs(), bitAnd->rhs(),
+                                     /* commutative = */ true,
+                                     TestBitsOp(simdOp()));
+    }
+  }
+
   // Specialize var OP const / const OP var when possible.
   //
   // As the LIR layer can't directly handle v128 constants as part of its normal
@@ -552,12 +618,14 @@ MDefinition* MWasmBinarySimd128::foldsTo(TempAllocator& alloc) {
 
   if (lhs()->isWasmFloatConstant() != rhs()->isWasmFloatConstant() &&
       specializeForConstantRhs()) {
-    if (isCommutative() && lhs()->isWasmFloatConstant() && lhs()->hasOneUse()) {
+    if (isCommutative() && lhs()->isWasmFloatConstant() &&
+        CanSpecializeConstantOperand(lhs(), simdOp())) {
       return MWasmBinarySimd128WithConstant::New(
           alloc, rhs(), lhs()->toWasmFloatConstant()->toSimd128(), simdOp());
     }
 
-    if (rhs()->isWasmFloatConstant() && rhs()->hasOneUse()) {
+    if (rhs()->isWasmFloatConstant() &&
+        CanSpecializeConstantOperand(rhs(), simdOp())) {
       return MWasmBinarySimd128WithConstant::New(
           alloc, lhs(), rhs()->toWasmFloatConstant()->toSimd128(), simdOp());
     }
@@ -744,27 +812,7 @@ MDefinition* MWasmReduceSimd128::foldsTo(TempAllocator& alloc) {
 #  endif
   return this;
 }
-#endif  // ENABLE_WASM_SIMD
-
-MDefinition* MWasmUnsignedToDouble::foldsTo(TempAllocator& alloc) {
-  if (input()->isConstant()) {
-    return MConstant::NewDouble(alloc,
-                                uint32_t(input()->toConstant()->toInt32()));
-  }
-
-  return this;
-}
-
-MDefinition* MWasmUnsignedToFloat32::foldsTo(TempAllocator& alloc) {
-  if (input()->isConstant()) {
-    double dval = double(uint32_t(input()->toConstant()->toInt32()));
-    if (IsFloat32Representable(dval)) {
-      return MConstant::NewFloat32(alloc, float(dval));
-    }
-  }
-
-  return this;
-}
+#endif  // ENABLE_JIT_SIMD
 
 MWasmCallCatchable* MWasmCallCatchable::New(
     TempAllocator& alloc, const wasm::CallSiteDesc& desc,
@@ -926,7 +974,7 @@ bool MWasmShuffleSimd128::congruentTo(const MDefinition* ins) const {
          congruentIfOperandsEqual(ins);
 }
 
-#ifdef ENABLE_WASM_SIMD
+#ifdef ENABLE_JIT_SIMD
 MWasmShuffleSimd128* jit::BuildWasmShuffleSimd128(TempAllocator& alloc,
                                                   const int8_t* control,
                                                   MDefinition* lhs,
@@ -949,7 +997,7 @@ MWasmShuffleSimd128* jit::BuildWasmShuffleSimd128(TempAllocator& alloc,
   }
   return MWasmShuffleSimd128::New(alloc, lhs, rhs, s);
 }
-#endif  // ENABLE_WASM_SIMD
+#endif  // ENABLE_JIT_SIMD
 
 static MDefinition* FoldTrivialWasmTests(TempAllocator& alloc,
                                          wasm::RefType sourceType,

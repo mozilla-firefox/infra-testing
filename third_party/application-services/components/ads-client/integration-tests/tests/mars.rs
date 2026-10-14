@@ -73,8 +73,8 @@ fn test_contract_image_with_categories_prod() {
     let ad = placements
         .get("mock_billboard_1")
         .expect("mock_billboard_1 should be present in the response");
-    assert!(!ad.url.is_empty(), "destination url should be populated");
-    assert!(!ad.image_url.is_empty(), "image url should be populated");
+    assert!(ad.url.has_host(), "destination url should be populated");
+    assert!(ad.image_url.has_host(), "image url should be populated");
 }
 
 #[test]
@@ -216,8 +216,8 @@ fn test_contract_tile_ohttp_prod() {
     viaduct::ohttp::configure_ohttp_channel(
         "ads-client".to_string(),
         viaduct::ohttp::OhttpConfig {
-            relay_url: "https://mozilla-ohttp.fastly-edge.com/".to_string(),
             gateway_host: "prod.ohttp-gateway.prod.webservices.mozgcp.net".to_string(),
+            relay_url: "https://mozilla-ohttp.fastly-edge.com/".to_string(),
         },
     )
     .expect("OHTTP channel configuration should succeed");

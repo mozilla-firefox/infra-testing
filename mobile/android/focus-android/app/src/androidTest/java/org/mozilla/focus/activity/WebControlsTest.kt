@@ -88,7 +88,7 @@ class WebControlsTest {
                 progressBar.waitUntilGone(waitingTime)
                 clickLinkMatchingText("External link")
                 progressBar.waitUntilGone(waitingTime)
-                verifyPageURL("DuckDuckGo")
+                verifyPageURL("example.com")
             }
     }
 

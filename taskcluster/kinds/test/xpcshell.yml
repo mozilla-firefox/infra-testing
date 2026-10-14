@@ -54,6 +54,7 @@ xpcshell:
         - conditioned_profile
         - no-fission
         - msix
+        - geckoview-isolated-process
         - inc-origin-init
         - privatebrowsing
     instance-size:
@@ -75,7 +76,6 @@ xpcshell:
                     default: []
             no-fission:
                 by-test-platform:
-                    android-em.*/debug-isolated-process: []
                     android.*: built-projects
                     linux2404-64.*: ['mozilla-central']
                     default: []
@@ -83,6 +83,10 @@ xpcshell:
                 by-test-platform:
                     windows11-64-25h2(-shippable)?/opt: built-projects
                     windows11-64-25h2/debug: built-projects
+                    default: []
+            geckoview-isolated-process:
+                by-test-platform:
+                    android-em.*/debug: built-projects
                     default: []
             inc-origin-init: []
             privatebrowsing: []
@@ -136,44 +140,48 @@ xpcshell:
                 by-test-platform:
                     linux.*: 2
                     default: default
+            geckoview-isolated-process: 2
             default:
                 by-test-platform:
                     windows.*-asan.*: 3
-                    android-em.*/debug-isolated-process: 2
                     default: default
     mozharness:
         extra-options: []
     fetches:
         toolchain:
             by-test-platform:
-                linux2204.*:
+                linux.*:
                     - linux64-node
                     - linux64-minidump-stackwalk
                     - linux64-fix-stacks
                     - linux-python-dbusmock
-                    - linux64-2204-dbus-python
-                linux2404.*:
-                    - linux64-node
-                    - linux64-minidump-stackwalk
-                    - linux64-fix-stacks
-                    - linux-python-dbusmock
-                    - linux64-2404-dbus-python
+                    - linux64-python3.10-dbus-python
+                    - linux64-samply
+                    - profiler-node-tools
                 macosx.*-64.*:
                     - macosx64-node
                     - macosx64-minidump-stackwalk
                     - macosx64-fix-stacks
+                    - macosx64-samply
+                    - profiler-node-tools
                 macosx.*-aarch64.*:
                     - macosx64-aarch64-node
                     - macosx64-aarch64-minidump-stackwalk
                     - macosx64-aarch64-fix-stacks
+                    - macosx64-aarch64-samply
+                    - profiler-node-tools
                 win.*-64.*:
                     - win64-node
                     - win32-minidump-stackwalk
                     - win32-fix-stacks
+                    - win64-samply
+                    - profiler-node-tools
                 win.*32.*:
                     - win32-node
                     - win32-minidump-stackwalk
                     - win32-fix-stacks
+                    - win32-samply
+                    - profiler-node-tools
                 android-em-14.*:
                     - android34-system-image-x86_64-linux
                     - android34-avd-x86_64-linux
@@ -181,6 +189,8 @@ xpcshell:
                     - linux64-node
                     - linux64-minidump-stackwalk
                     - linux64-hostutils
+                    - linux64-samply
+                    - profiler-node-tools
 
 xpcshell-failures:
     description: "xpcshell specific failures test run"
@@ -214,11 +224,17 @@ xpcshell-failures:
                     - macosx64-node
                     - macosx64-minidump-stackwalk
                     - macosx64-fix-stacks
+                    - macosx64-samply
+                    - profiler-node-tools
                 macosx.*-aarch64.*:
                     - macosx64-aarch64-node
                     - macosx64-aarch64-minidump-stackwalk
                     - macosx64-aarch64-fix-stacks
+                    - macosx64-aarch64-samply
+                    - profiler-node-tools
                 win.*32.*:
                     - win32-node
                     - win32-minidump-stackwalk
                     - win32-fix-stacks
+                    - win32-samply
+                    - profiler-node-tools

@@ -21,9 +21,12 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 add_setup(async () => {
-  await SidebarController.init();
-  await SidebarController.promiseInitialized;
-  await SidebarController.sidebarMain?.updateComplete;
+  // The display/position/tabs-layout metrics are only recorded by init(), and
+  // test_metrics_initialized resets FOG. Re-run init() so repeat runs in the
+  // same browser session (--verify) still see them.
+  SidebarController.init();
+  await SidebarTestUtils.waitForInitialized(window);
+  await SidebarTestUtils.ensureLauncherVisible(window);
 });
 
 registerCleanupFunction(() => {
@@ -61,6 +64,7 @@ add_task(async function test_sidebar_expand() {
   await SidebarTestUtils.waitForTabstripOrientation(window, "vertical");
   // Vertical tabs are expanded by default
   info("Waiting for sidebar main to be expanded");
+  await SidebarController.waitUntilStable();
   await BrowserTestUtils.waitForMutationCondition(
     SidebarController.sidebarMain,
     { attributes: true, attributeFilter: ["expanded"] },
@@ -72,6 +76,7 @@ add_task(async function test_sidebar_expand() {
 
   EventUtils.synthesizeMouseAtCenter(SidebarController.toolbarButton, {});
   info("Waiting for sidebar main to be collapsed");
+  await SidebarController.waitUntilStable();
   await BrowserTestUtils.waitForMutationCondition(
     SidebarController.sidebarMain,
     { attributes: true, attributeFilter: ["expanded"] },
@@ -82,6 +87,7 @@ add_task(async function test_sidebar_expand() {
   info("Re-expand the sidebar.");
   EventUtils.synthesizeMouseAtCenter(SidebarController.toolbarButton, {});
   info("Waiting for sidebar main to be expanded");
+  await SidebarController.waitUntilStable();
   await BrowserTestUtils.waitForMutationCondition(
     SidebarController.sidebarMain,
     { attributes: true, attributeFilter: ["expanded"] },
@@ -101,7 +107,7 @@ add_task(async function test_sidebar_expand() {
 
 async function testSidebarToggle(commandID, gleanEvent, otherCommandID) {
   info(`Load the ${commandID} panel.`);
-  await SidebarController.show(commandID);
+  await SidebarTestUtils.showPanel(window, commandID);
 
   let events = gleanEvent.testGetValue();
   Assert.equal(events?.length, 1, "One event was reported.");
@@ -113,10 +119,10 @@ async function testSidebarToggle(commandID, gleanEvent, otherCommandID) {
 
   if (otherCommandID) {
     info(`Load the ${otherCommandID} panel.`);
-    await SidebarController.show(otherCommandID);
+    await SidebarTestUtils.showPanel(window, otherCommandID);
   } else {
     info(`Unload the ${commandID} panel.`);
-    SidebarController.hide();
+    SidebarTestUtils.closePanel(window);
   }
 
   events = gleanEvent.testGetValue();
@@ -126,11 +132,14 @@ async function testSidebarToggle(commandID, gleanEvent, otherCommandID) {
     "false",
     "Event indicates that the panel was closed."
   );
-  await SidebarController.updateUIState({
-    panelOpen: false,
-    command: "",
-    launcherVisible: true,
-  });
+  info(`Maybe closing the ${otherCommandID || ""} panel`);
+  if (otherCommandID) {
+    SidebarTestUtils.closePanel(window);
+  }
+  Assert.ok(!SidebarController.isOpen, "Sidebar is not open");
+  Assert.equal(SidebarController.currentID, "", "No current id");
+  // leave the launcher visible if sidebar.revamp is enabled
+  await SidebarTestUtils.ensureLauncherVisible(window);
 }
 
 add_task(async function test_history_sidebar_toggle() {
@@ -153,6 +162,7 @@ async function test_synced_tabs_sidebar_toggle(revampEnabled) {
   await SpecialPowers.pushPrefEnv({
     set: [["sidebar.revamp", revampEnabled]],
   });
+  await SidebarController.waitUntilStable();
   await testSidebarToggle("viewTabsSidebar", Glean.syncedTabs.sidebarToggle);
   let events = Glean.syncedTabs.sidebarToggle.testGetValue();
   for (const { extra } of events) {
@@ -261,8 +271,7 @@ add_task(async function test_contextual_manager_toggle() {
   }
   await testCustomizeToggle(
     "viewCPMSidebar",
-    Glean.contextualManager.passwordsEnabled,
-    false // Remove this in bug 1957425
+    Glean.contextualManager.passwordsEnabled
   );
   await SpecialPowers.popPrefEnv();
   await SidebarController.waitUntilStable();
@@ -299,8 +308,9 @@ add_task(async function test_customize_icon_click() {
   SidebarController.hide();
 });
 
-async function testCustomizeToggle(commandID, gleanEvent, checked = true) {
+async function testCustomizeToggle(commandID, gleanEvent) {
   await SidebarController.show("viewCustomizeSidebar");
+  await SidebarController.waitUntilStable();
   const customizeComponent =
     SidebarController.browser.contentDocument.querySelector(
       "sidebar-customize"
@@ -313,17 +323,13 @@ async function testCustomizeToggle(commandID, gleanEvent, checked = true) {
     {},
     SidebarController.browser.contentWindow
   );
-  Assert.equal(
-    checkbox.checked,
-    !checked,
-    `Checkbox is ${checked ? "un" : ""}checked.`
-  );
+  Assert.ok(!checkbox.checked, "Checkbox is unchecked.");
   let events = gleanEvent.testGetValue();
   Assert.equal(events?.length, 1, "One event was reported.");
   Assert.deepEqual(
     events[0].extra,
-    { checked: `${!checked}` },
-    `Event indicates that the box was ${checked ? "un" : ""}checked.`
+    { checked: "false" },
+    "Event indicates that the box was unchecked."
   );
 
   info(`Re-toggle ${commandID}.`);
@@ -332,17 +338,13 @@ async function testCustomizeToggle(commandID, gleanEvent, checked = true) {
     {},
     SidebarController.browser.contentWindow
   );
-  Assert.equal(
-    checkbox.checked,
-    checked,
-    `Checkbox is ${checked ? "" : "un"}checked.`
-  );
+  Assert.ok(checkbox.checked, "Checkbox is checked.");
   events = gleanEvent.testGetValue();
   Assert.equal(events?.length, 2, "Two events were reported.");
   Assert.deepEqual(
     events[1].extra,
-    { checked: `${checked}` },
-    `Event indicates that the box was ${checked ? "" : "un"}checked.`
+    { checked: "true" },
+    "Event indicates that the box was checked."
   );
 
   SidebarController.hide();
@@ -592,7 +594,40 @@ add_task(async function test_sidebar_position_rtl_ui() {
   await SidebarController.waitUntilStable();
 });
 
+async function getActionButtonElement({ view, extensionId }) {
+  const overflowGroup = document.getElementById("tools-overflow-list");
+  const overflowPanel = document.getElementById("sidebar-tools-overflow");
+
+  let btnSelector = view
+    ? `moz-button[view="${view}"]`
+    : `moz-button[extensionId="${extensionId}"]`;
+  // is the button in the overflow menu?
+  let buttonEl = overflowGroup.querySelector(btnSelector);
+  if (buttonEl) {
+    // button is in the overflow menu, make sure its open.
+    if (!overflowPanel.hasAttribute("panelopen")) {
+      info(`${btnSelector} is in the overflow menu, opening it`);
+      let menuShown = BrowserTestUtils.waitForEvent(
+        overflowPanel,
+        "popupshown"
+      );
+      SidebarController.sidebarMain.moreToolsButton.click();
+      await menuShown;
+      info(`menu open`);
+    }
+  } else {
+    buttonEl =
+      SidebarController.sidebarMain.shadowRoot.querySelector(btnSelector);
+    info(`${btnSelector} not in the overflow menu, found it? ${!!buttonEl}`);
+  }
+  return buttonEl;
+}
+
 async function testIconClick(expanded) {
+  const { sidebarMain } = SidebarController;
+  const toolsButtonGroup = sidebarMain.buttonGroup;
+  const origToolCount = toolsButtonGroup.childElementCount;
+
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.ml.chat.enabled", true],
@@ -601,9 +636,9 @@ async function testIconClick(expanded) {
     ],
   });
   await SidebarTestUtils.waitForTabstripOrientation(window, "vertical");
-
   await SidebarController.waitUntilStable();
-  await SidebarController.show("viewCustomizeSidebar");
+
+  await SidebarTestUtils.showPanel(window, "viewCustomizeSidebar");
   const customizeComponent =
     SidebarController.browser.contentDocument.querySelector(
       "sidebar-customize"
@@ -611,15 +646,18 @@ async function testIconClick(expanded) {
   const checkbox =
     customizeComponent.shadowRoot.querySelector(`#viewCPMSidebar`);
 
+  const toolAddedPromise = BrowserTestUtils.waitForMutationCondition(
+    toolsButtonGroup,
+    { childList: true },
+    () => toolsButtonGroup.childElementCount > origToolCount
+  );
   EventUtils.synthesizeMouseAtCenter(
     checkbox,
     {},
     SidebarController.browser.contentWindow
   );
+  await toolAddedPromise;
 
-  await SidebarController.waitUntilStable();
-
-  const { sidebarMain } = SidebarController;
   const gleanEvents = new Map([
     ["viewGenaiChatSidebar", Glean.sidebar.chatbotIconClick],
     ["viewTabsSidebar", Glean.sidebar.syncedTabsIconClick],
@@ -629,28 +667,23 @@ async function testIconClick(expanded) {
     ["viewCPMSidebar", Glean.sidebar.passwordsIconClick],
   ]);
 
-  await sidebarMain.updateComplete;
-
   for (const button of sidebarMain.toolButtons) {
     await SidebarController.updateUIState({
       launcherExpanded: expanded,
       command: "",
     });
+    await SidebarController.waitUntilStable();
     Assert.equal(
       SidebarController.sidebarMain.expanded,
       expanded,
       `The launcher is ${expanded ? "expanded" : "collapsed"}`
     );
-    Assert.ok(!SidebarController._state.panelOpen, "No panel is open");
+    Assert.equal(SidebarController.currentID, "", "No panel is open");
 
     let view = button.getAttribute("view");
     if (view) {
       info(`Click the icon for: ${view}`);
-
-      // The nodelist for sidebarMain may be out of date.
-      let buttonEl = sidebarMain.shadowRoot.querySelector(
-        `moz-button[view='${view}']`
-      );
+      const buttonEl = await getActionButtonElement({ view });
       const shown = BrowserTestUtils.waitForEvent(document, "SidebarShown");
       EventUtils.synthesizeMouseAtCenter(buttonEl, {});
       await shown;
@@ -667,6 +700,11 @@ async function testIconClick(expanded) {
           );
         }
       }
+      const overflowPanel = document.getElementById("sidebar-tools-overflow");
+      Assert.ok(
+        !overflowPanel.hasAttribute("panelopen"),
+        "OVerflow menu is closed"
+      );
     }
   }
 
@@ -686,7 +724,7 @@ async function testIconClick(expanded) {
     expanded,
     `The launcher is ${expanded ? "expanded" : "collapsed"}`
   );
-  Assert.ok(!SidebarController._state.panelOpen, "No panel is open");
+  Assert.ok(!SidebarController.isOpen, "No panel is open");
 
   info("Click the icon for the extension.");
   info("Waiting for sidebar main to visible and extension button present");
@@ -696,7 +734,10 @@ async function testIconClick(expanded) {
     () =>
       BrowserTestUtils.isVisible(sidebarMain) && sidebarMain.extensionButtons[0]
   );
-  EventUtils.synthesizeMouseAtCenter(sidebarMain.extensionButtons[0], {});
+  let buttonEl = await getActionButtonElement({
+    extensionId: sidebarMain.extensionButtons[0].getAttribute("extensionId"),
+  });
+  EventUtils.synthesizeMouseAtCenter(buttonEl, {});
 
   const events = Glean.sidebar.addonIconClick.testGetValue();
   Assert.equal(events?.length, 1, "One event was reported.");

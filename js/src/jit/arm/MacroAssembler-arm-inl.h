@@ -286,6 +286,11 @@ void MacroAssembler::xorPtr(Imm32 imm, Register src, Register dest) {
   ma_eor(imm, src, dest, scratch);
 }
 
+void MacroAssembler::nor32(Imm32 imm, Register src, Register dest) {
+  or32(imm, src, dest);
+  not32(dest);
+}
+
 // ===============================================================
 // Swap instructions
 
@@ -1146,6 +1151,37 @@ void MacroAssembler::rotateRight64(Register shift, Register64 src,
   as_orr(dest.low, dest.low, lsr(temp, shift_value));
 
   bind(&done);
+}
+
+// ===============================================================
+// Shift or rotate, then combine with another register
+
+void MacroAssembler::lshift32ThenAdd(Imm32 shift, Register rhs,
+                                     Register srcDest) {
+  MOZ_ASSERT(rhs != srcDest);
+  lshift32(shift, srcDest);
+  add32(rhs, srcDest);
+}
+
+void MacroAssembler::lshift32ThenOr(Imm32 shift, Register rhs,
+                                    Register srcDest) {
+  MOZ_ASSERT(rhs != srcDest);
+  lshift32(shift, srcDest);
+  or32(rhs, srcDest);
+}
+
+void MacroAssembler::rshiftPtrThenXor(Imm32 shift, Register rhs,
+                                      Register srcDest) {
+  MOZ_ASSERT(rhs != srcDest);
+  rshiftPtr(shift, srcDest);
+  xorPtr(rhs, srcDest);
+}
+
+void MacroAssembler::rotateLeft64ThenXor(Imm32 count, Register64 rhs,
+                                         Register64 srcDest) {
+  MOZ_ASSERT(rhs != srcDest);
+  rotateLeft64(count, srcDest, srcDest, InvalidReg);
+  xor64(rhs, srcDest);
 }
 
 // ===============================================================

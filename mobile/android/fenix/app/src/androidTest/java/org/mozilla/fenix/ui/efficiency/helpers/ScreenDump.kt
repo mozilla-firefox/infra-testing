@@ -29,6 +29,7 @@ import org.hamcrest.Matcher
 import org.hamcrest.Matchers
 import org.json.JSONArray
 import org.json.JSONObject
+import org.mozilla.fenix.ui.efficiency.logging.TestLogging
 
 /**
  * ScreenDump — a concise, greppable snapshot of what the Compose UI currently exposes.
@@ -56,6 +57,9 @@ import org.json.JSONObject
 object ScreenDump {
 
     const val TAG = "EffScreenDump"
+
+    /** A pathological screen should not flood the record; the prose dump is still complete. */
+    private const val MAX_STRUCTURED_NODES = 250
     const val BEGIN = "EFF_SCREEN_DUMP:BEGIN"
     const val END = "EFF_SCREEN_DUMP:END"
 
@@ -75,16 +79,42 @@ object ScreenDump {
                 val desc = cfg.getOrNull(SemanticsProperties.ContentDescription)?.joinToString(" ")
                 // Only print nodes carrying a usable handle — keeps the dump tight.
                 if (text.isNullOrBlank() && tag.isNullOrBlank() && desc.isNullOrBlank()) return@forEach
-                val clickable = if (cfg.contains(SemanticsActions.OnClick)) " [clickable]" else ""
+                val clickable = cfg.contains(SemanticsActions.OnClick)
                 val parts = buildList {
                     if (!text.isNullOrBlank()) add("text=\"$text\"")
                     if (!tag.isNullOrBlank()) add("testTag=\"$tag\"")
                     if (!desc.isNullOrBlank()) add("desc=\"$desc\"")
                 }
-                Log.i(TAG, "• ${parts.joinToString("  ")}$clickable")
+                Log.i(TAG, "• ${parts.joinToString("  ")}${if (clickable) " [clickable]" else ""}")
+                // The same node as fields. Every triage rule ends with "read the dump", which today
+                // means a human reading prose; this is the version a rule can read - "was the element
+                // there under a different handle?" is a query rather than an eyeball exercise.
+                if (shown < MAX_STRUCTURED_NODES) {
+                    TestLogging.reporter.record(
+                        "dumpNode",
+                        mapOf(
+                            "dump" to label,
+                            "layer" to "compose",
+                            "text" to text,
+                            "testTag" to tag,
+                            "desc" to desc,
+                            "clickable" to clickable,
+                        ),
+                    )
+                }
                 shown++
             }
             Log.i(TAG, "($shown nodes with a text/testTag/desc handle, of ${nodes.size} total)")
+            TestLogging.reporter.record(
+                "dump",
+                mapOf(
+                    "dump" to label,
+                    "layer" to "compose",
+                    "handled" to shown,
+                    "total" to nodes.size,
+                    "structuredTruncatedAt" to MAX_STRUCTURED_NODES.takeIf { shown > it },
+                ),
+            )
         } catch (t: Throwable) {
             Log.i(TAG, "screen dump unavailable: ${t.message}")
         }
@@ -176,16 +206,41 @@ object ScreenDump {
                 val text = attr("text")
                 val desc = attr("content-desc")
                 if (resId == null && text == null && desc == null) return@forEach
-                val clickable = if (attr("clickable") == "true") " [clickable]" else ""
+                val clickable = attr("clickable") == "true"
                 val parts = buildList {
                     if (resId != null) add("res-id=\"$resId\"")
                     if (text != null) add("text=\"$text\"")
                     if (desc != null) add("desc=\"$desc\"")
                 }
-                Log.i(TAG, "• ${parts.joinToString("  ")}$clickable")
+                Log.i(TAG, "• ${parts.joinToString("  ")}${if (clickable) " [clickable]" else ""}")
+                // The native layer, as fields. "Was it there under a different handle?" is often
+                // answered here rather than in the Compose tree: a system dialog, a legacy View, or
+                // another package's window lives outside Compose semantics entirely.
+                if (shown < MAX_STRUCTURED_NODES) {
+                    TestLogging.reporter.record(
+                        "dumpNode",
+                        mapOf(
+                            "dump" to label,
+                            "layer" to "uiautomator",
+                            "resId" to resId,
+                            "text" to text,
+                            "desc" to desc,
+                            "clickable" to clickable,
+                        ),
+                    )
+                }
                 shown++
             }
             Log.i(TAG, "($shown native nodes with a res-id/text/desc handle)")
+            TestLogging.reporter.record(
+                "dump",
+                mapOf(
+                    "dump" to label,
+                    "layer" to "uiautomator",
+                    "handled" to shown,
+                    "structuredTruncatedAt" to MAX_STRUCTURED_NODES.takeIf { shown > it },
+                ),
+            )
         } catch (t: Throwable) {
             Log.i(TAG, "uiautomator dump unavailable: ${t.message}")
         }
@@ -391,6 +446,13 @@ object ScreenDump {
                 JSONObject()
                     .put("screen", JSONObject().put("width", w).put("height", h))
                     .put("screenshot", "eff-screendump.png")
+                    // Which page the HARNESS believed it was on. Distinct from the page a consumer
+                    // infers from the elements: that inference is a guess from selectors, and when
+                    // the two disagree the disagreement is the finding. A dump taken on a failure
+                    // where the harness thought it was on HomePage and the elements say otherwise
+                    // is a navigation bug; one where they agree is not.
+                    .put("harnessPage", PageStateTracker.currentPageName)
+                    .put("navigationFacts", PageStateTracker.currentFacts.map { it.name }.sorted())
                     .put("elements", elements)
             File(filesDir, "eff-screendump.json").writeText(root.toString())
             Log.i(TAG, "DONE: wrote ${elements.length()} elements to $filesDir")

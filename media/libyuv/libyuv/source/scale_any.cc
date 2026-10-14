@@ -8,12 +8,11 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <assert.h>
 #include <string.h>  // For memset/memcpy
 
 #include "libyuv/scale.h"
 #include "libyuv/scale_row.h"
-
-#include "libyuv/basic_types.h"
 
 #ifdef __cplusplus
 namespace libyuv {
@@ -30,8 +29,9 @@ extern "C" {
     if (n > 0) {                                                               \
       SCALEROWDOWN_SIMD(src_ptr, src_stride, dst_ptr, n);                      \
     }                                                                          \
-    SCALEROWDOWN_C(src_ptr + (n * FACTOR) * BPP, src_stride,                   \
-                   dst_ptr + n * BPP, r);                                      \
+    ptrdiff_t np = n;                                                          \
+    SCALEROWDOWN_C(src_ptr + (np * FACTOR) * BPP, src_stride,                  \
+                   dst_ptr + np * BPP, r);                                     \
   }
 
 // Fixed scale down for odd source width.  Used by I420Blend subsampling.
@@ -45,8 +45,9 @@ extern "C" {
     if (n > 0) {                                                               \
       SCALEROWDOWN_SIMD(src_ptr, src_stride, dst_ptr, n);                      \
     }                                                                          \
-    SCALEROWDOWN_C(src_ptr + (n * FACTOR) * BPP, src_stride,                   \
-                   dst_ptr + n * BPP, r + 1);                                  \
+    ptrdiff_t np = n;                                                          \
+    SCALEROWDOWN_C(src_ptr + (np * FACTOR) * BPP, src_stride,                  \
+                   dst_ptr + np * BPP, r + 1);                                 \
   }
 
 #ifdef HAS_SCALEROWDOWN2_SSSE3
@@ -405,6 +406,106 @@ SDANY(ScaleARGBRowDown2Box_Any_LSX,
       4,
       3)
 #endif
+#ifdef HAS_SCALEROWDOWN2_WASMSIMD
+SDANY(ScaleRowDown2_Any_WASMSIMD,
+      ScaleRowDown2_WASMSIMD,
+      ScaleRowDown2_C,
+      2,
+      1,
+      15)
+SDANY(ScaleRowDown2Linear_Any_WASMSIMD,
+      ScaleRowDown2Linear_WASMSIMD,
+      ScaleRowDown2Linear_C,
+      2,
+      1,
+      15)
+SDANY(ScaleRowDown2Box_Any_WASMSIMD,
+      ScaleRowDown2Box_WASMSIMD,
+      ScaleRowDown2Box_C,
+      2,
+      1,
+      15)
+SDODD(ScaleRowDown2Box_Odd_WASMSIMD,
+      ScaleRowDown2Box_WASMSIMD,
+      ScaleRowDown2Box_Odd_C,
+      2,
+      1,
+      15)
+#endif
+#ifdef HAS_SCALEROWDOWN4_WASMSIMD
+SDANY(ScaleRowDown4_Any_WASMSIMD,
+      ScaleRowDown4_WASMSIMD,
+      ScaleRowDown4_C,
+      4,
+      1,
+      15)
+SDANY(ScaleRowDown4Box_Any_WASMSIMD,
+      ScaleRowDown4Box_WASMSIMD,
+      ScaleRowDown4Box_C,
+      4,
+      1,
+      7)
+#endif
+#ifdef HAS_SCALEROWDOWN34_WASMSIMD
+SDANY(ScaleRowDown34_Any_WASMSIMD,
+      ScaleRowDown34_WASMSIMD,
+      ScaleRowDown34_C,
+      4 / 3,
+      1,
+      23)
+SDANY(ScaleRowDown34_0_Box_Any_WASMSIMD,
+      ScaleRowDown34_0_Box_WASMSIMD,
+      ScaleRowDown34_0_Box_C,
+      4 / 3,
+      1,
+      23)
+SDANY(ScaleRowDown34_1_Box_Any_WASMSIMD,
+      ScaleRowDown34_1_Box_WASMSIMD,
+      ScaleRowDown34_1_Box_C,
+      4 / 3,
+      1,
+      23)
+#endif
+#ifdef HAS_SCALEROWDOWN38_WASMSIMD
+SDANY(ScaleRowDown38_Any_WASMSIMD,
+      ScaleRowDown38_WASMSIMD,
+      ScaleRowDown38_C,
+      8 / 3,
+      1,
+      11)
+SDANY(ScaleRowDown38_3_Box_Any_WASMSIMD,
+      ScaleRowDown38_3_Box_WASMSIMD,
+      ScaleRowDown38_3_Box_C,
+      8 / 3,
+      1,
+      11)
+SDANY(ScaleRowDown38_2_Box_Any_WASMSIMD,
+      ScaleRowDown38_2_Box_WASMSIMD,
+      ScaleRowDown38_2_Box_C,
+      8 / 3,
+      1,
+      11)
+#endif
+#ifdef HAS_SCALEARGBROWDOWN2_WASMSIMD
+SDANY(ScaleARGBRowDown2_Any_WASMSIMD,
+      ScaleARGBRowDown2_WASMSIMD,
+      ScaleARGBRowDown2_C,
+      2,
+      4,
+      3)
+SDANY(ScaleARGBRowDown2Linear_Any_WASMSIMD,
+      ScaleARGBRowDown2Linear_WASMSIMD,
+      ScaleARGBRowDown2Linear_C,
+      2,
+      4,
+      3)
+SDANY(ScaleARGBRowDown2Box_Any_WASMSIMD,
+      ScaleARGBRowDown2Box_WASMSIMD,
+      ScaleARGBRowDown2Box_C,
+      2,
+      4,
+      3)
+#endif
 #undef SDANY
 
 // Scale down by even scale factor.
@@ -416,8 +517,9 @@ SDANY(ScaleARGBRowDown2Box_Any_LSX,
     if (n > 0) {                                                            \
       SCALEROWDOWN_SIMD(src_ptr, src_stride, src_stepx, dst_ptr, n);        \
     }                                                                       \
-    SCALEROWDOWN_C(src_ptr + (n * src_stepx) * BPP, src_stride, src_stepx,  \
-                   dst_ptr + n * BPP, r);                                   \
+    ptrdiff_t np = n;                                                       \
+    SCALEROWDOWN_C(src_ptr + (np * src_stepx) * BPP, src_stride, src_stepx, \
+                   dst_ptr + np * BPP, r);                                  \
   }
 
 #ifdef HAS_SCALEARGBROWDOWNEVEN_SSE2
@@ -463,25 +565,49 @@ SDAANY(ScaleUVRowDownEven_Any_NEON,
        2,
        3)
 #endif
+#ifdef HAS_SCALEARGBROWDOWNEVEN_WASMSIMD
+SDAANY(ScaleARGBRowDownEven_Any_WASMSIMD,
+       ScaleARGBRowDownEven_WASMSIMD,
+       ScaleARGBRowDownEven_C,
+       4,
+       3)
+SDAANY(ScaleARGBRowDownEvenBox_Any_WASMSIMD,
+       ScaleARGBRowDownEvenBox_WASMSIMD,
+       ScaleARGBRowDownEvenBox_C,
+       4,
+       3)
+#endif
 
 #ifdef SASIMDONLY
 // This also works and uses memcpy and SIMD instead of C, but is slower on ARM
 
+#ifdef LIBYUV_MSAN
+#define MSAN_MEMSET(a, b, c) memset(a, b, c)
+#else
+#define MSAN_MEMSET(a, b, c)
+#endif
+
 // Add rows box filter scale down.  Using macro from row_any
 #define SAROW(NAMEANY, ANY_SIMD, SBPP, BPP, MASK)                      \
   void NAMEANY(const uint8_t* src_ptr, uint16_t* dst_ptr, int width) { \
-    SIMD_ALIGNED(uint16_t dst_temp[32]);                               \
     SIMD_ALIGNED(uint8_t src_temp[32]);                                \
-    memset(dst_temp, 0, 32 * 2); /* for msan */                        \
+    static_assert((MASK + 1) * SBPP <= sizeof(src_temp),               \
+                  "src_temp buffer too small");                        \
+    SIMD_ALIGNED(uint16_t dst_temp[32]);                               \
+    static_assert((MASK + 1) * BPP <= sizeof(dst_temp),                \
+                  "dst_temp buffer too small");                        \
+    MSAN_MEMSET(src_temp, 0, sizeof(src_temp)); /* for msan */         \
+    MSAN_MEMSET(dst_temp, 0, sizeof(dst_temp)); /* for msan */         \
     int r = width & MASK;                                              \
     int n = width & ~MASK;                                             \
     if (n > 0) {                                                       \
       ANY_SIMD(src_ptr, dst_ptr, n);                                   \
     }                                                                  \
-    memcpy(src_temp, src_ptr + n * SBPP, r * SBPP);                    \
-    memcpy(dst_temp, dst_ptr + n * BPP, r * BPP);                      \
+    ptrdiff_t np = n;                                                  \
+    memcpy(src_temp, src_ptr + np * SBPP, r * SBPP);                   \
+    memcpy(dst_temp, dst_ptr + np * BPP, r * BPP);                     \
     ANY_SIMD(src_temp, dst_temp, MASK + 1);                            \
-    memcpy(dst_ptr + n * BPP, dst_temp, r * BPP);                      \
+    memcpy(dst_ptr + np * BPP, dst_temp, r * BPP);                     \
   }
 
 #ifdef HAS_SCALEADDROW_SSE2
@@ -535,7 +661,8 @@ SAANY(ScaleAddRow_Any_LSX, ScaleAddRow_LSX, ScaleAddRow_C, 15)
     if (n > 0) {                                                               \
       TERP_SIMD(dst_ptr, src_ptr, n, x, dx);                                   \
     }                                                                          \
-    TERP_C(dst_ptr + n * BPP, src_ptr, r, x + n * dx, dx);                     \
+    ptrdiff_t np = n;                                                          \
+    TERP_C(dst_ptr + np * BPP, src_ptr, r, x + np * dx, dx);                   \
   }
 
 #ifdef HAS_SCALEFILTERCOLS_NEON
@@ -563,6 +690,23 @@ CANY(ScaleARGBFilterCols_Any_LSX,
      ScaleARGBFilterCols_C,
      4,
      7)
+#endif
+#ifdef HAS_SCALEFILTERCOLS_WASMSIMD
+CANY(ScaleFilterCols_Any_WASMSIMD,
+     ScaleFilterCols_WASMSIMD,
+     ScaleFilterCols_C,
+     1,
+     7)
+#endif
+#ifdef HAS_SCALEARGBCOLS_WASMSIMD
+CANY(ScaleARGBCols_Any_WASMSIMD, ScaleARGBCols_WASMSIMD, ScaleARGBCols_C, 4, 3)
+#endif
+#ifdef HAS_SCALEARGBFILTERCOLS_WASMSIMD
+CANY(ScaleARGBFilterCols_Any_WASMSIMD,
+     ScaleARGBFilterCols_WASMSIMD,
+     ScaleARGBFilterCols_C,
+     4,
+     3)
 #endif
 #undef CANY
 
@@ -819,7 +963,8 @@ SU2BLANY(ScaleRowUp2_Bilinear_16_Any_NEON,
       if (n != 0) {                                                   \
         SIMD(src_ptr, dst_ptr + 2, n);                                \
       }                                                               \
-      C(src_ptr + n, dst_ptr + 2 * n + 2, r);                         \
+      ptrdiff_t np = n;                                               \
+      C(src_ptr + np, dst_ptr + 2 * np + 2, r);                       \
     }                                                                 \
     dst_ptr[2 * dst_width - 2] = src_ptr[((dst_width + 1) & ~1) - 2]; \
     dst_ptr[2 * dst_width - 1] = src_ptr[((dst_width + 1) & ~1) - 1]; \
@@ -907,7 +1052,8 @@ SBUH2LANY(ScaleUVRowUp2_Linear_16_Any_NEON,
       if (n != 0) {                                                     \
         SIMD(sa, sb - sa, da + 2, db - da, n);                          \
       }                                                                 \
-      C(sa + n, sb - sa, da + 2 * n + 2, db - da, r);                   \
+      ptrdiff_t np = n;                                                 \
+      C(sa + np, sb - sa, da + 2 * np + 2, db - da, r);                 \
     }                                                                   \
     da[2 * dst_width - 2] = (3 * sa[((dst_width + 1) & ~1) - 2] +       \
                              sb[((dst_width + 1) & ~1) - 2] + 2) >>     \

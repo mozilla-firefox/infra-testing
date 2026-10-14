@@ -119,6 +119,8 @@ EXPORTS.mozilla += [
     "AvailableMemoryTracker.h",
     "AvailableMemoryWatcher.h",
     "ClearOnShutdown.h",
+    "CollectorLogAnalyzer.h",
+    "CollectorLogAnalyzerBackground.h",
     "CountingAllocatorBase.h",
     "CycleCollectedJSContext.h",
     "CycleCollectedJSRuntime.h",
@@ -167,6 +169,7 @@ UNIFIED_SOURCES += [
     "AvailableMemoryTracker.cpp",
     "AvailableMemoryWatcher.cpp",
     "ClearOnShutdown.cpp",
+    "CollectorLogAnalyzer.cpp",
     "CycleCollectedJSContext.cpp",
     "CycleCollectedJSRuntime.cpp",
     "CycleCollectorStats.cpp",
@@ -208,6 +211,17 @@ UNIFIED_SOURCES += [
     "nsVersionComparatorImpl.cpp",
     "nsWeakReference.cpp",
     "RLBoxSandboxPool.cpp",
+]
+
+SOURCE_HEADERS += [
+    "KeyedUUIDMapper.h",
+    "LogCommandLineHandler.h",
+    "LogModulePrefWatcher.h",
+    "nsConsoleMessage.h",
+    "nsConsoleService.h",
+    "nsSecurityConsoleMessage.h",
+    "nsUUIDGenerator.h",
+    "nsVersionComparatorImpl.h",
 ]
 
 if CONFIG["OS_TARGET"] in ("Linux", "Android"):
@@ -285,6 +299,10 @@ elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
         "nsCrashOnException.cpp",
     ]
 
+    SOURCE_HEADERS += [
+        "nsCrashOnException.h",
+    ]
+
 if CONFIG["COMPILE_ENVIRONMENT"]:
     EXPORTS.mozilla += [
         "!gk_rust_utils_ffi_generated.h",
@@ -326,3 +344,8 @@ with Files("PHCManager.*"):
 
 with Files("*KeyedUUIDMapper*"):
     BUG_COMPONENT = ("WebExtensions", "General")
+
+LICENSED_UNDER += ["apple"]
+LICENSED_UNDER["apple"].paths = [
+    "DarwinObjectPtr.h",
+]

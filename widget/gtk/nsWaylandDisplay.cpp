@@ -84,7 +84,30 @@ nsWaylandDisplay* WaylandDisplayGet() {
   return gWaylandDisplay;
 }
 
-void nsWaylandDisplay::SetShm(wl_shm* aShm) { mShm = aShm; }
+#ifdef MOZ_LOGGING
+void nsWaylandDisplay::SetShmFormat(uint32_t aFormat) {
+  switch (aFormat) {
+    case WL_SHM_FORMAT_ABGR2101010:
+      LOG("WL_SHM_FORMAT_ABGR2101010 supported");
+      break;
+    case WL_SHM_FORMAT_YUV420:
+      LOG("WL_SHM_FORMAT_YUV420 supported");
+      break;
+  }
+}
+#endif
+
+void nsWaylandDisplay::SetShm(wl_shm* aShm) {
+  mShm = aShm;
+#ifdef MOZ_LOGGING
+  static const struct wl_shm_listener shm_listener{
+      [](void* data, struct wl_shm* wl_shm, uint32_t format) {
+        auto* display = static_cast<nsWaylandDisplay*>(data);
+        display->SetShmFormat(format);
+      }};
+  wl_shm_add_listener(mShm, &shm_listener, this);
+#endif
+}
 
 class WaylandPointerEvent {
  public:
@@ -529,6 +552,13 @@ void nsWaylandDisplay::SetAppMenuManager(
 }
 
 void nsWaylandDisplay::SetFixes(wl_fixes* aFixes) { mFixes = aFixes; }
+
+// BT2020/PQ is the minimum to enable HDR.
+bool nsWaylandDisplay::IsHDREnabled() const {
+  return mColorManagerSupportedFeature.mParametric &&
+         mSupportedPrimaries[WP_COLOR_MANAGER_V1_PRIMARIES_BT2020] &&
+         mSupportedTransfer[WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_ST2084_PQ];
+}
 
 void nsWaylandDisplay::SetCMSupportedFeature(uint32_t aFeature) {
   LOG("nsWaylandDisplay::SetCMSupportedFeature() [%d]", aFeature);
@@ -1283,8 +1313,7 @@ void WlCompositorUnavailableHandler() {
         nsCOMPtr<nsIAppStartup> appStartup =
             do_GetService("@mozilla.org/toolkit/app-startup;1");
         if (appStartup) {
-          bool userAllowedQuit = true;
-          appStartup->Quit(nsIAppStartup::eForceQuit, 0, &userAllowedQuit);
+          appStartup->Quit(nsIAppStartup::eForceQuit, 0);
         }
       }));
 }
@@ -1351,9 +1380,9 @@ void nsWaylandDisplay::Init() {
   }
 }
 
-bool nsWaylandDisplay::IsTFSupported(int aTF) {
+bool nsWaylandDisplay::IsTFSupported(uint32_t aTF) {
   if (aTF < sColorTransfersNum) {
-    return mSupportedTransfer[aTF] == aTF;
+    return mSupportedTransfer[aTF] == (int)aTF;
   } else {
     NS_WARNING("Unknow color transfer function!");
     return false;
@@ -1366,6 +1395,19 @@ bool nsWaylandDisplay::IsSetMDCVSupported() {
 
 bool nsWaylandDisplay::IsSetLuminancesSupported() {
   return mColorManagerSupportedFeature.mLuminances;
+}
+
+bool nsWaylandDisplay::IsPrimariesSupported(uint32_t aPrimaries) {
+  if (aPrimaries < sColorPrimariesNum) {
+    return mSupportedPrimaries[aPrimaries] == (int)aPrimaries;
+  } else {
+    NS_WARNING("Unknow color primaries!");
+    return false;
+  }
+}
+
+bool nsWaylandDisplay::IsParametricSupported() {
+  return mColorManagerSupportedFeature.mParametric;
 }
 
 }  // namespace mozilla::widget

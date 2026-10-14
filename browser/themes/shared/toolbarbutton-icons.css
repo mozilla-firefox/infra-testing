@@ -6,7 +6,22 @@
 .toolbarbutton-1 {
   color: inherit;
   -moz-context-properties: fill, fill-opacity;
+}
+
+.toolbarbutton-1 {
   fill: var(--toolbarbutton-icon-fill);
+}
+
+@media (forced-colors) {
+  toolbar .toolbarbutton-1:not([disabled]) {
+    &:hover {
+      fill: var(--toolbarbutton-icon-fill-hover);
+    }
+
+    &:is(:hover:active, [open], [checked]) {
+      fill: var(--toolbarbutton-icon-fill-active);
+    }
+  }
 }
 
 #back-button:-moz-locale-dir(rtl) > .toolbarbutton-icon,
@@ -115,6 +130,11 @@
   list-style-image: url("chrome://global/skin/icons/developer.svg");
 }
 
+#profiler-button-button {
+  --profiler-button-image-fill-active: var(--toolbarbutton-icon-fill-attention);
+  --profiler-button-image-opacity-paused: var(--toolbarbutton-opacity-disabled);
+}
+
 #profiler-button-button > .toolbarbutton-icon {
   list-style-image: url("chrome://devtools/skin/images/tool-profiler.svg");
 }
@@ -124,17 +144,17 @@
 }
 
 #profiler-button-button.profiler-active > image {
-  fill: #0060df;
+  fill: var(--profiler-button-image-fill-active);
   fill-opacity: 1;
-  background-color: #0060df33;
+  background-color: color-mix(in srgb, var(--profiler-button-image-fill-active) 20%, transparent);
 }
 
 #profiler-button-button.profiler-active:hover > image {
-  background-color: #0060df22;
+  background-color: color-mix(in srgb, var(--profiler-button-image-fill-active) 13%, transparent);
 }
 
 #profiler-button-button.profiler-paused > image {
-  opacity: 0.4;
+  opacity: var(--profiler-button-image-opacity-paused);
 }
 
 #preferences-button {
@@ -200,14 +220,16 @@
      * toolbarbuttons.css, duplicated here because this badge is keyed off an
      * attribute rather than a class. Keep both in sync. */
     > .toolbarbutton-badge-stack > .toolbarbutton-badge {
-      width: 14px;
-      height: 14px;
+      width: var(--toolbarbutton-badge-size);
+      height: var(--toolbarbutton-badge-size);
       min-width: auto;
       box-shadow: none;
       border: none;
       padding: 0;
       display: block;
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
       margin: -7px 0 0 !important;
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
       margin-inline-end: -6px !important;
       background: url("chrome://global/skin/icons/badge-blue.svg");
     }
@@ -279,7 +301,7 @@
 }
 
 #panic-button[open] {
-  fill: light-dark(rgb(213, 32, 20), #ff848b);
+  fill: var(--icon-color-critical);
 }
 
 #library-button {
@@ -383,6 +405,11 @@
       stroke: var(--icon-color-success);
     }
 
+    &.ipprotection-included {
+      list-style-image: url("chrome://browser/content/ipprotection/assets/states/ipprotection-included.svg");
+      stroke: var(--icon-color-success);
+    }
+
     &.ipprotection-paused {
       list-style-image: url("chrome://browser/content/ipprotection/assets/states/ipprotection-paused.svg");
       fill: var(--toolbarbutton-icon-fill);
@@ -421,6 +448,10 @@
       list-style-image: url("chrome://browser/content/ipprotection/assets/toolbaricons/ipprotection-excluded.svg");
       stroke: var(--icon-color-success);
     }
+    .ipprotection-icon-layer[data-state="included"] {
+      list-style-image: url("chrome://browser/content/ipprotection/assets/toolbaricons/ipprotection-included.svg");
+      stroke: var(--icon-color-success);
+    }
     .ipprotection-icon-layer[data-state="paused"] {
       list-style-image: url("chrome://browser/content/ipprotection/assets/toolbaricons/ipprotection-paused.svg");
       fill: var(--toolbarbutton-icon-fill);
@@ -431,12 +462,14 @@
     &.ipprotection-network-error .ipprotection-icon-layer[data-state="network-error"],
     &.ipprotection-error .ipprotection-icon-layer[data-state="error"],
     &.ipprotection-excluded .ipprotection-icon-layer[data-state="excluded"],
+    &.ipprotection-included .ipprotection-icon-layer[data-state="included"],
     &.ipprotection-paused .ipprotection-icon-layer[data-state="paused"] {
       opacity: 1;
     }
 
     /* Icon Inactive State */
-    &:is(.ipprotection-on, .ipprotection-network-error, .ipprotection-error, .ipprotection-excluded, .ipprotection-paused) .toolbarbutton-icon {
+    &:is(.ipprotection-on, .ipprotection-network-error, .ipprotection-error, .ipprotection-excluded, .ipprotection-included, .ipprotection-paused)
+      .toolbarbutton-icon {
       opacity: 0;
     }
   }
@@ -447,7 +480,7 @@
 }
 
 #taskbar-tabs-favicon {
-  margin: auto 8px;
+  margin: auto var(--space-small);
   height: var(--icon-size);
   width: var(--icon-size);
 
@@ -470,6 +503,28 @@
   }
 }
 
+#mini-window-restore-button {
+  list-style-image: url("chrome://global/skin/icons/open-in-new.svg");
+}
+
+#mini-window-close-button {
+  list-style-image: url("chrome://global/skin/icons/close.svg");
+}
+
+#mini-window-audio-button {
+  &[soundplaying] {
+    list-style-image: url("chrome://global/skin/media/audio.svg");
+  }
+
+  &[muted] {
+    list-style-image: url("chrome://global/skin/media/audio-muted.svg");
+  }
+}
+
+#mini-window-button {
+  list-style-image: url("chrome://browser/content/miniwindow/assets/mini-window.svg");
+}
+
 #smartwindow-ask-button-inner {
   list-style-image: url("chrome://browser/content/aiwindow/assets/ask-icon.svg");
 
@@ -478,8 +533,30 @@
   }
 }
 
-#smartwindow-group-tabs-button-inner {
+#smartwindow-group-tabs-button {
   list-style-image: url("chrome://browser/skin/grid-sparkle.svg");
+}
+
+#smartwindow-monitor-button {
+  list-style-image: url("chrome://browser/content/aiwindow/assets/agent-watch.svg");
+
+  /* A monitor matched its condition. Same badge dot as #PanelUI-menu-button and
+     #downloads-button, tinted to say the watched condition was met rather than
+     the attention blue those two use to ask for a decision. */
+  &[monitor-attention] > .toolbarbutton-badge-stack > .toolbarbutton-badge {
+    display: block;
+    box-shadow: none;
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    margin-top: -7px !important;
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    margin-inline-end: -6px !important;
+    min-width: var(--icon-size-xsmall);
+    min-height: var(--icon-size-xsmall);
+    -moz-context-properties: fill;
+    fill: var(--color-accent-attention);
+    background: url("chrome://browser/skin/notification-fill-12.svg") no-repeat center;
+    background-size: var(--icon-size-xsmall);
+  }
 }
 
 #document-pip-return-to-opener-button {

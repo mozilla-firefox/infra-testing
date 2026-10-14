@@ -627,7 +627,7 @@ class nsHttpChannel final : public HttpBaseChannel,
   RefPtr<HttpTransactionShell> mTransaction;
   RefPtr<HttpTransactionShell> mTransactionSticky;
 
-  uint64_t mLogicalOffset{0};
+  Atomic<uint64_t, Relaxed> mLogicalOffset{0};
 
   // cache specific data
   nsCOMPtr<nsICacheEntry> mCacheEntry;

@@ -3,7 +3,6 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 UNIFIED_SOURCES += [
-    'breakpad_nlist_64.cc',
     'dynamic_images.cc',
     'exception_handler.cc',
     'minidump_generator.cc',
@@ -18,3 +17,12 @@ LOCAL_INCLUDES += [
 
 if CONFIG['MOZ_PHC']:
     DEFINES['MOZ_PHC'] = True
+
+SOURCE_HEADERS += [
+	"dynamic_images.h",
+	"exception_handler.h",
+	"mach_vm_compat.h",
+	"minidump_generator.h",
+	"protected_memory_allocator.h",
+	"ucontext_compat.h",
+]

@@ -26,10 +26,15 @@
     "smartbar"
     "prompts"
     "topsites"
+    "promo"
+    "resume-section"
     "."
     "footer";
-  grid-template-rows: 0 1fr auto auto auto auto 1fr auto;
+  /* Preserve space above the heading as the resume section grows, and a
+   * minimum gap above the footer so it doesn't crowd short content. */
+  grid-template-rows: 0 minmax(var(--space-xlarge), 1fr) auto auto auto auto auto auto minmax(var(--size-item-xlarge), 1fr) auto;
   align-content: stretch;
+  box-shadow: var(--smartwindow-main-box-shadow);
 }
 
 :host([mode="sidebar"]) {
@@ -147,11 +152,12 @@
   accent-color: var(--smartwindow-assistant-accent-color-focus);
 }
 
-:host([mode="fullpage"]) #ai-window-smartbar {
+/* Keep the input from moving when the suggestions list opens. */
+#ai-window-smartbar[suggestions-position="bottom"] {
   top: 0;
 }
 
-:host([mode="sidebar"]) #ai-window-smartbar {
+#ai-window-smartbar[suggestions-position="top"] {
   bottom: 0;
 }
 
@@ -162,6 +168,13 @@
 smartwindow-prompts {
   grid-area: prompts;
   width: 100%;
+}
+
+/* Match the smartbar/fullpage-header content column so the pill row lines
+ * up with the input above it, and so overflow (for scrolling) triggers at
+ * a consistent width instead of depending on the window's own width. */
+:host([mode="fullpage"]) smartwindow-prompts {
+  max-width: var(--smartwindow-content-max-width);
 }
 
 .chat-header {
@@ -199,7 +212,7 @@ moz-button.close-sidebar-button {
     --button-background-color-ghost: var(--smartwindow-ghost-button-background);
     --button-background-color-ghost-hover: var(--smartwindow-ghost-button-background-hover);
     --button-background-color-ghost-active: var(--smartwindow-ghost-button-background-active);
-    --button-text-color-ghost: var(--smartwindow-ghost-button-text);
+    --button-text-color-ghost: var(--smartwindow-text-color);
 
     @media -moz-pref("browser.nova.enabled") {
       --button-icon-fill: light-dark(var(--color-violet-desaturated-60), var(--color-violet-desaturated-40));
@@ -227,6 +240,7 @@ moz-button.close-sidebar-button {
       background:
         image(var(--button-background-color-ghost)) padding-box,
         var(--nova-border-gradient) border-box;
+      color: var(--button-text-color-ghost);
     }
 
     &:is(:hover, :active)::part(button) {
@@ -298,6 +312,20 @@ smartwindow-topsites {
   }
 }
 
+smartwindow-resume-section {
+  grid-area: resume-section;
+  width: 100%;
+
+  :host(.chat-active) & {
+    display: none;
+  }
+}
+
+/* Align the card grid with the content above it. */
+:host([mode="fullpage"]) smartwindow-resume-section {
+  max-width: var(--smartwindow-content-max-width);
+}
+
 smartwindow-footer {
   grid-area: footer;
   width: 100%;
@@ -306,9 +334,13 @@ smartwindow-footer {
 }
 
 smartwindow-promo {
-  grid-area: footer;
+  grid-area: promo;
   max-width: 580px;
   margin-block-end: calc(var(--space-small) + 20px);
+
+  :host(.chat-active) & {
+    display: none;
+  }
 }
 
 .sr-only {

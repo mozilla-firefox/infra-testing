@@ -177,11 +177,6 @@ input {
 @import '../../components/Widgets/WidgetCelebration';
 @import '../../components/Widgets/Lists/Lists';
 @import '../../components/Widgets/FocusTimer/FocusTimer';
-@import '../../components/Widgets/SportsWidget/SportsWidget';
-@import '../../components/Widgets/SportsWidget/SportsMatchRow';
-@import '../../components/Widgets/SportsWidget/SportsResultCelebration';
-@import '../../components/Widgets/SportsWidget/WatchLiveModal';
-@import '../../components/Widgets/SportsWidget/LivePagination';
 @import '../../components/Widgets/Weather/Weather';
 @import '../../components/Widgets/Clocks/Clocks';
 
@@ -215,6 +210,7 @@ input {
 @import '../../components/DiscoveryStreamComponents/PromoCard/PromoCard';
 @import '../../components/DiscoveryStreamComponents/SectionContextMenu/SectionContextMenu';
 @import '../../components/DiscoveryStreamComponents/InterestPicker/InterestPicker';
+@import '../../components/DiscoveryStreamComponents/TopicNavigation/TopicNavigation';
 @import '../../components/DiscoveryStreamComponents/ReportContent/ReportContent';
 @import '../../components/DiscoveryStreamComponents/PersonalizedCard/PersonalizedCard';
 @import '../../components/MessageWrapper/MessageWrapper';

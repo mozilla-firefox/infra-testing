@@ -353,6 +353,13 @@ export function getDeleteMessagesByIdsSql(amount) {
   `;
 }
 
+export function getDeleteConversationsByIdsSql(amount) {
+  return `
+    DELETE FROM conversation
+    WHERE conversation.conv_id IN(${new Array(amount).fill("?").join(",")})
+  `;
+}
+
 export function getDeleteEmptyConversationsSql(amount) {
   return `
     DELETE FROM conversation

@@ -21,7 +21,6 @@ linux64-grcov:
     treeherder:
         symbol: TL(grcov)
     run:
-        clone-with: hg
         arguments: ['x86_64-unknown-linux-gnu']
     fetches:
         toolchain:
@@ -29,14 +28,39 @@ linux64-grcov:
             - linux64-clang-toolchain
             - sysroot-x86_64-linux-gnu
 
+linux64-aarch64-grcov:
+    attributes:
+        local-toolchain: true
+    treeherder:
+        symbol: TLA64(grcov)
+    run:
+        arguments: ['aarch64-unknown-linux-gnu']
+    fetches:
+        toolchain:
+            - linux64-rust-toolchain
+            - linux64-clang-toolchain
+            - sysroot-aarch64-linux-gnu
+
 macosx64-grcov:
     attributes:
         local-toolchain: true
     treeherder:
         symbol: TM(grcov)
     run:
-        clone-with: hg
         arguments: ['x86_64-apple-darwin']
+    fetches:
+        toolchain:
+            - linux64-rust-macos-toolchain
+            - linux64-clang-toolchain
+            - macosx64-sdk-toolchain
+
+macosx64-aarch64-grcov:
+    attributes:
+        local-toolchain: true
+    treeherder:
+        symbol: TMA64(grcov)
+    run:
+        arguments: ['aarch64-apple-darwin']
     fetches:
         toolchain:
             - linux64-rust-macos-toolchain
@@ -49,8 +73,20 @@ win64-grcov:
     treeherder:
         symbol: TW64(grcov)
     run:
-        clone-with: hg
         arguments: ['x86_64-pc-windows-msvc']
+    fetches:
+        toolchain:
+            - linux64-clang-toolchain
+            - linux64-rust-windows-toolchain
+            - vs-toolchain
+
+win64-aarch64-grcov:
+    attributes:
+        local-toolchain: true
+    treeherder:
+        symbol: TWA64(grcov)
+    run:
+        arguments: ['aarch64-pc-windows-msvc']
     fetches:
         toolchain:
             - linux64-clang-toolchain

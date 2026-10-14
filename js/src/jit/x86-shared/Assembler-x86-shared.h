@@ -9,6 +9,7 @@
 #include "mozilla/MathAlgorithms.h"
 
 #include <cstddef>
+#include <type_traits>
 
 #include "jit/shared/Assembler-shared.h"
 #include "jit/shared/IonAssemblerBuffer.h"  // jit::BufferOffset
@@ -1192,6 +1193,15 @@ class AssemblerX86Shared : public AssemblerShared {
   }
 
   void breakpoint() { masm.int3(); }
+
+  void ldmxcsr(const Address& src) {
+    masm.ldmxcsr_mr(src.offset, src.base.encoding());
+  }
+
+  void stmxcsr(const Address& dest) {
+    masm.stmxcsr_rm(dest.offset, dest.base.encoding());
+  }
+
   CodeOffset ud2() {
     MOZ_ASSERT(hasCreator());
     CodeOffset off(masm.currentOffset());
@@ -2338,6 +2348,22 @@ class AssemblerX86Shared : public AssemblerShared {
     masm.pop_r(src.encoding());
   }
   void pop(const Address& src) { masm.pop_m(src.offset, src.base.encoding()); }
+
+  template <typename... Regs>
+  void pushRegs(const Regs&... regs) {
+    static_assert((std::is_convertible_v<Regs, Register> && ...));
+    static_assert(sizeof...(Regs) > 0);
+
+    (push(regs), ...);
+  }
+
+  template <typename... Regs>
+  void popRegs(const Regs&... regs) {
+    static_assert((std::is_convertible_v<Regs, Register> && ...));
+    static_assert(sizeof...(Regs) > 0);
+
+    (pop(regs), ...);
+  }
 
   void pushFlags() { masm.push_flags(); }
   void popFlags() { masm.pop_flags(); }
@@ -4459,15 +4485,15 @@ class AssemblerX86Shared : public AssemblerShared {
     }
     MOZ_CRASH("unexpected mode");
   }
-  void vroundsd(X86Encoding::RoundingMode mode, FloatRegister src,
-                FloatRegister dest) {
+  void vroundsd(X86Encoding::RoundingMode mode, FloatRegister src1,
+                FloatRegister src0, FloatRegister dest) {
     MOZ_ASSERT(HasSSE41());
-    masm.vroundsd_irr(mode, src.encoding(), dest.encoding());
+    masm.vroundsd_irr(mode, src1.encoding(), src0.encoding(), dest.encoding());
   }
-  void vroundss(X86Encoding::RoundingMode mode, FloatRegister src,
-                FloatRegister dest) {
+  void vroundss(X86Encoding::RoundingMode mode, FloatRegister src1,
+                FloatRegister src0, FloatRegister dest) {
     MOZ_ASSERT(HasSSE41());
-    masm.vroundss_irr(mode, src.encoding(), dest.encoding());
+    masm.vroundss_irr(mode, src1.encoding(), src0.encoding(), dest.encoding());
   }
 
   unsigned vinsertpsMask(unsigned sourceLane, unsigned destLane,

@@ -51,7 +51,6 @@
 #include "mozilla/LoadInfo.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ProfilerLabels.h"
-#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ContentChild.h"
@@ -228,7 +227,6 @@ nsObjectLoadingContent::nsObjectLoadingContent()
     : mType(ObjectType::Loading),
       mChannelLoaded(false),
       mNetworkCreated(true),
-      mContentBlockingEnabled(false),
       mIsStopping(false),
       mIsLoading(false),
       mScriptRequested(false),
@@ -320,12 +318,10 @@ nsObjectLoadingContent::OnStartRequest(nsIRequest* aRequest) {
               u" since it was found on an internal Firefox blocklist.");
       console->LogStringMessage(message.get());
     }
-    mContentBlockingEnabled = true;
     return NS_ERROR_FAILURE;
   }
 
   if (ChannelClassifierUtils::IsClassifierBlockingErrorCode(status)) {
-    mContentBlockingEnabled = true;
     return NS_ERROR_FAILURE;
   }
 
@@ -1222,13 +1218,6 @@ nsresult nsObjectLoadingContent::LoadObject(bool aNotify, bool aForceLoad,
     mType = type;
   }
 
-  // Items resolved as Image/Document are not candidates for content blocking,
-  // as well as invalid plugins (they will not have the mContentType set).
-  if (mType == ObjectType::Fallback && ShouldBlockContent()) {
-    LOG(("OBJLC [%p]: Enable content blocking", this));
-    mType = ObjectType::Loading;
-  }
-
   // Sanity check: We shouldn't have any loaded resources, pending events, or
   // a final listener at this point
   if (mFrameLoader || mFinalListener) {
@@ -1598,7 +1587,7 @@ void nsObjectLoadingContent::Destroy() {
 void nsObjectLoadingContent::Traverse(nsObjectLoadingContent* tmp,
                                       nsCycleCollectionTraversalCallback& cb) {
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFrameLoader);
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFeaturePolicy);
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPermissionsPolicy);
 }
 
 /* static */
@@ -1607,7 +1596,7 @@ void nsObjectLoadingContent::Unlink(nsObjectLoadingContent* tmp) {
     tmp->mFrameLoader->Destroy();
   }
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mFrameLoader);
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mFeaturePolicy);
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mPermissionsPolicy);
 }
 
 void nsObjectLoadingContent::UnloadObject(bool aResetState) {
@@ -1777,19 +1766,15 @@ nsObjectLoadingContent::UpgradeLoadToDocument(
   }
 
   // At this point we know that we have a browsing context, so it's time to make
-  // sure that that browsing context gets the correct container feature policy.
-  // This is needed for `DocumentLoadListener::MaybeTriggerProcessSwitch` to be
-  // able to start loading the document with the correct container feature
-  // policy in the load info.
-  RefreshFeaturePolicy();
+  // sure that that browsing context gets the correct container permissions
+  // policy. This is needed for
+  // `DocumentLoadListener::MaybeTriggerProcessSwitch` to be able to start
+  // loading the document with the correct container permissions policy in the
+  // load info.
+  RefreshPermissionsPolicy();
 
   bc.forget(aBrowsingContext);
   return NS_OK;
-}
-
-bool nsObjectLoadingContent::ShouldBlockContent() {
-  return mContentBlockingEnabled && mURI && IsFlashMIME(mContentType) &&
-         StaticPrefs::browser_safebrowsing_blockedURIs_enabled();
 }
 
 Document* nsObjectLoadingContent::GetContentDocument(
@@ -1879,7 +1864,7 @@ void nsObjectLoadingContent::SubdocumentImageLoadComplete(nsresult aResult) {
   NotifyStateChanged(oldType, true);
 }
 
-void nsObjectLoadingContent::MaybeStoreCrossOriginFeaturePolicy() {
+void nsObjectLoadingContent::MaybeStoreCrossOriginPermissionsPolicy() {
   MOZ_DIAGNOSTIC_ASSERT(mFrameLoader);
   if (!mFrameLoader) {
     return;
@@ -1903,13 +1888,13 @@ void nsObjectLoadingContent::MaybeStoreCrossOriginFeaturePolicy() {
   }
 
   if (ContentChild* cc = ContentChild::GetSingleton()) {
-    (void)cc->SendSetContainerFeaturePolicy(
-        browsingContext, Some(mFeaturePolicy->ToFeaturePolicyInfo()));
+    (void)cc->SendSetContainerPermissionsPolicy(
+        browsingContext, Some(mPermissionsPolicy->ToPermissionsPolicyInfo()));
   }
 }
 
 /* static */ already_AddRefed<nsIPrincipal>
-nsObjectLoadingContent::GetFeaturePolicyDefaultOrigin(nsINode* aNode) {
+nsObjectLoadingContent::GetPermissionsPolicyDefaultOrigin(nsINode* aNode) {
   auto* el = nsGenericHTMLElement::FromNode(aNode);
   nsCOMPtr<nsIURI> nodeURI;
   // Different elements keep this in various locations
@@ -1931,20 +1916,22 @@ nsObjectLoadingContent::GetFeaturePolicyDefaultOrigin(nsINode* aNode) {
   return principal.forget();
 }
 
-void nsObjectLoadingContent::RefreshFeaturePolicy() {
+void nsObjectLoadingContent::RefreshPermissionsPolicy() {
   if (mType != ObjectType::Document) {
     return;
   }
 
-  if (!mFeaturePolicy) {
-    mFeaturePolicy = MakeAndAddRef<FeaturePolicy>(AsElement());
+  if (!mPermissionsPolicy) {
+    mPermissionsPolicy = MakeAndAddRef<PermissionsPolicy>(AsElement());
   }
 
   // The origin can change if 'src' or 'data' attributes change.
-  nsCOMPtr<nsIPrincipal> origin = GetFeaturePolicyDefaultOrigin(AsElement());
+  nsCOMPtr<nsIPrincipal> origin =
+      GetPermissionsPolicyDefaultOrigin(AsElement());
   MOZ_ASSERT(origin);
-  mFeaturePolicy->SetDefaultOrigin(origin);
+  mPermissionsPolicy->SetDefaultOrigin(origin);
 
-  mFeaturePolicy->InheritPolicy(AsElement()->OwnerDoc()->FeaturePolicy());
-  MaybeStoreCrossOriginFeaturePolicy();
+  mPermissionsPolicy->InheritPolicy(
+      AsElement()->OwnerDoc()->PermissionsPolicy());
+  MaybeStoreCrossOriginPermissionsPolicy();
 }

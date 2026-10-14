@@ -11,7 +11,7 @@
 
 [package]
 edition = "2021"
-rust-version = "1.76"
+rust-version = "1.87"
 name = "wgpu-core-deps-windows"
 version = "30.0.0"
 build = false
@@ -41,6 +41,7 @@ path = "src/lib.rs"
 [target."cfg(windows)".dependencies.wgpu-hal]
 version = "30.0.0"
 path = "../../../wgpu-hal"
+default-features = true
 
 [lints.clippy]
 ref_as_ptr = "warn"

@@ -54,7 +54,13 @@ var localProviderModules = [
     name: "UrlbarProviderGlobalActions",
     module:
       "moz-src:///browser/components/urlbar/UrlbarProviderGlobalActions.sys.mjs",
-    supportedSAPs: ["searchbar", "urlbar"],
+    supportedSAPs: ["searchbar", "urlbar", "smartbar"],
+  },
+  {
+    name: "UrlbarProviderAddonsShortcutMoved",
+    module:
+      "moz-src:///browser/components/urlbar/UrlbarProviderAddonsShortcutMoved.sys.mjs",
+    supportedSAPs: ["urlbar"],
   },
   {
     name: "UrlbarProviderAliasEngines",
@@ -589,7 +595,8 @@ export class ProvidersManager {
 
     // On the message path the parent's view has no results; the caller passes
     // the results shown content-side. Fall back to the view for the direct path.
-    visibleResults = visibleResults ?? controller.view?.visibleResults ?? [];
+    visibleResults ??=
+      "visibleResults" in controller.view ? controller.view.visibleResults : [];
     const visibleResultsByProviderName = new Map();
 
     visibleResults.forEach((result, index) => {
@@ -979,7 +986,10 @@ export class Query {
     // live in another process.
     if (result.type == lazy.UrlbarShared.RESULT_TYPE.DYNAMIC) {
       result.payload.viewTemplate = provider.getViewTemplate(result);
-      result.payload.viewUpdate = provider.getViewUpdate(result);
+      result.payload.viewUpdate = provider.getViewUpdate(
+        result,
+        this.controller
+      );
     }
     let commands = provider.tryMethod(
       "getResultCommands",

@@ -16,6 +16,7 @@ import org.hamcrest.Matchers.nullValue
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assume.assumeThat
+import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.geckoview.GeckoResult
@@ -1233,11 +1234,9 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
         assertThat("New session has same settings", newSession.settings, equalTo(settings))
     }
 
+    @Ignore("Bug 1673953")
     @Test
     fun createOpenSession_canInterleaveOtherCalls() {
-        // TODO: Bug 1673953
-        assumeThat(sessionRule.env.isFission, equalTo(false))
-
         mainSession.loadTestPath(HELLO_HTML_PATH)
 
         val newSession = sessionRule.createOpenSession()
@@ -1331,11 +1330,9 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
         sessionRule.waitForPageStops(2)
     }
 
+    @Ignore("Bug 1673953")
     @Test
     fun waitForPageStops_acrossSessionCreation() {
-        // TODO: Bug 1673953
-        assumeThat(sessionRule.env.isFission, equalTo(false))
-
         mainSession.loadTestPath(HELLO_HTML_PATH)
         val session = sessionRule.createOpenSession()
         mainSession.reload()
@@ -2134,7 +2131,11 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
 
         mainSession.reload()
         mainSession.waitForPageStop()
-        mainSession.forCallbacksDuringWait(Runnable @AssertCalled(count = 1) {})
+        mainSession.forCallbacksDuringWait(
+            object : Runnable {
+                @AssertCalled(count = 1) override fun run() {}
+            }
+        )
 
         assertThat("Delegate should be unregistered after wait", delegate, nullValue())
     }

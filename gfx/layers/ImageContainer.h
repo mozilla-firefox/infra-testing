@@ -408,7 +408,8 @@ class ImageContainer final : public SupportsThreadSafeWeakPtr<ImageContainer> {
         media::TimeUnit aMediaTime = media::TimeUnit::Invalid(),
         const CaptureTime& aWebrtcCaptureTime = AsVariant(Nothing()),
         const ReceiveTime& aWebrtcReceiveTime = Nothing(),
-        const RtpTimestamp& aRtpTimestamp = Nothing())
+        const RtpTimestamp& aRtpTimestamp = Nothing(),
+        const Maybe<VideoRotation>& aRotation = Nothing())
         : mImage(aImage),
           mTimeStamp(aTimeStamp),
           mFrameID(aFrameID),
@@ -417,7 +418,8 @@ class ImageContainer final : public SupportsThreadSafeWeakPtr<ImageContainer> {
           mMediaTime(aMediaTime),
           mWebrtcCaptureTime(aWebrtcCaptureTime),
           mWebrtcReceiveTime(aWebrtcReceiveTime),
-          mRtpTimestamp(aRtpTimestamp) {}
+          mRtpTimestamp(aRtpTimestamp),
+          mRotation(aRotation) {}
     Image* mImage;
     TimeStamp mTimeStamp;
     FrameID mFrameID;
@@ -427,6 +429,7 @@ class ImageContainer final : public SupportsThreadSafeWeakPtr<ImageContainer> {
     CaptureTime mWebrtcCaptureTime = AsVariant(Nothing());
     ReceiveTime mWebrtcReceiveTime;
     RtpTimestamp mRtpTimestamp;
+    Maybe<VideoRotation> mRotation;
   };
   /**
    * Set aImages as the list of timestamped to display. The Images must have
@@ -529,6 +532,7 @@ class ImageContainer final : public SupportsThreadSafeWeakPtr<ImageContainer> {
     FrameID mFrameID = 0;
     ProducerID mProducerID = 0;
     bool mComposited = false;
+    Maybe<VideoRotation> mRotation;
   };
   /**
    * Copy the current Image list to aImages.
@@ -831,9 +835,16 @@ struct PlanarYCbCrData {
                            : gfx::IntSize(0, 0);
   }
 
-  // The total uncropped size of data in the Y channel.
+  // Returns the uncropped Y size when the picture rect is non-empty, has a
+  // non-negative origin, and both endpoints fit in int32_t.
+  Maybe<gfx::IntSize> GetCheckedYDataSize() const;
+
+  // The total uncropped size of data in the Y channel. Falls back to the raw
+  // picture rect endpoint when GetCheckedYDataSize() rejects the rect.
+  // TODO: Bug 2072459
   gfx::IntSize YDataSize() const {
-    return gfx::IntSize(mPictureRect.XMost(), mPictureRect.YMost());
+    return GetCheckedYDataSize().valueOr(
+        gfx::IntSize(mPictureRect.XMost(), mPictureRect.YMost()));
   }
 
   // The total uncropped size of data in the Cb/Cr channels.
@@ -845,6 +856,8 @@ struct PlanarYCbCrData {
   static Maybe<PlanarYCbCrData> From(const SurfaceDescriptorBuffer&);
   static Maybe<PlanarYCbCrData> From(const VideoData::YCbCrBuffer&);
 };
+
+std::ostream& operator<<(std::ostream& aOut, const PlanarYCbCrData& aData);
 
 /****** Image subtypes for the different formats ******/
 

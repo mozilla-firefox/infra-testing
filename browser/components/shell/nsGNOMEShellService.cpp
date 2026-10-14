@@ -99,8 +99,8 @@ nsresult nsGNOMEShellService::Init() {
   return appPath->GetNativePath(mAppPath);
 }
 
-NS_IMPL_ISUPPORTS(nsGNOMEShellService, nsIGNOMEShellService, nsIShellService,
-                  nsIToolkitShellService)
+NS_IMPL_ISUPPORTS_INHERITED(nsGNOMEShellService, nsShellService,
+                            nsIGNOMEShellService, nsIShellService)
 
 bool nsGNOMEShellService::GetAppPathFromLauncher() {
   gchar* tmp;
@@ -169,7 +169,7 @@ bool nsGNOMEShellService::CheckHandlerMatchesAppName(
 }
 
 NS_IMETHODIMP
-nsGNOMEShellService::IsDefaultBrowser(bool aForAllTypes,
+nsGNOMEShellService::IsDefaultBrowser(bool /*aForAllTypes*/,
                                       bool* aIsDefaultBrowser) {
   *aIsDefaultBrowser = false;
 
@@ -178,29 +178,33 @@ nsGNOMEShellService::IsDefaultBrowser(bool aForAllTypes,
                            (MOZ_APP_NAME ".desktop"), nullptr};
     GSpawnFlags flags = static_cast<GSpawnFlags>(G_SPAWN_SEARCH_PATH |
                                                  G_SPAWN_STDERR_TO_DEV_NULL);
+
     gchar* output = nullptr;
     gint exit_status = 0;
     if (!g_spawn_sync(nullptr, (gchar**)argv, nullptr, flags, nullptr, nullptr,
                       &output, nullptr, &exit_status, nullptr)) {
       return NS_OK;
     }
+
     if (exit_status != 0) {
       g_free(output);
       return NS_OK;
     }
+
     if (strcmp(output, "yes\n") == 0) {
       *aIsDefaultBrowser = true;
     }
+
     g_free(output);
     return NS_OK;
   }
 
   nsCOMPtr<nsIGIOService> giovfs = do_GetService(NS_GIOSERVICE_CONTRACTID);
-  nsAutoCString handler;
-  nsCOMPtr<nsIGIOMimeApp> gioApp;
 
   for (auto appProtocol : appProtocols) {
-    if (!appProtocol.essential) continue;
+    if (!appProtocol.essential) {
+      continue;
+    }
 
     if (!IsDefaultForSchemeHelper(nsDependentCString(appProtocol.name),
                                   giovfs)) {
@@ -211,6 +215,13 @@ nsGNOMEShellService::IsDefaultBrowser(bool aForAllTypes,
   *aIsDefaultBrowser = true;
 
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsGNOMEShellService::IsDefaultBrowserAsync(bool aForAllTypes,
+                                           JSContext* aContext,
+                                           mozilla::dom::Promise** _retval) {
+  return nsShellService::IsDefaultBrowserAsync(aForAllTypes, aContext, _retval);
 }
 
 bool nsGNOMEShellService::IsDefaultForSchemeHelper(
@@ -342,7 +353,7 @@ static nsresult WriteImage(const nsCString& aPath, imgIContainer* aImage) {
 NS_IMETHODIMP
 nsGNOMEShellService::SetDesktopBackground(dom::Element* aElement,
                                           int32_t aPosition,
-                                          const nsACString& aImageName) {
+                                          const nsACString& /*aImageName*/) {
   nsCOMPtr<nsIImageLoadingContent> imageContent = do_QueryInterface(aElement);
   if (!imageContent) {
     return NS_ERROR_FAILURE;

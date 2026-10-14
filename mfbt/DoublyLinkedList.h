@@ -92,7 +92,7 @@ class DoublyLinkedListElement {
  */
 template <typename T>
 struct GetDoublyLinkedListElement {
-  static_assert(std::is_base_of<DoublyLinkedListElement<T>, T>::value,
+  static_assert(std::is_base_of_v<DoublyLinkedListElement<T>, T>,
                 "You need your own specialization of GetDoublyLinkedListElement"
                 " or use a separate Trait.");
   static const DoublyLinkedListElement<T>& Get(const T* aThis) {
@@ -170,7 +170,6 @@ class DoublyLinkedList final {
       return result;
     }
 
-    bool operator!=(const Iterator& aOther) const = default;
     bool operator==(const Iterator& aOther) const = default;
 
     explicit operator bool() const { return mCurrent; }
@@ -190,6 +189,11 @@ class DoublyLinkedList final {
   bool isEmpty() const {
     MOZ_ASSERT(isStateValid());
     return mHead == nullptr;
+  }
+
+  bool isSingle() const {
+    MOZ_ASSERT(isStateValid());
+    return !isEmpty() && mHead == mTail;
   }
 
   /**

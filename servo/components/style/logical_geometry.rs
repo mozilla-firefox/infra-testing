@@ -135,8 +135,8 @@ impl WritingMode {
 
         let mut flags = WritingMode::empty();
 
-        let direction = inheritedbox_style.clone_direction();
-        let writing_mode = inheritedbox_style.clone_writing_mode();
+        let direction = *inheritedbox_style.get_direction();
+        let writing_mode = *inheritedbox_style.get_writing_mode();
 
         match direction {
             Direction::Ltr => {},
@@ -187,7 +187,7 @@ impl WritingMode {
             // vertical-lr values of writing-mode.
             match writing_mode {
                 WritingModeProperty::VerticalRl | WritingModeProperty::VerticalLr => {
-                    match inheritedbox_style.clone_text_orientation() {
+                    match *inheritedbox_style.get_text_orientation() {
                         TextOrientation::Mixed => {},
                         TextOrientation::Upright => {
                             flags.insert(WritingMode::UPRIGHT);
@@ -475,13 +475,6 @@ impl Debug for DebugWritingMode {
     }
 }
 
-// Used to specify the logical direction.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
-pub enum Direction {
-    Inline,
-    Block,
-}
-
 /// A 2D size in flow-relative dimensions
 #[derive(Clone, Copy, Eq, PartialEq, Serialize)]
 pub struct LogicalSize<T> {
@@ -516,8 +509,8 @@ impl<T> LogicalSize<T> {
     #[inline]
     pub fn new(mode: WritingMode, inline: T, block: T) -> LogicalSize<T> {
         LogicalSize {
-            inline: inline,
-            block: block,
+            inline,
+            block,
             debug_writing_mode: DebugWritingMode::new(mode),
         }
     }
@@ -660,8 +653,8 @@ impl<T: Copy> LogicalPoint<T> {
     #[inline]
     pub fn new(mode: WritingMode, i: T, b: T) -> LogicalPoint<T> {
         LogicalPoint {
-            i: i,
-            b: b,
+            i,
+            b,
             debug_writing_mode: DebugWritingMode::new(mode),
         }
     }
@@ -710,12 +703,10 @@ impl<T: Copy + Sub<T, Output = T>> LogicalPoint<T> {
             } else {
                 container_size.width - self.b
             }
+        } else if mode.is_bidi_ltr() {
+            self.i
         } else {
-            if mode.is_bidi_ltr() {
-                self.i
-            } else {
-                container_size.width - self.i
-            }
+            container_size.width - self.i
         }
     }
 
@@ -1001,12 +992,10 @@ impl<T: Clone> LogicalMargin<T> {
             } else {
                 self.block_start.clone()
             }
+        } else if mode.is_bidi_ltr() {
+            self.inline_end.clone()
         } else {
-            if mode.is_bidi_ltr() {
-                self.inline_end.clone()
-            } else {
-                self.inline_start.clone()
-            }
+            self.inline_start.clone()
         }
     }
 
@@ -1019,12 +1008,10 @@ impl<T: Clone> LogicalMargin<T> {
             } else {
                 self.block_start = right
             }
+        } else if mode.is_bidi_ltr() {
+            self.inline_end = right
         } else {
-            if mode.is_bidi_ltr() {
-                self.inline_end = right
-            } else {
-                self.inline_start = right
-            }
+            self.inline_start = right
         }
     }
 
@@ -1065,12 +1052,10 @@ impl<T: Clone> LogicalMargin<T> {
             } else {
                 self.block_end.clone()
             }
+        } else if mode.is_bidi_ltr() {
+            self.inline_start.clone()
         } else {
-            if mode.is_bidi_ltr() {
-                self.inline_start.clone()
-            } else {
-                self.inline_end.clone()
-            }
+            self.inline_end.clone()
         }
     }
 
@@ -1083,12 +1068,10 @@ impl<T: Clone> LogicalMargin<T> {
             } else {
                 self.block_end = left
             }
+        } else if mode.is_bidi_ltr() {
+            self.inline_start = left
         } else {
-            if mode.is_bidi_ltr() {
-                self.inline_start = left
-            } else {
-                self.inline_end = left
-            }
+            self.inline_end = left
         }
     }
 
@@ -1161,10 +1144,10 @@ impl<T: Copy + Add<T, Output = T>> LogicalMargin<T> {
     }
 
     #[inline]
-    pub fn start_end(&self, direction: Direction) -> T {
-        match direction {
-            Direction::Inline => self.inline_start + self.inline_end,
-            Direction::Block => self.block_start + self.block_end,
+    pub fn start_end(&self, axis: LogicalAxis) -> T {
+        match axis {
+            LogicalAxis::Inline => self.inline_start + self.inline_end,
+            LogicalAxis::Block => self.block_start + self.block_end,
         }
     }
 
@@ -1283,8 +1266,8 @@ impl<T: Copy> LogicalRect<T> {
         start.debug_writing_mode.check(mode);
         size.debug_writing_mode.check(mode);
         LogicalRect {
-            start: start,
-            size: size,
+            start,
+            size,
             debug_writing_mode: DebugWritingMode::new(mode),
         }
     }

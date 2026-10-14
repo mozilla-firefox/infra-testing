@@ -19,4 +19,5 @@ data class ShareData(
     val title: String? = null,
     val text: String? = null,
     val url: String? = null,
+    val private: Boolean,
 ) : Parcelable

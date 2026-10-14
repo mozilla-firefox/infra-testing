@@ -275,6 +275,64 @@ describe("LinkParagraph component", () => {
       });
     });
 
+    it("should dispatch an arbitrary special message action for an action segment", () => {
+      const action = {
+        type: "OPEN_ABOUT_PAGE",
+        data: { args: "preferences#privacy" },
+      };
+      wrapper.setProps({
+        text_content: {
+          text: [{ raw: "Manage diagnostic and interaction data", action }],
+        },
+      });
+
+      const anchor = wrapper.find(".link-paragraph a");
+      assert.lengthOf(anchor, 1);
+      assert.strictEqual(anchor.prop("role"), "link");
+      assert.isUndefined(anchor.prop("href"));
+
+      anchor.simulate("click", { preventDefault() {} });
+      assert.calledOnce(handleAction);
+      assert.deepEqual(handleAction.firstCall.args[1], action);
+    });
+
+    it("should dispatch an action segment on Enter and ignore repeats", () => {
+      const action = { type: "OPEN_ABOUT_PAGE", data: { args: "logins" } };
+      wrapper.setProps({
+        text_content: { text: [{ raw: "Manage", action }] },
+      });
+
+      const anchor = wrapper.find(".link-paragraph a");
+      anchor.simulate("keypress", {
+        key: "Enter",
+        repeat: true,
+        preventDefault() {},
+      });
+      assert.notCalled(handleAction);
+
+      anchor.simulate("keypress", {
+        key: "Enter",
+        repeat: false,
+        preventDefault() {},
+      });
+      assert.calledOnce(handleAction);
+      assert.deepEqual(handleAction.firstCall.args[1], action);
+    });
+
+    it("should prefer the action over href when a segment has both", () => {
+      const action = { type: "SET_TERMS_OF_USE_INTERACTED" };
+      wrapper.setProps({
+        text_content: {
+          text: [{ raw: "Terms", href: "https://example.com/terms", action }],
+        },
+      });
+
+      const anchor = wrapper.find(".link-paragraph a");
+      assert.strictEqual(anchor.prop("href"), "https://example.com/terms");
+      anchor.simulate("click", { preventDefault() {} });
+      assert.deepEqual(handleAction.firstCall.args[1], action);
+    });
+
     it('should default the OPEN_URL `where` to "tab" when the segment omits it', () => {
       wrapper.setProps({
         text_content: {

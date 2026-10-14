@@ -5,7 +5,7 @@
 task-defaults:
     worker-type: b-linux-docker-amd
     worker:
-        max-run-time: 3600
+        max-run-time: 5400
     run:
         clone-with: hg
         resources:
@@ -20,7 +20,6 @@ linux64-gcc-8:
     treeherder:
         symbol: TL(gcc8)
     run:
-        clone-with: hg
         script: build-gcc-linux.sh
     fetches:
         fetch:
@@ -30,49 +29,29 @@ linux64-gcc-8:
             - mpc-1.0.3
             - mpfr-3.1.4
 
-linux64-gcc-9:
-    description: "GCC 9 toolchain build"
+linux64-gcc-11:
+    description: "GCC 11 toolchain build"
     treeherder:
-        symbol: TL(gcc9)
+        symbol: TL(gcc11)
+    worker:
+        env:
+            # Override gcc's configure so that the resulting compiler
+            # still works with the base binutils version, while not
+            # building against it to avoid a longer chain of dependencies.
+            gcc_cv_as_gdwarf_5_flag: "no"
+            gcc_cv_as_debug_line_32_flag: "no"
+            gcc_cv_as_debug_line_64_flag: "no"
+            gcc_cv_as_dwarf_4_debug_line_flag: "no"
+            gcc_cv_as_gdwarf_4_flag: "no"
+            gcc_cv_as_working_gdwarf_n_flag: "no"
     run:
-        clone-with: hg
-        script: build-gcc-linux.sh
-    fetches:
-        fetch:
-            - gcc-9.5.0
-            - gmp-6.1.0
-            - isl-0.16.1
-            - mpc-1.0.3
-            - mpfr-3.1.4
-
-linux64-gcc-10:
-    description: "GCC 10 toolchain build"
-    treeherder:
-        symbol: TL(gcc10)
-    run:
-        clone-with: hg
         script: build-gcc-linux.sh
         toolchain-alias:
             - linux64-gcc
             - linux64-gcc-base
     fetches:
         fetch:
-            - gcc-10.5.0
-            - gmp-6.1.0
-            - isl-0.16.1
-            - mpc-1.0.3
-            - mpfr-3.1.4
-
-linux64-gcc-11:
-    description: "GCC 11 toolchain build"
-    treeherder:
-        symbol: TL(gcc11)
-    run:
-        clone-with: hg
-        script: build-gcc-linux.sh
-    fetches:
-        fetch:
-            - gcc-11.4.0
+            - gcc-11.5.0
             - gmp-6.1.0
             - isl-0.16.1
             - mpc-1.0.3
@@ -83,7 +62,6 @@ linux64-gcc-14:
     treeherder:
         symbol: TL(gcc14)
     run:
-        clone-with: hg
         script: build-gcc-linux.sh
     fetches:
         fetch:
@@ -93,23 +71,22 @@ linux64-gcc-14:
             - mpc-1.0.3
             - mpfr-3.1.4
 
-linux64-gcc-10-sixgill:
+linux64-gcc-11-sixgill:
     description: "sixgill GCC plugin build"
     treeherder:
         symbol: TL(sixgill)
     run:
-        clone-with: hg
         script: build-gcc-sixgill-plugin-linux.sh
         resources:
             - 'taskcluster/scripts/misc/build-gcc-sixgill-plugin-linux.sh'
         toolchain-artifact: public/build/sixgill.tar.xz
     fetches:
         fetch:
-            - gcc-10.5.0
+            - gcc-11.5.0
             - gmp-6.1.0
             - isl-0.16.1
             - mpc-1.0.3
             - mpfr-3.1.4
             - sixgill
         toolchain:
-            - linux64-gcc-10
+            - linux64-gcc-11

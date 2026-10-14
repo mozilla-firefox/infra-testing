@@ -61,7 +61,7 @@
 #include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/gfx/HelpersCairo.h"
 #include "mozilla/gfx/gfxVars.h"
-#include "mozilla/layers/APZInputBridge.h"
+#include "mozilla/layers/APZBridge.h"
 #include "mozilla/layers/APZThreadUtils.h"
 #include "mozilla/layers/CompositorBridgeChild.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
@@ -648,15 +648,6 @@ void nsWindow::Destroy() {
   OnDestroy();
 }
 
-float nsWindow::GetDPI() {
-  float dpi = 96.0f;
-  nsCOMPtr<nsIScreen> screen = GetWidgetScreen();
-  if (screen) {
-    screen->GetDpi(&dpi);
-  }
-  return dpi;
-}
-
 double nsWindow::GetDefaultScaleInternal() { return FractionalScaleFactor(); }
 
 DesktopToLayoutDeviceScale nsWindow::GetDesktopToDeviceScale() const {
@@ -1213,14 +1204,6 @@ bool nsWindow::WorkspaceManagementDisabled() {
   return desktop.EqualsLiteral("bspwm") || desktop.EqualsLiteral("i3");
 }
 
-void nsWindow::GetWorkspaceID(nsAString& workspaceID) {
-  workspaceID.Truncate();
-}
-
-void nsWindow::MoveToWorkspace(const nsAString& workspaceIDStr) {
-  LOG("  MoveToWorkspace disabled, quit");
-}
-
 void nsWindow::SetUserTimeAndStartupTokenForActivatedWindow() {
   nsGTKToolkit* toolkit = nsGTKToolkit::GetToolkit();
   if (!toolkit) {
@@ -1596,11 +1579,15 @@ auto nsWindow::Bounds::ComputeX11(const nsWindow* aWindow) -> Bounds {
   LOG_WIN(aWindow, "  mClientArea %s", ToString(result.mClientArea).c_str());
 
   if (result.mClientArea.X() < 0 || result.mClientArea.Y() < 0 ||
-      result.mClientArea.Width() <= 1 || result.mClientArea.Height() <= 1) {
-    // If we don't have gdkwindow bounds, assume we take the whole toplevel
-    // except system decorations.
+      (!aWindow->mHasReceivedSizeAllocate &&
+       (result.mClientArea.Width() <= 1 || result.mClientArea.Height() <= 1))) {
+    // For an invalid client position or a placeholder size before the first
+    // allocation, assume we take the whole toplevel except decorations.
     result.mClientArea =
         DesktopIntRect(systemDecorationOffset, toplevelBounds.Size());
+    if (aWindow->ToplevelUsesCSD()) {
+      result.mClientArea.Deflate(aWindow->mClientMargin);
+    }
   }
 
   result.mClientMargin =
@@ -1644,14 +1631,34 @@ auto nsWindow::Bounds::ComputeWayland(const nsWindow* aWindow) -> Bounds {
           ToString(result.mClientMargin).c_str());
 
   if (result.mClientArea.X() < 0 || result.mClientArea.Y() < 0 ||
-      result.mClientArea.Width() <= 1 || result.mClientArea.Height() <= 1) {
-    // If we don't have gdkwindow bounds yet, assume we take the whole toplevel.
+      (!aWindow->mHasReceivedSizeAllocate &&
+       (result.mClientArea.Width() <= 1 || result.mClientArea.Height() <= 1))) {
+    // For an invalid client position or a placeholder size before the first
+    // allocation, assume we take the whole toplevel except CSD decorations.
+    result.mClientMargin = aWindow->ToplevelUsesCSD() ? aWindow->mClientMargin
+                                                      : DesktopIntMargin();
     result.mClientArea = toplevelBounds;
-    result.mClientMargin = {};
+    result.mClientArea.Deflate(result.mClientMargin);
   }
   return result;
 }
 #endif
+
+DesktopIntMargin nsWindow::Bounds::ComputeCSDMargin(GtkWidget* aShell,
+                                                    GtkWidget* aChild) {
+  GtkAllocation shell{};
+  GtkAllocation child{};
+  gtk_widget_get_allocation(aShell, &shell);
+  gtk_widget_get_allocation(aChild, &child);
+  if (child.x < 0 || child.y < 0) {
+    return {};
+  }
+  auto result =
+      DesktopIntMargin(child.y, shell.width - child.width - child.x,
+                       shell.height - child.height - child.y, child.x);
+  result.EnsureAtLeast(DesktopIntMargin());
+  return result;
+}
 
 auto nsWindow::Bounds::Compute(const nsWindow* aWindow) -> Bounds {
 #ifdef MOZ_X11
@@ -1725,6 +1732,10 @@ void nsWindow::RecomputeBounds(bool aScaleChange) {
     mLastSizeRequest.width += mClientMargin.LeftRight() - oldMargin.LeftRight();
     mLastSizeRequest.height +=
         mClientMargin.TopBottom() - oldMargin.TopBottom();
+    if (ToplevelUsesCSD()) {
+      // Size constraints are in outer pixels when using CSD.
+      ApplySizeConstraints();
+    }
   }
 
   // We need to send WindowMoved even if only the client margins changed
@@ -3208,6 +3219,9 @@ void nsWindow::OnContainerFocusInEvent(GdkEventFocus* aEvent) {
     // dispatching an activation notification if the widget is already
     // active.
     gFocusWindow = this;
+    if (mIMContext) {
+      mIMContext->OnFocusWindow(this);
+    }
   }
 
   LOG("Events sent from focus in event");
@@ -3270,10 +3284,12 @@ bool nsWindow::DispatchCommandEvent(nsAtom* aCommand) {
   return true;
 }
 
-bool nsWindow::DispatchContentCommandEvent(EventMessage aMsg) {
-  WidgetContentCommandEvent event(true, aMsg, this);
-  DispatchEvent(&event);
-  return true;
+Result<bool, nsresult> nsWindow::DispatchContentCommandEvent(
+    EventMessage aMsg) {
+  if (TextEventDispatcher* const dispatcher = GetTextEventDispatcher()) {
+    return dispatcher->DispatchContentCommandEvent(aMsg);
+  }
+  return Err(NS_ERROR_NOT_AVAILABLE);
 }
 
 WidgetEventTime nsWindow::GetWidgetEventTime(guint32 aEventTime) {
@@ -3541,19 +3557,15 @@ void nsWindow::DispatchPanGesture(PanGestureInput& aPanInput) {
   if (mAPZC) {
     MOZ_ASSERT(APZThreadUtils::IsControllerThread());
 
-    result = mAPZC->InputBridge()->ReceiveInputEvent(aPanInput);
+    result = mAPZC->Bridge()->ReceiveInputEvent(aPanInput);
     if (result.GetStatus() == nsEventStatus_eConsumeNoDefault) {
       return;
     }
   }
 
   WidgetWheelEvent event = aPanInput.ToWidgetEvent(this);
-  if (!mAPZC) {
-    if (MayStartSwipeForNonAPZ(aPanInput)) {
-      return;
-    }
-  } else {
-    event = MayStartSwipeForAPZ(aPanInput, result);
+  if (mAPZC) {
+    event = MayStartSwipe(aPanInput, result);
   }
 
   ProcessUntransformedAPZEvent(&event, result);
@@ -4033,7 +4045,10 @@ gboolean nsWindow::OnTouchEvent(GdkEventTouch* aEvent) {
       SetLastPointerDownEvent((GdkEvent*)aEvent);
       // check to see if we should rollup
       if (CheckForRollup(aEvent->x_root, aEvent->y_root, false, false)) {
-        return FALSE;
+        // Consume the press as the popup manager asked. TRUE also stops
+        // gtk_widget_real_touch_event() from replaying it as a button press
+        // that would reopen the popup (bug 2067688).
+        return TRUE;
       }
       msg = eTouchStart;
       break;
@@ -4178,7 +4193,10 @@ nsCString nsWindow::GetPopupTypeName() {
 Window nsWindow::GetX11Window() {
 #ifdef MOZ_X11
   if (GdkIsX11Display()) {
-    return gdk_x11_window_get_xid(mGdkWindow);
+    // mGdkWindow is set on realize signal at nsWindow::Create()
+    // and removed on nsWindow::::Destroy(). Looks like we're painting
+    // outside of that rendering window.
+    return mGdkWindow ? gdk_x11_window_get_xid(mGdkWindow) : (Window) nullptr;
   }
 #endif
   return (Window) nullptr;
@@ -4452,7 +4470,14 @@ nsresult nsWindow::Create(nsIWidget* aParent, const LayoutDeviceIntRect& aRect,
     gtk_window_set_focus_on_map(GTK_WINDOW(mShell), FALSE);
   }
 
+  // Show the container before realizing it, so that GTK lays it out inside the
+  // CSD decorations and we can compute the margin properly.
+  gtk_widget_show(container);
   gtk_widget_realize(container);
+  if (ToplevelUsesCSD()) {
+    mClientMargin = Bounds::ComputeCSDMargin(mShell, container);
+  }
+
   // mGdkWindow is set by moz_container_realize() / SetGdkWindow().
   MOZ_DIAGNOSTIC_ASSERT(mGdkWindow, "MozContainer realize failed?");
 
@@ -4475,8 +4500,6 @@ nsresult nsWindow::Create(nsIWidget* aParent, const LayoutDeviceIntRect& aRect,
   ConfigureToplevelWindow();
 
   // make sure this is the focus widget in the container
-  gtk_widget_show(container);
-
   if (shouldFocus) {
     gtk_widget_grab_focus(container);
   }
@@ -5073,15 +5096,16 @@ void nsWindow::UpdateOpaqueRegionInternal() {
       LOG("nsWindow::UpdateOpaqueRegionInternal() window is transparent");
     }
     gdk_window_set_opaque_region(window, region);
-    if (region) {
-      cairo_region_destroy(region);
-    }
 
 #ifdef MOZ_WAYLAND
     if (GdkIsWaylandDisplay()) {
+      AsWayland()->SetToplevelOpaqueRegion(region);
       mSurface->SetOpaqueRegion(mOpaqueRegion.ToUnknownRegion());
     }
 #endif
+    if (region) {
+      cairo_region_destroy(region);
+    }
   }
 }
 
@@ -6734,29 +6758,40 @@ void nsWindow::SetCustomTitlebar(bool aState) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     gtk_widget_reparent(GTK_WIDGET(mContainer), tmpWindow);
-    gtk_widget_unrealize(GTK_WIDGET(mShell));
+    gtk_widget_unrealize(mShell);
 
     // Add a hidden titlebar widget to trigger CSD, but disable the default
-    // titlebar.  GtkFixed is a somewhat random choice for a simple unused
-    // widget. gtk_window_set_titlebar() takes ownership of the titlebar
-    // widget.
+    // titlebar. GtkFixed is a somewhat random choice for a simple unused
+    // widget. gtk_window_set_titlebar() takes ownership of the titlebar widget.
     gtk_window_set_titlebar(GTK_WINDOW(mShell),
                             aState ? gtk_fixed_new() : nullptr);
 
-    /* A workaround for https://bugzilla.gnome.org/show_bug.cgi?id=791081
-     * gtk_widget_realize() throws:
-     * "In pixman_region32_init_rect: Invalid rectangle passed"
-     * when mShell has default 1x1 size.
-     */
-    GtkAllocation allocation = {0, 0, 0, 0};
-    gtk_widget_get_preferred_width(GTK_WIDGET(mShell), nullptr,
-                                   &allocation.width);
-    gtk_widget_get_preferred_height(GTK_WIDGET(mShell), nullptr,
-                                    &allocation.height);
-    gtk_widget_size_allocate(GTK_WIDGET(mShell), &allocation);
+    // Layout the shell at its preferred size, and use a placeholder child, so
+    // that we can compute the CSD margin of the new decorations.
+    //
+    // We can't use mContainer for this, to prevent the unmapped toplevel
+    // surface from moving.
+    //
+    // This also works around https://bugzilla.gnome.org/show_bug.cgi?id=791081
+    {
+      GtkWidget* placeholder = gtk_fixed_new();
+      gtk_widget_show(placeholder);
+      gtk_container_add(GTK_CONTAINER(mShell), placeholder);
+      GtkAllocation allocation{};
+      gtk_widget_get_preferred_width(mShell, nullptr, &allocation.width);
+      gtk_widget_get_preferred_height(mShell, nullptr, &allocation.height);
+      gtk_widget_size_allocate(mShell, &allocation);
+      // If we're not yet visible, compute the CSD margin here synchronously.
+      // Otherwise wait for the resize to arrive, to make sure we deal with
+      // changes to it properly.
+      if (!visible && ToplevelUsesCSD()) {
+        mClientMargin = Bounds::ComputeCSDMargin(mShell, placeholder);
+      }
+      gtk_widget_destroy(placeholder);
+    }
 
-    gtk_widget_realize(GTK_WIDGET(mShell));
-    gtk_widget_reparent(GTK_WIDGET(mContainer), GTK_WIDGET(mShell));
+    gtk_widget_realize(mShell);
+    gtk_widget_reparent(GTK_WIDGET(mContainer), mShell);
 #pragma GCC diagnostic pop
 
     if (AreBoundsSane()) {
@@ -7586,11 +7621,11 @@ void nsWindow::InsertEmoji(RefPtr<nsWindow> aToplevelWindow) {
                          return;
                        }
                        LOGW("[%p] nsWindow::Emoji() insert_text", window);
-                       WidgetContentCommandEvent insertTextEvent(
-                           true, eContentCommandInsertText, window);
-                       NS_ConvertUTF8toUTF16 str(text);
-                       insertTextEvent.mString.emplace(str);
-                       window->DispatchEvent(&insertTextEvent);
+                       if (TextEventDispatcher* const dispatcher =
+                               window->GetTextEventDispatcher()) {
+                         (void)dispatcher->DispatchInsertTextCommandEvent(
+                             NS_ConvertUTF8toUTF16(text));
+                       }
                      }),
                      aToplevelWindow);
   }

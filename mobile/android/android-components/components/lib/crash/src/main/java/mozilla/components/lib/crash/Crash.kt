@@ -5,15 +5,15 @@
 package mozilla.components.lib.crash
 
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import androidx.annotation.StringDef
-import java.io.Serializable
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import mozilla.components.concept.base.crash.Breadcrumb
+import mozilla.components.lib.crash.db.CrashReporterUnableToRestoreException
 import mozilla.components.lib.crash.runtimetagproviders.ExperimentData
 import mozilla.components.support.utils.ext.getParcelableArrayListCompat
-import mozilla.components.support.utils.ext.getSerializableCompat
 import org.json.JSONArray
 
 // Intent extra used to store crash data under when passing crashes in Intent objects
@@ -168,7 +168,7 @@ sealed class Crash {
         override fun toBundle() =
             Bundle().apply {
                 putString(INTENT_UUID, uuid)
-                putSerializable(INTENT_EXCEPTION, throwable as Serializable)
+                putByteArray(INTENT_EXCEPTION, throwable.serialize())
                 putLong(INTENT_CRASH_TIMESTAMP, timestamp)
                 putParcelableArrayList(INTENT_BREADCRUMBS, breadcrumbs)
                 putSerializable(INTENT_RUNTIME_TAGS, HashMap(runtimeTags))
@@ -176,14 +176,12 @@ sealed class Crash {
 
         companion object {
             @Suppress("UNCHECKED_CAST", "DEPRECATION")
-            internal fun fromBundle(bundle: Bundle) =
-                UncaughtExceptionCrash(
+            internal fun fromBundle(bundle: Bundle): UncaughtExceptionCrash {
+                return UncaughtExceptionCrash(
                     uuid = bundle.getString(INTENT_UUID) as String,
                     throwable =
-                        bundle.getSerializableCompat(
-                            INTENT_EXCEPTION,
-                            Throwable::class.java,
-                        ) as Throwable,
+                        bundle.getByteArray(INTENT_EXCEPTION)?.deserializeThrowable()
+                            ?: CrashReporterUnableToRestoreException("Unable to restore throwable from bundle"),
                     breadcrumbs =
                         bundle.getParcelableArrayListCompat(
                             INTENT_BREADCRUMBS,
@@ -193,6 +191,7 @@ sealed class Crash {
                     runtimeTags =
                         bundle.getSerializable(INTENT_RUNTIME_TAGS) as? HashMap<String, String> ?: hashMapOf(),
                 )
+            }
         }
     }
 
@@ -306,6 +305,20 @@ sealed class Crash {
     }
 
     companion object {
+        /**
+         * The CPU architecture to associate with crashes. This returns a string suitable for the CPUArchitecture crash
+         * annotation.
+         */
+        val CPU_ARCH: String by lazy {
+            when (Build.SUPPORTED_ABIS.getOrNull(0)) {
+                "x86" -> "x86"
+                "x86_64" -> "amd64"
+                "arm64-v8a" -> "arm64"
+                "armeabi-v7a" -> "arm"
+                else -> "unknown"
+            }
+        }
+
         fun fromIntent(intent: Intent): Crash {
             val bundle = intent.getBundleExtra(INTENT_CRASH)!!
 

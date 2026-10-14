@@ -8,7 +8,6 @@
 #include <functional>
 #include <vector>
 
-#include "FontVariation.h"
 #include "Matrix.h"
 #include "Point.h"
 #include "Quaternion.h"
@@ -88,6 +87,7 @@ class TextureData;
 
 namespace wr {
 struct FontInstanceOptions;
+struct FontVariation;
 struct FontInstancePlatformOptions;
 }  // namespace wr
 
@@ -147,10 +147,11 @@ struct StrokeOptions {
                          JoinStyle aLineJoin = JoinStyle::MITER_OR_BEVEL,
                          CapStyle aLineCap = CapStyle::BUTT,
                          Float aMiterLimit = 10.0f, size_t aDashLength = 0,
-                         const Float* aDashPattern = 0, Float aDashOffset = 0.f)
+                         const Float* aDashPattern = nullptr,
+                         Float aDashOffset = 0.f)
       : mLineWidth(aLineWidth),
         mMiterLimit(aMiterLimit),
-        mDashPattern(aDashLength > 0 ? aDashPattern : 0),
+        mDashPattern(aDashLength > 0 ? aDashPattern : nullptr),
         mDashLength(aDashLength),
         mDashOffset(aDashOffset),
         mLineJoin(aLineJoin),
@@ -339,7 +340,7 @@ class LinearGradientPatternT : public Pattern {
  public:
   /// For constructor parameter description, see member data documentation.
   LinearGradientPatternT(const Point& aBegin, const Point& aEnd,
-                         RefPtr<GradientStops> aStops,
+                         REF<GradientStops> aStops,
                          const Matrix& aMatrix = Matrix())
       : mBegin(aBegin),
         mEnd(aEnd),
@@ -349,11 +350,12 @@ class LinearGradientPatternT : public Pattern {
   PatternType GetType() const override { return PatternType::LINEAR_GRADIENT; }
 
   Pattern* CloneWeak() const override {
-    return new Weak(mBegin, mEnd, do_AddRef(mStops), mMatrix);
+    return new Weak(mBegin, mEnd, ThreadSafeWeakPtr<GradientStops>{mStops},
+                    mMatrix);
   }
 
   bool IsWeak() const override {
-    return std::is_same<decltype(*this), Weak>::value;
+    return std::is_same_v<decltype(this), const Weak*>;
   }
 
   bool IsValid() const override { return IsRefValid(mStops); }
@@ -399,7 +401,7 @@ class RadialGradientPatternT : public Pattern {
   /// For constructor parameter description, see member data documentation.
   RadialGradientPatternT(const Point& aCenter1, const Point& aCenter2,
                          Float aRadius1, Float aRadius2,
-                         RefPtr<GradientStops> aStops,
+                         REF<GradientStops> aStops,
                          const Matrix& aMatrix = Matrix())
       : mCenter1(aCenter1),
         mCenter2(aCenter2),
@@ -411,12 +413,12 @@ class RadialGradientPatternT : public Pattern {
   PatternType GetType() const override { return PatternType::RADIAL_GRADIENT; }
 
   Pattern* CloneWeak() const override {
-    return new Weak(mCenter1, mCenter2, mRadius1, mRadius2, do_AddRef(mStops),
-                    mMatrix);
+    return new Weak(mCenter1, mCenter2, mRadius1, mRadius2,
+                    ThreadSafeWeakPtr<GradientStops>{mStops}, mMatrix);
   }
 
   bool IsWeak() const override {
-    return std::is_same<decltype(*this), Weak>::value;
+    return std::is_same_v<decltype(this), const Weak*>;
   }
 
   bool IsValid() const override { return IsRefValid(mStops); }
@@ -461,7 +463,7 @@ class ConicGradientPatternT : public Pattern {
  public:
   /// For constructor parameter description, see member data documentation.
   ConicGradientPatternT(const Point& aCenter, Float aAngle, Float aStartOffset,
-                        Float aEndOffset, RefPtr<GradientStops> aStops,
+                        Float aEndOffset, REF<GradientStops> aStops,
                         const Matrix& aMatrix = Matrix())
       : mCenter(aCenter),
         mAngle(aAngle),
@@ -474,11 +476,11 @@ class ConicGradientPatternT : public Pattern {
 
   Pattern* CloneWeak() const override {
     return new Weak(mCenter, mAngle, mStartOffset, mEndOffset,
-                    do_AddRef(mStops), mMatrix);
+                    ThreadSafeWeakPtr<GradientStops>{mStops}, mMatrix);
   }
 
   bool IsWeak() const override {
-    return std::is_same<decltype(*this), Weak>::value;
+    return std::is_same_v<decltype(this), const Weak*>;
   }
 
   bool IsValid() const override { return IsRefValid(mStops); }
@@ -522,7 +524,7 @@ class SurfacePatternT : public Pattern {
 
  public:
   /// For constructor parameter description, see member data documentation.
-  SurfacePatternT(RefPtr<SourceSurface> aSourceSurface, ExtendMode aExtendMode,
+  SurfacePatternT(REF<SourceSurface> aSourceSurface, ExtendMode aExtendMode,
                   const Matrix& aMatrix = Matrix(),
                   SamplingFilter aSamplingFilter = SamplingFilter::GOOD,
                   const IntRect& aSamplingRect = IntRect())
@@ -535,12 +537,12 @@ class SurfacePatternT : public Pattern {
   PatternType GetType() const override { return PatternType::SURFACE; }
 
   Pattern* CloneWeak() const override {
-    return new Weak(do_AddRef(mSurface), mExtendMode, mMatrix, mSamplingFilter,
-                    mSamplingRect);
+    return new Weak(ThreadSafeWeakPtr<SourceSurface>{mSurface}, mExtendMode,
+                    mMatrix, mSamplingFilter, mSamplingRect);
   }
 
   bool IsWeak() const override {
-    return std::is_same<decltype(*this), Weak>::value;
+    return std::is_same_v<decltype(this), const Weak*>;
   }
 
   bool IsValid() const override { return IsRefValid(mSurface); }
@@ -782,6 +784,9 @@ class DataSourceSurface : public SourceSurface {
       }
     }
 
+    ScopedMap(const ScopedMap& aOther) = delete;
+    ScopedMap& operator=(const ScopedMap& aOther) = delete;
+
     uint8_t* GetData() const {
       MOZ_ASSERT(mIsMapped);
       return mMap.mData;
@@ -805,9 +810,6 @@ class DataSourceSurface : public SourceSurface {
     bool IsMapped() const { return mIsMapped; }
 
    private:
-    ScopedMap(const ScopedMap& aOther) = delete;
-    ScopedMap& operator=(const ScopedMap& aOther) = delete;
-
     RefPtr<DataSourceSurface> mSurface;
     MappedSurface mMap;
     bool mIsMapped;
@@ -951,42 +953,49 @@ class Path : public external::AtomicRefCounted<Path> {
   /** This returns a PathBuilder object that contains a copy of the contents of
    * this path and is still writable.
    */
-  inline already_AddRefed<PathBuilder> CopyToBuilder() const {
-    return CopyToBuilder(GetFillRule());
+  inline already_AddRefed<PathBuilder> CopyToBuilder(
+      already_AddRefed<PathBuilder> aBuilder = nullptr) const {
+    return CopyToBuilder(GetFillRule(), std::move(aBuilder));
   }
   inline already_AddRefed<PathBuilder> TransformedCopyToBuilder(
-      const Matrix& aTransform) const {
-    return TransformedCopyToBuilder(aTransform, GetFillRule());
+      const Matrix& aTransform,
+      already_AddRefed<PathBuilder> aBuilder = nullptr) const {
+    return TransformedCopyToBuilder(aTransform, GetFillRule(),
+                                    std::move(aBuilder));
   }
   /** This returns a PathBuilder object that contains a copy of the contents of
    * this path, converted to use the specified FillRule, and still writable.
    */
   virtual already_AddRefed<PathBuilder> CopyToBuilder(
-      FillRule aFillRule) const = 0;
+      FillRule aFillRule,
+      already_AddRefed<PathBuilder> aBuilder = nullptr) const = 0;
   virtual already_AddRefed<PathBuilder> TransformedCopyToBuilder(
-      const Matrix& aTransform, FillRule aFillRule) const = 0;
+      const Matrix& aTransform, FillRule aFillRule,
+      already_AddRefed<PathBuilder> aBuilder = nullptr) const;
 
  protected:
   /** This returns a PathBuilder object that may consume the contents of this
    * path.
    */
   virtual inline already_AddRefed<PathBuilder> MoveToBuilder(
-      FillRule aFillRule) {
-    return CopyToBuilder(aFillRule);
+      FillRule aFillRule, already_AddRefed<PathBuilder> aBuilder = nullptr) {
+    return CopyToBuilder(aFillRule, std::move(aBuilder));
   }
-  inline already_AddRefed<PathBuilder> MoveToBuilder() {
-    return MoveToBuilder(GetFillRule());
+  inline already_AddRefed<PathBuilder> MoveToBuilder(
+      already_AddRefed<PathBuilder> aBuilder = nullptr) {
+    return MoveToBuilder(GetFillRule(), std::move(aBuilder));
   }
   /** Like TransformedCopyToBuilder, but is allowed to consume the contents of
    * the path when beneficial.
    */
   virtual inline already_AddRefed<PathBuilder> TransformedMoveToBuilder(
-      const Matrix& aTransform, FillRule aFillRule) {
-    return TransformedCopyToBuilder(aTransform, aFillRule);
-  }
+      const Matrix& aTransform, FillRule aFillRule,
+      already_AddRefed<PathBuilder> aBuilder = nullptr);
   inline already_AddRefed<PathBuilder> TransformedMoveToBuilder(
-      const Matrix& aTransform) {
-    return TransformedMoveToBuilder(aTransform, GetFillRule());
+      const Matrix& aTransform,
+      already_AddRefed<PathBuilder> aBuilder = nullptr) {
+    return TransformedMoveToBuilder(aTransform, GetFillRule(),
+                                    std::move(aBuilder));
   }
 
  public:
@@ -994,33 +1003,38 @@ class Path : public external::AtomicRefCounted<Path> {
    * otherwise copy.
    */
   static inline already_AddRefed<PathBuilder> ToBuilder(
-      already_AddRefed<Path> aPath, FillRule aFillRule) {
+      already_AddRefed<Path> aPath, FillRule aFillRule,
+      already_AddRefed<PathBuilder> aBuilder = nullptr) {
     RefPtr<Path> path = aPath;
-    return path->hasOneRef() ? path->MoveToBuilder(aFillRule)
-                             : path->CopyToBuilder(aFillRule);
+    return path->hasOneRef()
+               ? path->MoveToBuilder(aFillRule, std::move(aBuilder))
+               : path->CopyToBuilder(aFillRule, std::move(aBuilder));
   }
   static inline already_AddRefed<PathBuilder> ToBuilder(
-      already_AddRefed<Path> aPath) {
+      already_AddRefed<Path> aPath,
+      already_AddRefed<PathBuilder> aBuilder = nullptr) {
     RefPtr<Path> path = aPath;
     FillRule fillRule = path->GetFillRule();
-    return ToBuilder(path.forget(), fillRule);
+    return ToBuilder(path.forget(), fillRule, std::move(aBuilder));
   }
   /** Transformed move to a PathBuilder only if there are no other references to
    * the path, otherwise copy.
    */
   static inline already_AddRefed<PathBuilder> ToBuilder(
       already_AddRefed<Path> aPath, const Matrix& aTransform,
-      FillRule aFillRule) {
+      FillRule aFillRule, already_AddRefed<PathBuilder> aBuilder = nullptr) {
     RefPtr<Path> path = aPath;
-    return path->hasOneRef()
-               ? path->TransformedMoveToBuilder(aTransform, aFillRule)
-               : path->TransformedCopyToBuilder(aTransform, aFillRule);
+    return path->hasOneRef() ? path->TransformedMoveToBuilder(
+                                   aTransform, aFillRule, std::move(aBuilder))
+                             : path->TransformedCopyToBuilder(
+                                   aTransform, aFillRule, std::move(aBuilder));
   }
   static inline already_AddRefed<PathBuilder> ToBuilder(
-      already_AddRefed<Path> aPath, const Matrix& aTransform) {
+      already_AddRefed<Path> aPath, const Matrix& aTransform,
+      already_AddRefed<PathBuilder> aBuilder = nullptr) {
     RefPtr<Path> path = aPath;
     FillRule fillRule = path->GetFillRule();
-    return ToBuilder(path.forget(), aTransform, fillRule);
+    return ToBuilder(path.forget(), aTransform, fillRule, std::move(aBuilder));
   }
 
   /** Modifies an existing path in-place if it has no other references, or
@@ -1077,7 +1091,7 @@ class Path : public external::AtomicRefCounted<Path> {
   /** This gets the fillrule this path's builder was created with. This is not
    * mutable.
    */
-  virtual FillRule GetFillRule() const = 0;
+  FillRule GetFillRule() const { return mFillRule; }
 
   virtual Float ComputeLength();
 
@@ -1087,10 +1101,28 @@ class Path : public external::AtomicRefCounted<Path> {
 
   virtual bool IsEmpty() const = 0;
 
+  struct Circle {
+    Point origin;
+    float radius;
+    bool closed = false;
+  };
+
+  struct Line {
+    Point origin;
+    Point destination;
+  };
+
+  virtual Maybe<Circle> AsCircle() const { return Nothing(); }
+  virtual Maybe<Line> AsLine() const { return Nothing(); }
+
  protected:
-  Path();
+  explicit Path(FillRule aFillRule, const Point& aCurrentPoint = Point(),
+                const Point& aBeginPoint = Point());
   void EnsureFlattenedPath();
 
+  FillRule mFillRule;
+  Point mCurrentPoint;
+  Point mBeginPoint;
   RefPtr<FlattenedPath> mFlattenedPath;
 };
 
@@ -1100,15 +1132,51 @@ class Path : public external::AtomicRefCounted<Path> {
 class PathBuilder : public PathSink {
  public:
   MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(PathBuilder, override)
+
+  explicit PathBuilder(FillRule aFillRule) : mFillRule(aFillRule) {}
+
   /** Finish writing to the path and return a Path object that can be used for
    * drawing. Future use of the builder results in a crash!
    */
   virtual already_AddRefed<Path> Finish() = 0;
 
+  virtual void Reset(FillRule aFillRule) = 0;
+
+  virtual void RecyclePath(already_AddRefed<Path> aPath) {
+    RefPtr<Path> path(aPath);
+  }
+
+  virtual void Transform(const Matrix& aTransform) = 0;
+
   virtual BackendType GetBackendType() const = 0;
 
   virtual bool IsActive() const = 0;
+
+  virtual Maybe<Path::Circle> AsCircle() const { return Nothing(); }
+  virtual Maybe<Path::Line> AsLine() const { return Nothing(); }
+
+  virtual void SetFillRule(FillRule aFillRule) { mFillRule = aFillRule; }
+  FillRule GetFillRule() const { return mFillRule; }
+
+ protected:
+  FillRule mFillRule;
 };
+
+inline already_AddRefed<PathBuilder> Path::TransformedCopyToBuilder(
+    const Matrix& aTransform, FillRule aFillRule,
+    already_AddRefed<PathBuilder> aBuilder) const {
+  RefPtr builder = CopyToBuilder(aFillRule, std::move(aBuilder));
+  builder->Transform(aTransform);
+  return builder.forget();
+}
+
+inline already_AddRefed<PathBuilder> Path::TransformedMoveToBuilder(
+    const Matrix& aTransform, FillRule aFillRule,
+    already_AddRefed<PathBuilder> aBuilder) {
+  RefPtr builder = MoveToBuilder(aFillRule, std::move(aBuilder));
+  builder->Transform(aTransform);
+  return builder.forget();
+}
 
 inline void Path::Transform(RefPtr<Path>& aPath, const Matrix& aTransform) {
   RefPtr<PathBuilder> builder = Path::ToBuilder(aPath.forget(), aTransform);
@@ -1285,7 +1353,7 @@ class UnscaledFont : public SupportsThreadSafeWeakPtr<UnscaledFont> {
 
   virtual already_AddRefed<ScaledFont> CreateScaledFont(
       Float aGlyphSize, const uint8_t* aInstanceData,
-      uint32_t aInstanceDataLength, const FontVariation* aVariations,
+      uint32_t aInstanceDataLength, const wr::FontVariation* aVariations,
       uint32_t aNumVariations) {
     return nullptr;
   }
@@ -1293,7 +1361,7 @@ class UnscaledFont : public SupportsThreadSafeWeakPtr<UnscaledFont> {
   virtual already_AddRefed<ScaledFont> CreateScaledFontFromWRFont(
       Float aGlyphSize, const wr::FontInstanceOptions* aOptions,
       const wr::FontInstancePlatformOptions* aPlatformOptions,
-      const FontVariation* aVariations, uint32_t aNumVariations) {
+      const wr::FontVariation* aVariations, uint32_t aNumVariations) {
     return CreateScaledFont(aGlyphSize, nullptr, 0, aVariations,
                             aNumVariations);
   }
@@ -1339,7 +1407,7 @@ class ScaledFont : public SupportsThreadSafeWeakPtr<ScaledFont> {
                                    const Matrix* aTransformHint = nullptr) = 0;
 
   typedef void (*FontInstanceDataOutput)(const uint8_t* aData, uint32_t aLength,
-                                         const FontVariation* aVariations,
+                                         const wr::FontVariation* aVariations,
                                          uint32_t aNumVariations, void* aBaton);
 
   virtual bool GetFontInstanceData(FontInstanceDataOutput, void*) {
@@ -1349,7 +1417,7 @@ class ScaledFont : public SupportsThreadSafeWeakPtr<ScaledFont> {
   virtual bool GetWRFontInstanceOptions(
       Maybe<wr::FontInstanceOptions>* aOutOptions,
       Maybe<wr::FontInstancePlatformOptions>* aOutPlatformOptions,
-      std::vector<FontVariation>* aOutVariations) {
+      std::vector<wr::FontVariation>* aOutVariations) {
     return false;
   }
 
@@ -1450,8 +1518,10 @@ class DrawTarget : public external::AtomicRefCounted<DrawTarget> {
 
   /**
    * Associate subsequent calls to other methods with a specific accessibility
-   * node. This is used to generate tagged PDF output. Specifying an id of (0,
-   * 0) disassociates subsequent calls from any accessibility node.
+   * node. This is used to generate tagged PDF output. If subsequent calls
+   * aren't associated with any accessibility node, use 0 for
+   * aInnerWindowId, along with one of the ids in
+   * a11y::PdfStructTreeBuilder::SpecialId.
    */
   virtual void AccessibleId(uint64_t aInnerWindowId, uint64_t aAccId) {}
 
@@ -2243,7 +2313,8 @@ class GFX2D_API Factory {
   /**
    * This creates a NativeFontResource from TrueType data.
    *
-   * @param aData Pointer to the data
+   * @param aData Pointer to the data. The data is copied, so the buffer only
+   *              needs to remain valid for the duration of this call.
    * @param aSize Size of the TrueType data
    * @param aFontType Type of NativeFontResource that should be created.
    * @param aFontContext Optional native font context to be used to create the

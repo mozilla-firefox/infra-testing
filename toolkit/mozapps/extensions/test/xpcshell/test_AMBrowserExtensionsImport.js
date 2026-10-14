@@ -91,8 +91,6 @@ const XPIS = {};
 // Populated in `setup()`.
 const ADDON_SEARCH_RESULTS = {};
 
-AddonTestUtils.init(this);
-AddonTestUtils.overrideCertDB();
 AddonTestUtils.createAppInfo(
   "xpcshell@tests.mozilla.org",
   "XPCShell",
@@ -107,8 +105,8 @@ add_setup(async function setup() {
 
     ADDON_SEARCH_RESULTS[name] = {
       id: data.manifest.browser_specific_settings.gecko.id,
-      name: data.name,
-      version: data.version,
+      name: data.manifest.name,
+      version: data.manifest.version,
       sourceURI: Services.io.newURI(`http://example.com/addons/${name}.xpi`),
       icons: {},
     };

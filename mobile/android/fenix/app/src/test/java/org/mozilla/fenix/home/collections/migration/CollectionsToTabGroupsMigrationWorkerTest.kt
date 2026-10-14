@@ -33,6 +33,7 @@ class CollectionsToTabGroupsMigrationWorkerTest {
 
     private val settings = mockk<Settings>(relaxed = true)
     private val tabCollectionStorage = mockk<TabCollectionStorage>(relaxed = true)
+    private val collectionsMigrationRepository = DefaultCollectionsMigrationRepository(settings)
 
     private lateinit var workManager: WorkManager
 
@@ -50,6 +51,7 @@ class CollectionsToTabGroupsMigrationWorkerTest {
         val components = testContext.components
         every { components.settings } returns settings
         every { components.core.tabCollectionStorage } returns tabCollectionStorage
+        every { components.collectionsMigrationRepository } returns collectionsMigrationRepository
     }
 
     @After
@@ -91,7 +93,7 @@ class CollectionsToTabGroupsMigrationWorkerTest {
 
     @Test
     fun `GIVEN the migration is needed WHEN the work is enqueued THEN the migration work is scheduled`() = runTest {
-        CollectionsToTabGroupsMigrationWorker.enqueueIfNeeded(testContext, settings)
+        CollectionsToTabGroupsMigrationWorker.enqueueIfNeeded(testContext, collectionsMigrationRepository)
 
         val workInfos = workManager.getWorkInfosForUniqueWork(MIGRATION_WORK_NAME).await()
         assertEquals(1, workInfos.size)
@@ -105,8 +107,8 @@ class CollectionsToTabGroupsMigrationWorkerTest {
     @Test
     fun `GIVEN the migration work is already scheduled WHEN the work is enqueued again THEN it is not duplicated`() =
         runTest {
-            CollectionsToTabGroupsMigrationWorker.enqueueIfNeeded(testContext, settings)
-            CollectionsToTabGroupsMigrationWorker.enqueueIfNeeded(testContext, settings)
+            CollectionsToTabGroupsMigrationWorker.enqueueIfNeeded(testContext, collectionsMigrationRepository)
+            CollectionsToTabGroupsMigrationWorker.enqueueIfNeeded(testContext, collectionsMigrationRepository)
 
             assertEquals(1, workManager.getWorkInfosForUniqueWork(MIGRATION_WORK_NAME).await().size)
         }
@@ -116,7 +118,7 @@ class CollectionsToTabGroupsMigrationWorkerTest {
         runTest {
             every { settings.hasMigratedCollectionsToTabGroups } returns true
 
-            CollectionsToTabGroupsMigrationWorker.enqueueIfNeeded(testContext, settings)
+            CollectionsToTabGroupsMigrationWorker.enqueueIfNeeded(testContext, collectionsMigrationRepository)
 
             assertTrue(workManager.getWorkInfosForUniqueWork(MIGRATION_WORK_NAME).await().isEmpty())
         }
@@ -125,7 +127,7 @@ class CollectionsToTabGroupsMigrationWorkerTest {
     fun `GIVEN the migration is disabled WHEN the work is enqueued THEN no migration work is scheduled`() = runTest {
         every { settings.migrateCollectionsToTabGroupsEnabled } returns false
 
-        CollectionsToTabGroupsMigrationWorker.enqueueIfNeeded(testContext, settings)
+        CollectionsToTabGroupsMigrationWorker.enqueueIfNeeded(testContext, collectionsMigrationRepository)
 
         assertTrue(workManager.getWorkInfosForUniqueWork(MIGRATION_WORK_NAME).await().isEmpty())
     }

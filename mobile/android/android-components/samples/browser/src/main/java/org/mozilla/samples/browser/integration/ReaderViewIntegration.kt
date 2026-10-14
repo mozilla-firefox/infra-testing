@@ -57,17 +57,23 @@ class ReaderViewIntegration(
 
     init {
         toolbar.addPageAction(readerViewButton)
-        readerViewAppearanceButton.setOnClickListener { feature.showControls(isListenEnabled = false) }
+        readerViewAppearanceButton.setOnClickListener { feature.showControls() }
     }
 
     private val feature =
-        ReaderViewFeature(context, engine, store, view) { available, active ->
-            readerViewButtonVisible = available
-            readerViewButton.setSelected(active)
+        ReaderViewFeature(
+            context = context,
+            engine = engine,
+            store = store,
+            controlsView = view,
+            onReaderViewStatusChange = { available, active ->
+                readerViewButtonVisible = available
+                readerViewButton.setSelected(active)
 
-            if (active) readerViewAppearanceButton.show() else readerViewAppearanceButton.hide()
-            toolbar.invalidateActions()
-        }
+                if (active) readerViewAppearanceButton.show() else readerViewAppearanceButton.hide()
+                toolbar.invalidateActions()
+            },
+        )
 
     override fun start() {
         feature.start()

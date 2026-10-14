@@ -72,7 +72,7 @@ bool CodeGeneratorMIPSShared::generateOutOfLineCode() {
     return false;
   }
 
-  if (deoptLabel_.used()) {
+  if (needsDeoptLabel()) {
     // All non-table-based bailouts will go here.
     masm.bind(&deoptLabel_);
 
@@ -87,33 +87,6 @@ bool CodeGeneratorMIPSShared::generateOutOfLineCode() {
   }
 
   return !masm.oom();
-}
-
-void CodeGeneratorMIPSShared::bailoutFrom(Label* label, LSnapshot* snapshot) {
-  MOZ_ASSERT_IF(!masm.oom(), label->used());
-  MOZ_ASSERT_IF(!masm.oom(), !label->bound());
-
-  encode(snapshot);
-
-  InlineScriptTree* tree = snapshot->mir()->block()->trackedTree();
-  auto* ool = new (alloc()) LambdaOutOfLineCode([=, this](OutOfLineCode& ool) {
-    // Push snapshotOffset and make sure stack is aligned.
-    masm.subPtr(Imm32(sizeof(Value)), StackPointer);
-    masm.storePtr(ImmWord(snapshot->snapshotOffset()),
-                  Address(StackPointer, 0));
-
-    masm.jump(&deoptLabel_);
-  });
-  addOutOfLineCode(ool,
-                   new (alloc()) BytecodeSite(tree, tree->script()->code()));
-
-  masm.retarget(label, ool->entry());
-}
-
-void CodeGeneratorMIPSShared::bailout(LSnapshot* snapshot) {
-  Label label;
-  masm.jump(&label);
-  bailoutFrom(&label, snapshot);
 }
 
 void CodeGenerator::visitMinMaxD(LMinMaxD* ins) {
@@ -1076,14 +1049,14 @@ void CodeGenerator::visitWasmTruncateToInt32(LWasmTruncateToInt32* lir) {
 void CodeGeneratorMIPSShared::visitOutOfLineWasmTruncateCheck(
     OutOfLineWasmTruncateCheck* ool) {
   if (ool->toType() == MIRType::Int32) {
-    masm.outOfLineWasmTruncateToInt32Check(ool->input(), ool->output(),
-                                           ool->fromType(), ool->flags(),
-                                           ool->rejoin(), ool->trapSiteDesc());
+    masm.outOfLineWasmTruncateToInt32Check(
+        ool->input(), ool->output(), ool->fromType(), ool->flags(),
+        ool->rejoin(), ool->trapSiteDesc(), nullptr, nullptr);
   } else {
     MOZ_ASSERT(ool->toType() == MIRType::Int64);
-    masm.outOfLineWasmTruncateToInt64Check(ool->input(), ool->output64(),
-                                           ool->fromType(), ool->flags(),
-                                           ool->rejoin(), ool->trapSiteDesc());
+    masm.outOfLineWasmTruncateToInt64Check(
+        ool->input(), ool->output64(), ool->fromType(), ool->flags(),
+        ool->rejoin(), ool->trapSiteDesc(), nullptr, nullptr);
   }
 }
 
@@ -1177,16 +1150,6 @@ void CodeGenerator::visitCompareFAndBranch(LCompareFAndBranch* comp) {
                   Assembler::InvertCondition(cond));
     jumpToBlock(ifTrue);
   }
-}
-
-void CodeGenerator::visitWasmUint32ToDouble(LWasmUint32ToDouble* lir) {
-  masm.convertUInt32ToDouble(ToRegister(lir->input()),
-                             ToFloatRegister(lir->output()));
-}
-
-void CodeGenerator::visitWasmUint32ToFloat32(LWasmUint32ToFloat32* lir) {
-  masm.convertUInt32ToFloat32(ToRegister(lir->input()),
-                              ToFloatRegister(lir->output()));
 }
 
 void CodeGenerator::visitNotD(LNotD* ins) {
@@ -1679,12 +1642,11 @@ void CodeGenerator::visitAtomicTypedArrayElementBinop(
     LAtomicTypedArrayElementBinop* lir) {
   MOZ_ASSERT(!lir->mir()->isForEffect());
 
-  AnyRegister output = ToAnyRegister(lir->output());
+  Register output = ToRegister(lir->output());
   Register elements = ToRegister(lir->elements());
-  Register outTemp = ToTempRegisterOrInvalid(lir->temp0());
-  Register valueTemp = ToTempRegisterOrInvalid(lir->temp1());
-  Register offsetTemp = ToTempRegisterOrInvalid(lir->temp2());
-  Register maskTemp = ToTempRegisterOrInvalid(lir->temp3());
+  Register valueTemp = ToTempRegisterOrInvalid(lir->temp0());
+  Register offsetTemp = ToTempRegisterOrInvalid(lir->temp1());
+  Register maskTemp = ToTempRegisterOrInvalid(lir->temp2());
   Register value = ToRegister(lir->value());
 
   Scalar::Type arrayType = lir->mir()->arrayType();
@@ -1692,9 +1654,9 @@ void CodeGenerator::visitAtomicTypedArrayElementBinop(
   auto mem = ToAddressOrBaseIndex(elements, lir->index(), arrayType);
 
   mem.match([&](const auto& mem) {
-    masm.atomicFetchOpJS(arrayType, Synchronization::Full(),
-                         lir->mir()->operation(), value, mem, valueTemp,
-                         offsetTemp, maskTemp, outTemp, output);
+    masm.atomicFetchOp(arrayType, Synchronization::Full(),
+                       lir->mir()->operation(), value, mem, valueTemp,
+                       offsetTemp, maskTemp, output);
   });
 }
 
@@ -1712,53 +1674,50 @@ void CodeGenerator::visitAtomicTypedArrayElementBinopForEffect(
   auto mem = ToAddressOrBaseIndex(elements, lir->index(), arrayType);
 
   mem.match([&](const auto& mem) {
-    masm.atomicEffectOpJS(arrayType, Synchronization::Full(),
-                          lir->mir()->operation(), value, mem, valueTemp,
-                          offsetTemp, maskTemp);
+    masm.atomicEffectOp(arrayType, Synchronization::Full(),
+                        lir->mir()->operation(), value, mem, valueTemp,
+                        offsetTemp, maskTemp);
   });
 }
 
 void CodeGenerator::visitCompareExchangeTypedArrayElement(
     LCompareExchangeTypedArrayElement* lir) {
   Register elements = ToRegister(lir->elements());
-  AnyRegister output = ToAnyRegister(lir->output());
-  Register outTemp = ToTempRegisterOrInvalid(lir->temp0());
+  Register output = ToRegister(lir->output());
 
   Register oldval = ToRegister(lir->oldval());
   Register newval = ToRegister(lir->newval());
-  Register valueTemp = ToTempRegisterOrInvalid(lir->temp1());
-  Register offsetTemp = ToTempRegisterOrInvalid(lir->temp2());
-  Register maskTemp = ToTempRegisterOrInvalid(lir->temp3());
+  Register valueTemp = ToTempRegisterOrInvalid(lir->temp0());
+  Register offsetTemp = ToTempRegisterOrInvalid(lir->temp1());
+  Register maskTemp = ToTempRegisterOrInvalid(lir->temp2());
 
   Scalar::Type arrayType = lir->mir()->arrayType();
 
   auto dest = ToAddressOrBaseIndex(elements, lir->index(), arrayType);
 
   dest.match([&](const auto& dest) {
-    masm.compareExchangeJS(arrayType, Synchronization::Full(), dest, oldval,
-                           newval, valueTemp, offsetTemp, maskTemp, outTemp,
-                           output);
+    masm.compareExchange(arrayType, Synchronization::Full(), dest, oldval,
+                         newval, valueTemp, offsetTemp, maskTemp, output);
   });
 }
 
 void CodeGenerator::visitAtomicExchangeTypedArrayElement(
     LAtomicExchangeTypedArrayElement* lir) {
   Register elements = ToRegister(lir->elements());
-  AnyRegister output = ToAnyRegister(lir->output());
-  Register outTemp = ToTempRegisterOrInvalid(lir->temp0());
+  Register output = ToRegister(lir->output());
 
   Register value = ToRegister(lir->value());
-  Register valueTemp = ToTempRegisterOrInvalid(lir->temp1());
-  Register offsetTemp = ToTempRegisterOrInvalid(lir->temp2());
-  Register maskTemp = ToTempRegisterOrInvalid(lir->temp3());
+  Register valueTemp = ToTempRegisterOrInvalid(lir->temp0());
+  Register offsetTemp = ToTempRegisterOrInvalid(lir->temp1());
+  Register maskTemp = ToTempRegisterOrInvalid(lir->temp2());
 
   Scalar::Type arrayType = lir->mir()->arrayType();
 
   auto dest = ToAddressOrBaseIndex(elements, lir->index(), arrayType);
 
   dest.match([&](const auto& dest) {
-    masm.atomicExchangeJS(arrayType, Synchronization::Full(), dest, value,
-                          valueTemp, offsetTemp, maskTemp, outTemp, output);
+    masm.atomicExchange(arrayType, Synchronization::Full(), dest, value,
+                        valueTemp, offsetTemp, maskTemp, output);
   });
 }
 

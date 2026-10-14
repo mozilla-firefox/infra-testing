@@ -218,7 +218,8 @@ TextEditor::InsertLineFeedCharacterAtSelection() {
   // Insert a linefeed character.
   Result<InsertTextResult, nsresult> insertTextResult =
       InsertTextWithTransaction(u"\n"_ns, pointToInsert,
-                                InsertTextTo::ExistingTextNodeIfAvailable);
+                                InsertTextTo::ExistingTextNodeIfAvailable,
+                                InsertTextFor::NormalText);
   if (MOZ_UNLIKELY(insertTextResult.isErr())) {
     NS_WARNING("TextEditor::InsertTextWithTransaction(\"\\n\") failed");
     return insertTextResult.propagateErr();
@@ -454,7 +455,8 @@ Result<EditActionResult, nsresult> TextEditor::HandleInsertText(
     }
     Result<InsertTextResult, nsresult> insertTextResult =
         InsertTextWithTransaction(insertionString, compositionStartPoint,
-                                  InsertTextTo::ExistingTextNodeIfAvailable);
+                                  InsertTextTo::ExistingTextNodeIfAvailable,
+                                  aPurpose);
     if (MOZ_UNLIKELY(insertTextResult.isErr())) {
       NS_WARNING("EditorBase::InsertTextWithTransaction() failed");
       return insertTextResult.propagateErr();
@@ -475,7 +477,8 @@ Result<EditActionResult, nsresult> TextEditor::HandleInsertText(
 
     Result<InsertTextResult, nsresult> insertTextResult =
         InsertTextWithTransaction(insertionString, atStartOfSelection,
-                                  InsertTextTo::ExistingTextNodeIfAvailable);
+                                  InsertTextTo::ExistingTextNodeIfAvailable,
+                                  aPurpose);
     if (MOZ_UNLIKELY(insertTextResult.isErr())) {
       NS_WARNING("EditorBase::InsertTextWithTransaction() failed");
       return insertTextResult.propagateErr();
@@ -634,6 +637,8 @@ Result<EditActionResult, nsresult> TextEditor::HandleDeleteSelectionInternal(
       if (const Text* const textNode = GetTextNode()) {
         rangesToDelete.EnsureRangesInTextNode(*textNode);
       }
+      rangesToDelete.MaybeExtendAnchorFocusRangeToDeleteAdjacentWhiteSpace(
+          *this);
 
       Result<CaretPoint, nsresult> caretPointOrError =
           DeleteRangesWithTransaction(aDirectionAndAmount, aStripWrappers,

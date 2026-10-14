@@ -393,6 +393,101 @@ add_task(async function test_refresh_discards_stale_results() {
   sandbox.restore();
 });
 
+add_task(async function test_refresh_keeps_broadcast_when_superseded() {
+  let sandbox = sinon.createSandbox();
+  let feed = getTopSitesFeedForTest(sandbox);
+  feed._startedUp = true;
+  feed._tippyTopProvider.initialized = true;
+
+  let resolveFirst;
+  let firstPromise = new Promise(resolve => {
+    resolveFirst = resolve;
+  });
+
+  sandbox
+    .stub(feed, "getLinksWithDefaults")
+    .onFirstCall()
+    .returns(firstPromise)
+    .onSecondCall()
+    .resolves([{ url: "https://second.example" }]);
+
+  let firstRefresh = feed.refresh({ broadcast: true });
+  let secondRefresh = feed.refresh({ broadcast: false });
+
+  await secondRefresh;
+  resolveFirst([{ url: "https://first.example" }]);
+  await firstRefresh;
+
+  Assert.equal(
+    feed.store.dispatch.callCount,
+    1,
+    "only the newest refresh dispatched"
+  );
+  Assert.ok(
+    feed.store.dispatch.calledWithExactly(
+      actionCreators.BroadcastToContent({
+        type: actionTypes.TOP_SITES_UPDATED,
+        data: { links: [{ url: "https://second.example" }] },
+      })
+    ),
+    "the superseding refresh broadcasts for the one it discarded"
+  );
+
+  feed.getLinksWithDefaults.onThirdCall().resolves([]);
+  await feed.refresh({ broadcast: false });
+
+  Assert.ok(
+    feed.store.dispatch.calledWithExactly(
+      actionCreators.AlsoToPreloaded({
+        type: actionTypes.TOP_SITES_UPDATED,
+        data: { links: [] },
+      })
+    ),
+    "a later refresh no longer broadcasts"
+  );
+
+  sandbox.restore();
+});
+
+add_task(async function test_refresh_discards_results_after_uninit() {
+  let sandbox = sinon.createSandbox();
+  sandbox.stub(NimbusFeatures.newtab, "onUpdate");
+  let feed = getTopSitesFeedForTest(sandbox);
+  sandbox.stub(feed, "_readDefaults");
+  sandbox.stub(feed._contile, "refresh");
+  feed.init();
+  feed._startedUp = true;
+  feed._tippyTopProvider.initialized = true;
+
+  let resolveLinks;
+  let linksPromise = new Promise(resolve => {
+    resolveLinks = resolve;
+  });
+  sandbox.stub(feed, "getLinksWithDefaults").returns(linksPromise);
+
+  let refreshPromise = feed.refresh({ broadcast: true });
+
+  feed.uninit();
+  resolveLinks([{ url: "https://stale.example" }]);
+  await refreshPromise;
+
+  Assert.ok(
+    feed.store.dispatch.notCalled,
+    "a refresh that was in flight during uninit() does not dispatch"
+  );
+
+  feed.getLinksWithDefaults.resetHistory();
+  await feed.refresh({ broadcast: true });
+
+  Assert.ok(
+    feed.getLinksWithDefaults.notCalled,
+    "a refresh started after uninit() does no work"
+  );
+  Assert.ok(feed.store.dispatch.notCalled, "and does not dispatch");
+
+  sandbox.restore();
+});
+
 add_task(async function test_getLinksWithDefaults_filterAdult() {
   let sandbox = sinon.createSandbox();
   info("getLinksWithDefaults should filter out non-pinned adult sites");
@@ -1279,6 +1374,131 @@ add_task(async function test_refresh_handles_indexedDB_errors() {
 
   sandbox.restore();
 });
+
+add_task(async function test_adEligiblePositions() {
+  let sandbox = sinon.createSandbox();
+  let feed = getTopSitesFeedForTest(sandbox);
+
+  let nimbusVariables = { topSitesContileEnabled: true };
+  sandbox
+    .stub(NimbusFeatures.pocketNewtab, "getVariable")
+    .callsFake(name => nimbusVariables[name]);
+  sandbox
+    .stub(NimbusFeatures.newtab, "getVariable")
+    .callsFake(name => nimbusVariables[name]);
+
+  info("No position is ad-eligible while sponsored top sites are off");
+  Assert.deepEqual(feed._adEligiblePositions(), []);
+
+  feed.store.state.Prefs.values[SHOW_SPONSORED_PREF] = true;
+
+  info("No position is ad-eligible while Contile is disabled");
+  nimbusVariables.topSitesContileEnabled = false;
+  Assert.deepEqual(feed._adEligiblePositions(), []);
+  nimbusVariables.topSitesContileEnabled = true;
+
+  info("Contile fills the first two positions by default");
+  Assert.deepEqual(feed._adEligiblePositions(), [1, 2]);
+
+  info("The Nimbus variable is 0-based and replaces the default");
+  nimbusVariables.contileTopsitesPositions = "0,2,3";
+  Assert.deepEqual(feed._adEligiblePositions(), [1, 3, 4]);
+
+  info("Positions past the display maximum can never be filled");
+  nimbusVariables.topSitesMaxSponsored = 2;
+  Assert.deepEqual(feed._adEligiblePositions(), [1, 3]);
+
+  info("SOV allocations replace the Contile positions once SOV is ready");
+  sandbox
+    .stub(feed._contile, "sov")
+    .get(() => ({ name: "SOV-20230518215316" }));
+  feed.store.state.TopSites.sov = {
+    ready: true,
+    positions: [
+      { position: 1, assignedPartner: "amp" },
+      { position: 2, assignedPartner: "amp" },
+      { position: 3, assignedPartner: "frec-boost" },
+    ],
+  };
+  Assert.deepEqual(feed._adEligiblePositions(), [1, 2]);
+
+  info("Contile positions are used until SOV is ready");
+  feed.store.state.TopSites.sov.ready = false;
+  Assert.deepEqual(feed._adEligiblePositions(), [1, 3]);
+
+  sandbox.restore();
+});
+
+add_task(
+  async function test_getLinksWithDefaults_flags_ad_eligible_positions() {
+    info(
+      "getLinksWithDefaults should flag whichever tile lands in an " +
+        "ad-eligible position"
+    );
+
+    let sandbox = sinon.createSandbox();
+    let feed = getTopSitesFeedForTest(sandbox);
+    sandbox.stub(feed, "_adEligiblePositions").returns([1, 3]);
+    // getLinksWithDefaults writes to the link objects it is handed, so keep
+    // the shared FAKE_LINKS clean for the tasks that deep-compare against it.
+    gGetTopSitesStub.resolves(FAKE_LINKS.map(link => ({ ...link })));
+
+    let result = await feed.getLinksWithDefaults();
+
+    Assert.ok(
+      result[0].is_ad_eligible_position,
+      "1-based position 1 should be flagged"
+    );
+    Assert.ok(
+      result[2].is_ad_eligible_position,
+      "1-based position 3 should be flagged"
+    );
+    Assert.equal(
+      result[1].is_ad_eligible_position,
+      undefined,
+      "A position no ad may fill should not be flagged"
+    );
+
+    gGetTopSitesStub.resolves(FAKE_LINKS);
+    sandbox.restore();
+  }
+);
+
+add_task(
+  async function test_getLinksWithDefaults_clears_stale_ad_eligible_flag() {
+    info(
+      "getLinksWithDefaults should clear the flag from a tile that moved out " +
+        "of an ad-eligible position"
+    );
+
+    let sandbox = sinon.createSandbox();
+    let feed = getTopSitesFeedForTest(sandbox);
+    // Default tiles are the reused ones: getLinksWithDefaults puts the
+    // DEFAULT_TOP_SITES entry itself into the row, not a copy, so a flag
+    // written onto one outlives the refresh.
+    feed.refreshDefaults("https://default.com");
+    gGetTopSitesStub.resolves([]);
+    sandbox.stub(feed, "_adEligiblePositions").returns([1]);
+
+    let result = await feed.getLinksWithDefaults();
+    Assert.ok(
+      result[0].is_ad_eligible_position,
+      "Should be flagged while sitting in position 1"
+    );
+
+    feed._adEligiblePositions.returns([2]);
+    result = await feed.getLinksWithDefaults();
+    Assert.equal(
+      result[0].is_ad_eligible_position,
+      undefined,
+      "Should not still be flagged once position 1 is not eligible"
+    );
+
+    gGetTopSitesStub.resolves(FAKE_LINKS);
+    feed.refreshDefaults(null);
+    sandbox.restore();
+  }
+);
 
 add_task(async function test_allocatePositions() {
   let sandbox = sinon.createSandbox();
@@ -4143,12 +4363,128 @@ add_task(async function test_fetchSites_callsAdsClientWhenEnabled() {
     type: actionTypes.TOP_SITES_UPDATED,
   });
 
-  Assert.ok(AdsClient.requestOptions.calledOnce);
+  // The flags in adsBackendConfig only reach MARS if the prefs are passed.
+  Assert.ok(
+    AdsClient.requestOptions.calledOnceWithExactly(
+      feed.store.getState().Prefs.values,
+      "duckduckgo"
+    )
+  );
   Assert.ok(
     ADS_CLIENT.requestTileAds.calledOnceWithExactly(
       sinon.match.any,
       REQUEST_OPTIONS
     )
+  );
+
+  sandbox.restore();
+});
+
+add_task(async function test_normalizeTileData_sorts() {
+  let sandbox = sinon.createSandbox();
+
+  const placements = [0, 1, 2, 3].map(i => ({
+    id: `placement_${i}`,
+    raw: [
+      {
+        block_key: `key_${i}`,
+        name: `name_${i}`,
+        url: `url_${i}`,
+        image_url: `image_${i}`,
+        callbacks: {
+          click: `click_${i}`,
+          impression: `impression_${i}`,
+        },
+      },
+    ],
+    normalized: {
+      id: `key_${i}`,
+      block_key: `key_${i}`,
+      name: `name_${i}`,
+      url: `url_${i}`,
+      click_url: `click_${i}`,
+      image_url: `image_${i}`,
+      impression_url: `impression_${i}`,
+      image_size: 200,
+      attribution: null,
+    },
+  }));
+
+  const feed = getTopSitesFeedForTest(sandbox);
+
+  Assert.deepEqual(
+    feed._contile._normalizeTileData({}, []),
+    { tiles: [] },
+    "_normalizeTileData should return empty tiles with no placements."
+  );
+
+  Assert.deepEqual(
+    feed._contile._normalizeTileData(
+      { [placements[0].id]: placements[0].raw },
+      []
+    ),
+    { tiles: [placements[0].normalized] },
+    "_normalizeTileData should return single tiles with single placement empty array."
+  );
+
+  Assert.deepEqual(
+    feed._contile._normalizeTileData(
+      { [placements[0].id]: placements[0].raw },
+      [placements[0].id]
+    ),
+    { tiles: [placements[0].normalized] },
+    "_normalizeTileData should return single tiles with single placement in array."
+  );
+
+  Assert.deepEqual(
+    feed._contile._normalizeTileData(
+      { [placements[0].id]: placements[0].raw },
+      [placements[1].id]
+    ),
+    { tiles: [placements[0].normalized] },
+    "_normalizeTileData should return single tiles with single placement not in array."
+  );
+
+  Assert.deepEqual(
+    feed._contile._normalizeTileData(
+      {
+        [placements[0].id]: placements[0].raw,
+        [placements[3].id]: placements[3].raw,
+        [placements[1].id]: placements[1].raw,
+        [placements[2].id]: placements[2].raw,
+      },
+      [placements[0].id, placements[1].id, placements[2].id, placements[3].id]
+    ),
+    {
+      tiles: [
+        placements[0].normalized,
+        placements[1].normalized,
+        placements[2].normalized,
+        placements[3].normalized,
+      ],
+    },
+    "_normalizeTileData should return sort placements by order in array."
+  );
+
+  Assert.deepEqual(
+    feed._contile._normalizeTileData(
+      {
+        [placements[0].id]: placements[0].raw,
+        [placements[3].id]: placements[3].raw,
+        [placements[1].id]: placements[1].raw,
+        [placements[2].id]: placements[2].raw,
+      },
+      [placements[0].id, placements[1].id]
+    ),
+    {
+      tiles: [
+        placements[0].normalized,
+        placements[1].normalized,
+        placements[3].normalized,
+        placements[2].normalized,
+      ],
+    },
+    "_normalizeTileData should return sort placements by order in array, leave others in place."
   );
 
   sandbox.restore();

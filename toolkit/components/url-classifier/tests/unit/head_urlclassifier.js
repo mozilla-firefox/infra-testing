@@ -33,7 +33,7 @@ var {
   HttpServer,
 } = ChromeUtils.importESModule("resource://testing-common/httpd.sys.mjs");
 
-do_get_profile();
+do_get_profile(true);
 
 // Ensure PSM is initialized before the test
 Cc["@mozilla.org/psm;1"].getService(Ci.nsISupports);
@@ -190,8 +190,8 @@ function doSimpleUpdate(updateText, success, failure) {
     updateError(errorCode) {
       failure(errorCode);
     },
-    updateSuccess(requestedTimeout) {
-      success(requestedTimeout);
+    updateSuccess(tables, waitSeconds) {
+      success(tables, waitSeconds);
     },
   };
 
@@ -214,8 +214,8 @@ function doErrorUpdate(tables, success, failure) {
     updateError(errorCode) {
       success(errorCode);
     },
-    updateSuccess(requestedTimeout) {
-      failure(requestedTimeout);
+    updateSuccess(tables, waitSeconds) {
+      failure(tables, waitSeconds);
     },
   };
 

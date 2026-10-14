@@ -12,6 +12,7 @@
   border: 0;
   border-radius: var(--border-radius-small);
   background-color: var(--button-background-color, rgba(21, 20, 26, 7%));
+  color: var(--button-text-color);
   box-shadow: 0 0.8px 1.6px 0 rgba(58, 57, 68, 20%);
   padding: calc(5 * var(--space-xxsmall));
   position: relative;
@@ -193,12 +194,19 @@
 
   @media (prefers-reduced-motion: no-preference) {
     // We need customize-animate-enter and customize-animate-exit to fix bug 1868232
-    // These first 2 classes happen only while the element is animating.
-    &.customize-animate-enter,
-    &.customize-animate-exit,
-    // We only add these so the css is visible for inspecting while not animating.
+    // These classes happen only while the element is animating. We only add the
+    // -done ones so the css is visible for inspecting while not animating.
     // Otherwise it's difficult to see and inspect this css because the transition is so fast.
-    &.customize-animate-enter-done,
+    &.customize-animate-enter,
+    &.customize-animate-enter-done {
+      transition: transform 250ms $customize-menu-slide-bezier;
+    }
+
+    // Only the way out transitions visibility, so the panel stays visible while
+    // it slides away. On the way in the transition would hold visibility at
+    // hidden for the first style resolution, leaving the close button
+    // unfocusable when the panel finishes opening.
+    &.customize-animate-exit,
     &.customize-animate-exit-done {
       transition: transform 250ms $customize-menu-slide-bezier, visibility 250ms;
     }
@@ -335,6 +343,9 @@
     min-height: 0;
     overflow-y: auto;
     padding-inline: var(--space-xlarge);
+    // Bug 2061155: Reserve padding at the bottom to prevent Manage settings footer
+    // from overlapping controls.
+    padding-block-end: calc(var(--space-xlarge) * 2);
   }
 
   .wallpapers-section h2 {
@@ -555,26 +566,10 @@
     }
   }
 
-  // @nova-cleanup(remove-conditional): Remove .nova-enabled & selector, keep .panel-content and .arrow-wrapper as default
+  // @nova-cleanup(remove-conditional): Remove .nova-enabled & selector, keep .panel-content as default
   .nova-enabled & {
     .panel-content {
       padding: var(--space-xlarge);
-    }
-
-    .arrow-wrapper {
-      display: flex;
-      align-items: center;
-      margin-block-end: var(--space-xlarge);
-
-      .arrow-button {
-        margin-inline-end: var(--space-small);
-      }
-
-      h2 {
-        font-size: var(--font-size-heading-medium);
-        margin-block: 0;
-        font-weight: var(--button-font-weight);
-      }
     }
   }
 
@@ -602,6 +597,25 @@
   &.themes-mgmt-panel-enter-done,
   &.themes-mgmt-panel-enter-active {
     transform: translateX(0);
+  }
+}
+
+// Header row of a customize subpanel: a back button followed by the panel
+// title. Shared by the management panels and the wallpaper category list.
+// @nova-cleanup(remove-conditional): Remove the .nova-enabled ancestor, keep .arrow-wrapper as default
+.nova-enabled .arrow-wrapper {
+  display: flex;
+  align-items: center;
+  margin-block-end: var(--space-xlarge);
+
+  .arrow-button {
+    margin-inline-end: var(--space-small);
+  }
+
+  h2 {
+    font-size: var(--font-size-heading-medium);
+    margin-block: 0;
+    font-weight: var(--button-font-weight);
   }
 }
 

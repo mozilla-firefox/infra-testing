@@ -4,21 +4,82 @@
 
 #include "mozilla/browser/NimbusFeatures.h"
 #include "mozilla/browser/NimbusFeatureManifest.h"
+#include "mozilla/dom/NimbusBinding.h"
 #include "mozilla/Try.h"
-#include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/glean/NimbusMetrics.h"
-#include "jsapi.h"
-#include "js/JSON.h"
-#include "nsJSUtils.h"
+#include "nsPrintfCString.h"
 
 namespace mozilla {
 
 constinit static nsTHashSet<nsCString> sExposureFeatureSet;
 
-void NimbusFeatures::GetPrefName(const nsACString& branchPrefix,
-                                 const nsACString& aFeatureId,
-                                 const nsACString& aVariable,
-                                 nsACString& aPref) {
+// This branch is used to store experiment data
+static constexpr auto kSyncDataPrefBranch = "nimbus.syncdatastore."_ns;
+
+// This branch is used to store rollouts data
+static constexpr auto kSyncRolloutsPrefBranch = "nimbus.syncdefaultsstore."_ns;
+
+static void AssertFeatureAvailable(const nsACString& aFeatureId,
+                                   bool aRequireExposure = false) {
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+  bool missingExposure = false;
+
+  for (const auto& [featureId, hasExposure] :
+       nimbus::NIMBUS_PLATFORM_FEATURES) {
+    if (featureId == aFeatureId) {
+      if (!aRequireExposure || (aRequireExposure && hasExposure)) {
+        return;
+      }
+
+      missingExposure = true;
+      break;
+    }
+  }
+
+  auto featureId = nsCString(aFeatureId);
+
+  if (missingExposure) {
+    NS_WARNING(nsPrintfCString("Platform feature `%s' does not support "
+                               "exposure; hasExposure != true in "
+                               "FeatureManifest.yaml",
+                               featureId.get())
+                   .get());
+
+    MOZ_DIAGNOSTIC_ASSERT(
+        false,
+        "Platform feature does not support exposure: hasExposure != true in "
+        "FeatureManifest.yaml");
+  } else {
+    NS_WARNING(nsPrintfCString("Not a platform feature `%s': isEarlyStartup != "
+                               "true in FeatureManifest.yaml",
+                               featureId.get())
+                   .get());
+
+    MOZ_DIAGNOSTIC_ASSERT(false,
+                          "Not a platform feature: isEarlyStartup != true in "
+                          "FeatureManifest.yaml");
+  }
+#endif  // MOZ_DIAGNOSTIC_ASSERT_ENABLED
+}
+
+static Maybe<nsCString> GetNimbusFallbackPrefName(const nsACString& aFeatureId,
+                                                  const nsACString& aVariable) {
+  nsAutoCString manifestKey;
+  manifestKey.Append(aFeatureId);
+  manifestKey.Append("_");
+  manifestKey.Append(aVariable);
+
+  for (const auto& pair : nimbus::NIMBUS_FALLBACK_PREFS) {
+    if (pair.first.Equals(manifestKey.get())) {
+      return Some(pair.second);
+    }
+  }
+  return Nothing{};
+}
+
+static void GetNimbusPrefName(const nsACString& branchPrefix,
+                              const nsACString& aFeatureId,
+                              const nsACString& aVariable, nsACString& aPref) {
   nsAutoCString featureAndVariable;
   featureAndVariable.Append(aFeatureId);
   if (!aVariable.IsEmpty()) {
@@ -37,14 +98,17 @@ void NimbusFeatures::GetPrefName(const nsACString& branchPrefix,
  */
 bool NimbusFeatures::GetBool(const nsACString& aFeatureId,
                              const nsACString& aVariable, bool aDefault) {
+  AssertFeatureAvailable(aFeatureId);
+
   nsAutoCString experimentPref;
-  GetPrefName(kSyncDataPrefBranch, aFeatureId, aVariable, experimentPref);
+  GetNimbusPrefName(kSyncDataPrefBranch, aFeatureId, aVariable, experimentPref);
   if (Preferences::HasUserValue(experimentPref.get())) {
     return Preferences::GetBool(experimentPref.get(), aDefault);
   }
 
   nsAutoCString rolloutPref;
-  GetPrefName(kSyncRolloutsPrefBranch, aFeatureId, aVariable, rolloutPref);
+  GetNimbusPrefName(kSyncRolloutsPrefBranch, aFeatureId, aVariable,
+                    rolloutPref);
   if (Preferences::HasUserValue(rolloutPref.get())) {
     return Preferences::GetBool(rolloutPref.get(), aDefault);
   }
@@ -63,14 +127,17 @@ bool NimbusFeatures::GetBool(const nsACString& aFeatureId,
  */
 int NimbusFeatures::GetInt(const nsACString& aFeatureId,
                            const nsACString& aVariable, int aDefault) {
+  AssertFeatureAvailable(aFeatureId);
+
   nsAutoCString experimentPref;
-  GetPrefName(kSyncDataPrefBranch, aFeatureId, aVariable, experimentPref);
+  GetNimbusPrefName(kSyncDataPrefBranch, aFeatureId, aVariable, experimentPref);
   if (Preferences::HasUserValue(experimentPref.get())) {
     return Preferences::GetInt(experimentPref.get(), aDefault);
   }
 
   nsAutoCString rolloutPref;
-  GetPrefName(kSyncRolloutsPrefBranch, aFeatureId, aVariable, rolloutPref);
+  GetNimbusPrefName(kSyncRolloutsPrefBranch, aFeatureId, aVariable,
+                    rolloutPref);
   if (Preferences::HasUserValue(rolloutPref.get())) {
     return Preferences::GetInt(rolloutPref.get(), aDefault);
   }
@@ -86,10 +153,13 @@ nsresult NimbusFeatures::OnUpdate(const nsACString& aFeatureId,
                                   const nsACString& aVariable,
                                   PrefChangedFunc aUserCallback,
                                   void* aUserData) {
+  AssertFeatureAvailable(aFeatureId);
+
   nsAutoCString experimentPref;
   nsAutoCString rolloutPref;
-  GetPrefName(kSyncDataPrefBranch, aFeatureId, aVariable, experimentPref);
-  GetPrefName(kSyncRolloutsPrefBranch, aFeatureId, aVariable, rolloutPref);
+  GetNimbusPrefName(kSyncDataPrefBranch, aFeatureId, aVariable, experimentPref);
+  GetNimbusPrefName(kSyncRolloutsPrefBranch, aFeatureId, aVariable,
+                    rolloutPref);
   nsresult rv =
       Preferences::RegisterCallback(aUserCallback, experimentPref, aUserData);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -103,10 +173,13 @@ nsresult NimbusFeatures::OffUpdate(const nsACString& aFeatureId,
                                    const nsACString& aVariable,
                                    PrefChangedFunc aUserCallback,
                                    void* aUserData) {
+  AssertFeatureAvailable(aFeatureId);
+
   nsAutoCString experimentPref;
   nsAutoCString rolloutPref;
-  GetPrefName(kSyncDataPrefBranch, aFeatureId, aVariable, experimentPref);
-  GetPrefName(kSyncRolloutsPrefBranch, aFeatureId, aVariable, rolloutPref);
+  GetNimbusPrefName(kSyncDataPrefBranch, aFeatureId, aVariable, experimentPref);
+  GetNimbusPrefName(kSyncRolloutsPrefBranch, aFeatureId, aVariable,
+                    rolloutPref);
   nsresult rv =
       Preferences::UnregisterCallback(aUserCallback, experimentPref, aUserData);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -128,47 +201,28 @@ nsresult NimbusFeatures::OffUpdate(const nsACString& aFeatureId,
  * `nimbus.syncdatastore.<feature_id>`
  * These values are used to send `exposure` telemetry pings.
  */
-nsresult NimbusFeatures::GetExperimentSlug(const nsACString& aFeatureId,
-                                           nsACString& aExperimentSlug,
-                                           nsACString& aBranchSlug) {
-  nsAutoCString prefName;
-  nsAutoString prefValue;
-
+nsresult GetExperimentSlug(const nsACString& aFeatureId,
+                           nsACString& aExperimentSlug,
+                           nsACString& aBranchSlug) {
   aExperimentSlug.Truncate();
   aBranchSlug.Truncate();
 
-  GetPrefName(kSyncDataPrefBranch, aFeatureId, EmptyCString(), prefName);
+  nsAutoCString prefName;
+  GetNimbusPrefName(kSyncDataPrefBranch, aFeatureId, EmptyCString(), prefName);
+
+  nsAutoString prefValue;
   MOZ_TRY(Preferences::GetString(prefName.get(), prefValue));
   if (prefValue.IsEmpty()) {
     return NS_ERROR_UNEXPECTED;
   }
-  dom::AutoJSAPI jsapi;
-  if (!jsapi.Init(xpc::PrivilegedJunkScope())) {
+
+  dom::CachedNimbusExperimentMetadata meta;
+  if (!meta.Init(prefValue)) {
     return NS_ERROR_UNEXPECTED;
   }
-  JSContext* cx = jsapi.cx();
-  JS::Rooted<JS::Value> json(cx, JS::NullValue());
-  if (JS_ParseJSON(cx, prefValue.BeginReading(), prefValue.Length(), &json) &&
-      json.isObject()) {
-    JS::Rooted<JSObject*> experimentJSON(cx, json.toObjectOrNull());
-    JS::Rooted<JS::Value> expSlugValue(cx);
-    if (!JS_GetProperty(cx, experimentJSON, "slug", &expSlugValue)) {
-      return NS_ERROR_UNEXPECTED;
-    }
-    AssignJSString(cx, aExperimentSlug, expSlugValue.toString());
 
-    JS::Rooted<JS::Value> branchJSON(cx);
-    if (!JS_GetProperty(cx, experimentJSON, "branch", &branchJSON) &&
-        !branchJSON.isObject()) {
-      return NS_ERROR_UNEXPECTED;
-    }
-    JS::Rooted<JSObject*> branchObj(cx, branchJSON.toObjectOrNull());
-    JS::Rooted<JS::Value> branchSlugValue(cx);
-    if (!JS_GetProperty(cx, branchObj, "slug", &branchSlugValue)) {
-      return NS_ERROR_UNEXPECTED;
-    }
-    AssignJSString(cx, aBranchSlug, branchSlugValue.toString());
-  }
+  aExperimentSlug.Assign(std::move(meta.mSlug));
+  aBranchSlug.Assign(std::move(meta.mBranch.mSlug));
 
   return NS_OK;
 }
@@ -180,6 +234,8 @@ nsresult NimbusFeatures::GetExperimentSlug(const nsACString& aFeatureId,
  */
 nsresult NimbusFeatures::RecordExposureEvent(const nsACString& aFeatureId,
                                              const bool aOnce) {
+  AssertFeatureAvailable(aFeatureId, /* aRequireExposure = */ true);
+
   nsAutoCString featureName(aFeatureId);
   if (!sExposureFeatureSet.EnsureInserted(featureName) && aOnce) {
     // We already sent (or tried to send) an exposure ping for this featureId

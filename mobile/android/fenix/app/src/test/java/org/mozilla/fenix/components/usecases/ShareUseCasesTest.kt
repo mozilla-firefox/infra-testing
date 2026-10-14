@@ -234,7 +234,7 @@ class ShareUseCasesTest {
     @Config(sdk = [34])
     @Test
     fun `GIVEN a list of share data and subject WHEN shareItems is called THEN system share sheet is launched`() {
-        val items = listOf(ShareData(url = "https://mozilla.org", title = "Mozilla"))
+        val items = listOf(ShareData(url = "https://mozilla.org", title = "Mozilla", private = false))
 
         assertNull(NativeShareSheet.shown.testGetValue())
 
@@ -264,7 +264,7 @@ class ShareUseCasesTest {
     @Config(sdk = [34])
     @Test
     fun `GIVEN chooserActions and a thumbnailUri WHEN shareItems is called THEN they are forwarded to the system share sheet`() {
-        val items = listOf(ShareData(url = "https://mozilla.org", title = "Mozilla"))
+        val items = listOf(ShareData(url = "https://mozilla.org", title = "Mozilla", private = false))
         val thumbnailUri = "content://thumbnail".toUri()
 
         shareUseCases.shareItems(
@@ -296,7 +296,7 @@ class ShareUseCasesTest {
         every { settings.nativeShareSheetEnabled } returns false
 
         shareUseCases.shareItems(
-            items = listOf(ShareData(url = "https://mozilla.org")),
+            items = listOf(ShareData(url = "https://mozilla.org", private = false)),
             source = ShareSource.HOME,
             navigateToShareFragment = navigateToShareFragment,
         )
@@ -310,7 +310,7 @@ class ShareUseCasesTest {
     @Test
     fun `GIVEN native share sheet is not supported WHEN shareItems is called THEN navigate to share fragment and telemetry is not recorded`() {
         shareUseCases.shareItems(
-            items = listOf(ShareData(url = "https://mozilla.org")),
+            items = listOf(ShareData(url = "https://mozilla.org", private = false)),
             source = ShareSource.HOME,
             navigateToShareFragment = navigateToShareFragment,
         )

@@ -22,6 +22,7 @@
 #include "mozilla/a11y/Role.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLBRElement.h"
+#include "mozilla/dom/Range.h"
 #include "mozilla/dom/Selection.h"
 #include "nsAccessibilityService.h"
 #include "nsCaret.h"
@@ -35,7 +36,6 @@
 #include "nsILineIterator.h"
 #include "nsIMathMLFrame.h"
 #include "nsLayoutUtils.h"
-#include "nsRange.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -72,6 +72,10 @@ uint64_t HyperTextAccessible::NativeState() const {
   }
 
   nsIFrame* frame = GetFrame();
+  if (!frame) {
+    frame = FindNearestAccessibleAncestorFrame();
+  }
+
   if ((states & states::EDITABLE) || (frame && frame->IsSelectable())) {
     // If the accessible is editable the layout selectable state only disables
     // mouse selection, but keyboard (shift+arrow) selection is still possible.
@@ -674,7 +678,7 @@ bool HyperTextAccessible::RemoveFromSelection(int32_t aSelectionNum) {
     return false;
   }
 
-  const RefPtr<nsRange> range{
+  const RefPtr<mozilla::dom::Range> range{
       domSel->GetRangeAt(static_cast<uint32_t>(aSelectionNum))};
   domSel->RemoveRangeAndUnselectFramesAndNotifyListeners(*range,
                                                          IgnoreErrors());
@@ -691,7 +695,7 @@ void HyperTextAccessible::ScrollSubstringToPoint(int32_t aStartOffset,
   LayoutDeviceIntPoint coords =
       nsAccUtils::ConvertToScreenCoords(aX, aY, aCoordinateType, this);
 
-  RefPtr<nsRange> domRange = nsRange::Create(mContent);
+  RefPtr<mozilla::dom::Range> domRange = mozilla::dom::Range::Create(mContent);
   TextRange range(this, this, aStartOffset, this, aEndOffset);
   if (!range.AssignDOMRange(domRange)) {
     return;

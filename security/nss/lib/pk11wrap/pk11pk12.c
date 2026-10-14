@@ -22,6 +22,7 @@
 #include "secasn1.h"
 #include "secerr.h"
 #include "prerror.h"
+#include "secder.h"
 
 /* These data structures should move to a common .h file shared between the
  * wrappers and the pkcs 12 code. */
@@ -108,8 +109,10 @@ struct SECKEYRawPrivateKeyStr {
 typedef struct SECKEYRawPrivateKeyStr SECKEYRawPrivateKey;
 
 SEC_ASN1_MKSUB(SEC_AnyTemplate)
-SEC_ASN1_MKSUB(SECOID_AlgorithmIDTemplate)
+SEC_ASN1_MKSUB(SEC_BitStringTemplate)
+SEC_ASN1_MKSUB(SEC_ObjectIDTemplate)
 SEC_ASN1_MKSUB(SEC_OctetStringTemplate)
+SEC_ASN1_MKSUB(SECOID_AlgorithmIDTemplate)
 
 /* ASN1 Templates for new decoder/encoder */
 /*
@@ -128,6 +131,11 @@ const SEC_ASN1Template SECKEY_SetOfAttributeTemplate[] = {
     { SEC_ASN1_SET_OF, 0, SECKEY_AttributeTemplate },
 };
 
+/*
+ * keep the publicly exported version one of this template.
+ * We use v2 for decode only, since it can decode both v1 and
+ * v2. We encode with v1.
+ */
 const SEC_ASN1Template SECKEY_PrivateKeyInfoTemplate[] = {
     { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SECKEYPrivateKeyInfo) },
     { SEC_ASN1_INTEGER, offsetof(SECKEYPrivateKeyInfo, version) },
@@ -138,6 +146,32 @@ const SEC_ASN1Template SECKEY_PrivateKeyInfoTemplate[] = {
     { SEC_ASN1_OPTIONAL | SEC_ASN1_CONSTRUCTED | SEC_ASN1_CONTEXT_SPECIFIC | 0,
       offsetof(SECKEYPrivateKeyInfo, attributes),
       SECKEY_SetOfAttributeTemplate },
+    { 0 }
+};
+
+/* keep the V2 struct private. In case we need to add new parameters in the future */
+struct SECKEYPrivateKeyInfoV2Str {
+    SECKEYPrivateKeyInfo v1;
+    SECItem publicKey;
+};
+
+typedef struct SECKEYPrivateKeyInfoV2Str SECKEYPrivateKeyInfoV2;
+
+/* PrivateKeyInfo is a public value, so we can't add parameters. so we need a new template
+ * To hold the publicKey */
+static const SEC_ASN1Template seckey_PrivateKeyInfoV2Template[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SECKEYPrivateKeyInfoV2) },
+    { SEC_ASN1_INTEGER, offsetof(SECKEYPrivateKeyInfoV2, v1.version) },
+    { SEC_ASN1_INLINE | SEC_ASN1_XTRN,
+      offsetof(SECKEYPrivateKeyInfoV2, v1.algorithm),
+      SEC_ASN1_SUB(SECOID_AlgorithmIDTemplate) },
+    { SEC_ASN1_OCTET_STRING, offsetof(SECKEYPrivateKeyInfoV2, v1.privateKey) },
+    { SEC_ASN1_OPTIONAL | SEC_ASN1_CONSTRUCTED | SEC_ASN1_CONTEXT_SPECIFIC | 0,
+      offsetof(SECKEYPrivateKeyInfoV2, v1.attributes),
+      SECKEY_SetOfAttributeTemplate },
+    { SEC_ASN1_OPTIONAL | SEC_ASN1_CONTEXT_SPECIFIC | SEC_ASN1_XTRN | 1,
+      offsetof(SECKEYPrivateKeyInfoV2, publicKey),
+      SEC_ASN1_SUB(SEC_BitStringTemplate) },
     { 0 }
 };
 
@@ -187,9 +221,6 @@ const SEC_ASN1Template SECKEY_PQPrivateKeyKeyExportTemplate[] = {
     { SEC_ASN1_OCTET_STRING, offsetof(SECKEYRawPrivateKey, u.pq.privateValue) },
     { 0 }
 };
-
-SEC_ASN1_MKSUB(SEC_BitStringTemplate)
-SEC_ASN1_MKSUB(SEC_ObjectIDTemplate)
 
 const SEC_ASN1Template SECKEY_ECPrivateKeyExportTemplate[] = {
     { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SECKEYRawPrivateKey) },
@@ -288,6 +319,60 @@ prepare_ec_priv_key_export_for_asn1(SECKEYRawPrivateKey *key)
     key->u.ec.publicValue.type = siUnsignedInteger;
 }
 
+/*
+ * Finish off a private key we just imported: give it a CKA_ID, and, if it is
+ * a token key, a matching public key on the token.
+ *
+ * publicValue is what the caller had to work with at import time, and may be
+ * NULL. If it is, we ask the token to regenerate the public key from the
+ * private key and take the public value from that.
+ */
+static SECStatus
+pk11_SetIDAndPublicKey(SECKEYPrivateKey *privKey, const SECItem *publicValue,
+                       PRBool isPerm)
+{
+    SECKEYPublicKey *pubKey = NULL;
+    SECItem *ck_id = NULL;
+    SECStatus rv = SECFailure;
+
+    if (publicValue == NULL) {
+        /* if the token had to derive a public key object to answer this, it
+         * belongs to pubKey and goes away with it. */
+        pubKey = SECKEY_ConvertToPublicKey(privKey);
+        if (pubKey == NULL) {
+            goto loser;
+        }
+        publicValue = PK11_GetPublicValueFromPublicKey(pubKey);
+        if (publicValue == NULL) {
+            goto loser;
+        }
+        ck_id = PK11_MakeIDFromPubKey(publicValue);
+        if (ck_id == NULL) {
+            goto loser;
+        }
+        rv = PK11_WriteRawAttribute(PK11_TypePrivKey, privKey, CKA_ID, ck_id);
+        if (rv != SECSuccess) {
+            goto loser;
+        }
+    }
+
+    /* if we are importing a token object, create the corresponding public
+     * key, just as PK11_ImportEncryptedPrivateKeyInfoAndReturnKey does. */
+    rv = SECSuccess;
+    if (isPerm) {
+        rv = SECKEY_SetPublicValue(privKey, publicValue);
+    }
+
+loser:
+    if (pubKey) {
+        SECKEY_DestroyPublicKey(pubKey);
+    }
+    if (ck_id) {
+        SECITEM_ZfreeItem(ck_id, PR_TRUE);
+    }
+    return rv;
+}
+
 SECStatus
 PK11_ImportDERPrivateKeyInfo(PK11SlotInfo *slot, SECItem *derPKI,
                              SECItem *nickname, const SECItem *publicValue, PRBool isPerm,
@@ -299,35 +384,59 @@ PK11_ImportDERPrivateKeyInfo(PK11SlotInfo *slot, SECItem *derPKI,
                                                     NULL, wincx);
 }
 
+SECKEYPrivateKeyInfo *
+_PK11_DERPrivateKeyToPrivateKeyInfo(SECItem *derPKI)
+{
+    SECKEYPrivateKeyInfoV2 *pkiV2 = NULL;
+    PLArenaPool *temparena = NULL;
+    SECStatus rv = SECFailure;
+    unsigned long version = 0;
+
+    temparena = PORT_NewArena(DER_DEFAULT_CHUNKSIZE);
+    if (!temparena) {
+        return NULL;
+    }
+
+    pkiV2 = PORT_ArenaZNew(temparena, SECKEYPrivateKeyInfoV2);
+    if (!pkiV2) {
+        goto loser;
+    }
+    pkiV2->v1.arena = temparena;
+
+    rv = SEC_ASN1DecodeItem(pkiV2->v1.arena, pkiV2, seckey_PrivateKeyInfoV2Template,
+                            derPKI);
+    if (rv != SECSuccess) {
+        /* If SEC_ASN1DecodeItem fails, we cannot assume anything about the
+         * validity of the data in pki. The best we can do is free the arena
+         * and return. */
+        goto loser;
+    }
+    /* do some sanity checks on the decoded key */
+    if (SEC_ASN1DecodeInteger(&pkiV2->v1.version, &version) != SECSuccess) {
+        goto loser; /* error already set */
+    }
+    if ((version > 1) || ((version == 0) && (pkiV2->publicKey.data != NULL))) {
+        PORT_SetError(SEC_ERROR_BAD_DER);
+        goto loser;
+    }
+
+    return &(pkiV2->v1);
+
+loser:
+    PORT_FreeArena(temparena, PR_TRUE);
+    return NULL;
+}
+
 SECStatus
 PK11_ImportDERPrivateKeyInfoAndReturnKey(PK11SlotInfo *slot, SECItem *derPKI,
                                          SECItem *nickname, const SECItem *publicValue,
                                          PRBool isPerm, PRBool isPrivate, unsigned int keyUsage,
                                          SECKEYPrivateKey **privk, void *wincx)
 {
-    SECKEYPrivateKeyInfo *pki = NULL;
-    PLArenaPool *temparena = NULL;
+    SECKEYPrivateKeyInfo *pki = _PK11_DERPrivateKeyToPrivateKeyInfo(derPKI);
     SECStatus rv = SECFailure;
 
-    temparena = PORT_NewArena(DER_DEFAULT_CHUNKSIZE);
-    if (!temparena) {
-        return rv;
-    }
-
-    pki = PORT_ArenaZNew(temparena, SECKEYPrivateKeyInfo);
-    if (!pki) {
-        PORT_FreeArena(temparena, PR_FALSE);
-        return rv;
-    }
-    pki->arena = temparena;
-
-    rv = SEC_ASN1DecodeItem(pki->arena, pki, SECKEY_PrivateKeyInfoTemplate,
-                            derPKI);
-    if (rv != SECSuccess) {
-        /* If SEC_ASN1DecodeItem fails, we cannot assume anything about the
-         * validity of the data in pki. The best we can do is free the arena
-         * and return. */
-        PORT_FreeArena(temparena, PR_TRUE);
+    if (pki == NULL) {
         return rv;
     }
     if (pki->privateKey.data == NULL || pki->privateKey.len == 0) {
@@ -335,11 +444,14 @@ PK11_ImportDERPrivateKeyInfoAndReturnKey(PK11SlotInfo *slot, SECItem *derPKI,
          * is a zero-length octet string, free the arena and return a failure
          * to avoid trying to zero the corresponding SECItem in
          * SECKEY_DestroyPrivateKeyInfo(). */
-        PORT_FreeArena(temparena, PR_TRUE);
+        PORT_FreeArena(pki->arena, PR_TRUE);
         PORT_SetError(SEC_ERROR_BAD_KEY);
         return SECFailure;
     }
 
+    /* if we want to be able to read the public key for v2 decodes, we need
+     * a new PK11_Import that takes the V2 struct, and the old entry can
+     * create a V2 struct with a NULL public key */
     rv = PK11_ImportPrivateKeyInfoAndReturnKey(slot, pki, nickname,
                                                publicValue, isPerm, isPrivate,
                                                keyUsage, privk, wincx);
@@ -369,6 +481,11 @@ PK11_ImportAndReturnPrivateKey(PK11SlotInfo *slot, SECKEYRawPrivateKey *lpk,
     CK_ATTRIBUTE *ap;
     SECItem *ck_id = NULL;
     CK_ULONG paramSet;
+    SECKEYPrivateKey *privKey = NULL;
+    /* the public value we end up using: either the caller's or one carried
+     * in the PrivateKeyInfo. If we have neither, we leave this NULL and let
+     * the token regenerate the public key once the private key is imported */
+    const SECItem *pubValue = publicValue;
 
     attrs = theTemplate;
 
@@ -403,7 +520,8 @@ PK11_ImportAndReturnPrivateKey(PK11SlotInfo *slot, SECKEYRawPrivateKey *lpk,
                                                             : &ckfalse,
                           sizeof(CK_BBOOL));
             attrs++;
-            ck_id = PK11_MakeIDFromPubKey(&lpk->u.rsa.modulus);
+            pubValue = &lpk->u.rsa.modulus;
+            ck_id = PK11_MakeIDFromPubKey(pubValue);
             if (ck_id == NULL) {
                 goto loser;
             }
@@ -448,18 +566,6 @@ PK11_ImportAndReturnPrivateKey(PK11SlotInfo *slot, SECKEYRawPrivateKey *lpk,
             break;
         case dsaKey:
             keyType = CKK_DSA;
-            /* To make our intenal PKCS #11 module work correctly with
-             * our database, we need to pass in the public key value for
-             * this dsa key. We have a netscape only CKA_ value to do this.
-             * Only send it to internal slots */
-            if (publicValue == NULL) {
-                goto loser;
-            }
-            if (PK11_IsInternal(slot)) {
-                PK11_SETATTRS(attrs, CKA_NSS_DB,
-                              publicValue->data, publicValue->len);
-                attrs++;
-            }
             PK11_SETATTRS(attrs, CKA_SIGN, &cktrue, sizeof(CK_BBOOL));
             attrs++;
             PK11_SETATTRS(attrs, CKA_SIGN_RECOVER, &ckfalse, sizeof(CK_BBOOL));
@@ -468,12 +574,23 @@ PK11_ImportAndReturnPrivateKey(PK11SlotInfo *slot, SECKEYRawPrivateKey *lpk,
                 PK11_SETATTRS(attrs, CKA_LABEL, nickname->data, nickname->len);
                 attrs++;
             }
-            ck_id = PK11_MakeIDFromPubKey(publicValue);
-            if (ck_id == NULL) {
-                goto loser;
+            /* To make our intenal PKCS #11 module work correctly with
+             * our database, we need to pass in the public key value for
+             * this dsa key. We have a netscape only CKA_ value to do this.
+             * Only send it to internal slots */
+            if (pubValue != NULL) {
+                if (PK11_IsInternal(slot)) {
+                    PK11_SETATTRS(attrs, CKA_NSS_DB,
+                                  pubValue->data, pubValue->len);
+                    attrs++;
+                }
+                ck_id = PK11_MakeIDFromPubKey(pubValue);
+                if (ck_id == NULL) {
+                    goto loser;
+                }
+                PK11_SETATTRS(attrs, CKA_ID, ck_id->data, ck_id->len);
+                attrs++;
             }
-            PK11_SETATTRS(attrs, CKA_ID, ck_id->data, ck_id->len);
-            attrs++;
             signedattr = attrs;
             PK11_SETATTRS(attrs, CKA_PRIME, lpk->u.dsa.params.prime.data,
                           lpk->u.dsa.params.prime.len);
@@ -490,27 +607,29 @@ PK11_ImportAndReturnPrivateKey(PK11SlotInfo *slot, SECKEYRawPrivateKey *lpk,
             break;
         case dhKey:
             keyType = CKK_DH;
-            /* To make our intenal PKCS #11 module work correctly with
-             * our database, we need to pass in the public key value for
-             * this dh key. We have a netscape only CKA_ value to do this.
-             * Only send it to internal slots */
-            if (PK11_IsInternal(slot)) {
-                PK11_SETATTRS(attrs, CKA_NSS_DB,
-                              publicValue->data, publicValue->len);
-                attrs++;
-            }
             PK11_SETATTRS(attrs, CKA_DERIVE, &cktrue, sizeof(CK_BBOOL));
             attrs++;
             if (nickname) {
                 PK11_SETATTRS(attrs, CKA_LABEL, nickname->data, nickname->len);
                 attrs++;
             }
-            ck_id = PK11_MakeIDFromPubKey(publicValue);
-            if (ck_id == NULL) {
-                goto loser;
+            /* To make our intenal PKCS #11 module work correctly with
+             * our database, we need to pass in the public key value for
+             * this dh key. We have a netscape only CKA_ value to do this.
+             * Only send it to internal slots */
+            if (pubValue != NULL) {
+                if (PK11_IsInternal(slot)) {
+                    PK11_SETATTRS(attrs, CKA_NSS_DB,
+                                  pubValue->data, pubValue->len);
+                    attrs++;
+                }
+                ck_id = PK11_MakeIDFromPubKey(pubValue);
+                if (ck_id == NULL) {
+                    goto loser;
+                }
+                PK11_SETATTRS(attrs, CKA_ID, ck_id->data, ck_id->len);
+                attrs++;
             }
-            PK11_SETATTRS(attrs, CKA_ID, ck_id->data, ck_id->len);
-            attrs++;
             signedattr = attrs;
             PK11_SETATTRS(attrs, CKA_PRIME, lpk->u.dh.prime.data,
                           lpk->u.dh.prime.len);
@@ -524,15 +643,6 @@ PK11_ImportAndReturnPrivateKey(PK11SlotInfo *slot, SECKEYRawPrivateKey *lpk,
             break;
         case ecKey:
             keyType = CKK_EC;
-            if (lpk->u.ec.publicValue.len != 0) {
-                if (PK11_IsInternal(slot)) {
-                    PK11_SETATTRS(attrs, CKA_NSS_DB,
-                                  lpk->u.ec.publicValue.data,
-                                  lpk->u.ec.publicValue.len);
-                    attrs++;
-                }
-            }
-
             PK11_SETATTRS(attrs, CKA_SIGN, (keyUsage & KU_DIGITAL_SIGNATURE) ? &cktrue : &ckfalse,
                           sizeof(CK_BBOOL));
             attrs++;
@@ -546,12 +656,28 @@ PK11_ImportAndReturnPrivateKey(PK11SlotInfo *slot, SECKEYRawPrivateKey *lpk,
                 PK11_SETATTRS(attrs, CKA_LABEL, nickname->data, nickname->len);
                 attrs++;
             }
-            ck_id = PK11_MakeIDFromPubKey(&lpk->u.ec.publicValue);
-            if (ck_id == NULL) {
-                goto loser;
+            /* the public value is optional in an ECPrivateKey. Without it we
+             * have to wait until the key is on the token and let the token
+             * regenerate the public key for us (below). */
+            if (lpk->u.ec.publicValue.len != 0) {
+                pubValue = &lpk->u.ec.publicValue;
             }
-            PK11_SETATTRS(attrs, CKA_ID, ck_id->data, ck_id->len);
-            attrs++;
+            if (pubValue != NULL) {
+                if (PK11_IsInternal(slot)) {
+                    PK11_SETATTRS(attrs, CKA_NSS_DB,
+                                  pubValue->data, pubValue->len);
+                    attrs++;
+                }
+                ck_id = PK11_MakeIDFromPubKey(pubValue);
+                if (ck_id == NULL) {
+                    goto loser;
+                }
+                PK11_SETATTRS(attrs, CKA_ID, ck_id->data, ck_id->len);
+                attrs++;
+                PK11_SETATTRS(attrs, CKA_EC_POINT, pubValue->data,
+                              pubValue->len);
+                attrs++;
+            }
             /* No signed attrs for EC */
             /* curveOID always is a copy of AlgorithmID.parameters. */
             PK11_SETATTRS(attrs, CKA_EC_PARAMS, lpk->u.ec.curveOID.data,
@@ -560,9 +686,6 @@ PK11_ImportAndReturnPrivateKey(PK11SlotInfo *slot, SECKEYRawPrivateKey *lpk,
             PK11_SETATTRS(attrs, CKA_VALUE, lpk->u.ec.privateValue.data,
                           lpk->u.ec.privateValue.len);
             attrs++;
-            PK11_SETATTRS(attrs, CKA_EC_POINT, lpk->u.ec.publicValue.data,
-                          lpk->u.ec.publicValue.len);
-            attrs++;
             break;
         case edKey:
             keyType = CKK_EC_EDWARDS;
@@ -570,6 +693,17 @@ PK11_ImportAndReturnPrivateKey(PK11SlotInfo *slot, SECKEYRawPrivateKey *lpk,
             attrs++;
             if (nickname) {
                 PK11_SETATTRS(attrs, CKA_LABEL, nickname->data, nickname->len);
+                attrs++;
+            }
+            /* a CurvePrivateKey carries no public value, so unless the caller
+             * handed us one we have to let the token regenerate the public
+             * key for us (below). */
+            if (pubValue != NULL) {
+                ck_id = PK11_MakeIDFromPubKey(pubValue);
+                if (ck_id == NULL) {
+                    goto loser;
+                }
+                PK11_SETATTRS(attrs, CKA_ID, ck_id->data, ck_id->len);
                 attrs++;
             }
 
@@ -590,6 +724,17 @@ PK11_ImportAndReturnPrivateKey(PK11SlotInfo *slot, SECKEYRawPrivateKey *lpk,
 
             if (nickname) {
                 PK11_SETATTRS(attrs, CKA_LABEL, nickname->data, nickname->len);
+                attrs++;
+            }
+            /* a CurvePrivateKey carries no public value, so unless the caller
+             * handed us one we have to let the token regenerate the public
+             * key for us (below). */
+            if (pubValue != NULL) {
+                ck_id = PK11_MakeIDFromPubKey(pubValue);
+                if (ck_id == NULL) {
+                    goto loser;
+                }
+                PK11_SETATTRS(attrs, CKA_ID, ck_id->data, ck_id->len);
                 attrs++;
             }
 
@@ -617,17 +762,13 @@ PK11_ImportAndReturnPrivateKey(PK11SlotInfo *slot, SECKEYRawPrivateKey *lpk,
             attrs++;
             PK11_SETATTRS(attrs, CKA_SIGN_RECOVER, &ckfalse, sizeof(CK_BBOOL));
             attrs++;
-            /* if we have the public value, we can do more, without it
-             * we won't be able to set the ck_id properly, which will make
-             * this key effectively invisible. The application will need
-             * to update the ID before it looses it's handle */
-            if (publicValue != NULL) {
-                if (PK11_IsInternal(slot)) {
-                    PK11_SETATTRS(attrs, CKA_NSS_DB,
-                                  publicValue->data, publicValue->len);
-                    attrs++;
-                }
-                ck_id = PK11_MakeIDFromPubKey(publicValue);
+            /* the public value is optional in an ML-DSA PrivateKey. Without
+             * it we have to wait until the key is on the token and let the
+             * token regenerate the public key for us (below). CKA_NSS_DB is
+             * an artifact of the old dbm database, which never supported
+             * ML-DSA, so we don't set it here. */
+            if (pubValue != NULL) {
+                ck_id = PK11_MakeIDFromPubKey(pubValue);
                 if (ck_id == NULL) {
                     goto loser;
                 }
@@ -665,17 +806,13 @@ PK11_ImportAndReturnPrivateKey(PK11SlotInfo *slot, SECKEYRawPrivateKey *lpk,
             }
             PK11_SETATTRS(attrs, CKA_DECAPSULATE, &cktrue, sizeof(CK_BBOOL));
             attrs++;
-            /* if we have the public value, we can do more, without it
-             * we won't be able to set the ck_id properly, which will make
-             * this key effectively invisible. The application will need
-             * to update the ID before it looses it's handle */
-            if (publicValue != NULL) {
-                if (PK11_IsInternal(slot)) {
-                    PK11_SETATTRS(attrs, CKA_NSS_DB,
-                                  publicValue->data, publicValue->len);
-                    attrs++;
-                }
-                ck_id = PK11_MakeIDFromPubKey(publicValue);
+            /* the public value is optional in an ML-KEM PrivateKey. Without
+             * it we have to wait until the key is on the token and let the
+             * token regenerate the public key for us (below). CKA_NSS_DB is
+             * an artifact of the old dbm database, which never supported
+             * ML-KEM, so we don't set it here. */
+            if (pubValue != NULL) {
+                ck_id = PK11_MakeIDFromPubKey(pubValue);
                 if (ck_id == NULL) {
                     goto loser;
                 }
@@ -720,15 +857,31 @@ PK11_ImportAndReturnPrivateKey(PK11SlotInfo *slot, SECKEYRawPrivateKey *lpk,
 
     rv = PK11_CreateNewObject(slot, CK_INVALID_HANDLE,
                               theTemplate, templateCount, isPerm, &objectID);
+    if (rv != SECSuccess) {
+        goto loser;
+    }
 
-    /* create and return a SECKEYPrivateKey */
-    if (rv == SECSuccess && privk != NULL) {
-        *privk = pk11_MakePrivKey(slot, lpk->keyType, !isPerm, objectID, wincx);
-        if (*privk == NULL) {
-            rv = SECFailure;
-        }
+    privKey = pk11_MakePrivKey(slot, lpk->keyType, !isPerm, objectID, wincx);
+    if (privKey == NULL) {
+        rv = SECFailure;
+        goto loser;
+    }
+
+    /* Best effort. A token needn't be able to regenerate a public key from a
+     * private one (softoken can only do it for ML-DSA if it has the seed),
+     * and it needn't support permanent public keys either. Without a CKA_ID
+     * the key can't be found again, but it is still usable through the
+     * handle we return here. */
+    (void)pk11_SetIDAndPublicKey(privKey, pubValue, isPerm);
+
+    if (privk != NULL) {
+        *privk = privKey;
+        privKey = NULL;
     }
 loser:
+    if (privKey) {
+        SECKEY_DestroyPrivateKey(privKey);
+    }
     if (ck_id) {
         SECITEM_ZfreeItem(ck_id, PR_TRUE);
     }

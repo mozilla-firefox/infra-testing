@@ -63,6 +63,9 @@ XPCOMUtils.defineLazyPreferenceGetter(
  * and is only instantiated the first time the panel is opened.
  */
 class SharePageActionClass {
+  #windowToAction = new WeakMap();
+  #openedByKeyboard = false;
+
   /**
    * Sets up the share button for a browser window. Called for every window at
    * delayed startup through the browser-window-delayed-startup category.
@@ -84,6 +87,7 @@ class SharePageActionClass {
     }
 
     button.addEventListener("click", this, true);
+    button.addEventListener("keydown", this, true);
   }
 
   updateGlobalButtonVisibility() {
@@ -107,6 +111,9 @@ class SharePageActionClass {
         this.togglePanel(event);
         break;
       }
+      case "keydown":
+        this.handleKeydown(event);
+        break;
       case "command": {
         this.handleCommand(event);
         break;
@@ -115,6 +122,18 @@ class SharePageActionClass {
         this.handlePopupShowing(event);
         break;
       }
+      case "popuphidden": {
+        this.#openedByKeyboard = false;
+        this.#recordActions(event.target.documentGlobal);
+        this.#setButtonExpanded(event.target, false);
+        break;
+      }
+    }
+  }
+
+  handleKeydown(event) {
+    if (event.key === "Enter" || event.key === " ") {
+      this.#openedByKeyboard = true;
     }
   }
 
@@ -123,10 +142,14 @@ class SharePageActionClass {
     let hintL10nId;
 
     if (event.target.classList.contains("share-panel-device")) {
+      this.#saveAction(event.target.documentGlobal, "send-to-device");
+
       lazy.SharingUtils.sendToDevice(panel, event.target.deviceId);
       lazy.PanelMultiView.hidePopup(panel);
       return;
     }
+
+    let action = event.target.id.replace("share-panel-", "");
 
     switch (event.target.id) {
       case COPY_LINK_BUTTON_ID: {
@@ -157,6 +180,7 @@ class SharePageActionClass {
         if (this.#showDeviceView(panel, event)) {
           return;
         }
+        action = "connect-or-sign-in";
         break;
       }
       case CONNECT_DEVICE_BUTTON_ID: {
@@ -171,6 +195,8 @@ class SharePageActionClass {
         return;
       }
     }
+
+    this.#saveAction(event.target.documentGlobal, action);
 
     if (hintL10nId) {
       this.#showConfirmationHint(panel, hintL10nId);
@@ -216,6 +242,8 @@ class SharePageActionClass {
   #handleOsShare(panel) {
     if (AppConstants.platform === "win") {
       lazy.SharingUtils.shareOnWindows(panel);
+    } else if (AppConstants.platform === "macosx") {
+      lazy.SharingUtils.shareOnMacPicker(panel);
     }
   }
 
@@ -246,6 +274,20 @@ class SharePageActionClass {
     )) {
       button.hidden = !shouldButtonBeVisible(button.id, isShareable);
     }
+
+    this.#startActions(panel.documentGlobal, isShareable);
+
+    if (this.#openedByKeyboard) {
+      let mainView = panel.querySelector("#share-panel-mainView");
+      lazy.PanelMultiView.forNode(mainView).focusWhenActive = true;
+    }
+
+    this.#setButtonExpanded(panel, true);
+  }
+
+  #setButtonExpanded(panel, expanded) {
+    let button = panel.documentGlobal?.document.getElementById(BUTTON_ID);
+    button?.setAttribute("aria-expanded", String(expanded));
   }
 
   togglePanel(event) {
@@ -362,7 +404,7 @@ class SharePageActionClass {
     let connectButton = document.createXULElement("toolbarbutton");
     connectButton.id = CONNECT_DEVICE_BUTTON_ID;
     connectButton.classList.add("subviewbutton", "subviewbutton-iconic");
-    document.l10n.setAttributes(connectButton, "share-panel-connect-device");
+    document.l10n.setAttributes(connectButton, "share-panel-connect-device-2");
 
     let helpButton = document.createXULElement("toolbarbutton");
     helpButton.id = DEVICE_HELP_BUTTON_ID;
@@ -394,9 +436,38 @@ class SharePageActionClass {
 
       panel.addEventListener("command", this);
       panel.addEventListener("popupshowing", this);
+      panel.addEventListener("popuphidden", this);
     }
 
     return panel;
+  }
+
+  #startActions(window, isShareable) {
+    this.#windowToAction.set(window, { isShareable, action: "" });
+  }
+
+  #saveAction(window, action) {
+    const actionObject = this.#windowToAction.get(window);
+    if (!actionObject) {
+      return;
+    }
+
+    actionObject.action = action;
+  }
+
+  #recordActions(window) {
+    const actionObject = this.#windowToAction.get(window);
+    if (!actionObject) {
+      return;
+    }
+
+    const { isShareable, action } = actionObject;
+    Glean.shareButton.impression.record({
+      is_shareable: isShareable,
+      action,
+    });
+
+    this.#windowToAction.delete(window);
   }
 }
 

@@ -4,10 +4,13 @@
 
 #include "NetworkLoadHandler.h"
 
+#include <memory>
+
 #include "CacheLoadHandler.h"  // CachePromiseHandler
 #include "js/loader/ModuleLoadRequest.h"
 #include "js/loader/ScriptLoadRequest.h"
 #include "mozilla/Encoding.h"
+#include "mozilla/StaticPrefs_extensions.h"
 #include "mozilla/StaticPrefs_javascript.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/InternalResponse.h"
@@ -52,9 +55,13 @@ NetworkLoadHandler::OnStreamComplete(nsIStreamLoader* aLoader,
                                      nsISupports* aContext, nsresult aStatus,
                                      uint32_t aStringLen,
                                      const uint8_t* aString) {
-  // If we have cancelled, or we have no mRequest, it means that the loader has
-  // shut down and we can exit early. If the cancel result is still NS_OK
-  if (mRequestHandle->IsEmpty()) {
+  AssertIsOnMainThread();
+
+  // If the request has been handed over to the worker thread, it means that
+  // the loader has shut down and we can exit early. This happens when
+  // cancelling the channel failed and the load was finished without us; see
+  // ScriptLoaderRunnable::CancelMainThread().
+  if (mRequestHandle->ExecutionScheduled()) {
     return NS_OK;
   }
   nsresult rv = DataReceivedFromNetwork(aLoader, aStatus, aStringLen, aString);
@@ -66,7 +73,7 @@ nsresult NetworkLoadHandler::DataReceivedFromNetwork(nsIStreamLoader* aLoader,
                                                      uint32_t aStringLen,
                                                      const uint8_t* aString) {
   AssertIsOnMainThread();
-  MOZ_ASSERT(!mRequestHandle->IsEmpty());
+  MOZ_ASSERT(!mRequestHandle->ExecutionScheduled());
 
   if (aStringLen > GetWorkerScriptMaxSizeInBytes()) {
     Document* parentDoc = mWorkerRef->Private()->GetDocument();
@@ -148,9 +155,16 @@ nsresult NetworkLoadHandler::DataReceivedFromNetwork(nsIStreamLoader* aLoader,
     // if we are not in a ServiceWorker, and the principal is not null, then
     // the loading principal must subsume the worker principal if it is not a
     // nullPrincipal (sandbox).
-    MOZ_ASSERT(!loadingPrincipal || loadingPrincipal->GetIsNullPrincipal() ||
-               principal->GetIsNullPrincipal() ||
-               loadingPrincipal->Subsumes(principal));
+    //
+    // This does not hold for an addon worker principal when
+    // extensions.web_accessible_workers.deprecated_behavior is enabled; see
+    // bug 1767455.
+    MOZ_ASSERT(
+        !loadingPrincipal || loadingPrincipal->GetIsNullPrincipal() ||
+        principal->GetIsNullPrincipal() ||
+        loadingPrincipal->Subsumes(principal) ||
+        (StaticPrefs::extensions_web_accessible_workers_deprecated_behavior() &&
+         principal->GetIsAddonPrincipal()));
   }
 #endif
 
@@ -329,14 +343,16 @@ NetworkLoadHandler::OnStartRequest(nsIRequest* aRequest) {
 
 nsresult NetworkLoadHandler::PrepareForRequest(nsIRequest* aRequest) {
   AssertIsOnMainThread();
-  MOZ_ASSERT(!mRequestHandle->IsEmpty());
-  WorkerLoadContext* loadContext = mRequestHandle->GetContext();
 
   // If one load info cancels or hits an error, it can race with the start
-  // callback coming from another load info.
-  if (mRequestHandle->IsCancelled()) {
+  // callback coming from another load info. The request may even have been
+  // handed over to the worker thread already, in which case we must not touch
+  // it any more and let the caller cancel this channel.
+  if (mRequestHandle->ExecutionScheduled() || mRequestHandle->IsCancelled()) {
     return NS_ERROR_FAILURE;
   }
+
+  WorkerLoadContext* loadContext = mRequestHandle->GetContext();
 
   nsCOMPtr<nsIChannel> channel = do_QueryInterface(aRequest);
 
@@ -410,7 +426,7 @@ nsresult NetworkLoadHandler::PrepareForRequest(nsIRequest* aRequest) {
   MOZ_TRY(ssm->GetChannelResultPrincipal(channel,
                                          getter_AddRefs(channelPrincipal)));
 
-  UniquePtr<PrincipalInfo> principalInfo(new PrincipalInfo());
+  auto principalInfo = std::make_unique<PrincipalInfo>();
   MOZ_TRY(PrincipalToPrincipalInfo(channelPrincipal, principalInfo.get()));
 
   ir->SetPrincipalInfo(std::move(principalInfo));

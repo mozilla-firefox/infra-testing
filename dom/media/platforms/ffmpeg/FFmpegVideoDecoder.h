@@ -166,6 +166,7 @@ class FFmpegVideoDecoder<LIBAV_VER>
   gfx::ColorDepth GetColorDepth(const AVPixelFormat& aFormat) const;
   gfx::YUVColorSpace GetFrameColorSpace() const;
   gfx::ColorSpace2 GetFrameColorPrimaries() const;
+  Maybe<gfx::TransferFunction> GetFrameTransferFunction() const;
   gfx::ColorRange GetFrameColorRange() const;
   gfx::SurfaceFormat GetSurfaceFormat() const;
 
@@ -238,6 +239,7 @@ class FFmpegVideoDecoder<LIBAV_VER>
                                     MediaDataDecoder::DecodedData& aResults);
   bool ReleaseFrameMediaCodec(void* aKey, bool aRender);
   void ReleaseFramesMediaCodec();
+  void ReleaseSurfaceMediaCodec();
   int32_t mTextureAlignment;
   AVBufferRef* mMediaCodecDeviceContext = nullptr;
   // Only used for the SurfaceTexture case
@@ -250,13 +252,13 @@ class FFmpegVideoDecoder<LIBAV_VER>
 #endif
 
 #if defined(MOZ_USE_HWDECODE) && defined(MOZ_WIDGET_GTK)
-  bool UploadSWDecodeToDMABuf() const;
   bool IsLinuxHDR() const;
   MediaResult InitVAAPIDecoder();
   MediaResult InitV4L2Decoder();
 #  ifdef MOZ_USE_HWDECODE_VULKAN
 #    include "FFmpegVulkanVideoDecoder.h"
   MediaResult InitVulkanDecoder();
+  bool VulkanDirectDecodeExportEnabled();
   bool CreateVulkanDeviceContext(const StaticMutexAutoLock& aProofOfLock);
   void PrepareVulkanDrmModifiersForSwFormat(int aSwFormat,
                                             VkImageUsageFlags aImageUsages);
@@ -296,9 +298,6 @@ class FFmpegVideoDecoder<LIBAV_VER>
   bool mVulkanTilingSettled = false;
 #  endif
   bool mUsingV4L2 = false;
-  // If video overlay is used we want to upload SW decoded frames to
-  // DMABuf and present it as a external texture to rendering pipeline.
-  bool mUploadSWDecodeToDMABuf = false;
   VADisplay mDisplay = nullptr;
   UniquePtr<VideoFramePool<LIBAV_VER>> mVideoFramePool;
   static nsTArray<AVCodecID> mAcceleratedFormats;
@@ -402,7 +401,7 @@ class FFmpegVideoDecoder<LIBAV_VER>
   bool MaybeQueueDrain(const MediaDataDecoder::DecodedData& aData);
 #ifdef MOZ_WIDGET_ANDROID
   void QueueResumeDrain();
-  void ResumeDrain();
+  void ResumeDrain() override;
 
   Atomic<bool> mShouldResumeDrain{false};
 #endif

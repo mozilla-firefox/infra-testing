@@ -45,3 +45,34 @@ rust:
             - 'python/mozbuild/mozbuild/vendor/vendor_rust.py'
             - 'supply-chain/**'
             - 'third_party/rust/**'
+
+node:
+    description: Node vendoring validation
+    attributes:
+        code-review: false
+    treeherder:
+        symbol: node(vendor)
+    worker:
+        artifacts: []
+        env:
+            MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: system
+    run:
+        cwd: '{checkout}'
+        command: >-
+            ./mach vendor node --ignore-modified &&
+            ./mach python -c
+            'import sys; from mozversioncontrol import get_repository_object;
+            changed = [f for f in get_repository_object(".").get_changed_files("ADM", mode="all")
+            if f.startswith("third_party/node/")];
+            print("\n".join(changed)); sys.exit(1 if changed else 0)'
+    fetches:
+        toolchain:
+            - linux64-node
+        fetch:
+            - pnpm
+    when:
+        files-changed:
+            - 'third_party/node/**'
+            - 'browser/extensions/newtab/package.json'
+            - 'python/mozbuild/mozbuild/vendor/vendor_node.py'
+            - 'taskcluster/kinds/fetch/pnpm.yml'

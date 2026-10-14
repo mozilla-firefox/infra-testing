@@ -124,7 +124,7 @@ const TESTCASES = [
         expectation: "email",
       },
       {
-        testValues: ["username"],
+        testValues: ["username", "webauthn"],
         expectation: "username",
       },
     ],
@@ -154,6 +154,13 @@ const TESTCASES = [
     description: "Test placeholder attribute",
     update: (doc, v) => {
       doc.querySelector("input").setAttribute("placeholder", v);
+    },
+    subtests: attributeTestData,
+  },
+  {
+    description: "Test aria-label attribute",
+    update: (doc, v) => {
+      doc.querySelector("input").setAttribute("aria-label", v);
     },
     subtests: attributeTestData,
   },

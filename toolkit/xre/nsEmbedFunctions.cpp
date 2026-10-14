@@ -154,7 +154,7 @@ const char* XRE_GeckoProcessTypeToString(GeckoProcessType aProcessType) {
                            webidl_typename, allcaps_name)                     \
   case GeckoProcessType::GeckoProcessType_##enum_name:                        \
     return string_name;
-#include "mozilla/GeckoProcessTypes.h"
+#include "mozilla/GeckoProcessTypes.inc"
 #undef GECKO_PROCESS_TYPE
     default:
       return "invalid";
@@ -684,8 +684,8 @@ already_AddRefed<TestShellParent> GetOrCreateTestShellParent() {
     // this and you're sure you wouldn't be better off writing a "browser"
     // chrome mochitest where you can have multiple types of content
     // processes.
-    TestShellContentParent() =
-        ContentParent::GetNewOrUsedBrowserProcess(DEFAULT_REMOTE_TYPE);
+    TestShellContentParent() = ContentParent::GetNewOrUsedBrowserProcess(
+        mozilla::dom::RemoteType::SharedWeb({}));
   } else if (TestShellContentParent()->IsShuttingDown()) {
     return nullptr;
   }

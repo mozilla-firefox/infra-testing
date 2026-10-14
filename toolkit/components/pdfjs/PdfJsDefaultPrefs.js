@@ -30,6 +30,7 @@ pref("pdfjs.disableFontFace", false);
 pref("pdfjs.disablePageLabels", false);
 pref("pdfjs.disableRange", false);
 pref("pdfjs.disableStream", false);
+pref("pdfjs.disableWorkerRendering", true);
 pref("pdfjs.enableAltText", false);
 pref("pdfjs.enableAltTextModelDownload", true);
 pref("pdfjs.enableAutoLinking", true);

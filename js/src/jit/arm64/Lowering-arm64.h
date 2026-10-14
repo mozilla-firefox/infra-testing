@@ -52,6 +52,8 @@ class LIRGeneratorARM64 : public LIRGeneratorShared {
                    MDefinition* input);
   void lowerForALU(LInstructionHelper<1, 2, 0>* ins, MDefinition* mir,
                    MDefinition* lhs, MDefinition* rhs);
+  bool lowerForALUWithShiftedOperand(JSOp op, MBinaryInstruction* mir,
+                                     MDefinition* lhs, MDefinition* rhs);
 
   void lowerForALUInt64(LInstructionHelper<INT64_PIECES, INT64_PIECES, 0>* ins,
                         MDefinition* mir, MDefinition* input);
@@ -102,7 +104,7 @@ class LIRGeneratorARM64 : public LIRGeneratorShared {
   void lowerAtomicLoad64(MLoadUnboxedScalar* ins);
   void lowerAtomicStore64(MStoreUnboxedScalar* ins);
 
-#ifdef ENABLE_WASM_SIMD
+#ifdef ENABLE_JIT_SIMD
   bool canFoldReduceSimd128AndBranch(wasm::SimdOp op);
   bool canEmitWasmReduceSimd128AtUses(MWasmReduceSimd128* ins);
 #endif

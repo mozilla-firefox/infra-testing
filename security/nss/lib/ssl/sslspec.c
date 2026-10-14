@@ -199,6 +199,7 @@ ssl_SetupNullCipherSpec(sslSocket *ss, SSLSecretDirection dir)
 void
 ssl_CipherSpecAddRef(ssl3CipherSpec *spec)
 {
+    PORT_ReleaseAssert(spec->refCt > 0 && spec->refCt < PR_UINT8_MAX);
     ++spec->refCt;
     SSL_TRC(10, ("%d: SSL[-]: Increment ref ct for %s spec %d. new ct = %d",
                  SSL_GETPID(), SPEC_DIR(spec), spec, spec->refCt));
@@ -208,9 +209,12 @@ void
 ssl_DestroyKeyMaterial(ssl3KeyMaterial *keyMaterial)
 {
     PK11_FreeSymKey(keyMaterial->key);
+    keyMaterial->key = NULL;
     PK11_FreeSymKey(keyMaterial->macKey);
+    keyMaterial->macKey = NULL;
     if (keyMaterial->macContext != NULL) {
         PK11_DestroyContext(keyMaterial->macContext, PR_TRUE);
+        keyMaterial->macContext = NULL;
     }
 }
 
@@ -242,7 +246,7 @@ ssl_CipherSpecRelease(ssl3CipherSpec *spec)
         return;
     }
 
-    PORT_Assert(spec->refCt > 0);
+    PORT_ReleaseAssert(spec->refCt > 0);
     --spec->refCt;
     SSL_TRC(10, ("%d: SSL[-]: decrement refct for %s spec %d. epoch=%d new ct = %d",
                  SSL_GETPID(), SPEC_DIR(spec), spec, spec->epoch, spec->refCt));

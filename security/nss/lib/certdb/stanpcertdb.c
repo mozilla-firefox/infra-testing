@@ -67,7 +67,7 @@ SEC_DeletePermCertificate(CERTCertificate *cert)
 
     certTrust = nssTrust_GetCERTCertTrustForCert(c, cert);
     if (certTrust) {
-        NSSTrust *nssTrust = nssTrustDomain_FindTrustForCertificate(td, c);
+        NSSTrust *nssTrust = nssTrustDomain_FindTrustForCertificate(td, &c->encoding, &c->issuer, &c->serial);
         if (nssTrust) {
             nssrv = STAN_DeleteCertTrustMatchingSlot(c);
             if (nssrv != PR_SUCCESS) {
@@ -102,6 +102,37 @@ CERT_GetCertTrust(const CERTCertificate *cert, CERTCertTrust *trust)
     }
     CERT_UnlockCertTrust(cert);
     return (rv);
+}
+
+SECStatus
+CERT_GetDERCertTrust(SECItem *derCert, CERTCertTrust *trust)
+{
+    if (!derCert || !trust) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        return SECFailure;
+    }
+    NSSTrustDomain *td = STAN_GetDefaultTrustDomain();
+    NSSDER encoding;
+    NSSITEM_FROM_SECITEM(&encoding, derCert);
+    NSSDER issuer;
+    NSSDER serial;
+    if (nssPKIX509_GetIssuerAndSerialFromDER(&encoding, &issuer, &serial) != PR_SUCCESS) {
+        // Despite the name, any errors here would be set by CERT_* functions,
+        // so no need to map a STAN error.
+        return SECFailure;
+    }
+    NSSTrust *nssTrust = nssTrustDomain_FindTrustForCertificate(td, &encoding, &issuer, &serial);
+    if (!nssTrust) {
+        CERT_MapStanError();
+        PORT_Free(issuer.data);
+        PORT_Free(serial.data);
+        return SECFailure;
+    }
+    nssTrust_ToCERTCertTrust(nssTrust, trust);
+    (void)nssTrust_Destroy(nssTrust);
+    PORT_Free(issuer.data);
+    PORT_Free(serial.data);
+    return SECSuccess;
 }
 
 extern const NSSError NSS_ERROR_NO_ERROR;
@@ -146,7 +177,10 @@ extern const NSSError NSS_ERROR_PKCS11;
 
 /* Look at the stan error stack and map it to NSS 3 errors */
 #define STAN_MAP_ERROR(x, y) \
-    else if (error == (x)) { secError = y; }
+    else if (error == (x))   \
+    {                        \
+        secError = y;        \
+    }
 
 /*
  * map Stan errors into NSS errors
@@ -221,7 +255,10 @@ CERT_MapStanError()
     STAN_MAP_ERROR(NSS_ERROR_INVALID_ASN1ENCODER, SEC_ERROR_INVALID_ARGS)
     STAN_MAP_ERROR(NSS_ERROR_INVALID_ASN1DECODER, SEC_ERROR_INVALID_ARGS)
     STAN_MAP_ERROR(NSS_ERROR_UNKNOWN_ATTRIBUTE, SEC_ERROR_INVALID_ARGS)
-    else { secError = SEC_ERROR_LIBRARY_FAILURE; }
+    else
+    {
+        secError = SEC_ERROR_LIBRARY_FAILURE;
+    }
     PORT_SetError(secError);
 }
 
@@ -260,7 +297,9 @@ __CERT_AddTempCertToPerm(CERTCertificate *cert, char *nickname,
         return SECFailure;
     }
 
+    nssPKIObject_Lock(&c->object);
     context = c->object.cryptoContext;
+    nssPKIObject_Unlock(&c->object);
     if (!context) {
         PORT_SetError(SEC_ERROR_ADDING_CERT);
         return SECFailure; /* wasn't a temp cert */
@@ -278,20 +317,13 @@ __CERT_AddTempCertToPerm(CERTCertificate *cert, char *nickname,
     } /* else: old stanNick is identical to new nickname */
     /* Delete the temp instance */
     nssCertificateStore_Lock(context->certStore, &lockTrace);
-    nssCertificateStore_RemoveCertLOCKED(context->certStore, c);
-    nssCertificateStore_Unlock(context->certStore, &lockTrace, &unlockTrace);
-    c->object.cryptoContext = NULL;
-
-    /* if the id has not been set explicitly yet, create one from the public
-     * key. */
-    if (c->id.data == NULL) {
-        SECItem *keyID = pk11_mkcertKeyID(cert);
-        if (keyID) {
-            nssItem_Create(c->object.arena, &c->id, keyID->len, keyID->data);
-            SECITEM_FreeItem(keyID, PR_TRUE);
-        }
-        /* if any of these failed, continue with our null c->id */
+    nssPKIObject_Lock(&c->object);
+    if (c->object.cryptoContext == context) {
+        nssCertificateStore_RemoveCertLOCKED(context->certStore, c);
+        c->object.cryptoContext = NULL;
     }
+    nssPKIObject_Unlock(&c->object);
+    nssCertificateStore_Unlock(context->certStore, &lockTrace, &unlockTrace);
 
     /* Import the perm instance onto the internal token */
     slot = PK11_GetInternalKeySlot();
@@ -435,6 +467,10 @@ CERT_NewTempCertificate(CERTCertDBHandle *handle, SECItem *derCert,
                    derSerial.data);
     PORT_Free(derSerial.data);
 
+    if (nssCertificate_SetCertKeyID(c) != PR_SUCCESS) {
+        goto loser;
+    }
+
     if (nickname) {
         c->object.tempName =
             nssUTF8_Create(c->object.arena, nssStringType_UTF8String,
@@ -468,8 +504,7 @@ CERT_NewTempCertificate(CERTCertDBHandle *handle, SECItem *derCert,
     CERT_UnlockCertTempPerm(cc);
     return cc;
 loser:
-    /* Perhaps this should be nssCertificate_Destroy(c) */
-    nssPKIObject_Destroy(&c->object);
+    nssCertificate_Destroy(c);
     return NULL;
 }
 
@@ -553,33 +588,6 @@ CERT_FindCertByName(CERTCertDBHandle *handle, SECItem *name)
         CERT_DestroyCertificate(STAN_GetCERTCertificateOrRelease(cp));
     }
     return c ? STAN_GetCERTCertificateOrRelease(c) : NULL;
-}
-
-CERTCertificate *
-CERT_FindCertByKeyID(CERTCertDBHandle *handle, SECItem *name, SECItem *keyID)
-{
-    CERTCertList *list;
-    CERTCertificate *cert = NULL;
-    CERTCertListNode *node;
-
-    list = CERT_CreateSubjectCertList(NULL, handle, name, 0, PR_FALSE);
-    if (list == NULL)
-        return NULL;
-
-    node = CERT_LIST_HEAD(list);
-    while (!CERT_LIST_END(node, list)) {
-        if (node->cert &&
-            SECITEM_ItemsAreEqual(&node->cert->subjectKeyID, keyID)) {
-            cert = CERT_DupCertificate(node->cert);
-            goto done;
-        }
-        node = CERT_LIST_NEXT(node);
-    }
-    PORT_SetError(SEC_ERROR_UNKNOWN_ISSUER);
-
-done:
-    CERT_DestroyCertList(list);
-    return cert;
 }
 
 CERTCertificate *
@@ -856,32 +864,39 @@ certdb_SaveSingleProfile(CERTCertificate *cert, const char *emailAddr,
     PRTime newtime;
     SECStatus rv = SECFailure;
     PRBool saveit;
-    SECItem oldprof, oldproftime;
-    SECItem *oldProfile = NULL;
+    SECItem oldproftime;
     SECItem *oldProfileTime = NULL;
+    PRBool freeOldProfileTime = PR_FALSE;
     PK11SlotInfo *slot = NULL;
     NSSCertificate *c;
     NSSCryptoContext *cc;
     nssSMIMEProfile *stanProfile = NULL;
-    PRBool freeOldProfile = PR_FALSE;
 
     c = STAN_GetNSSCertificate(cert);
-    if (!c)
+    if (!c) {
         return SECFailure;
+    }
+
+    nssPKIObject_Lock(&c->object);
     cc = c->object.cryptoContext;
+    nssPKIObject_Unlock(&c->object);
     if (cc != NULL) {
         stanProfile = nssCryptoContext_FindSMIMEProfileForCertificate(cc, c);
         if (stanProfile) {
-            PORT_Assert(stanProfile->profileData);
-            SECITEM_FROM_NSSITEM(&oldprof, stanProfile->profileData);
-            oldProfile = &oldprof;
+            nssPKIObject_Lock(&stanProfile->object);
+            PORT_Assert(stanProfile->profileTime);
             SECITEM_FROM_NSSITEM(&oldproftime, stanProfile->profileTime);
             oldProfileTime = &oldproftime;
+            nssPKIObject_Unlock(&stanProfile->object);
         }
     } else {
-        oldProfile = PK11_FindSMimeProfile(&slot, (char *)emailAddr,
-                                           &cert->derSubject, &oldProfileTime);
-        freeOldProfile = PR_TRUE;
+        /* PK11_FindSMimeProfile returns the profile data in addition to the
+         * profile time. We do not need the data below. */
+        SECItem *oldProfile = PK11_FindSMimeProfile(
+            &slot, (char *)emailAddr, &cert->derSubject, &oldProfileTime);
+
+        SECITEM_FreeItem(oldProfile, PR_TRUE);
+        freeOldProfileTime = PR_TRUE;
     }
 
     saveit = PR_FALSE;
@@ -930,10 +945,12 @@ certdb_SaveSingleProfile(CERTCertificate *cert, const char *emailAddr,
                  * overwrite the data
                  */
                 NSSArena *arena = stanProfile->object.arena;
+                nssPKIObject_Lock(&stanProfile->object);
                 stanProfile->profileTime = nssItem_Create(
                     arena, NULL, profileTime->len, profileTime->data);
                 stanProfile->profileData = nssItem_Create(
                     arena, NULL, emailProfile->len, emailProfile->data);
+                nssPKIObject_Unlock(&stanProfile->object);
             } else if (profileTime && emailProfile) {
                 PRStatus nssrv;
                 NSSItem profTime, profData;
@@ -955,10 +972,7 @@ certdb_SaveSingleProfile(CERTCertificate *cert, const char *emailAddr,
     }
 
 loser:
-    if (oldProfile && freeOldProfile) {
-        SECITEM_FreeItem(oldProfile, PR_TRUE);
-    }
-    if (oldProfileTime && freeOldProfile) {
+    if (freeOldProfileTime) {
         SECITEM_FreeItem(oldProfileTime, PR_TRUE);
     }
     if (stanProfile) {
@@ -1039,31 +1053,32 @@ CERT_FindSMimeProfile(CERTCertificate *cert)
         return NULL;
     }
     c = STAN_GetNSSCertificate(cert);
-    if (!c)
+    if (!c) {
         return NULL;
+    }
+
+    nssPKIObject_Lock(&c->object);
     cc = c->object.cryptoContext;
+    nssPKIObject_Unlock(&c->object);
     if (cc != NULL) {
         nssSMIMEProfile *stanProfile;
         stanProfile = nssCryptoContext_FindSMIMEProfileForCertificate(cc, c);
         if (stanProfile) {
+            nssPKIObject_Lock(&stanProfile->object);
             if (stanProfile->profileData) {
-                rvItem =
-                    SECITEM_AllocItem(NULL, NULL,
-                                      stanProfile->profileData->size);
-                if (rvItem) {
-                    PORT_Memcpy(rvItem->data,
-                                stanProfile->profileData->data,
-                                stanProfile->profileData->size);
-                }
+                SECItem profile = { siBuffer, NULL, 0 };
+                SECITEM_FROM_NSSITEM(&profile, stanProfile->profileData);
+                rvItem = SECITEM_DupItem(&profile);
             }
+            nssPKIObject_Unlock(&stanProfile->object);
             nssSMIMEProfile_Destroy(stanProfile);
         }
-        return rvItem;
-    }
-    rvItem =
-        PK11_FindSMimeProfile(&slot, cert->emailAddr, &cert->derSubject, NULL);
-    if (slot) {
-        PK11_FreeSlot(slot);
+    } else {
+        rvItem =
+            PK11_FindSMimeProfile(&slot, cert->emailAddr, &cert->derSubject, NULL);
+        if (slot) {
+            PK11_FreeSlot(slot);
+        }
     }
     return rvItem;
 }

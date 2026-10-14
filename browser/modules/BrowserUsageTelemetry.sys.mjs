@@ -849,8 +849,8 @@ export let BrowserUsageTelemetry = {
       return "microsoft-system-share";
     }
 
-    if (node.hasAttribute("data-share-name")) {
-      return "share-macos-provider";
+    if (node.classList?.contains("share-mac-picker-item")) {
+      return "macos-share-picker";
     }
 
     // See if this is a customizable widget.
@@ -2126,7 +2126,7 @@ export let BrowserUsageTelemetry = {
       if (data?.installer_type) {
         let { installer_type, extra } = data;
 
-        // Record the event (mirrored to legacy telemetry using GIFFT)
+        // Record the event
         if (installer_type == "full") {
           Glean.installation.firstSeenFull.record(extra);
         } else if (installer_type == "stub") {

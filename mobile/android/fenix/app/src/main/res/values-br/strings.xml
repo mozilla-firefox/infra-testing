@@ -21,16 +21,22 @@
   <string name="content_description_private_browsing">Merdeiñ prevez</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
   <string name="search_hint">Klask pe chomlecʼh</string>
+  <!-- Shorter placeholder text shown in the search bar when an additional action (voice search) is rendered alongside the hint. -->
+  <string name="search_hint_short">Klask</string>
   <!-- Placeholder text shown in the search bar before a user enters text for a general engine -->
   <string name="search_hint_general_engine">Klask er web</string>
   <!-- Placeholder text shown in search bar when using history search -->
   <string name="history_search_hint">Klask er roll istor</string>
   <!-- Placeholder text shown in search bar when using bookmarks search -->
   <string name="bookmark_search_hint">Klask er sinedoù</string>
+  <!-- Content description for the toolbar back button while searching bookmarks -->
+  <string name="bookmark_close_search_description">Distreiñ ha serriñ ar c’hlask</string>
   <!-- Placeholder text shown in search bar when using tabs search -->
   <string name="tab_search_hint">Klask en ivinelloù</string>
   <!-- Placeholder text shown in the search bar when using application search engines -->
   <string name="application_search_hint">Skrivit gerioù ar c’hlask</string>
+  <!-- The header text displayed on the normal tabs page when no normal tabs are open -->
+  <string name="tab_manager_empty_normal_tabs_page_header">Krouiñ un ivinell nevez evit kregiñ da glask</string>
   <!-- Tab tray multi select title in app bar. %1$d is the number of tabs selected -->
   <string name="tab_tray_multi_select_title">%1$d diuzet</string>
   <!-- Tab tray multi select title in app bar when no tabs are selected -->
@@ -79,8 +85,6 @@
   <string name="open_in_app_cfr_positive_button_text">Mont en arventennoù</string>
   <!-- Text for the negative action button -->
   <string name="open_in_app_cfr_negative_button_text">Argas</string>
-  <!-- Private browsing erase action "contextual feature recommendation" (CFR) -->
-
   <!-- Text for the info dialog when camera permissions have been denied but user tries to access a camera feature. -->
   <string name="camera_permissions_needed_message">Ezhomm a zo haeziñ ar c’hamera. Kit e Arventennoù Android, stokit war an aotreoù ha stokit war aotren.</string>
   <!-- Text for the positive action button to go to Android Settings to grant permissions. -->
@@ -118,16 +122,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Ivinell prevez nevez</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Gerioù-tremen</string>
-  <!--
-    Recent Tabs
-
-    Header text for jumping back into the recent tab in the home screen
-  -->
-  <string name="recent_tabs_header">Distreiñ</string>
   <!-- Button text for showing all the tabs in the tabs tray -->
   <string name="recent_tabs_show_all">Diskouez pep tra</string>
-  <!-- Content description for the button which navigates the user to show all recent tabs in the tabs tray. -->
-  <string name="recent_tabs_show_all_content_description_2">Diskouez an holl afelloù ivinelloù nevez</string>
   <!-- Text for button in synced tab card that opens synced tabs tray -->
   <string name="recent_tabs_see_all_synced_tabs_button_text">Gwelout an holl ivinelloù goubredet</string>
   <!-- Accessibility description for device icon used for recent synced tab -->
@@ -271,6 +267,8 @@
     Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred.
   -->
   <string name="browser_toolbar_translate">Treiñ ar bajenn</string>
+  <!-- Title for the voice search AI feature toggle -->
+  <string name="ai_controls_voice_search_title">Klask dre vouezh</string>
   <!--
     Locale Settings Fragment
 
@@ -354,10 +352,6 @@
   <string name="onboarding_marketing_body_1" tools:ignore="BrandUsage,UnusedResources">Rannit penaos ho peus graet anaoudegezh gant Firefox ha penaos ec\'h implijit anezhañ gant kevelerien marketing Mozilla. Ne vo morse gwerzhet ar roadennoù-mañ.</string>
   <!-- Marketing onboarding page button label variant. Button to confirm choice and start browsing. -->
   <string name="onboarding_marketing_positive_button_1" tools:ignore="UnusedResources">Asantiñ ha kregiñ da verdeiñ</string>
-  <!-- ==== Project "Nova" onboarding strings ==== -->
-
-  <!-- ==== End of Project "Nova" onboarding strings ==== -->
-
   <!--
     Widget Picker
 
@@ -433,8 +427,6 @@
   <string name="preferences_add_private_browsing_shortcut">Ouzhpennañ ur verradenn merdeiñ prevez</string>
   <!-- Preference for enabling "HTTPS-Only" mode -->
   <string name="preferences_https_only_title">Mod HTTPS-hepken</string>
-  <!-- Preference for removing cookie/consent banners from sites automatically in private mode. See reduce_cookie_banner_summary for additional context. -->
-  <string name="preferences_cookie_banner_reduction_private_mode">Stanker banniel an toupinoù er merdeiñ prevez</string>
   <!-- Description of the preference to enable "HTTPS-Only" mode. -->
   <string name="preferences_https_only_summary">Klask kennaskañ ent emgefreek gant ar c’homenad HTTPS evit muioc’h a surentez.</string>
   <!-- Summary of https only preference if https only is set to off -->
@@ -581,8 +573,6 @@
   <string name="customize_addon_collection_user_hint">Perc’henn an dastumad (Naoudi an arveriad)</string>
   <!-- Toast shown after confirming the custom extension collection configuration -->
   <string name="toast_customize_extension_collection_done">Kemmet eo bet an dastumad askouezhioù. Emañ an arload o serriñ evit arloañ ar c’hemmoù…</string>
-  <!-- Header text for jumping back into the recent tab in customize the home screen -->
-  <string name="customize_toggle_jump_back_in">Distreiñ</string>
   <!-- Title for the customize home screen section with bookmarks. -->
   <string name="customize_toggle_bookmarks">Sinedoù</string>
   <!--
@@ -895,8 +885,6 @@
     Title of preference for tabs management
   -->
   <string name="preferences_tabs">Ivinelloù</string>
-  <!-- Title of preference that allows a user to specify the tab view -->
-  <string name="preferences_tab_view">Gwel an ivinell</string>
   <!-- Option for a list tab view -->
   <string name="tab_view_list">Roll</string>
   <!-- Option for a grid tab view -->
@@ -939,13 +927,7 @@
   <string name="opening_screen_last_tab_summary">Digeriñ en ivinell ziwezhañ</string>
   <!-- Summary for homepage preference indicating opening the homepage when re-opening the app after four hours of inactivity -->
   <string name="opening_screen_after_four_hours_of_inactivity_summary">Digeriñ er bennbajenn goude peder eurvezh</string>
-  <!--
-    Inactive tabs
-
-    Category header of a preference that allows a user to enable or disable the inactive tabs feature
-  -->
-  <string name="preferences_inactive_tabs">Dilec’hiañ an ivinelloù kozh dioberiant</string>
-  <!-- Title of inactive tabs preference -->
+  <!-- Summary of the preference that allows a user to enable or disable the inactive tabs feature. -->
   <string name="preferences_inactive_tabs_title">An ivinelloù n’ho peus ket gwelet e-pad div sizhun a vo dilec’hiet er lodenn dioberiant.</string>
   <!--
     Studies
@@ -1016,16 +998,6 @@
     %1$d is the number of bookmarks selected
   -->
   <string name="history_multi_select_title">%1$d diuzet</string>
-  <!-- Text for the header that groups the history for today -->
-  <string name="history_today">Hiziv</string>
-  <!-- Text for the header that groups the history for yesterday -->
-  <string name="history_yesterday">Dec’h</string>
-  <!-- Text for the header that groups the history the past 7 days -->
-  <string name="history_7_days">Ar 7 deiz diwezhañ</string>
-  <!-- Text for the header that groups the history the past 30 days -->
-  <string name="history_30_days">An 30 deiz diwezhañ</string>
-  <!-- Text for the header that groups the history older than the last month -->
-  <string name="history_older">Koshocʼh</string>
   <!-- Text shown when no history exists -->
   <string name="history_empty_message">Roll istor ebet amañ</string>
   <!-- Title for the dialog that prompts the user to choose an app for downloading a file. -->
@@ -1132,6 +1104,8 @@
   <string name="download_item_status_failed">Pellgargañ c\'hwitet</string>
   <!-- Text for the snackbar action button to view failed download details. -->
   <string name="download_failed_snackbar_action_details">Munudoù</string>
+  <!-- Placeholder text to indicate that users can use the search bar to search for a download. -->
+  <string name="download_search_placeholder">Klask er pellgargadurioù</string>
   <!-- Text to indicate that no downloads match the search query. -->
   <string name="download_search_no_results_found">Disoc’h ebet kavet</string>
   <!-- Text for the "Select all" button, which selects all downloaded items in the downloads list. -->
@@ -1275,6 +1249,8 @@
   <string name="bookmark_delete_folder_content_description">Dilemel an teuliad</string>
   <!-- Content description for bookmark search floating action button -->
   <string name="bookmark_search_button_content_description">Klask er sinedoù</string>
+  <!-- Content description for select folder screen search action button ("search" is a verb) -->
+  <string name="select_bookmark_search_button_content_description">Klask en teuliadoù</string>
   <!-- Content description for the overflow menu for a bookmark item. %s is a folder name or bookmark title. -->
   <string name="bookmark_item_menu_button_content_description">Elfenn lañser evit %s</string>
   <!-- Title for the bookmark list empty state -->
@@ -1833,12 +1809,8 @@
   <string name="add_to_homescreen_cancel">Nullañ</string>
   <!-- Add button text for the Add to Homescreen dialog -->
   <string name="add_to_homescreen_add">Ouzhpennañ</string>
-  <!-- Continue to website button text for the first-time Add to Homescreen dialog -->
-  <string name="add_to_homescreen_continue">Kenderc’hel etrezek al lec’hienn</string>
   <!-- Placeholder text for the TextView in the Add to Homescreen dialog -->
   <string name="add_to_homescreen_text_placeholder">Anv ar verradenn</string>
-  <!-- Describes the add to homescreen functionality -->
-  <string name="add_to_homescreen_description_2">Gallout a rit ouzhpennañ al lec’hienn-mañ da bennbajenn ho trevnad evit mont war-eeun ha merdeiñ primoc’h evel ma vefe un arload.</string>
   <!-- Preference for managing the settings for logins and passwords in Fenix -->
   <string name="preferences_passwords_logins_and_passwords_2">Gerioù-tremen</string>
   <!-- Preference for managing the saving of logins and passwords in Fenix -->
@@ -2255,8 +2227,6 @@
   <string name="a11y_action_label_expand">astenn</string>
   <!-- Action label for links to a website containing documentation about a wallpaper collection. Talkback will append this to say "Double tap to open link to learn more about this collection". -->
   <string name="a11y_action_label_wallpaper_collection_learn_more">digeriñ an ere evit gouzout hiroc’h diwar-benn an dastumad-mañ</string>
-  <!-- Translations feature -->
-
   <!--
     Translation request dialog
 
@@ -2698,8 +2668,6 @@
   <string name="certificate_warning_homepage_card_hcw2_title" tools:ignore="UnusedResources">Chom a ra nebeutoc’h eget 7 deiz evit hizivaat</string>
   <!-- Push notification title about old Firefox version. "Update" is a noun. -->
   <string name="certificate_warning_push_notification_update_recommended_title" tools:ignore="UnusedResources">Hizivadur erbedet</string>
-  <!-- TextField Design System Component -->
-
   <!-- Title for the setup checklist feature when the state is 'completed' -->
   <string name="setup_checklist_title_state_completed">Gourc’hemennoù!</string>
   <!--
@@ -2736,8 +2704,14 @@
   <string name="review_prompt_positive_button">Dispar eo!</string>
   <!-- Label for a button opening a feedback forum -->
   <string name="review_prompt_feedback_button">Reiñ hoc’h ali</string>
-  <!-- ==== Terms of use pop up prompt ==== -->
+  <!--
+    Settings Search Strings
 
+    Title of Settings Search. "Search" is a verb here
+  -->
+  <string name="settings_search_title">Klask en arventennoù</string>
+  <!-- Content description (not visible, for screen readers etc.) for the button to clear the search field for settings search -->
+  <string name="content_description_settings_search_clear_search">Skarzhañ ar c’hlask</string>
   <!-- Title for the pop up prompt -->
   <string name="terms_of_use_prompt_title">Un hizivadur zo da gaout</string>
   <!-- Terms of use link in the pop up prompt message that links to the terms of use -->
@@ -2750,7 +2724,4 @@
   <string name="terms_of_use_prompt_accept">Asantiñ</string>
   <!-- Label for a button to postpone accepting the terms of use -->
   <string name="terms_of_use_prompt_postpone">Degas soñj din diwezhatoc’h</string>
-  <!-- ==== Experiment strings. ==== -->
-
-  <!-- ==== End of Terms of use popup prompt. ==== -->
 </resources>

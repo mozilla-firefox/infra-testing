@@ -319,10 +319,8 @@ Maybe<SurfaceDescriptor> Image::GetDescFromTexClient(
     return {};
   }
 
-  const auto& tcd = tc->GetInternalData();
-
   SurfaceDescriptor ret;
-  if (!tcd->Serialize(ret)) {
+  if (!tc->ToSurfaceDescriptor(ret)) {
     return {};
   }
   return Some(ret);
@@ -401,6 +399,7 @@ void ImageContainer::SetCurrentImageInternal(
     img->mRtpTimestamp = aImages[i].mRtpTimestamp;
     img->mFrameID = aImages[i].mFrameID;
     img->mProducerID = aImages[i].mProducerID;
+    img->mRotation = aImages[i].mRotation;
     for (const auto& oldImg : mCurrentImages) {
       if (oldImg.mFrameID == img->mFrameID &&
           oldImg.mProducerID == img->mProducerID) {
@@ -648,6 +647,21 @@ ImageContainer::GetMacIOSurfaceRecycleAllocator() {
 // -
 // https://searchfox.org/firefox-main/source/dom/media/ipc/RemoteImageHolder.cpp#46
 
+Maybe<IntSize> PlanarYCbCrData::GetCheckedYDataSize() const {
+  if (mPictureRect.IsEmpty() || mPictureRect.X() < 0 || mPictureRect.Y() < 0) {
+    return Nothing();
+  }
+
+  CheckedInt32 width(mPictureRect.X());
+  width += mPictureRect.Width();
+  CheckedInt32 height(mPictureRect.Y());
+  height += mPictureRect.Height();
+  if (!width.isValid() || !height.isValid()) {
+    return Nothing();
+  }
+  return Some(IntSize(width.value(), height.value()));
+}
+
 Maybe<PlanarYCbCrData> PlanarYCbCrData::From(
     const SurfaceDescriptorBuffer& sdb) {
   if (sdb.desc().type() != BufferDescriptor::TYCbCrDescriptor) {
@@ -684,6 +698,13 @@ Maybe<PlanarYCbCrData> PlanarYCbCrData::From(
   yuvData.mYUVColorSpace = yuvDesc.yUVColorSpace();
   yuvData.mColorRange = yuvDesc.colorRange();
   yuvData.mChromaSubsampling = yuvDesc.chromaSubsampling();
+
+  const Maybe<IntSize> yDataSize = yuvData.GetCheckedYDataSize();
+  if (yDataSize.isNothing()) {
+    gfxCriticalError() << "Invalid PlanarYCbCrData picture rectangle: "
+                       << yuvData.mPictureRect;
+    return {};
+  }
 
   const auto GetPlanePtr = [&](const uint32_t beginOffset,
                                const gfx::IntSize size,
@@ -750,9 +771,10 @@ Maybe<PlanarYCbCrData> PlanarYCbCrData::From(
   yuvData.mCbChannel = yuvDesc.mPlanes[CbPlane].mData;
   yuvData.mCrChannel = yuvDesc.mPlanes[CrPlane].mData;
 
-  if (yuvData.mYSkip || yuvData.mCbSkip || yuvData.mCrSkip ||
-      yuvData.mYStride < 0 || yuvData.mCbCrStride < 0 || !yuvData.mYChannel ||
-      !yuvData.mCbChannel || !yuvData.mCrChannel) {
+  if (yuvData.GetCheckedYDataSize().isNothing() || yuvData.mYSkip ||
+      yuvData.mCbSkip || yuvData.mCrSkip || yuvData.mYStride < 0 ||
+      yuvData.mCbCrStride < 0 || !yuvData.mYChannel || !yuvData.mCbChannel ||
+      !yuvData.mCrChannel) {
     gfxCriticalError() << "Unusual PlanarYCbCrData: " << yuvData.mYSkip << ","
                        << yuvData.mCbSkip << "," << yuvData.mCrSkip << ","
                        << yuvData.mYStride << "," << yuvData.mCbCrStride << ", "
@@ -765,6 +787,23 @@ Maybe<PlanarYCbCrData> PlanarYCbCrData::From(
 }
 
 // -
+
+std::ostream& operator<<(std::ostream& aOut, const PlanarYCbCrData& aData) {
+  aOut << "PlanarYCbCrData: {"
+       << "mYStride=" << aData.mYStride << ", mCbCrStride=" << aData.mCbCrStride
+       << ", mYSkip=" << aData.mYSkip << ", mCbSkip=" << aData.mCbSkip
+       << ", mCrSkip=" << aData.mCrSkip
+       << ", mPictureRect=" << aData.mPictureRect
+       << ", mColorDepth=" << aData.mColorDepth
+       << ", mYUVColorSpace=" << aData.mYUVColorSpace
+       << ", mColorPrimaries=" << aData.mColorPrimaries
+       << ", mTransferFunction=" << aData.mTransferFunction
+       << ", mColorRange=" << aData.mColorRange
+       << ", mChromaSubsampling=" << aData.mChromaSubsampling
+       << ", YPictureSize=" << aData.YDataSize()
+       << ", CbCrPictureSize=" << aData.CbCrDataSize() << "}";
+  return aOut;
+}
 
 PlanarYCbCrImage::PlanarYCbCrImage()
     : Image(nullptr, ImageFormat::PLANAR_YCBCR),
@@ -927,10 +966,17 @@ static void CopyPlane(uint8_t* aDst, const uint8_t* aSrc,
 }
 
 nsresult RecyclingPlanarYCbCrImage::CopyData(const Data& aData) {
+  const Maybe<IntSize> checkedYSize = aData.GetCheckedYDataSize();
+  if (checkedYSize.isNothing()) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
   // update buffer size
   // Use uint32_t throughout to match AllocateBuffer's param and mBufferSize
-  auto ySize = aData.YDataSize();
-  auto cbcrSize = aData.CbCrDataSize();
+  const IntSize ySize = checkedYSize.value();
+  const IntSize cbcrSize = aData.mCbCrStride > 0
+                               ? ChromaSize(ySize, aData.mChromaSubsampling)
+                               : IntSize(0, 0);
   const auto checkedSize =
       CheckedInt<uint32_t>(aData.mCbCrStride) * cbcrSize.height * 2 +
       CheckedInt<uint32_t>(aData.mYStride) * ySize.height *
@@ -981,6 +1027,9 @@ gfxImageFormat PlanarYCbCrImage::GetOffscreenFormat() const {
 }
 
 nsresult PlanarYCbCrImage::AdoptData(const Data& aData) {
+  if (aData.GetCheckedYDataSize().isNothing()) {
+    return NS_ERROR_INVALID_ARG;
+  }
   mData = aData;
   mSize = aData.mPictureRect.Size();
   mOrigin = aData.mPictureRect.TopLeft();
@@ -1194,14 +1243,23 @@ uint32_t NVImage::GetBufferSize() const { return mBufferSize; }
 NVImage* NVImage::AsNVImage() { return this; };
 
 nsresult NVImage::SetData(const Data& aData) {
+  const Maybe<IntSize> checkedYSize = aData.GetCheckedYDataSize();
+  if (checkedYSize.isNothing()) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
   MOZ_ASSERT(aData.mCbSkip == 1 && aData.mCrSkip == 1);
   MOZ_ASSERT((int)std::abs(aData.mCbChannel - aData.mCrChannel) == 1);
 
   // Calculate buffer size
   // Use uint32_t throughout to match AllocateBuffer's param and mBufferSize
+  const IntSize ySize = checkedYSize.value();
+  const IntSize cbcrSize = aData.mCbCrStride > 0
+                               ? ChromaSize(ySize, aData.mChromaSubsampling)
+                               : IntSize(0, 0);
   const auto checkedSize =
-      CheckedInt<uint32_t>(aData.YDataSize().height) * aData.mYStride +
-      CheckedInt<uint32_t>(aData.CbCrDataSize().height) * aData.mCbCrStride;
+      CheckedInt<uint32_t>(ySize.height) * aData.mYStride +
+      CheckedInt<uint32_t>(cbcrSize.height) * aData.mCbCrStride;
 
   if (!checkedSize.isValid()) {
     return NS_ERROR_INVALID_ARG;

@@ -119,3 +119,30 @@ if CONFIG["MOZ_FOLD_LIBS"]:
 CXXFLAGS += CONFIG["SQLITE_CFLAGS"]
 
 SPHINX_TREES["/storage"] = "docs"
+
+SOURCE_HEADERS += [
+    "BaseVFS.h",
+    "FileSystemModule.h",
+    "IStorageBindingParamsInternal.h",
+    "mozStorageArgValueArray.h",
+    "mozStorageAsyncStatement.h",
+    "mozStorageAsyncStatementExecution.h",
+    "mozStorageAsyncStatementJSHelper.h",
+    "mozStorageBindingParams.h",
+    "mozStorageBindingParamsArray.h",
+    "mozStorageConnection.h",
+    "mozStorageError.h",
+    "mozStoragePrivateHelpers.h",
+    "mozStorageResultSet.h",
+    "mozStorageRow.h",
+    "mozStorageService.h",
+    "mozStorageSQLFunctions.h",
+    "mozStorageStatement.h",
+    "mozStorageStatementData.h",
+    "mozStorageStatementJSHelper.h",
+    "ObfuscatingVFS.h",
+    "QuotaVFS.h",
+    "StorageBaseStatementInternal.h",
+    "VacuumManager.h",
+    "variantToSQLiteT_impl.h",
+]

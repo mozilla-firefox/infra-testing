@@ -24,7 +24,7 @@ const FULLSCREEN_TRANSITION_TIME_SHOWN_OFFSET_MS = 2000;
 // SECURITY_DELAY_EXTENSION_CAP_MULTIPLIER * the configured delay.
 const SECURITY_DELAY_EXTENSION_CAP_MULTIPLIER = 20;
 
-// Enumerated values for the POPUP_NOTIFICATION_STATS telemetry histogram.
+// Enumerated values for the popup_notification.stats metric.
 const TELEMETRY_STAT_OFFERED = 0;
 const TELEMETRY_STAT_ACTION_1 = 1;
 const TELEMETRY_STAT_ACTION_2 = 2;
@@ -214,8 +214,8 @@ Notification.prototype = {
   },
 
   /**
-   * Adds an enumerated value to the POPUP_NOTIFICATION_STATS histogram,
-   * ensuring that it is recorded at most once for each distinct Notification.
+   * Adds an enumerated value to the popup_notification.stats metric, ensuring
+   * that it is recorded at most once for each distinct Notification.
    *
    * Statistics for reopened notifications are recorded in separate buckets.
    *
@@ -388,6 +388,10 @@ export function PopupNotifications(tabbrowser, panel, iconBox, options = {}) {
 }
 
 PopupNotifications.prototype = {
+  CHECK_VISIBILITY_OPTIONS: {
+    visibilityProperty: true,
+  },
+
   window: null,
   panel: null,
   tabbrowser: null,
@@ -699,6 +703,13 @@ PopupNotifications.prototype = {
 
     if (isActiveBrowser) {
       if (isActiveWindow) {
+        // Autofocus if the notification requests focus.
+        if (options && !options.dismissed && options.autofocus) {
+          this.panel.removeAttribute("noautofocus");
+        } else {
+          this.panel.setAttribute("noautofocus", "true");
+        }
+
         // show panel now
         this._update(
           notifications,
@@ -1344,11 +1355,11 @@ PopupNotifications.prototype = {
       anchorElement = this._getVisibleAnchorElement(anchorElement);
     }
     // In case _getVisibleAnchorElement provided a non-visible element.
-    if (!anchorElement?.checkVisibility()) {
+    if (!anchorElement?.checkVisibility(this.CHECK_VISIBILITY_OPTIONS)) {
       // We only ever show notifications for the current browser,
       // so we can just use the current tab.
       anchorElement = this.tabbrowser.selectedTab;
-      if (!anchorElement?.checkVisibility()) {
+      if (!anchorElement?.checkVisibility(this.CHECK_VISIBILITY_OPTIONS)) {
         // If we're in an entirely chromeless environment, set the anchorElement
         // to null and let openPopup show the notification at (0,0) later.
         anchorElement = null;
@@ -1401,17 +1412,6 @@ PopupNotifications.prototype = {
         this.panel.setAttribute("noautohide", "true");
       } else {
         this.panel.removeAttribute("noautohide");
-      }
-
-      // Autofocus the panel if any notification being shown requests focus.
-      // Done here when the panel is actually opened, rather than
-      // in show(), since a notification may be shown asynchronously (e.g. after the
-      // window/browser becomes active again following a navigation). This path
-      // reliably runs before openPopup() in every case.
-      if (notificationsToShow.some(n => !n.dismissed && n.options.autofocus)) {
-        this.panel.removeAttribute("noautofocus");
-      } else {
-        this.panel.setAttribute("noautofocus", "true");
       }
 
       this._updatePanelLevel(notificationsToShow);

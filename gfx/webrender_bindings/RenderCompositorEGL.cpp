@@ -26,6 +26,7 @@
 
 #  include "mozilla/java/GeckoSurfaceTextureWrappers.h"
 #  include "mozilla/layers/AndroidHardwareBuffer.h"
+#  include "mozilla/layers/AndroidImageReader.h"
 #  include "mozilla/widget/AndroidCompositorWidget.h"
 #endif
 
@@ -54,7 +55,7 @@ UniquePtr<RenderCompositor> RenderCompositorEGL::Create(
 
 EGLSurface RenderCompositorEGL::CreateEGLSurface() {
   EGLSurface surface = EGL_NO_SURFACE;
-  surface = gl::GLContextEGL::CreateEGLSurfaceForCompositorWidget(
+  surface = gl::GLContextEGL::Cast(gl())->CreateEGLSurfaceForCompositorWidget(
       mWidget, gl::GLContextEGL::Cast(gl())->mSurfaceConfig);
   if (surface == EGL_NO_SURFACE) {
     const auto* renderThread = RenderThread::Get();
@@ -133,7 +134,8 @@ RenderedFrameId RenderCompositorEGL::EndFrame(
   const auto& egl = gle->mEgl;
 
   EGLSync sync = nullptr;
-  if (layers::AndroidHardwareBufferManager::Get()) {
+  if (layers::AndroidHardwareBufferManager::Get() ||
+      layers::GpuProcessAndroidImageReaderMap::Get()) {
     sync = egl->fCreateSyncKHR(LOCAL_EGL_SYNC_NATIVE_FENCE_ANDROID, nullptr);
   }
   if (sync) {
@@ -282,8 +284,27 @@ void RenderCompositorEGL::DestroyEGLSurface() {
   }
 }
 
-RefPtr<layers::Fence> RenderCompositorEGL::GetAndResetReleaseFence() {
+void RenderCompositorEGL::MaybeWaitingForPendingReadFence(
+    RenderTextureHost* aTexture) {
+  if (!aTexture || !aTexture->AsRenderAndroidImageReaderImageTextureHost()) {
+    return;
+  }
+  mWaitingForPendingReadFence.emplace_back(aTexture);
+}
+
+RefPtr<layers::Fence> RenderCompositorEGL::GetAndResetReadFence() {
 #ifdef MOZ_WIDGET_ANDROID
+  if (mReleaseFence && !mWaitingForPendingReadFence.empty()) {
+    auto* fileFence = mReleaseFence->AsFenceFileHandle();
+    MOZ_ASSERT(fileFence);
+
+    for (auto& textureHost : mWaitingForPendingReadFence) {
+      auto fence = fileFence->DuplicateFileHandle();
+      textureHost->SetReadFenceFd(std::move(fence));
+    }
+  }
+  mWaitingForPendingReadFence.clear();
+
   MOZ_ASSERT(!layers::AndroidHardwareBufferManager::Get() || mReleaseFence);
   return mReleaseFence.forget();
 #else

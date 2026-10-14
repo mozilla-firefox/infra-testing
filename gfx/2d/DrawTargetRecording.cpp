@@ -86,9 +86,19 @@ class SourceSurfaceRecording final : public SourceSurface {
   }
 
   ~SourceSurfaceRecording() {
-    mRecorder->RemoveStoredObject(this);
-    mRecorder->RecordEvent(
-        RecordedSourceSurfaceDestruction(ReferencePtr(this)));
+    ReferencePtr self(this);
+    if (NS_IsMainThread()) {
+      mRecorder->RemoveStoredObject(self);
+      mRecorder->RecordEvent(RecordedSourceSurfaceDestruction(self));
+      return;
+    }
+
+    // The recorder owns the deletion so no need to hold a strong ref to it.
+    mRecorder->AddPendingDeletion(
+        [recorder = MOZ_KnownLive(mRecorder.get()), self]() {
+          recorder->RemoveStoredObject(self);
+          recorder->RecordEvent(RecordedSourceSurfaceDestruction(self));
+        });
   }
 
   SurfaceType GetType() const override { return SurfaceType::RECORDING; }
@@ -281,6 +291,21 @@ void DrawTargetRecording::StrokeLine(const Point& aBegin, const Point& aEnd,
       RecordedStrokeLine(aBegin, aEnd, aPattern, aStrokeOptions, aOptions));
 }
 
+void DrawTargetRecording::StrokeCircle(const Point& aOrigin, float aRadius,
+                                       const Pattern& aPattern,
+                                       const StrokeOptions& aStrokeOptions,
+                                       const DrawOptions& aOptions) {
+  if (aRadius > 0.0f) {
+    MarkChanged();
+    EnsurePatternDependenciesStored(aPattern);
+    RecordEventSelf(RecordedStrokeCircle(Path::Circle{aOrigin, aRadius, true},
+                                         aPattern, aStrokeOptions, aOptions));
+  } else {
+    DrawTarget::StrokeCircle(aOrigin, aRadius, aPattern, aStrokeOptions,
+                             aOptions);
+  }
+}
+
 void DrawTargetRecording::Fill(const Path* aPath, const Pattern& aPattern,
                                const DrawOptions& aOptions) {
   if (!aPath) {
@@ -289,19 +314,30 @@ void DrawTargetRecording::Fill(const Path* aPath, const Pattern& aPattern,
 
   MarkChanged();
 
-  if (aPath->GetBackendType() == BackendType::RECORDING) {
-    const PathRecording* path = static_cast<const PathRecording*>(aPath);
-    auto circle = path->AsCircle();
-    if (circle) {
-      EnsurePatternDependenciesStored(aPattern);
-      RecordEventSelf(RecordedFillCircle(circle.value(), aPattern, aOptions));
-      return;
-    }
+  auto circle = aPath->AsCircle();
+  if (circle) {
+    EnsurePatternDependenciesStored(aPattern);
+    RecordEventSelf(RecordedFillCircle(circle.value(), aPattern, aOptions));
+    return;
   }
 
   RefPtr<PathRecording> pathRecording = EnsurePathStored(aPath);
   EnsurePatternDependenciesStored(aPattern);
   RecordEventSelf(RecordedFill(pathRecording, aPattern, aOptions));
+}
+
+void DrawTargetRecording::FillCircle(const Point& aOrigin, float aRadius,
+                                     const Pattern& aPattern,
+                                     const DrawOptions& aOptions) {
+  if (aRadius > 0.0f) {
+    // For circles with valid, positive radii, generate FillCircle events.
+    MarkChanged();
+    EnsurePatternDependenciesStored(aPattern);
+    RecordEventSelf(RecordedFillCircle(Path::Circle{aOrigin, aRadius, true},
+                                       aPattern, aOptions));
+  } else {
+    DrawTarget::FillCircle(aOrigin, aRadius, aPattern, aOptions);
+  }
 }
 
 struct RecordingFontUserData {
@@ -431,23 +467,20 @@ void DrawTargetRecording::Stroke(const Path* aPath, const Pattern& aPattern,
                                  const DrawOptions& aOptions) {
   MarkChanged();
 
-  if (aPath->GetBackendType() == BackendType::RECORDING) {
-    const PathRecording* path = static_cast<const PathRecording*>(aPath);
-    auto circle = path->AsCircle();
-    if (circle && circle->closed) {
-      EnsurePatternDependenciesStored(aPattern);
-      RecordEventSelf(RecordedStrokeCircle(circle.value(), aPattern,
-                                           aStrokeOptions, aOptions));
-      return;
-    }
+  auto circle = aPath->AsCircle();
+  if (circle && circle->closed) {
+    EnsurePatternDependenciesStored(aPattern);
+    RecordEventSelf(RecordedStrokeCircle(circle.value(), aPattern,
+                                         aStrokeOptions, aOptions));
+    return;
+  }
 
-    auto line = path->AsLine();
-    if (line) {
-      EnsurePatternDependenciesStored(aPattern);
-      RecordEventSelf(RecordedStrokeLine(line->origin, line->destination,
-                                         aPattern, aStrokeOptions, aOptions));
-      return;
-    }
+  auto line = aPath->AsLine();
+  if (line) {
+    EnsurePatternDependenciesStored(aPattern);
+    RecordEventSelf(RecordedStrokeLine(line->origin, line->destination,
+                                       aPattern, aStrokeOptions, aOptions));
+    return;
   }
 
   RefPtr<PathRecording> pathRecording = EnsurePathStored(aPath);

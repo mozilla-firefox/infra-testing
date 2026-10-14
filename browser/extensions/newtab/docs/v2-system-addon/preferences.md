@@ -122,18 +122,10 @@ Not intended for user configuration, but is programmatically updated. Used for t
 
 When this is set to `true` the Discovery Stream experience will show up if `enabled` is also `true` on `browser.newtabpage.activity-stream.discoverystream.config`. Otherwise the old Activity Stream experience will be shown.
 
-### `browser.newtabpage.activity-stream.discoverystream.endpointSpocsClear`
-
-- Type: `string (URL)`
-- Default: `https://spocs.getpocket.com/user`
-- Pref Type: AS
-
-Endpoint for when a user opts-out of sponsored content to delete the corresponding data from the ad server.
-
 ### `browser.newtabpage.activity-stream.discoverystream.endpoints`
 
 - Type: `string (URLs, CSV)`
-- Default: `https://getpocket.cdn.mozilla.net/,https://spocs.getpocket.com/`
+- Default: `https://getpocket.cdn.mozilla.net/,https://firefox-api-proxy.cdn.mozilla.net/,https://merino.services.mozilla.com/,https://ads.mozilla.org/`
 - Pref Type: AS
 
 A list of endpoints that are allowed to be used by Discovery Stream for remote content (eg: story metadata) and configuration (eg: remote layout definitions for experimentation).
@@ -146,14 +138,6 @@ A list of endpoints that are allowed to be used by Discovery Stream for remote c
 
 If this is `false` the default hardcoded layout is used, and if it's `true` then an alternate hardcoded layout (that currently simulates the older AS experience) is used.
 
-### `browser.newtabpage.activity-stream.discoverystream.rec.impressions`
-
-- Type: `string (JSON)`
-- Default: `{}`
-- Pref Type: AS
-
-Programmatically generated hash table where the keys are recommendation IDs and the values are timestamps representing the first impression.
-
 ### `browser.newtabpage.activity-stream.discoverystream.spoc.impressions`
 
 - Type: `string (JSON)`
@@ -162,21 +146,23 @@ Programmatically generated hash table where the keys are recommendation IDs and 
 
 Programmatically generated hash table where the keys are sponsored content IDs and the values are arrays of timestamps for every impression.
 
-### `browser.newtabpage.activity-stream.discoverystream.locale-list-config`
+### `browser.newtabpage.activity-stream.discoverystream.stories-region-locale-config`
 
-- Type: `string (CSV, locales)`
-- Default: `null`
+- Type: `string (JSON, [region, localePatterns] entries)`
+- Default: `STORIES_REGION_LOCALE_DEFAULT` in `ActivityStream.sys.mjs`
 - Pref Type: Firefox
 
-A comma separated list of locales that by default have stories enabled in newtab. It overrides what might be in region-stories-config. So if I set this to "en-US,en-CA,en-GB", all users with a English browser would see newtab stories, even if their region was not in region-stories-config list.
+The region / locale pairs that get stories, for example `[["US",["en-*"]],["FR",["fr"]]]`. Entries are OR-ed. A locale pattern ending in `*` prefix-matches, and the region `*` matches any region, so a global English feed is `[["*",["en-*"]]]`. Exceptions to a `*` entry go in region-stories-block.
 
 ### `browser.newtabpage.activity-stream.discoverystream.region-stories-config`
 
 - Type: `string (CSV, regions)`
-- Default: `US,DE,CA,GB,IE,CH,AT,BE`
+- Default: unset
 - Pref Type: Firefox
 
-A comma separated list of geos that by default have stories enabled in newtab. It matches the client's geo with that list, then looks for a matching locale.
+Legacy, being replaced by stories-region-locale-config. Read only so that launched experiments setting `regionStoriesConfig` keep working; do not set it in new recipes.
+
+A comma separated list of geos that have stories enabled in newtab. It matches the client's geo with that list, then looks for a matching locale in `LEGACY_REGION_STORIES_LOCALES`.
 
 ### `browser.newtabpage.activity-stream.discoverystream.region-spocs-config`
 

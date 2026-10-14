@@ -18,7 +18,7 @@ use std::collections::HashSet;
 use std::mem;
 use crate::debug_item::DebugItem;
 use crate::segment::EdgeMask;
-use crate::device::DrawTarget;
+use crate::device::{BlendMode, DrawTarget, LoadOp, RenderPassDescriptor, StoreOp};
 use crate::gpu_types::{CompositeInstance, ZBufferId};
 use crate::internal_types::{FastHashMap, TextureSource};
 use crate::picture::ResolvedSurfaceTexture;
@@ -62,9 +62,28 @@ impl CompositeTileState {
     }
 }
 
+// Only surfaces drawn into a content layer are stored here. Matching a state
+// in the previous frame therefore also verifies that it was not externally
+// composited. Compare the complete draw state, not just the destination rect.
+#[derive(PartialEq)]
+pub(super) struct ExternalContentSurfaceState {
+    rect: DeviceRect,
+    local_rect: PictureRect,
+    local_valid_rect: PictureRect,
+    device_clip_rect: DeviceRect,
+    transform: CompositorSurfaceTransform,
+    clip: Option<(DeviceRect, api::BorderRadius)>,
+    z_id: ZBufferId,
+    kind: TileKind,
+    layer_index: usize,
+    external_image_id: Option<api::ExternalImageId>,
+    image_buffer_kind: ImageBufferKind,
+    color_data: ResolvedExternalSurfaceColorData,
+}
+
 pub(super) struct LayerCompositorFrameState {
     pub tile_states: FastHashMap<TileId, CompositeTileState>,
-    pub rects_without_id: Vec<DeviceRect>,
+    pub external_content_surfaces: Vec<ExternalContentSurfaceState>,
 }
 
 impl Renderer {
@@ -80,8 +99,8 @@ impl Renderer {
 
         let opaque_sampler = self.gpu_profiler.start_sampler(GPU_SAMPLER_TAG_OPAQUE);
 
-        self.device.disable_depth();
-        self.set_blend(false, FramebufferKind::Main);
+        self.device.set_depth_test(None);
+        self.set_blend_mode(BlendMode::None, FramebufferKind::Main);
 
         for surface in external_surfaces {
             // See if this surface needs to be updated
@@ -99,7 +118,6 @@ impl Renderer {
                 .compositor()
                 .unwrap()
                 .bind(
-                    &mut self.device,
                     NativeTileId {
                         surface_id: native_surface_id,
                         x: 0,
@@ -112,10 +130,15 @@ impl Renderer {
             // Bind the native surface to current FBO target
             let draw_target = DrawTarget::NativeSurface {
                 offset: surface_info.origin,
-                external_fbo_id: surface_info.fbo_id,
+                handle: surface_info.handle,
                 dimensions: surface_size,
             };
-            self.device.bind_draw_target(draw_target);
+            self.device.begin_render_pass(&RenderPassDescriptor {
+                target: draw_target,
+                render_area: None,
+                color_load: LoadOp::DontCare,
+                depth_load: LoadOp::DontCare,
+            });
 
             let projection = Transform3D::ortho(
                 0.0,
@@ -218,10 +241,12 @@ impl Renderer {
                 &mut results.stats,
             );
 
+            self.device.end_render_pass(StoreOp::Store);
+
             self.compositor_config
                 .compositor()
                 .unwrap()
-                .unbind(&mut self.device);
+                .unbind();
         }
 
         self.gpu_profiler.finish_sampler(opaque_sampler);
@@ -447,10 +472,6 @@ impl Renderer {
         partial_present_mode: Option<PartialPresentMode>,
         layer: &SwapChainLayer,
     ) {
-        self.device.bind_draw_target(draw_target);
-        self.device.disable_depth_write();
-        self.device.disable_depth();
-
         // If using KHR_partial_update, call eglSetDamageRegion.
         // This must be called exactly once per frame, and prior to any rendering to the main
         // framebuffer. Additionally, on Mali-G77 we encountered rendering issues when calling
@@ -462,27 +483,34 @@ impl Renderer {
             }
         }
 
-        // Clear the framebuffer
-        let clear_color = Some(clear_color.to_array());
+        let clear_color = clear_color.to_array();
 
-        match partial_present_mode {
-            Some(PartialPresentMode::Single { dirty_rect }) => {
-                // There is no need to clear if the dirty rect is occluded. Additionally,
-                // on Mali-G77 we have observed artefacts when calling glClear (even with
-                // the empty scissor rect set) after calling eglSetDamageRegion with an
-                // empty damage region. So avoid clearing in that case. See bug 1709548.
-                if !dirty_rect.is_empty() && layer.occlusion.test(&dirty_rect) {
-                    // We have a single dirty rect, so clear only that
-                    self.device.clear_target(clear_color,
-                                             None,
-                                             Some(draw_target.to_framebuffer_rect(dirty_rect.to_i32())));
-                }
-            }
-            None => {
-                // Partial present is disabled, so clear the entire framebuffer
-                self.device.clear_target(clear_color,
-                                         None,
-                                         None);
+        self.device.begin_render_pass(&RenderPassDescriptor {
+            target: draw_target,
+            render_area: None,
+            // Partial present clears just the dirty rect below; otherwise the
+            // entire framebuffer is cleared.
+            color_load: match partial_present_mode {
+                Some(PartialPresentMode::Single { .. }) => LoadOp::Load,
+                None => LoadOp::Clear(clear_color),
+            },
+            depth_load: LoadOp::DontCare,
+        });
+        self.device.set_depth_write(false);
+        self.device.set_depth_test(None);
+
+        if let Some(PartialPresentMode::Single { dirty_rect }) = partial_present_mode {
+            // There is no need to clear if the dirty rect is occluded. Additionally,
+            // on Mali-G77 we have observed artefacts when calling glClear (even with
+            // the empty scissor rect set) after calling eglSetDamageRegion with an
+            // empty damage region. So avoid clearing in that case. See bug 1709548.
+            if !dirty_rect.is_empty() && layer.occlusion.test(&dirty_rect) {
+                // We have a single dirty rect, so clear only that
+                self.device.clear_rect(
+                    draw_target.to_framebuffer_rect(dirty_rect.to_i32()),
+                    Some(clear_color),
+                    None,
+                );
             }
         }
 
@@ -490,7 +518,7 @@ impl Renderer {
         let opaque_items = layer.occlusion.opaque_items();
         if !opaque_items.is_empty() {
             let opaque_sampler = self.gpu_profiler.start_sampler(GPU_SAMPLER_TAG_OPAQUE);
-            self.set_blend(false, FramebufferKind::Main);
+            self.set_blend_mode(BlendMode::None, FramebufferKind::Main);
             self.draw_tile_list(
                 opaque_items.iter(),
                 &composite_state,
@@ -505,8 +533,7 @@ impl Renderer {
         let alpha_items = layer.occlusion.alpha_items();
         if !alpha_items.is_empty() {
             let transparent_sampler = self.gpu_profiler.start_sampler(GPU_SAMPLER_TAG_TRANSPARENT);
-            self.set_blend(true, FramebufferKind::Main);
-            self.set_blend_mode_premultiplied_alpha(FramebufferKind::Main);
+            self.set_blend_mode(BlendMode::PremultipliedAlpha, FramebufferKind::Main);
             self.draw_tile_list(
                 alpha_items.iter().rev(),
                 &composite_state,
@@ -516,6 +543,8 @@ impl Renderer {
             );
             self.gpu_profiler.finish_sampler(transparent_sampler);
         }
+
+        self.device.end_render_pass(StoreOp::Store);
     }
 
     /// Composite picture cache tiles into the framebuffer. This is currently
@@ -554,8 +583,66 @@ impl Renderer {
         let mut full_render_occlusion = occlusion::FrontToBackBuilder::with_capacity(cap, cap);
         let mut layer_compositor_frame_state = LayerCompositorFrameState{
             tile_states: FastHashMap::default(),
-            rects_without_id: Vec::new(),
+            external_content_surfaces: Vec::new(),
         };
+
+        // Select among surfaces that could otherwise be externally composited.
+        let mut largest_sdr_yuv_tile = None;
+        if self.limit_sdr_yuv_external_composites
+            && self.compositor_config.layer_compositor().is_some()
+            && !enable_screenshot
+        {
+            let frame_rect = DeviceRect::from_size(frame_device_size.to_f32());
+            let mut largest_area = 0.0;
+            for (idx, tile) in composite_state.tiles.iter().enumerate() {
+                let external_surface_index = match tile.surface {
+                    CompositeTileSurface::ExternalSurface { external_surface_index } => {
+                        external_surface_index
+                    }
+                    _ => continue,
+                };
+                let surface = &composite_state.external_surfaces[external_surface_index.0];
+                if surface.external_image_id.is_none()
+                    || !matches!(
+                        surface.color_data,
+                        ResolvedExternalSurfaceColorData::Yuv { channel_bit_depth: 8, .. }
+                    )
+                {
+                    continue;
+                }
+
+                let device_rect = composite_state.get_device_rect(
+                    &tile.local_rect,
+                    tile.transform_index,
+                );
+                // Match the existing external-composite size restriction (too big).
+                if device_rect.try_cast::<i16>().is_none() {
+                    continue;
+                }
+                let valid_rect = composite_state.get_device_rect(
+                    &tile.local_valid_rect,
+                    tile.transform_index,
+                );
+                let mut visible_rect = device_rect
+                    .intersection_unchecked(&tile.device_clip_rect)
+                    .intersection_unchecked(&valid_rect)
+                    .intersection_unchecked(&frame_rect);
+                if let Some(clip_index) = tile.clip_index {
+                    visible_rect = visible_rect.intersection_unchecked(
+                        &composite_state.get_compositor_clip(clip_index).rect,
+                    );
+                }
+                if visible_rect.is_empty() {
+                    continue;
+                }
+                let area = visible_rect.area();
+                // Keep the first tile in front-to-back order on equal areas.
+                if area > largest_area {
+                    largest_area = area;
+                    largest_sdr_yuv_tile = Some(idx);
+                }
+            }
+        }
 
         // Calculate layers with full device rect
 
@@ -619,7 +706,19 @@ impl Renderer {
             }
 
             let mut disable_external_composite = enable_screenshot;
-            if let CompositeTileSurface::ExternalSurface { .. } = tile.surface {
+            if let CompositeTileSurface::ExternalSurface { external_surface_index } = tile.surface {
+                let surface = &composite_state.external_surfaces[external_surface_index.0];
+                if self.limit_sdr_yuv_external_composites
+                    && matches!(
+                        surface.color_data,
+                        ResolvedExternalSurfaceColorData::Yuv { channel_bit_depth: 8, .. }
+                    )
+                    && largest_sdr_yuv_tile != Some(idx)
+                {
+                    // Fall back to the existing Content path. HDR and RGB
+                    // surfaces are not affected by the SDR YUV limit.
+                    disable_external_composite = true;
+                }
                 let transformed_rect = composite_state.get_device_rect(
                     &tile.local_rect,
                     tile.transform_index
@@ -675,10 +774,6 @@ impl Renderer {
             if let Some(ref _compositor) = self.compositor_config.layer_compositor() {
                 if let CompositeTileSurface::ExternalSurface { .. } = tile.surface {
                     assert!(tile.tile_id.is_none());
-                    // ExternalSurface is not promoted to external composite.
-                    if let CompositorSurfaceUsage::Content = usage {
-                        layer_compositor_frame_state.rects_without_id.push(rect);
-                    }
                 } else {
                     assert!(tile.tile_id.is_some());
                 }
@@ -788,6 +883,52 @@ impl Renderer {
                 })
             }
             tile_index_to_layer_index[idx] = Some(input_layers.len() - 1);
+
+            if self.compositor_config.layer_compositor().is_some() {
+                if let (CompositeTileSurface::ExternalSurface { external_surface_index },
+                        CompositorSurfaceUsage::Content) = (&tile.surface, usage) {
+                    let surface = &composite_state.external_surfaces[external_surface_index.0];
+                    let mut color_data = surface.color_data.clone();
+                    // External textures get their actual UV rect during lock(),
+                    // so retain the UV rect used to draw this frame as well.
+                    match &mut color_data {
+                        ResolvedExternalSurfaceColorData::Yuv { planes, .. } => {
+                            for plane in planes {
+                                plane.uv_rect = self.texture_resolver.get_uv_rect(
+                                    &plane.texture,
+                                    plane.uv_rect,
+                                );
+                            }
+                        }
+                        ResolvedExternalSurfaceColorData::Rgb { plane, .. } => {
+                            plane.uv_rect = self.texture_resolver.get_uv_rect(
+                                &plane.texture,
+                                plane.uv_rect,
+                            );
+                        }
+                    }
+                    let clip = tile.clip_index.map(|index| {
+                        let clip = composite_state.get_compositor_clip(index);
+                        (clip.rect, clip.radius)
+                    });
+                    layer_compositor_frame_state.external_content_surfaces.push(
+                        ExternalContentSurfaceState {
+                            rect,
+                            local_rect: tile.local_rect,
+                            local_valid_rect: tile.local_valid_rect,
+                            device_clip_rect: tile.device_clip_rect,
+                            transform: composite_state.get_device_transform(tile.transform_index),
+                            clip,
+                            z_id: tile.z_id,
+                            kind: tile.kind,
+                            layer_index: input_layers.len() - 1,
+                            external_image_id: surface.external_image_id,
+                            image_buffer_kind: surface.image_buffer_kind,
+                            color_data,
+                        },
+                    );
+                }
+            }
 
             // Caluclate actual visible tile's rects
 
@@ -980,12 +1121,31 @@ impl Renderer {
                     }
                 }
 
-                // Case that ExternalSurface is not promoted to external composite.
-                for rect in layer_compositor_frame_state
-                    .rects_without_id
-                    .iter()
-                    .chain(self.layer_compositor_frame_state_in_prev_frame.as_ref().unwrap().rects_without_id.iter())  {
-                    combined_dirty_rect = combined_dirty_rect.union(&rect);
+                // Unchanged external surfaces already drawn into a content layer
+                // need no damage of their own. Match each previous occurrence
+                // only once, since an image may be drawn more than once.
+                let prev_surfaces = &self.layer_compositor_frame_state_in_prev_frame
+                    .as_ref()
+                    .unwrap()
+                    .external_content_surfaces;
+                let mut matched = vec![false; prev_surfaces.len()];
+                for surface in &layer_compositor_frame_state.external_content_surfaces {
+                    let previous = prev_surfaces.iter().enumerate().position(|(index, prev)| {
+                        !matched[index] && surface == prev
+                    });
+                    if let Some(index) = previous {
+                        matched[index] = true;
+                    } else {
+                        // New, updated, moved, or previously externally composited.
+                        combined_dirty_rect = combined_dirty_rect.union(&surface.rect);
+                    }
+                }
+                for (index, surface) in prev_surfaces.iter().enumerate() {
+                    if !matched[index] {
+                        // Removed, changed, or now externally composited. Repaint
+                        // the old content-layer pixels as well.
+                        combined_dirty_rect = combined_dirty_rect.union(&surface.rect);
+                    }
                 }
 
                 let device_rect = DeviceRect::from_size(device_size.to_f32());
@@ -1158,7 +1318,7 @@ impl Renderer {
 
                     DrawTarget::NativeSurface {
                         offset: -layer.offset,
-                        external_fbo_id: 0,
+                        handle: crate::composite::NativeSurfaceHandle::DEFAULT,
                         dimensions: frame_device_size,
                     }
                 }

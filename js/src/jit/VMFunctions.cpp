@@ -1474,19 +1474,21 @@ void AssertValidStringPtr(JSContext* cx, JSString* str) {
 void AssertValidSymbolPtr(JSContext* cx, JS::Symbol* sym) {
   AutoUnsafeCallWithABI unsafe;
 
+  MOZ_ASSERT(sym->getAllocKind() == gc::AllocKind::SYMBOL);
+  MOZ_ASSERT(sym->isAligned());
+
   // We can't closely inspect symbols from another runtime.
   if (sym->runtimeFromAnyThread() != cx->runtime()) {
     MOZ_ASSERT(sym->isWellKnownSymbol());
     return;
   }
 
-  MOZ_ASSERT(sym->zone()->isAtomsZone());
-  MOZ_ASSERT(sym->isAligned());
+  MOZ_ASSERT_IF(!sym->isUnique(), sym->zone()->isAtomsZone());
+  MOZ_ASSERT_IF(sym->isUnique(), !sym->zone()->isAtomsZone());
+
   if (JSAtom* desc = sym->description()) {
     AssertValidStringPtr(cx, desc);
   }
-
-  MOZ_ASSERT(sym->getAllocKind() == gc::AllocKind::SYMBOL);
 }
 
 void AssertValidValue(JSContext* cx, Value* v) {
@@ -2284,6 +2286,7 @@ static bool TryAddOrSetNativeObjectProperty(JSContext* cx,
     MegamorphicSetPropCache::Entry* entry;
     if (cache.lookup(receiverShape, key, &entry)) {
       if (entry->afterShape() != nullptr) {  // AddProp
+        MOZ_ASSERT(entry->shouldPreserve() == obj->hasUnpreservedWrapper());
         NativeObject* holder = nullptr;
         PropertyResult prop;
         MOZ_ASSERT(LookupPropertyPure(cx, obj, key, &holder, &prop));
@@ -2325,7 +2328,7 @@ static bool TryAddOrSetNativeObjectProperty(JSContext* cx,
       // there.
       if (!watchesPropValue) {
         TaggedSlotOffset offset = obj->getTaggedSlotOffset(prop.slot());
-        cache.set(receiverShape, nullptr, key, offset, 0);
+        cache.set(receiverShape, nullptr, key, offset, 0, false);
       }
     }
     return true;
@@ -2379,9 +2382,23 @@ static bool TryAddOrSetNativeObjectProperty(JSContext* cx,
   }
 #endif
 
-  *optimized = true;
   Rooted<PropertyKey> keyRoot(cx, key);
   Rooted<Shape*> receiverShapeRoot(cx, receiverShape);
+
+  // If we need to preserve the wrapper, do it now. Note that this updates the
+  // shape, so we'll get the right afterShape if we cache below.
+  bool shouldPreserveWrapper = obj->hasUnpreservedWrapper();
+  if (MOZ_UNLIKELY(shouldPreserveWrapper)) {
+    if (!PreserveAnyUnpreservedWrapper(cx, obj)) {
+      return false;
+    }
+    // If the object's wrapper slot doesn't contain a wrapper, don't optimize.
+    if (MOZ_UNLIKELY(obj->hasUnpreservedWrapper())) {
+      return true;
+    }
+  }
+
+  *optimized = true;
   uint32_t resultSlot = 0;
   size_t numDynamic = obj->numDynamicSlots();
   bool res = AddDataPropertyToNativeObjectNoHooks(cx, obj, keyRoot, value,
@@ -2397,7 +2414,8 @@ static bool TryAddOrSetNativeObjectProperty(JSContext* cx,
             (resultSlot - obj->numFixedSlots()) < numDynamic)) {
         newCapacity = obj->numDynamicSlots();
       }
-      cache.set(receiverShapeRoot, obj->shape(), keyRoot, offset, newCapacity);
+      cache.set(receiverShapeRoot, obj->shape(), keyRoot, offset, newCapacity,
+                shouldPreserveWrapper);
     }
   }
 

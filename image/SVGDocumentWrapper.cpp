@@ -4,6 +4,7 @@
 
 #include "SVGDocumentWrapper.h"
 
+#include "mozilla/AutoRestore.h"
 #include "mozilla/Components.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/SMILAnimationController.h"
@@ -54,7 +55,8 @@ SVGDocumentWrapper::~SVGDocumentWrapper() {
 void SVGDocumentWrapper::DestroyViewer() {
   MOZ_ASSERT(NS_IsMainThread());
   if (mViewer) {
-    mViewer->GetDocument()->OnPageHide(false, nullptr);
+    const RefPtr<Document> doc = mViewer->GetDocument();
+    doc->OnPageHide(false, nullptr);
     mViewer->Close();
     mViewer->Destroy();
     mViewer = nullptr;
@@ -196,6 +198,10 @@ void SVGDocumentWrapper::SetCurrentTime(float aTime) {
 }
 
 void SVGDocumentWrapper::TickRefreshDriver() {
+  // The tick flushes our document, so nested draws of it must be refused.
+  AutoRestore<bool> isDrawing(mIsDrawing);
+  mIsDrawing = true;
+
   if (RefPtr<PresShell> presShell = mViewer->GetPresShell()) {
     if (RefPtr<nsPresContext> presContext = presShell->GetPresContext()) {
       if (RefPtr<nsRefreshDriver> driver = presContext->RefreshDriver()) {
@@ -217,7 +223,8 @@ SVGDocumentWrapper::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* inStr,
 /** nsIRequestObserver methods **/
 
 NS_IMETHODIMP
-SVGDocumentWrapper::OnStartRequest(nsIRequest* aRequest) {
+SVGDocumentWrapper::OnStartRequest(nsIRequest* aRequest)
+    MOZ_CAN_RUN_SCRIPT_BOUNDARY {
   nsresult rv = SetupViewer(aRequest, getter_AddRefs(mViewer),
                             getter_AddRefs(mLoadGroup));
 
@@ -226,9 +233,10 @@ SVGDocumentWrapper::OnStartRequest(nsIRequest* aRequest) {
     mViewer->GetDocument()->SetIsBeingUsedAsImage();
     StopAnimation();  // otherwise animations start automatically in helper doc
 
-    rv = mViewer->Init(nullptr, LayoutDeviceIntRect(), nullptr);
+    const nsCOMPtr<nsIDocumentViewer> viewer = mViewer;
+    rv = viewer->Init(nullptr, LayoutDeviceIntRect(), nullptr);
     if (NS_SUCCEEDED(rv)) {
-      rv = mViewer->Open();
+      rv = viewer->Open();
     }
   }
   return rv;
@@ -247,7 +255,7 @@ SVGDocumentWrapper::OnStopRequest(nsIRequest* aRequest, nsresult status) {
 /** nsIObserver Methods **/
 NS_IMETHODIMP
 SVGDocumentWrapper::Observe(nsISupports* aSubject, const char* aTopic,
-                            const char16_t* aData) {
+                            const char16_t* aData) MOZ_CAN_RUN_SCRIPT_BOUNDARY {
   if (!strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID)) {
     // Sever ties from rendering observers to helper-doc's root SVG node
     SVGSVGElement* svgElem = GetSVGRootElement();

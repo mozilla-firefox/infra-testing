@@ -115,6 +115,15 @@ uiaAccessibleActionsPropertyId = uiaReg.RegisterProperty(
         )
     )
 )
+uiaIsWebContentRootPropertyId = uiaReg.RegisterProperty(
+    byref(
+        uiaCoreMod.UIAutomationPropertyInfo(
+            GUID("{C5FDC049-4EEC-4299-87BB-CA9FC718A681}"),
+            "IsWebContentRoot",
+            uiaCoreMod.UIAutomationType_Bool,
+        )
+    )
+)
 del uiaReg, uiaCoreMod
 
 _threadLocal = threading.local()
@@ -315,7 +324,7 @@ def getDocUia():
     # could perhaps implement a custom property.
     hwnd = getFirefoxHwnd()
     root = uiaClient.ElementFromHandle(hwnd)
-    doc = findUiaByDomId(root, "body")
+    doc = findUiaByDomId(root, "default-content-doc-id")
     if not doc:
         # Sometimes, when UIA is disabled, we can't find the document for some
         # unknown reason. Since this only happens when UIA is disabled, we want

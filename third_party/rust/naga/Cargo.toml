@@ -195,6 +195,7 @@ version = "0.1"
 
 [dev-dependencies.env_logger]
 version = "0.11"
+features = ["humantime"]
 default-features = false
 
 [dev-dependencies.hashbrown]
@@ -210,7 +211,7 @@ default-features = false
 path = "hlsl-snapshots"
 
 [dev-dependencies.itertools]
-version = "0.14"
+version = "0.15"
 
 [dev-dependencies.naga-test]
 path = "../naga-test"

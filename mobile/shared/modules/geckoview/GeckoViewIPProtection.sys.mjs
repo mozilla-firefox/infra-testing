@@ -26,7 +26,12 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "moz-src:///toolkit/components/ipprotection/IPProtectionService.sys.mjs",
 });
 
-const { debug, warn } = GeckoViewUtils.initLogging("GeckoViewIPProtection");
+const { debug } = GeckoViewUtils.initLoggingConsole("GeckoViewIPProtection");
+
+function sendRequest(message, data) {
+  debug`send ${message} ${data}`;
+  lazy.EventDispatcher.instance.sendRequest(message, data);
+}
 
 const AUTH_PROVIDER_PREF = "toolkit.ipProtection.android.authProvider";
 
@@ -56,24 +61,20 @@ export const GeckoViewIPProtection = {
         break;
       }
       case "IPProtectionServerlist:ListChanged": {
-        lazy.EventDispatcher.instance.sendRequest(
-          "GeckoView:IPProtection:ServerList:ListChanged",
-          { countries: lazy.IPProtectionServerlist.countries }
-        );
+        sendRequest("GeckoView:IPProtection:ServerList:ListChanged", {
+          countries: lazy.IPProtectionServerlist.countries,
+        });
         return;
       }
       default:
         detail = event.detail;
     }
-    lazy.EventDispatcher.instance.sendRequest(
-      `GeckoView:IPProtection:${event.type}`,
-      detail
-    );
+    sendRequest(`GeckoView:IPProtection:${event.type}`, detail);
   },
 
   // Events dispatched from IPProtectionController.java via EventDispatcher.
   onEvent(aEvent, aData, aCallback) {
-    debug`onEvent ${aEvent}`;
+    debug`recv ${aEvent} ${aData}`;
 
     switch (aEvent) {
       case "GeckoView:IPProtection:Init": {
@@ -165,11 +166,15 @@ export const GeckoViewIPProtection = {
       }
       case "GeckoView:IPProtection:ServerList:GetCountryList": {
         lazy.IPProtectionServerlist.maybeFetchList()
-          .then(() => {
-            lazy.EventDispatcher.instance.sendRequest(
-              "GeckoView:IPProtection:ServerList:ListChanged",
-              { countries: lazy.IPProtectionServerlist.countries }
-            );
+          .then(changed => {
+            // maybeFetchList already dispatches ListChanged (forwarded to the
+            // delegate) when the list changed; only push manually otherwise so
+            // getCountryList() delivers the current list exactly once.
+            if (!changed) {
+              sendRequest("GeckoView:IPProtection:ServerList:ListChanged", {
+                countries: lazy.IPProtectionServerlist.countries,
+              });
+            }
             aCallback.onSuccess();
           })
           .catch(err => {

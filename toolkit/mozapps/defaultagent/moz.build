@@ -92,3 +92,23 @@ with Files("**"):
 EXTRA_JS_MODULES.backgroundtasks += [
     "BackgroundTask_defaultagent.sys.mjs",
 ]
+
+EXTRA_JS_MODULES += [
+    "DefaultAgentScheduler.sys.mjs",
+]
+
+SOURCE_HEADERS += [
+    "Cache.h",
+    "common.h",
+    "DefaultBrowser.h",
+    "DefaultPDF.h",
+    "EventLog.h",
+    "Notification.h",
+    "Policy.h",
+    "Registry.h",
+    "ScheduledTask.h",
+    "ScheduledTaskRemove.h",
+    "SetDefaultBrowser.h",
+    "Telemetry.h",
+    "UtfConvert.h",
+]

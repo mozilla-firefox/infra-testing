@@ -168,10 +168,12 @@ void nsTableFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   // Let the base class do its processing
   nsContainerFrame::Init(aContent, aParent, aPrevInFlow);
 
-  // see if border collapse is on, if so set it
-  const nsStyleTableBorder* tableStyle = StyleTableBorder();
-  bool borderCollapse =
-      (StyleBorderCollapse::Collapse == tableStyle->mBorderCollapse);
+  // Continuations share the first-in-flow's cell map and cell frame types.
+  // Keep their border model consistent even if their computed styles differ.
+  const bool borderCollapse =
+      aPrevInFlow ? static_cast<nsTableFrame*>(aPrevInFlow)->IsBorderCollapse()
+                  : StyleTableBorder()->mBorderCollapse ==
+                        StyleBorderCollapse::Collapse;
   SetBorderCollapse(borderCollapse);
   if (borderCollapse) {
     SetNeedToCalcHasBCBorders(true);
@@ -3796,10 +3798,10 @@ void BCMapCellInfo::SetInfo(nsTableRowFrame* aNewRow, int32_t aColIndex,
   if (1 == mRowSpan) {
     mEndRow = mStartRow;
   } else {
-    mEndRow = mStartRow->GetNextRow();
+    mEndRow = mStartRow->GetNextRowAcrossFragments();
     if (mEndRow) {
       for (int32_t span = 2; mEndRow && span < mRowSpan; span++) {
-        mEndRow = mEndRow->GetNextRow();
+        mEndRow = mEndRow->GetNextRowAcrossFragments();
       }
       NS_ASSERTION(mEndRow, "spanned row not found");
     } else {
@@ -4750,8 +4752,9 @@ void BCMapCellInfo::SetColumn(int32_t aColX) {
 }
 
 void BCMapCellInfo::IncrementRow(bool aResetToBStartRowOfCell) {
-  mCurrentRowFrame =
-      aResetToBStartRowOfCell ? mStartRow : mCurrentRowFrame->GetNextRow();
+  mCurrentRowFrame = aResetToBStartRowOfCell
+                         ? mStartRow
+                         : mCurrentRowFrame->GetNextRowAcrossFragments();
 }
 
 BCCellBorder BCMapCellInfo::GetBStartEdgeBorder() {
@@ -5614,6 +5617,7 @@ class BCPaintBorderIterator {
   void ResetVerInfo();
   void StoreColumnWidth(int32_t aIndex);
   bool BlockDirSegmentOwnsCorner();
+  nsTableCellFrame* GetBStartAdjacentCell(int32_t aRelColIndex) const;
 
   nsTableFrame* mTable;
   nsTableFrame* mTableFirstInFlow;
@@ -5626,26 +5630,26 @@ class BCPaintBorderIterator {
   nsTableRowGroupFrame* mRg;
   bool mIsRepeatedHeader;
   bool mIsRepeatedFooter;
-  nsTableRowGroupFrame* mStartRg;   // first row group in the damagearea
-  int32_t mRgIndex;                 // current row group index in the
-                                    // mRowgroups array
-  int32_t mFifRgFirstRowIndex;      // start row index of the first in
-                                    // flow of the row group
-  int32_t mRgFirstRowIndex;         // row index of the first row in the
-                                    // row group
-  int32_t mRgLastRowIndex;          // row index of the last row in the row
-                                    // group
-  int32_t mNumTableRows;            // number of rows in the table and all
-                                    // continuations
-  int32_t mNumTableCols;            // number of columns in the table
-  int32_t mColIndex;                // with respect to the table
-  int32_t mRowIndex;                // with respect to the table
-  int32_t mRepeatedHeaderRowIndex;  // row index in a repeated
-                                    // header, it's equivalent to
-                                    // mRowIndex when we're in a repeated
-                                    // header, and set to the last row
-                                    // index of a repeated header when
-                                    // we're not
+  // Whether the row group we advanced away from was a repeated header. The
+  // rows of a repeated header keep the row indices of the header they were
+  // repeated from, so the row group that follows one does not continue from
+  // it in the cell map, and block-dir border segments must not be accumulated
+  // across that boundary.
+  bool mPrevRgIsRepeatedHeader;
+  nsTableRowGroupFrame* mStartRg;  // first row group in the damagearea
+  int32_t mRgIndex;                // current row group index in the
+                                   // mRowgroups array
+  int32_t mFifRgFirstRowIndex;     // start row index of the first in
+                                   // flow of the row group
+  int32_t mRgFirstRowIndex;        // row index of the first row in the
+                                   // row group
+  int32_t mRgLastRowIndex;         // row index of the last row in the row
+                                   // group
+  int32_t mNumTableRows;           // number of rows in the table and all
+                                   // continuations
+  int32_t mNumTableCols;           // number of columns in the table
+  int32_t mColIndex;               // with respect to the table
+  int32_t mRowIndex;               // with respect to the table
   bool mIsNewRow;
   bool mAtEnd;  // the iterator cycled over all
                 // borders
@@ -5685,8 +5689,8 @@ class BCPaintBorderIterator {
   }
 
   TableArea mDamageArea;  // damageArea in cellmap coordinates
-  bool IsAfterRepeatedHeader() {
-    return !mIsRepeatedHeader && (mRowIndex == (mRepeatedHeaderRowIndex + 1));
+  bool IsAfterRepeatedHeader() const {
+    return mPrevRgIsRepeatedHeader && mRowIndex == mRgFirstRowIndex;
   }
   bool StartRepeatedFooter() const {
     return mIsRepeatedFooter && mRowIndex == mRgFirstRowIndex &&
@@ -5732,6 +5736,7 @@ BCPaintBorderIterator::BCPaintBorderIterator(nsTableFrame* aTable)
       mRg(nullptr),
       mIsRepeatedHeader(false),
       mIsRepeatedFooter(false),
+      mPrevRgIsRepeatedHeader(false),
       mStartRg(nullptr),
       mRgIndex(0),
       mFifRgFirstRowIndex(0),
@@ -5760,9 +5765,6 @@ BCPaintBorderIterator::BCPaintBorderIterator(nsTableFrame* aTable)
   mInitialOffsetB = mTable->GetPrevInFlow() ? 0 : bp.BStart(mTableWM);
   mNumTableRows = mTable->GetRowCount();
   mNumTableCols = mTable->GetColCount();
-
-  // initialize to a non existing index
-  mRepeatedHeaderRowIndex = -99;
 }
 
 bool BCPaintBorderIterator::SetDamageArea(const nsRect& aDirtyRect) {
@@ -5882,6 +5884,9 @@ void BCPaintBorderIterator::Reset() {
   mRowIndex = 0;
   mColIndex = 0;
   mRgIndex = -1;
+  mIsRepeatedHeader = false;
+  mIsRepeatedFooter = false;
+  mPrevRgIsRepeatedHeader = false;
   mPrevCell = nullptr;
   mCell = nullptr;
   mPrevCellData = nullptr;
@@ -5958,9 +5963,6 @@ bool BCPaintBorderIterator::SetNewRow(nsTableRowFrame* aRow) {
     mRowIndex = mRow->GetRowIndex();
     mColIndex = mDamageArea.StartCol();
     mPrevInlineSegBSize = 0;
-    if (mIsRepeatedHeader) {
-      mRepeatedHeaderRowIndex = mRowIndex;
-    }
   } else {
     mAtEnd = true;
   }
@@ -5973,6 +5975,7 @@ bool BCPaintBorderIterator::SetNewRow(nsTableRowFrame* aRow) {
 bool BCPaintBorderIterator::SetNewRowGroup() {
   mRgIndex++;
 
+  mPrevRgIsRepeatedHeader = mIsRepeatedHeader;
   mIsRepeatedHeader = false;
   mIsRepeatedFooter = false;
 
@@ -6606,9 +6609,7 @@ void BCInlineDirSeg::Start(BCPaintBorderIterator& aIter,
   mLength = -offset;
   mWidth = aInlineSegBSize;
   mFirstCell = aIter.mCell;
-  mAjaCell = (aIter.IsDamageAreaBStartMost())
-                 ? nullptr
-                 : aIter.mBlockDirInfo[relColIndex].mLastCell;
+  mAjaCell = aIter.GetBStartAdjacentCell(relColIndex);
 }
 
 /**
@@ -6795,6 +6796,28 @@ void BCPaintBorderIterator::StoreColumnWidth(int32_t aIndex) {
     mBlockDirInfo[aIndex].mColWidth = col->ISize(mTableWM);
   }
 }
+
+/**
+ * Get the cell that the current one is adjacent to on its block-start side,
+ * i.e. the cell whose style owns an inline-dir border owned by the adjacent
+ * cell. That is normally the cell visited in the previous row, but the rows of
+ * a repeated header or footer are not adjacent in the cell map to the rows
+ * next to them on the page, so look the cell up in the cell map instead.
+ */
+nsTableCellFrame* BCPaintBorderIterator::GetBStartAdjacentCell(
+    int32_t aRelColIndex) const {
+  // If this is null due to the damage area not starting at the block-start
+  // edge, the border won't show up anyway.
+  if (IsDamageAreaBStartMost()) {
+    return nullptr;
+  }
+  if (IsAfterRepeatedHeader() || StartRepeatedFooter()) {
+    MOZ_ASSERT(mRowIndex > 0, "Repeated header/footer at the first row?");
+    return mTableCellMap->GetCellInfoAt(mRowIndex - 1, mColIndex);
+  }
+  return mBlockDirInfo[aRelColIndex].mLastCell;
+}
+
 /**
  * Determine if a block-dir segment owns the corner
  */
@@ -7138,7 +7161,7 @@ class nsDisplayTableBorderCollapse final : public nsDisplayTableItem {
   MOZ_COUNTED_DTOR_FINAL(nsDisplayTableBorderCollapse)
 
   void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
-  bool CreateWebRenderCommands(
+  WebRenderCommandsResult CreateWebRenderCommands(
       wr::DisplayListBuilder& aBuilder, wr::IpcResourceUpdateQueue& aResources,
       const StackingContextHelper& aSc,
       layers::RenderRootStateManager* aManager,
@@ -7164,7 +7187,7 @@ void nsDisplayTableBorderCollapse::Paint(nsDisplayListBuilder* aBuilder,
       *drawTarget, GetPaintRect(aBuilder, aCtx) - pt);
 }
 
-bool nsDisplayTableBorderCollapse::CreateWebRenderCommands(
+WebRenderCommandsResult nsDisplayTableBorderCollapse::CreateWebRenderCommands(
     wr::DisplayListBuilder& aBuilder, wr::IpcResourceUpdateQueue& aResources,
     const StackingContextHelper& aSc,
     mozilla::layers::RenderRootStateManager* aManager,
@@ -7173,7 +7196,7 @@ bool nsDisplayTableBorderCollapse::CreateWebRenderCommands(
   static_cast<nsTableFrame*>(mFrame)->CreateWebRenderCommandsForBCBorders(
       aBuilder, aSc, GetBounds(aDisplayListBuilder, &dummy),
       ToReferenceFrame());
-  return true;
+  return Ok();
 }
 
 }  // namespace mozilla

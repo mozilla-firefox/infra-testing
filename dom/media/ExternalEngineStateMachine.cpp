@@ -4,6 +4,8 @@
 
 #include "ExternalEngineStateMachine.h"
 
+#include <memory>
+
 #include "PerformanceRecorder.h"
 #ifdef MOZ_WMF_MEDIA_ENGINE
 #  include "MFMediaEngineDecoderModule.h"
@@ -375,13 +377,13 @@ void ExternalEngineStateMachine::OnMetadataRead(MetadataHolder&& aMetadata) {
 
   if (IsBeingProfiledOrLogEnabled()) {
     nsPrintfCString msg(
-        "a=%s, v=%s, size=[%dx%d], duration=%s, encrypted=%d, "
+        "a=%s, v=%s, size=[%dx%d], image=[%dx%d], duration=%s, encrypted=%d, "
         "IsEncryptedCustomIdent=%d",
         mInfo->HasAudio() ? mInfo->mAudio.mMimeType.get() : "none",
         mInfo->HasVideo() ? mInfo->mVideo.mMimeType.get() : "none",
-        mVideoDisplay.width, mVideoDisplay.height,
-        mDuration.Ref()->ToString().get(), mInfo->IsEncrypted(),
-        mReader->IsEncryptedCustomIdent());
+        mVideoDisplay.width, mVideoDisplay.height, mInfo->mVideo.mImage.width,
+        mInfo->mVideo.mImage.height, mDuration.Ref()->ToString().get(),
+        mInfo->IsEncrypted(), mReader->IsEncryptedCustomIdent());
     LOG("Metadata loaded : {}", msg.get());
     PROFILER_MARKER_TEXT("EESM::OnMetadataRead", MEDIA_PLAYBACK, {}, msg);
   }
@@ -1113,7 +1115,7 @@ void ExternalEngineStateMachine::OnLoadedFirstFrame() {
       mSentFirstFrameLoadedEvent ? MediaDecoderEventVisibility::Suppressed
                                  : MediaDecoderEventVisibility::Observable;
   mSentFirstFrameLoadedEvent = true;
-  mFirstFrameLoadedEvent.Notify(UniquePtr<MediaInfo>(new MediaInfo(Info())),
+  mFirstFrameLoadedEvent.Notify(std::make_unique<MediaInfo>(Info()),
                                 visibility);
   mOnNextFrameStatus.Notify(MediaDecoderOwner::NEXT_FRAME_AVAILABLE);
 }
@@ -1150,8 +1152,13 @@ void ExternalEngineStateMachine::OnSeeked() {
   }
   MOZ_ASSERT(mState.IsSeekingData());
 
-  const auto currentTime = mEngine->GetCurrentPosition();
   auto* state = mState.AsSeekingData();
+  if (!state->mSeekJob.Exists()) {
+    LOG("Seeking has been rejected, ignore the event");
+    return;
+  }
+
+  const auto currentTime = mEngine->GetCurrentPosition();
   if (IsBeingProfiledOrLogEnabled()) {
     nsPrintfCString msg("target=%" PRId64 ", currentTime=%" PRId64,
                         state->GetTargetTime().ToMicroseconds(),

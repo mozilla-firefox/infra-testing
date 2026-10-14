@@ -18,7 +18,6 @@ export function SectionContextMenu({
   type = "DISCOVERY_STREAM",
   buttonType = "icon",
   title,
-  source,
   index,
   dispatch,
   sectionKey,
@@ -59,6 +58,10 @@ export function SectionContextMenu({
     },
   });
 
+  const tooltipL10nId = title
+    ? "newtab-menu-content-tooltip"
+    : "newtab-menu-section-tooltip";
+
   return (
     <div
       className={`section-context-menu${contextMenuOpen ? " context-menu-open" : ""}`}
@@ -67,11 +70,15 @@ export function SectionContextMenu({
         type={buttonType}
         size="default"
         iconsrc="chrome://global/skin/icons/more.svg"
-        data-l10n-id="newtab-menu-content-tooltip"
-        data-l10n-args={JSON.stringify({ title: title || source })}
+        data-l10n-id={tooltipL10nId}
+        data-l10n-args={title ? JSON.stringify({ title }) : null}
         menuId={menuId}
       />
-      <panel-list id={menuId} ref={panelListRef}>
+      <panel-list
+        className="panel-list-no-icons"
+        id={menuId}
+        ref={panelListRef}
+      >
         <PanelListItems options={options} />
       </panel-list>
     </div>

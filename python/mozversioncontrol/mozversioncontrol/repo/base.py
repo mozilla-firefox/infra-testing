@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this,
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import annotations
+
 import abc
 import os
 import re
@@ -474,6 +476,11 @@ class Repository(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def configure(self, state_dir: Path, update_only: bool = False):
+    def configure(
+        self,
+        state_dir: Path,
+        update_only: bool = False,
+        no_system_changes: bool = False,
+    ):
         """Perform initial VCS setup, applying sensible defaults for configuration."""
         pass

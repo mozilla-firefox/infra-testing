@@ -161,6 +161,18 @@ struct nsRoleMapEntry {
     return nsDependentAtomString(roleAtom);
   }
 
+  /**
+   * Return true if this role only exposes the selectable state when
+   * aria-selected is explicitly defined, as opposed to always being selectable
+   * regardless .
+   */
+  bool IsSelectableIfDefined() const {
+    return attributeMap1 == mozilla::a11y::aria::eARIASelectableIfDefined ||
+           attributeMap2 == mozilla::a11y::aria::eARIASelectableIfDefined ||
+           attributeMap3 == mozilla::a11y::aria::eARIASelectableIfDefined ||
+           attributeMap4 == mozilla::a11y::aria::eARIASelectableIfDefined;
+  }
+
   // ARIA role: string representation such as "button"
   nsStaticAtom* const roleAtom;
 
@@ -314,14 +326,6 @@ uint8_t AttrCharacteristicsFor(nsAtom* aAtom);
  * and should not be ignored per ShouldIgnoreARIAHidden.
  */
 bool IsValidARIAHidden(nsIContent* aContent);
-
-/**
- * This function calls into the function above. It verifies the validity
- * of any `aria-hidden` specified on the given Doc Accessible's
- * mContent, as well as on the root element of mContent's owner
- * doc.
- */
-bool IsValidARIAHidden(DocAccessible* aDocAcc);
 
 /**
  * Return true if the element should render its subtree

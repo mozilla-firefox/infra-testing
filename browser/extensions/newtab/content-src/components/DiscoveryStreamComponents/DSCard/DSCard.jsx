@@ -2,11 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { actionCreators as ac } from "common/Actions.mjs";
+import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
 import { DSImage } from "../DSImage/DSImage.jsx";
 import { DSLinkMenu } from "../DSLinkMenu/DSLinkMenu";
 import { ImpressionStats } from "../../DiscoveryStreamImpressionStats/ImpressionStats";
-import { getActiveCardSize, getNovaColumnLayout } from "../../../lib/utils";
+import {
+  getActiveCardSize,
+  getCardColumn,
+  getNovaColumnLayout,
+} from "../../../lib/utils";
 import React from "react";
 import { SafeAnchor } from "../SafeAnchor/SafeAnchor";
 import {
@@ -161,6 +165,7 @@ export class _DSCard extends React.PureComponent {
     super(props);
 
     this.onLinkClick = this.onLinkClick.bind(this);
+    this.onLinkOpenIntent = this.onLinkOpenIntent.bind(this);
     this.doesLinkTopicMatchSelectedTopic =
       this.doesLinkTopicMatchSelectedTopic.bind(this);
     this.onMenuUpdate = this.onMenuUpdate.bind(this);
@@ -292,92 +297,73 @@ export class _DSCard extends React.PureComponent {
     return "false";
   }
 
-  onLinkClick() {
+  getClickEventData() {
     const matchesSelectedTopic = this.doesLinkTopicMatchSelectedTopic();
+    const cardColumn = getCardColumn(this.contextMenuButtonHostElement);
+    return {
+      event: "CLICK",
+      source: this.props.type.toUpperCase(),
+      action_position: this.props.pos,
+      value: {
+        event_source: "card",
+        card_type: this.props.flightId ? "spoc" : "organic",
+        tile_id: this.props.id,
+        ...(this.props.shim && this.props.shim.click
+          ? { shim: this.props.shim.click }
+          : {}),
+        corpus_item_id: this.props.corpus_item_id,
+        scheduled_corpus_item_id: this.props.scheduled_corpus_item_id,
+        recommended_at: this.props.recommended_at,
+        received_rank: this.props.received_rank,
+        variant_id: this.props.variant_id,
+        source_section_id: this.props.source_section_id,
+        topic: this.props.topic,
+        features: this.props.features,
+        matches_selected_topic: matchesSelectedTopic,
+        selected_topics: this.props.selectedTopics,
+        attribution: this.props.attribution,
+        ...(cardColumn ? { card_column: cardColumn } : {}),
+        ...(this.props.format
+          ? { format: this.props.format }
+          : {
+              format: getActiveCardSize(
+                window.innerWidth,
+                this.props.sectionsClassNames,
+                this.props.section,
+                this.props.flightId,
+                getNovaColumnLayout(this.contextMenuButtonHostElement)
+              ),
+            }),
+        ...(this.props.section
+          ? {
+              section: this.props.section,
+              section_position: this.props.sectionPosition,
+              is_section_followed: this.props.sectionFollowed,
+              layout_name: this.props.sectionLayoutName,
+            }
+          : {}),
+      },
+    };
+  }
+
+  onLinkClick() {
     if (this.props.dispatch) {
       this.props.dispatch(
-        ac.DiscoveryStreamUserEvent({
-          event: "CLICK",
-          source: this.props.type.toUpperCase(),
-          action_position: this.props.pos,
-          value: {
-            event_source: "card",
-            card_type: this.props.flightId ? "spoc" : "organic",
-            tile_id: this.props.id,
-            ...(this.props.shim && this.props.shim.click
-              ? { shim: this.props.shim.click }
-              : {}),
-            corpus_item_id: this.props.corpus_item_id,
-            scheduled_corpus_item_id: this.props.scheduled_corpus_item_id,
-            recommended_at: this.props.recommended_at,
-            received_rank: this.props.received_rank,
-            topic: this.props.topic,
-            features: this.props.features,
-            matches_selected_topic: matchesSelectedTopic,
-            selected_topics: this.props.selectedTopics,
-            attribution: this.props.attribution,
-            ...(this.props.format
-              ? { format: this.props.format }
-              : {
-                  format: getActiveCardSize(
-                    window.innerWidth,
-                    this.props.sectionsClassNames,
-                    this.props.section,
-                    this.props.flightId,
-                    getNovaColumnLayout(this.contextMenuButtonHostElement)
-                  ),
-                }),
-            ...(this.props.section
-              ? {
-                  section: this.props.section,
-                  section_position: this.props.sectionPosition,
-                  is_section_followed: this.props.sectionFollowed,
-                  layout_name: this.props.sectionLayoutName,
-                }
-              : {}),
-          },
-        })
-      );
-
-      this.props.dispatch(
-        ac.ImpressionStats({
-          source: this.props.type.toUpperCase(),
-          click: 0,
-          window_inner_width: this.props.windowObj.innerWidth,
-          window_inner_height: this.props.windowObj.innerHeight,
-          tiles: [
-            {
-              id: this.props.id,
-              pos: this.props.pos,
-              ...(this.props.shim && this.props.shim.click
-                ? { shim: this.props.shim.click }
-                : {}),
-              type: this.props.flightId ? "spoc" : "organic",
-              topic: this.props.topic,
-              selected_topics: this.props.selectedTopics,
-              ...(this.props.format
-                ? { format: this.props.format }
-                : {
-                    format: getActiveCardSize(
-                      window.innerWidth,
-                      this.props.sectionsClassNames,
-                      this.props.section,
-                      this.props.flightId,
-                      getNovaColumnLayout(this.contextMenuButtonHostElement)
-                    ),
-                  }),
-              ...(this.props.section
-                ? {
-                    section: this.props.section,
-                    section_position: this.props.sectionPosition,
-                    is_section_followed: this.props.sectionFollowed,
-                  }
-                : {}),
-            },
-          ],
-        })
+        ac.DiscoveryStreamUserEvent(this.getClickEventData())
       );
     }
+  }
+
+  onLinkOpenIntent(event) {
+    this.props.dispatch?.(
+      ac.OnlyToMain({
+        type: at.BROWSER_LINK_OPEN_INTENT,
+        data: {
+          url: event.currentTarget.href,
+          userEvent: this.getClickEventData(),
+        },
+      })
+    );
   }
 
   onMenuUpdate(showContextMenu) {
@@ -676,53 +662,59 @@ export class _DSCard extends React.PureComponent {
           className="ds-card-link"
           dispatch={this.props.dispatch}
           onLinkClick={!this.props.placeholder ? this.onLinkClick : undefined}
+          onLinkOpenIntent={
+            !this.props.placeholder ? this.onLinkOpenIntent : undefined
+          }
           url={this.props.url}
           title={this.props.title}
           isSponsored={!!this.props.flightId}
+          dwellLabel={this.props.flightId ? "story_sponsored" : "story_organic"}
           tabIndex={this.props.tabIndex}
           onFocus={this.props.onFocus}
         >
           <div className="img-wrapper">{images}</div>
-          {/* Only the carousel passes isActive for its current slide. Its hidden
-              slides are stacked at zero opacity, which IntersectionObserver still
-              counts as visible, so they would otherwise all report impressions. */}
-          {this.props.isActive !== false && (
-            <ImpressionStats
-              flightId={this.props.flightId}
-              rows={[
-                {
-                  id: this.props.id,
-                  pos: this.props.pos,
-                  ...(this.props.shim && this.props.shim.impression
-                    ? { shim: this.props.shim.impression }
-                    : {}),
-                  corpus_item_id: this.props.corpus_item_id,
-                  scheduled_corpus_item_id: this.props.scheduled_corpus_item_id,
-                  recommended_at: this.props.recommended_at,
-                  received_rank: this.props.received_rank,
-                  topic: this.props.topic,
-                  features: this.props.features,
-                  ...(format ? { format } : {}),
-                  category: this.props.category,
-                  attribution: this.props.attribution,
-                  ...(this.props.section
-                    ? {
-                        section: this.props.section,
-                        section_position: this.props.sectionPosition,
-                        is_section_followed: this.props.sectionFollowed,
-                        sectionLayoutName: this.props.sectionLayoutName,
-                      }
-                    : {}),
-                  ...(!format && this.props.section
-                    ? // Note: sectionsCardsClassName is passed to ImpressionStats.jsx in order to calculate format
-                      { class_names: sectionsCardsClassName }
-                    : {}),
-                },
-              ]}
-              dispatch={this.props.dispatch}
-              source={this.props.type}
-            />
-          )}
+          {/* Only the carousel passes isActive, and only its visible slide gets
+              true. This stays mounted while the slide is hidden, so a card that
+              is shown more than once still reports a single impression. */}
+          <ImpressionStats
+            isActive={this.props.isActive !== false}
+            flightId={this.props.flightId}
+            rows={[
+              {
+                id: this.props.id,
+                pos: this.props.pos,
+                ...(this.props.shim && this.props.shim.impression
+                  ? { shim: this.props.shim.impression }
+                  : {}),
+                corpus_item_id: this.props.corpus_item_id,
+                scheduled_corpus_item_id: this.props.scheduled_corpus_item_id,
+                recommended_at: this.props.recommended_at,
+                received_rank: this.props.received_rank,
+                variant_id: this.props.variant_id,
+                source_section_id: this.props.source_section_id,
+                topic: this.props.topic,
+                features: this.props.features,
+                ...(format ? { format } : {}),
+                is_ad_eligible_position: this.props.is_ad_eligible_position,
+                category: this.props.category,
+                attribution: this.props.attribution,
+                ...(this.props.section
+                  ? {
+                      section: this.props.section,
+                      section_position: this.props.sectionPosition,
+                      is_section_followed: this.props.sectionFollowed,
+                      layout_name: this.props.sectionLayoutName,
+                    }
+                  : {}),
+                ...(!format && this.props.section
+                  ? // Note: sectionsCardsClassName is passed to ImpressionStats.jsx in order to calculate format
+                    { class_names: sectionsCardsClassName }
+                  : {}),
+              },
+            ]}
+            dispatch={this.props.dispatch}
+            source={this.props.type}
+          />
 
           {ctaButtonVariant === "variant-b" && (
             <div className="cta-header">Shop Now</div>

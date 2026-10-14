@@ -2,6 +2,9 @@
 
 ["test_bug_2027541.html"]
 
+["test_dynamicImportRelazify.html"]
+support-files = ["module_simpleExport.mjs"]
+
 ["test_dynamicImport_dependency_load_failure.html"]
 support-files = [
   "import_404_evaluated.mjs",
@@ -12,3 +15,13 @@ support-files = [
 ]
 
 ["test_nested_modules.html"]
+
+["test_scriptDisabled_modules.html"]
+support-files = [
+  "!/dom/base/test/file_wasm_offthread_module.sjs",
+  "exports-fun.wasm",
+  "module_large1.mjs",
+  "scriptDisabledDiskCache_module.sjs",
+  "scriptDisabled_frame.html",
+  "scriptDisabled_module.mjs",
+]

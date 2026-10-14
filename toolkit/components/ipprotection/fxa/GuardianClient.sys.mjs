@@ -18,7 +18,13 @@ import { AUTH_ERRORS } from "moz-src:///toolkit/components/ipprotection/IPPAuthP
  * The subset of AuthError that the Guardian client reports, i.e. the status
  * errors plus the ones raised without a usable response.
  *
- * @typedef {GuardianStatusError | "login_needed" | "invalid_response" | "parse_error"} GuardianError
+ * @typedef {GuardianStatusError | "login_needed" | "network_error" | "invalid_response" | "parse_error"} GuardianError
+ */
+
+/**
+ * Type Imports
+ *
+ * @typedef {import("../GuardianTypes.sys.mjs").TokenHandle} TokenHandle
  */
 
 const lazy = {};
@@ -32,7 +38,7 @@ ChromeUtils.defineLazyGetter(
 );
 ChromeUtils.defineLazyGetter(lazy, "logConsole", () =>
   console.createInstance({
-    prefix: "GuardianClient",
+    prefix: "IPP_GuardianClient",
     maxLogLevel: Services.prefs.getBoolPref("browser.ipProtection.log", false)
       ? "Debug"
       : "Warn",
@@ -190,26 +196,36 @@ export class GuardianClient {
    * Fetches a proxy pass from the Guardian service.
    *
    * A status other than 200 always resolves with an error, see
-   * {@link GuardianClient.toError}.
+   * {@link GuardianClient.toError}. A 401 additionally invalidates the handle.
    *
-   * @param {{token: string}} tokenHandle - short-lived OAuth token obtained from fxAccounts
+   * @param {TokenHandle} tokenHandle - short-lived OAuth token obtained from fxAccounts
    * @param {AbortSignal} [abortSignal=null] - a signal to indicate the fetch should be aborted
    * @returns {Promise<{error?: GuardianError, status?:number, pass?: ProxyPass, usage?: ProxyUsage|null, retryAfter?: string|null}>} Resolves with an object containing either an error or the proxy pass data and a status code.
    */
   async fetchProxyPass(tokenHandle, abortSignal = null) {
-    const response = await fetch(this.#tokenURL, {
-      method: "GET",
-      cache: "no-cache",
-      headers: {
-        Authorization: `Bearer ${tokenHandle.token}`,
-        "Content-Type": "application/json",
-      },
-      signal: abortSignal,
-    });
-    if (!response) {
+    if (!tokenHandle) {
       return { error: AUTH_ERRORS.LOGIN_NEEDED, usage: null };
     }
+    let response;
+    try {
+      response = await fetch(this.#tokenURL, {
+        method: "GET",
+        cache: "no-cache",
+        headers: {
+          Authorization: `Bearer ${tokenHandle.token}`,
+          "Content-Type": "application/json",
+        },
+        signal: abortSignal,
+      });
+    } catch (error) {
+      abortSignal?.throwIfAborted();
+      lazy.logConsole.error("Proxy pass fetch failed:", error);
+      return { error: AUTH_ERRORS.NETWORK_ERROR, usage: null };
+    }
     const status = response.status;
+    if (status === 401) {
+      await tokenHandle.onTokenRejected?.();
+    }
 
     let usage = null;
     try {
@@ -242,29 +258,40 @@ export class GuardianClient {
   /**
    * Fetches the user's entitlement information.
    *
-   * @param {{token: string}} tokenHandle - short-lived OAuth token obtained from fxAccounts
+   * @param {TokenHandle} tokenHandle - short-lived OAuth token obtained from fxAccounts
    * @param {AbortSignal} [abortSignal=null] - a signal to indicate the fetch should be aborted
    * @returns {Promise<{status?: number, entitlement?: Entitlement|null, error?:string}>} A promise that resolves to an object containing the HTTP status code and the user's entitlement information.
    *
    * Status codes to watch for:
    * - 200: User is a proxy user and the entitlement information is available.
    * - 404: User is not a proxy user, no entitlement information available.
-   * - 401: The auth token was rejected, probably a guardian/auth provider environment mismatch.
+   * - 401: The auth token was rejected, probably a guardian/auth provider
+   *   environment mismatch. The handle is invalidated.
    */
   async fetchUserInfo(tokenHandle, abortSignal = null) {
-    const response = await fetch(this.#statusURL, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${tokenHandle.token}`,
-        "Content-Type": "application/json",
-      },
-      cache: "no-cache",
-      signal: abortSignal,
-    });
-    if (!response) {
+    if (!tokenHandle) {
       return { error: AUTH_ERRORS.LOGIN_NEEDED };
     }
+    let response;
+    try {
+      response = await fetch(this.#statusURL, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${tokenHandle.token}`,
+          "Content-Type": "application/json",
+        },
+        cache: "no-cache",
+        signal: abortSignal,
+      });
+    } catch (error) {
+      abortSignal?.throwIfAborted();
+      lazy.logConsole.error("User info fetch failed:", error);
+      return { error: AUTH_ERRORS.NETWORK_ERROR };
+    }
     const status = response.status;
+    if (status === 401) {
+      await tokenHandle.onTokenRejected?.();
+    }
     try {
       const entitlement = await Entitlement.fromResponse(response);
       if (!entitlement) {
@@ -282,21 +309,32 @@ export class GuardianClient {
   /**
    * Returns the user's proxy usage information, without fetching a new proxy pass.
    *
-   * @param {{token: string}} tokenHandle - short-lived OAuth token obtained from fxAccounts
+   * @param {TokenHandle} tokenHandle - short-lived OAuth token obtained from fxAccounts
    * @param {AbortSignal} abortSignal - Signal for when this function should be aborted
    * @returns {ProxyUsage | null}
    */
   async fetchProxyUsage(tokenHandle, abortSignal) {
-    const response = await fetch(this.#tokenURL, {
-      method: "HEAD",
-      cache: "no-cache",
-      signal: abortSignal,
-      headers: {
-        Authorization: `Bearer ${tokenHandle.token}`,
-        "Content-Type": "application/json",
-      },
-    });
-    if (!response) {
+    if (!tokenHandle) {
+      return null;
+    }
+    let response;
+    try {
+      response = await fetch(this.#tokenURL, {
+        method: "HEAD",
+        cache: "no-cache",
+        signal: abortSignal,
+        headers: {
+          Authorization: `Bearer ${tokenHandle.token}`,
+          "Content-Type": "application/json",
+        },
+      });
+    } catch (error) {
+      abortSignal?.throwIfAborted();
+      lazy.logConsole.error("Proxy usage fetch failed:", error);
+      return null;
+    }
+    if (response.status === 401) {
+      await tokenHandle.onTokenRejected?.();
       return null;
     }
     try {
@@ -314,7 +352,7 @@ export class GuardianClient {
    * Activates the current FxA account with Guardian by presenting the FxA
    * Bearer token directly.
    *
-   * @param {{token: string}} tokenHandle - short-lived OAuth token obtained from fxAccounts
+   * @param {TokenHandle} tokenHandle - short-lived OAuth token obtained from fxAccounts
    * @param {AbortSignal} [abortSignal=null]
    * @returns {Promise<{ok: boolean, entitlement?: object, error?: string}>}
    */
@@ -322,17 +360,27 @@ export class GuardianClient {
     if (!tokenHandle) {
       return { ok: false, error: AUTH_ERRORS.LOGIN_NEEDED };
     }
-    const response = await fetch(this.#activateURL, {
-      method: "POST",
-      cache: "no-cache",
-      headers: {
-        Authorization: `Bearer ${tokenHandle.token}`,
-        "Content-Type": "application/json",
-      },
-      signal: abortSignal,
-    });
+    let response;
+    try {
+      response = await fetch(this.#activateURL, {
+        method: "POST",
+        cache: "no-cache",
+        headers: {
+          Authorization: `Bearer ${tokenHandle.token}`,
+          "Content-Type": "application/json",
+        },
+        signal: abortSignal,
+      });
+    } catch (error) {
+      abortSignal?.throwIfAborted();
+      lazy.logConsole.error("Activate fetch failed:", error);
+      return { ok: false, error: AUTH_ERRORS.NETWORK_ERROR };
+    }
+    if (response.status === 401) {
+      await tokenHandle.onTokenRejected?.();
+    }
     if (!response.ok) {
-      return { ok: false, error: `status_${response.status}` };
+      return { ok: false, error: GuardianClient.toError(response.status) };
     }
     try {
       const entitlement = await Entitlement.fromResponse(response);

@@ -1856,51 +1856,28 @@ bool nsCSSRendering::CanBuildWebRenderDisplayItemsForStyleImageLayer(
     WebRenderLayerManager* aManager, nsPresContext& aPresCtx, nsIFrame* aFrame,
     const nsStyleBackground* aBackgroundStyle, int32_t aLayer,
     uint32_t aPaintFlags) {
-  if (!aBackgroundStyle) {
-    return false;
-  }
-
-  MOZ_ASSERT(aFrame && aLayer >= 0 &&
+  MOZ_ASSERT(aBackgroundStyle);
+  MOZ_ASSERT(aFrame);
+  MOZ_ASSERT(aLayer >= 0 &&
              (uint32_t)aLayer < aBackgroundStyle->mImage.mLayers.Length());
 
-  // We cannot draw native themed backgrounds
-  StyleAppearance appearance = aFrame->StyleDisplay()->EffectiveAppearance();
-  if (appearance != StyleAppearance::None) {
-    nsITheme* theme = aPresCtx.Theme();
-    if (theme->ThemeSupportsWidget(&aPresCtx, aFrame, appearance)) {
-      return false;
-    }
-  }
-
-  // We only support painting gradients and image for a single style image
-  // layer, and we don't support crop-rects.
   const auto& styleImage =
       aBackgroundStyle->mImage.mLayers[aLayer].mImage.FinalImage();
-  if (styleImage.IsImageRequestType()) {
-    imgRequestProxy* requestProxy = styleImage.GetImageRequest();
-    if (!requestProxy) {
-      return false;
-    }
-
-    uint32_t imageFlags = imgIContainer::FLAG_NONE;
-    if (aPaintFlags & nsCSSRendering::PAINTBG_SYNC_DECODE_IMAGES) {
-      imageFlags |= imgIContainer::FLAG_SYNC_DECODE;
-    }
-
-    nsCOMPtr<imgIContainer> srcImage;
-    requestProxy->GetImage(getter_AddRefs(srcImage));
-    if (!srcImage ||
-        !srcImage->IsImageContainerAvailable(aManager, imageFlags)) {
-      return false;
-    }
-
-    return true;
+  switch (styleImage.tag) {
+    case StyleImage::Tag::ImageSet:
+    case StyleImage::Tag::LightDark:
+      MOZ_FALLTHROUGH_ASSERT("Should've been resolved");
+    case StyleImage::Tag::Url:
+    case StyleImage::Tag::Gradient:
+    case StyleImage::Tag::MozSymbolicIcon:
+    case StyleImage::Tag::Image:
+    case StyleImage::Tag::None:
+    case StyleImage::Tag::CrossFade:
+      return true;
+    case StyleImage::Tag::Element:
+      // Try to not add to this branch.
+      break;
   }
-
-  if (styleImage.IsGradient()) {
-    return true;
-  }
-
   return false;
 }
 
@@ -1996,32 +1973,37 @@ static bool IsSVGStyleGeometryBox(StyleGeometryBox aBox) {
           aBox == StyleGeometryBox::ViewBox);
 }
 
-static bool IsHTMLStyleGeometryBox(StyleGeometryBox aBox) {
-  return (aBox == StyleGeometryBox::ContentBox ||
-          aBox == StyleGeometryBox::PaddingBox ||
-          aBox == StyleGeometryBox::BorderBox ||
-          aBox == StyleGeometryBox::MarginBox);
-}
-
-static StyleGeometryBox ComputeBoxValueForOrigin(nsIFrame* aForFrame,
-                                                 StyleGeometryBox aBox) {
+static StyleGeometryBox ComputeBoxValueForOrigin(
+    nsIFrame* aForFrame, StyleBackgroundOrigin aOrigin) {
   // The mapping for mask-origin is from
   // https://drafts.fxtf.org/css-masking/#the-mask-origin
-  if (!aForFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT)) {
-    // For elements with associated CSS layout box, the values fill-box,
-    // stroke-box and view-box compute to the initial value of mask-origin.
-    if (IsSVGStyleGeometryBox(aBox)) {
-      return StyleGeometryBox::BorderBox;
-    }
-  } else {
+  const bool svgLayout = aForFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT);
+  switch (aOrigin) {
     // For SVG elements without associated CSS layout box, the values
     // content-box, padding-box, border-box compute to fill-box.
-    if (IsHTMLStyleGeometryBox(aBox)) {
-      return StyleGeometryBox::FillBox;
-    }
+    case StyleBackgroundOrigin::ContentBox:
+      return svgLayout ? StyleGeometryBox::FillBox
+                       : StyleGeometryBox::ContentBox;
+    case StyleBackgroundOrigin::PaddingBox:
+      return svgLayout ? StyleGeometryBox::FillBox
+                       : StyleGeometryBox::PaddingBox;
+    case StyleBackgroundOrigin::BorderBox:
+      return svgLayout ? StyleGeometryBox::FillBox
+                       : StyleGeometryBox::BorderBox;
+    // For elements with associated CSS layout box, the values fill-box,
+    // stroke-box and view-box compute to the initial value of mask-origin.
+    case StyleBackgroundOrigin::FillBox:
+      return svgLayout ? StyleGeometryBox::FillBox
+                       : StyleGeometryBox::BorderBox;
+    case StyleBackgroundOrigin::StrokeBox:
+      return svgLayout ? StyleGeometryBox::StrokeBox
+                       : StyleGeometryBox::BorderBox;
+    case StyleBackgroundOrigin::ViewBox:
+      return svgLayout ? StyleGeometryBox::ViewBox
+                       : StyleGeometryBox::BorderBox;
   }
-
-  return aBox;
+  MOZ_ASSERT_UNREACHABLE("Unknown background-origin value");
+  return StyleGeometryBox::BorderBox;
 }
 
 // Resolves a background-clip/mask-clip value into the geometry box it paints
@@ -2784,14 +2766,6 @@ nsRect nsCSSRendering::ComputeImageLayerPositioningArea(
   } else {
     positionArea = nsRect(nsPoint(0, 0), aBorderArea.Size());
   }
-
-  // See the comment of StyleGeometryBox::MarginBox.
-  // Hitting this assertion means we decide to turn on margin-box support for
-  // positioned mask from CSS parser and style system. In this case, you
-  // should *inflate* positionArea by the margin returning from
-  // geometryFrame->GetUsedMargin() in the code chunk bellow.
-  MOZ_ASSERT(aLayer.mOrigin != StyleGeometryBox::MarginBox,
-             "StyleGeometryBox::MarginBox rendering is not supported yet.\n");
 
   // {background|mask} images are tiled over the '{background|mask}-clip' area
   // but the origin of the tiling is based on the '{background|mask}-origin'

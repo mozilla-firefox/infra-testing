@@ -6,21 +6,20 @@ such as system access, normal file I/O, and socket (network) I/O.
 For sample code that illustrates basic I/O operations, see {doc}`introduction_to_nspr`.
 For information about the types most
 commonly used with the functions described in this chapter, see [I/O
-Types](I%2fO_Types).
+Types](i_o_types.md).
 
 - [Functions that Operate on
-  Pathnames](#Functions_that_Operate_on_Pathnames)
+  Pathnames](#functions-that-operate-on-pathnames)
 - [Functions that Act on File
-  Descriptors](#Functions_that_Act_on_File_Descriptors)
-- [Directory I/O Functions](#Directory_I/O_Functions)
-- [Socket Manipulation Functions](#Socket_Manipulation_Functions)
+  Descriptors](#functions-that-act-on-file-descriptors)
+- [Directory I/O Functions](#directory-io-functions)
+- [Socket Manipulation Functions](#socket-manipulation-functions)
 - [Converting Between Host and Network
-  Addresses](#Converting_Between_Host_and_Network_Addresses)
-- [Memory-Mapped I/O Functions](#Memory-Mapped_I/O_Functions)
-- [Anonymous Pipe Function](#Anonymous_Pipe_Function)
-- [Polling Functions](#Polling_Functions)
-- [Pollable Events](#Pollable_Events)
-- [Manipulating Layers](#Manipulating_Layers)
+  Addresses](#converting-between-host-and-network-addresses)
+- [Memory-Mapped I/O Functions](#memory-mapped-io-functions)
+- [Anonymous Pipe Function](#anonymous-pipe-function)
+- [Polling Functions](#polling-functions)
+- [Manipulating Layers](#manipulating-layers)
 
 (functions-that-operate-on-pathnames)=
 
@@ -36,48 +35,48 @@ the native system calls.
 
 Some file systems also differentiate drives or volumes.
 
-- {ref}`PR_Open`
+- {doc}`pr_open`
 
-- {ref}`PR_Delete`
+- {doc}`pr_delete`
 
-- {ref}`PR_GetFileInfo`
+- {doc}`pr_getfileinfo`
 
-- {ref}`PR_GetFileInfo64`
+- {doc}`pr_getfileinfo64`
 
-- {ref}`PR_Rename`
+- {doc}`pr_rename`
 
-- {ref}`PR_Access`
+- {doc}`pr_access`
 
-  - type {ref}`PRAccessHow`
+  - type {doc}`praccesshow`
 
 (functions-that-act-on-file-descriptors)=
 
 ## Functions that Act on File Descriptors
 
-- {ref}`PR_Close`
-- {ref}`PR_Read`
-- {ref}`PR_Write`
-- {ref}`PR_Writev`
-- {ref}`PR_GetOpenFileInfo`
-- {ref}`PR_GetOpenFileInfo64`
-- {ref}`PR_Seek`
-- {ref}`PR_Seek64`
-- {ref}`PR_Available`
-- {ref}`PR_Available64`
-- {ref}`PR_Sync`
-- {ref}`PR_GetDescType`
-- {ref}`PR_GetSpecialFD`
-- {ref}`PR_CreatePipe`
+- {doc}`pr_close`
+- {doc}`pr_read`
+- {doc}`pr_write`
+- {doc}`pr_writev`
+- {doc}`pr_getopenfileinfo`
+- {doc}`pr_getopenfileinfo64`
+- {doc}`pr_seek`
+- {doc}`pr_seek64`
+- {doc}`pr_available`
+- {doc}`pr_available64`
+- {doc}`pr_sync`
+- {doc}`pr_getdesctype`
+- {doc}`pr_getspecialfd`
+- {doc}`pr_createpipe`
 
 (directory-i-2fo-functions)=
 
 ## Directory I/O Functions
 
-- {ref}`PR_OpenDir`
-- {ref}`PR_ReadDir`
-- {ref}`PR_CloseDir`
-- {ref}`PR_MkDir`
-- {ref}`PR_RmDir`
+- {doc}`pr_opendir`
+- {doc}`pr_readdir`
+- {doc}`pr_closedir`
+- {doc}`pr_mkdir`
+- {doc}`pr_rmdir`
 
 (socket-manipulation-functions)=
 
@@ -87,43 +86,43 @@ The network programming interface presented here is a socket API modeled
 after the popular Berkeley sockets. Differences include the following:
 
 - The blocking socket functions in NSPR take a timeout parameter.
-- Two new functions, {ref}`PR_TransmitFile` and {ref}`PR_AcceptRead`, can
+- Two new functions, {doc}`pr_transmitfile` and {doc}`pr_acceptread`, can
   exploit the new system calls of some operating systems for higher
   performance.
 
 List of functions:
 
-- {ref}`PR_OpenUDPSocket`
-- {ref}`PR_NewUDPSocket`
-- {ref}`PR_OpenTCPSocket`
-- {ref}`PR_NewTCPSocket`
-- {ref}`PR_ImportTCPSocket`
-- {ref}`PR_Connect`
-- {ref}`PR_ConnectContinue`
-- {ref}`PR_Accept`
-- {ref}`PR_Bind`
-- {ref}`PR_Listen`
-- {ref}`PR_Shutdown`
-- {ref}`PR_Recv`
-- {ref}`PR_Send`
-- {ref}`PR_RecvFrom`
-- {ref}`PR_SendTo`
-- {ref}`PR_TransmitFile`
-- {ref}`PR_AcceptRead`
-- {ref}`PR_GetSockName`
-- {ref}`PR_GetPeerName`
-- {ref}`PR_GetSocketOption`
-- {ref}`PR_SetSocketOption`
+- {doc}`pr_openudpsocket`
+- {doc}`pr_newudpsocket`
+- {doc}`pr_opentcpsocket`
+- {doc}`pr_newtcpsocket`
+- {doc}`pr_importtcpsocket`
+- {doc}`pr_connect`
+- {doc}`pr_connectcontinue`
+- {doc}`pr_accept`
+- {doc}`pr_bind`
+- {doc}`pr_listen`
+- {doc}`pr_shutdown`
+- {doc}`pr_recv`
+- {doc}`pr_send`
+- {doc}`pr_recvfrom`
+- {doc}`pr_sendto`
+- {doc}`pr_transmitfile`
+- {doc}`pr_acceptread`
+- {doc}`pr_getsockname`
+- {doc}`pr_getpeername`
+- {doc}`pr_getsocketoption`
+- {doc}`pr_setsocketoption`
 
 (converting-between-host-and-network-addresses)=
 
 ## Converting Between Host and Network Addresses
 
-- {ref}`PR_ntohs`
-- {ref}`PR_ntohl`
-- {ref}`PR_htons`
-- {ref}`PR_htonl`
-- {ref}`PR_FamilyInet`
+- {doc}`pr_ntohs`
+- {doc}`pr_ntohl`
+- {doc}`pr_htons`
+- {doc}`pr_htonl`
+- {doc}`pr_familyinet`
 
 (memory-mapped-i-2fo-functions)=
 
@@ -136,16 +135,16 @@ accomplished by normal memory accesses.
 Memory-mapped I/O functions are currently implemented for Unix, Linux,
 Mac OS X, and Win32 only.
 
-- {ref}`PR_CreateFileMap`
-- {ref}`PR_MemMap`
-- {ref}`PR_MemUnmap`
-- {ref}`PR_CloseFileMap`
+- {doc}`pr_createfilemap`
+- {doc}`pr_memmap`
+- {doc}`pr_unmap`
+- {doc}`pr_closefilemap`
 
 (anonymous-pipe-function)=
 
 ## Anonymous Pipe Function
 
-- {ref}`PR_CreatePipe`
+- {doc}`pr_createpipe`
 
 (polling-functions)=
 
@@ -154,37 +153,8 @@ Mac OS X, and Win32 only.
 This section describes two of the most important polling functions
 provided by NSPR:
 
-- {ref}`PR_Poll`
-- {ref}`PR_GetConnectStatus`
-
-(pollable-events)=
-
-## Pollable Events
-
-A pollable event is a special kind of file descriptor. The only I/O
-operation you can perform on a pollable event is to poll it with the
-`PR_POLL_READ` flag. You cannot read from or write to a pollable
-event.
-
-The purpose of a pollable event is to combine event waiting with I/O
-waiting in a single {ref}`PR_Poll` call. Pollable events are implemented
-using a pipe or a pair of TCP sockets connected via the loopback
-address, therefore setting and/or waiting for pollable events are
-expensive operating system calls. Do not use pollable events for general
-thread synchronization; use condition variables instead.
-
-A pollable event has two states: set and unset. Events are not queued,
-so there is no notion of an event count. A pollable event is either set
-or unset.
-
-- {ref}`PR_NewPollableEvent`
-- {ref}`PR_DestroyPollableEvent`
-- {ref}`PR_SetPollableEvent`
-- {ref}`PR_WaitForPollableEvent`
-
-One can call {ref}`PR_Poll` with the `PR_POLL_READ` flag on a pollable
-event. When the pollable event is set, {ref}`PR_Poll` returns the the
-`PR_POLL_READ` flag set in the out_flags.
+- {doc}`pr_poll`
+- {doc}`pr_getconnectstatus`
 
 (manipulating-layers)=
 
@@ -225,11 +195,11 @@ code are equivalent:
 
 `rv = PR_PushIOLayer(stack, PR_GetLayersIdentity(stack), my_layer);`
 
-- {ref}`PR_GetUniqueIdentity`
-- {ref}`PR_GetNameForIdentity`
-- {ref}`PR_GetLayersIdentity`
-- {ref}`PR_GetIdentitiesLayer`
-- {ref}`PR_GetDefaultIOMethods`
-- {ref}`PR_CreateIOLayerStub`
-- {ref}`PR_PushIOLayer`
-- {ref}`PR_PopIOLayer`
+- {doc}`pr_getuniqueidentity`
+- {doc}`pr_getnameforidentity`
+- {doc}`pr_getlayersidentity`
+- {doc}`pr_getidentitieslayer`
+- {doc}`pr_getdefaultiomethods`
+- {doc}`pr_createiolayerstub`
+- {doc}`pr_pushiolayer`
+- {doc}`pr_popiolayer`

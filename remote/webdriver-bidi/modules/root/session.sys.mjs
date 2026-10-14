@@ -14,7 +14,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "chrome://remote/content/shared/messagehandler/MessageHandler.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
   generateUUID: "chrome://remote/content/shared/UUID.sys.mjs",
-  getWebDriverSessionById:
+  getWebDriverSessionByInternalSessionId:
     "chrome://remote/content/shared/webdriver/Session.sys.mjs",
   NavigableManager: "chrome://remote/content/shared/NavigableManager.sys.mjs",
   pprint: "chrome://remote/content/shared/Format.sys.mjs",
@@ -78,7 +78,9 @@ class SessionModule extends RootBiDiModule {
    * Session clean up will happen later in WebDriverBiDiConnection class.
    */
   async end() {
-    const session = lazy.getWebDriverSessionById(this.messageHandler.sessionId);
+    const session = lazy.getWebDriverSessionByInternalSessionId(
+      this.messageHandler.internalSessionId
+    );
 
     if (session.http) {
       throw new lazy.error.UnsupportedOperationError(

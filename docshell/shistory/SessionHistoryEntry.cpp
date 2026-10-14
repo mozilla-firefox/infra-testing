@@ -6,6 +6,7 @@
 #include "ipc/IPCMessageUtilsSpecializations.h"
 #include "mozilla/dom/SessionHistoryEntry.h"
 #include "nsCOMPtr.h"
+#include "nsContentUtils.h"
 #include "nsDocShell.h"
 #include "nsDocShellLoadState.h"
 #include "nsFrameLoader.h"
@@ -43,6 +44,14 @@ extern mozilla::LazyLogModule gSHLog;
 namespace mozilla {
 namespace dom {
 
+// Only store policy container for loads that can't carry it themselves
+// (about:blank, about:srcdoc, blob:, data:, ...)
+// bug 1867137, bug 2011236
+static nsIPolicyContainer* PolicyContainerToStore(
+    nsIURI* aURI, nsIPolicyContainer* aPolicyContainer) {
+  return CSP_ShouldURIInheritCSP(aURI) ? aPolicyContainer : nullptr;
+}
+
 SessionHistoryInfo::SessionHistoryInfo(nsDocShellLoadState* aLoadState,
                                        nsIChannel* aChannel)
     : mURI(aLoadState->URI()),
@@ -61,10 +70,17 @@ SessionHistoryInfo::SessionHistoryInfo(nsDocShellLoadState* aLoadState,
       mSharedState(SharedState::Create(
           aLoadState->TriggeringPrincipal(), aLoadState->PrincipalToInherit(),
           aLoadState->PartitionedPrincipalToInherit(),
-          aLoadState->PolicyContainer(),
+          PolicyContainerToStore(aLoadState->URI(),
+                                 aLoadState->PolicyContainer()),
           /* FIXME Is this correct? */
           aLoadState->TypeHint())) {
   MOZ_DIAGNOSTIC_ASSERT(!mURI->SchemeIs("javascript"));
+
+  // Verify the documented purpose of mBaseURI.
+  MOZ_DIAGNOSTIC_ASSERT(
+      !mBaseURI || mSrcdocData ||
+      (aLoadState->TriggeringPrincipal() &&
+       aLoadState->TriggeringPrincipal()->IsSystemPrincipal()));
 
   // Pull the upload stream off of the channel instead of the load state, as
   // ownership has already been transferred from the load state to the channel.
@@ -126,7 +142,8 @@ SessionHistoryInfo::SessionHistoryInfo(
 
   mSharedState.Get()->mPartitionedPrincipalToInherit =
       aPartitionedPrincipalToInherit;
-  mSharedState.Get()->mPolicyContainer = aPolicyContainer;
+  mSharedState.Get()->mPolicyContainer =
+      PolicyContainerToStore(mURI, aPolicyContainer);
   aChannel->GetContentType(mSharedState.Get()->mContentType);
   aChannel->GetOriginalURI(getter_AddRefs(mOriginalURI));
 
@@ -237,6 +254,7 @@ void SessionHistoryInfo::FillLoadInfo(nsDocShellLoadState& aLoadState) const {
   aLoadState.SetOriginalURI(mOriginalURI);
   aLoadState.SetMaybeResultPrincipalURI(Some(mResultPrincipalURI));
   aLoadState.SetUnstrippedURI(mUnstrippedURI);
+  aLoadState.SetBaseURI(mBaseURI);
   aLoadState.SetLoadReplace(mLoadReplace);
   nsCOMPtr<nsIInputStream> postData = GetPostData();
   aLoadState.SetPostDataStream(postData);
@@ -257,16 +275,13 @@ void SessionHistoryInfo::FillLoadInfo(nsDocShellLoadState& aLoadState) const {
   // the source browsing context that was used when the history entry was
   // first created. bug 947716 has been created to address this issue.
   nsAutoString srcdoc;
-  nsCOMPtr<nsIURI> baseURI;
   if (mSrcdocData) {
     srcdoc = mSrcdocData.value();
-    baseURI = mBaseURI;
     flags |= nsDocShell::InternalLoad::INTERNAL_LOAD_FLAGS_IS_SRCDOC;
   } else {
     srcdoc = VoidString();
   }
   aLoadState.SetSrcdocData(srcdoc);
-  aLoadState.SetBaseURI(baseURI);
   aLoadState.SetInternalLoadFlags(flags);
 
   aLoadState.SetFirstParty(true);
@@ -1287,47 +1302,6 @@ void SessionHistoryEntry::GetChildAt(int32_t aIndex,
   child.forget(aChild);
 }
 
-SessionHistoryEntry*
-SessionHistoryEntry::GetChildSHEntryIfHasNoDynamicallyAddedChild(
-    int32_t aChildOffset) {
-  bool dynamicallyAddedChild = false;
-  HasDynamicallyAddedChild(&dynamicallyAddedChild);
-  if (dynamicallyAddedChild) {
-    return nullptr;
-  }
-
-  // If the user did a shift-reload on this frameset page,
-  // we don't want to load the subframes from history.
-  if (IsForceReloadType(mInfo->mLoadType) || mInfo->mLoadType == LOAD_REFRESH) {
-    return nullptr;
-  }
-
-  /* Before looking for the subframe's url, check
-   * the expiration status of the parent. If the parent
-   * has expired from cache, then subframes will not be
-   * loaded from history in certain situations.
-   * If the user pressed reload and the parent frame has expired
-   *  from cache, we do not want to load the child frame from history.
-   */
-  if (SharedInfo()->mExpired && (mInfo->mLoadType == LOAD_RELOAD_NORMAL)) {
-    // The parent has expired. Return null.
-    return nullptr;
-  }
-  // Get the child subframe from session history.
-  auto* child = mChildren.SafeElementAt(aChildOffset);
-  if (child) {
-    // Set the parent's Load Type on the child
-    child->SetLoadType(mInfo->mLoadType);
-  }
-  return child;
-}
-
-NS_IMETHODIMP_(void)
-SessionHistoryEntry::GetChildSHEntryIfHasNoDynamicallyAddedChild(
-    int32_t aChildOffset, nsISHEntry** aChild) {
-  *aChild = GetChildSHEntryIfHasNoDynamicallyAddedChild(aChildOffset);
-}
-
 NS_IMETHODIMP
 SessionHistoryEntry::ReplaceChild(nsISHEntry* aNewChild) {
   NS_ENSURE_STATE(aNewChild);
@@ -1613,6 +1587,7 @@ bool ParamTraits<mozilla::dom::SessionHistoryInfo>::Read(
   }
 
   if (aResult->mURI && aResult->mURI->SchemeIs("javascript")) {
+    // Note: Session restore also skips javascript: URIs to avoid hitting this.
     aReader->FatalError("javascript: URIs should not enter session history");
     return false;
   }

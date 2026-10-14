@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, # You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import annotations
+
 import ast
 import os
 import re
@@ -11,7 +13,6 @@ from typing import Any
 from urllib.parse import urlparse
 
 import mozfile
-import requests
 
 from mozbuild.vendor.host_googlesource import GoogleSourceHost
 from mozbuild.vendor.vendor_manifest import safe_extract_tar
@@ -122,7 +123,7 @@ class DepsParser:
 class AngleHost(GoogleSourceHost):
     def upstream_commit(self, revision):
         def _chromium_beta_angle_revision() -> str:
-            response = requests.get(
+            response = self.session.get(
                 "https://chromiumdash.appspot.com/fetch_releases",
                 params={"channel": "Beta", "platform": "Windows", "num": 1},
             )
@@ -139,7 +140,7 @@ class AngleHost(GoogleSourceHost):
     def upstream_snapshot(self, revision):
         def download_and_extract(url: str, target: Path):
             with mozfile.NamedTemporaryFile() as tmpfile:
-                req = requests.get(url, stream=True)
+                req = self.session.get(url, stream=True)
                 req.raise_for_status()
                 for data in req.iter_content(4096):
                     tmpfile.write(data)

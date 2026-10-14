@@ -26,7 +26,8 @@ const DEFAULT_HORIZONTAL_VISIBILITY = "hide-on-close";
 // New panels that are ready to be introduced to new sidebar users should be added to this list;
 // ensure your feature flag is enabled at the same time you do this and that its the same value as
 // what you added to .
-const DEFAULT_LAUNCHER_TOOLS = "aichat,syncedtabs,history,bookmarks,opentabs";
+const DEFAULT_LAUNCHER_TOOLS =
+  "opentabs,bookmarks,aichat,history,syncedtabs,passwords";
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
@@ -67,13 +68,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
     if (!newVal) {
       // Disable vertical tabs if revamped sidebar is turned off
       Services.prefs.setBoolPref("sidebar.verticalTabs", false);
-    } else if (newVal && !lazy.verticalTabsEnabled) {
-      // Horizontal tabs with sidebar.revamp default to "hide-on-close"; users
-      // can opt into the switcher-only "hide-launcher" from the customize panel.
-      Services.prefs.setStringPref(
-        VISIBILITY_SETTING_PREF,
-        DEFAULT_HORIZONTAL_VISIBILITY
-      );
     }
   }
 );
@@ -246,10 +240,12 @@ class SidebarManager extends EventTarget {
       DEFAULT_VERTICAL_VISIBILITY
     );
     if (!isEnabled) {
-      // Switching to (or initializing) horizontal tabs.
-      if (currentVisibility === "expand-on-hover") {
-        this.#savedVisibility = currentVisibility;
-      }
+      // Switching to (or initializing) horizontal tabs. The saved value is only
+      // consumed by a switch back that finds an invalid visibility, so record
+      // the absence of a choice too: otherwise one left over from an earlier
+      // switch stays latched and is restored over an unrelated one.
+      this.#savedVisibility =
+        currentVisibility === "expand-on-hover" ? currentVisibility : null;
       if (!HORIZONTAL_VISIBILITIES.includes(currentVisibility)) {
         Services.prefs.setStringPref(
           VISIBILITY_SETTING_PREF,

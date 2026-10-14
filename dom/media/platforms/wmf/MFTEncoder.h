@@ -71,6 +71,8 @@ class MFTEncoder final {
 
   static nsCString GetFriendlyName(const GUID& aSubtype);
 
+  static void ClearCache();
+
   struct Info final {
     GUID mSubtype;
     nsCString mName;
@@ -128,8 +130,9 @@ class MFTEncoder final {
   RefPtr<EncodePromise> DrainWithAsyncCallback();
   RefPtr<EncodePromise> PrepareForDrain();
   RefPtr<EncodePromise> StartDraining();
+  bool MaybeArmTimer();
   void EventHandler(MediaEventType aEventType, HRESULT aStatus);
-  void MaybeResolveOrRejectEncodePromise();
+  void MaybeResolveOrRejectEncodePromise(bool aResolveAll = false);
   void MaybeResolveOrRejectDrainPromise();
   void MaybeResolveOrRejectPreDrainPromise();
   void MaybeResolveOrRejectAnyPendingPromise(
@@ -218,8 +221,8 @@ class MFTEncoder final {
 
   // The following members are used only for realtime asynchronous processing
   // model.
+  std::deque<RefPtr<EncodePromise::Private>> mEncodePromises;
   MediaResult mPendingError;
-  MozPromiseHolder<EncodePromise> mEncodePromise;
   MozPromiseHolder<EncodePromise> mDrainPromise;
   MozPromiseHolder<EncodePromise> mPreDrainPromise;
   // Use to resolve the encode promise if mAsyncEventSource doesn't response in

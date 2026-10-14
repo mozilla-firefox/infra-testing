@@ -61,6 +61,20 @@ private const val MINI_DUMP_FILE_EXT = "dmp"
 private const val EXTRAS_FILE_EXT = "extra"
 private const val FILE_REGEX = "([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\\."
 
+private const val MISSING_STACKTRACE_CLASS = "\$Missing"
+private const val MISSING_STACKTRACE_METHOD = "<stackTrace>"
+
+/**
+ * Fills in a placeholder frame when a throwable has no stack trace so that Socorro can process it.
+ *
+ * These report similar to: `[@ kotlinx.coroutines.JobCancellationException: at $Missing.<stackTrace>(Unknown Source) ]`
+ */
+private fun Throwable.withStacktraceIfMissing(): Throwable = also {
+    if (stackTrace.isEmpty()) {
+        stackTrace = arrayOf(StackTraceElement(MISSING_STACKTRACE_CLASS, MISSING_STACKTRACE_METHOD, null, -1))
+    }
+}
+
 /**
  * A [CrashReporterService] implementation uploading crash reports to crash-stats.mozilla.com.
  *
@@ -279,36 +293,40 @@ class MozillaSocorroService(
         formDataWriter.sendAnnotation(Annotation.DistributionID, distributionId)
 
         var additionalDumps: FormDataWriter.AdditionalMinidumps? = null
-        var hasCrashEventId = false
+        var extrasFileKeys = setOf<String>()
 
         extrasFilePath?.let {
             val regex = "$FILE_REGEX$EXTRAS_FILE_EXT".toRegex()
             if (regex.matchEntire(it.substringAfterLast("/")) != null) {
                 val extrasFile = File(it)
                 val extrasMap = readExtrasFromFile(extrasFile)
+                extrasFileKeys = extrasMap.keys
                 for (key in extrasMap.keys) {
                     formDataWriter.sendPart(key, extrasMap[key])
                 }
-                hasCrashEventId = extrasMap.containsKey(Annotation.CrashEventID.toString())
                 additionalDumps = formDataWriter.AdditionalMinidumps(extrasMap)
                 extrasFile.delete()
             }
         }
 
-        if (!hasCrashEventId) {
-            formDataWriter.sendAnnotation(Annotation.CrashEventID, crashEventId)
+        val sendIfMissing = { a: Annotation, value: () -> String ->
+            if (!extrasFileKeys.contains(a.toString())) {
+                formDataWriter.sendAnnotation(a, value())
+            }
         }
 
-        if (throwable?.stackTrace?.isEmpty() == false) {
+        sendIfMissing(Annotation.CrashEventID) { crashEventId }
+
+        throwable?.withStacktraceIfMissing()?.also {
             formDataWriter.sendAnnotation(
                 Annotation.JavaStackTrace,
                 getExceptionStackTrace(
-                    throwable,
+                    it,
                     !isNativeCodeCrash && !isFatalCrash,
                 ),
             )
 
-            formDataWriter.sendAnnotation(Annotation.JavaException, throwable.getStacktraceAsJsonString())
+            formDataWriter.sendAnnotation(Annotation.JavaException, it.getStacktraceAsJsonString())
         }
 
         miniDumpFilePath?.let {
@@ -359,6 +377,9 @@ class MozillaSocorroService(
                 formDataWriter.sendAnnotation(Annotation.Android_CPU_ABI2, Build.SUPPORTED_ABIS[1])
             }
         }
+        sendIfMissing(Annotation.OS) { "Android" }
+        sendIfMissing(Annotation.OSVersion) { "${Build.VERSION.SDK_INT}" }
+        sendIfMissing(Annotation.CPUArchitecture) { Crash.CPU_ARCH }
 
         formDataWriter.finish()
     }
@@ -490,7 +511,9 @@ class MozillaSocorroService(
         }
 
         fun finish() {
-            os.write(("\r\n--$boundary--\r\n").toByteArray())
+            // The close delimiter's leading CRLF is already supplied by the trailing CRLF
+            // every part writes; emitting another would land inside the last part's value.
+            os.write(("--$boundary--\r\n").toByteArray())
             os.flush()
             os.close()
         }

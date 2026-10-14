@@ -27,7 +27,7 @@ import textwrap
 import time
 import traceback
 import types
-from collections import OrderedDict, defaultdict
+from collections import defaultdict
 from concurrent.futures.process import ProcessPoolExecutor
 from io import StringIO
 from itertools import chain
@@ -842,6 +842,9 @@ class BuildReader:
             "testing/mozbase/moztest/tests/data",
             # Ignore object directories.
             "obj*",
+            # Ignore scratch directories that can hold whole checkouts.
+            "artifacts",
+            ".claude/worktrees",
         }
 
         # Also ignore any other directories that could be objdirs, but don't
@@ -1197,6 +1200,25 @@ class BuildReader:
         hook = config.substs.get("MOZ_BUILD_HOOK")
         if hook:
             sandbox.exec_file(hook, becomes_current_path=False)
+
+        # Add all EXPORTS to SOURCE_HEADERS
+        if exports := context.get("EXPORTS"):
+            exported_headers = {
+                hdr
+                for _, v in exports.walk()
+                for hdr in v
+                if hdr.endswith((".h", ".hpp"))
+            }
+            for source_header in sandbox["SOURCE_HEADERS"]:
+                if source_header in exported_headers:
+                    raise SandboxValidationError(
+                        f"SOURCE_HEADERS lists {source_header} which is already listed in EXPORTS",
+                        context,
+                    )
+
+            exported_headers = sorted(exported_headers, key=str.lower)
+            sandbox["SOURCE_HEADERS"] += exported_headers
+
         self._execution_time += time.monotonic() - time_start
         self._file_count += len(context.all_paths)
 
@@ -1254,7 +1276,7 @@ class BuildReader:
         # It's very tempting to use a set here. Unfortunately, the recursive
         # make backend needs order preserved. Once we autogenerate all backend
         # files, we should be able to convert this to a set.
-        recurse_info = OrderedDict()
+        recurse_info = {}
         for d in dirs:
             if d in recurse_info:
                 raise SandboxValidationError(

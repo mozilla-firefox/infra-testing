@@ -105,25 +105,25 @@ sftk_NullHashEnd(void *info, unsigned char *data, unsigned int *lenp,
 #endif
 
 /* Wrappers to avoid undefined behavior calling functions through a pointer of incorrect type. */
-#define SFTKHashWrap(ctxtype, mmm)                                                        \
-    static void                                                                           \
-        SFTKHash_##mmm##_Update(void *vctx, const unsigned char *input, unsigned int len) \
-    {                                                                                     \
-        ctxtype *ctx = vctx;                                                              \
-        mmm##_Update(ctx, input, len);                                                    \
-    }                                                                                     \
-    static void                                                                           \
-        SFTKHash_##mmm##_End(void *vctx, unsigned char *digest,                           \
-                             unsigned int *len, unsigned int maxLen)                      \
-    {                                                                                     \
-        ctxtype *ctx = vctx;                                                              \
-        mmm##_End(ctx, digest, len, maxLen);                                              \
-    }                                                                                     \
-    static void                                                                           \
-        SFTKHash_##mmm##_DestroyContext(void *vctx, PRBool freeit)                        \
-    {                                                                                     \
-        ctxtype *ctx = vctx;                                                              \
-        mmm##_DestroyContext(ctx, freeit);                                                \
+#define SFTKHashWrap(ctxtype, mmm)                                                    \
+    static void                                                                       \
+    SFTKHash_##mmm##_Update(void *vctx, const unsigned char *input, unsigned int len) \
+    {                                                                                 \
+        ctxtype *ctx = vctx;                                                          \
+        mmm##_Update(ctx, input, len);                                                \
+    }                                                                                 \
+    static void                                                                       \
+    SFTKHash_##mmm##_End(void *vctx, unsigned char *digest,                           \
+                         unsigned int *len, unsigned int maxLen)                      \
+    {                                                                                 \
+        ctxtype *ctx = vctx;                                                          \
+        mmm##_End(ctx, digest, len, maxLen);                                          \
+    }                                                                                 \
+    static void                                                                       \
+    SFTKHash_##mmm##_DestroyContext(void *vctx, PRBool freeit)                        \
+    {                                                                                 \
+        ctxtype *ctx = vctx;                                                          \
+        mmm##_DestroyContext(ctx, freeit);                                            \
     }
 
 SFTKHashWrap(MD2Context, MD2);
@@ -153,15 +153,15 @@ SFTKHash_MD5_Begin(void *vctx)
     MD5_Begin(ctx);
 }
 
-#define SFTKCipherWrap(ctxtype, mmm)                                         \
-    static SECStatus                                                         \
-        SFTKCipher_##mmm(void *vctx, unsigned char *output,                  \
-                         unsigned int *outputLen, unsigned int maxOutputLen, \
-                         const unsigned char *input, unsigned int inputLen)  \
-    {                                                                        \
-        ctxtype *ctx = vctx;                                                 \
-        return mmm(ctx, output, outputLen, maxOutputLen,                     \
-                   input, inputLen);                                         \
+#define SFTKCipherWrap(ctxtype, mmm)                                     \
+    static SECStatus                                                     \
+    SFTKCipher_##mmm(void *vctx, unsigned char *output,                  \
+                     unsigned int *outputLen, unsigned int maxOutputLen, \
+                     const unsigned char *input, unsigned int inputLen)  \
+    {                                                                    \
+        ctxtype *ctx = vctx;                                             \
+        return mmm(ctx, output, outputLen, maxOutputLen,                 \
+                   input, inputLen);                                     \
     }
 
 SFTKCipherWrap(AESKeyWrapContext, AESKeyWrap_EncryptKWP);
@@ -2281,7 +2281,7 @@ NSC_DigestFinal(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pDigest,
  */
 #define DOSUB(mmm)                                              \
     static CK_RV                                                \
-        sftk_doSub##mmm(SFTKSessionContext *context)            \
+    sftk_doSub##mmm(SFTKSessionContext *context)                \
     {                                                           \
         mmm##Context *mmm##_ctx = mmm##_NewContext();           \
         context->hashInfo = (void *)mmm##_ctx;                  \
@@ -3052,6 +3052,12 @@ nsc_EDDSASignStub(void *ctx, unsigned char *sigBuf,
     return rv;
 }
 
+static void
+sftk_MLDSADestroyContext(void *info, PRBool freeit)
+{
+    MLDSA_DestroyContext((MLDSAContext *)info);
+}
+
 void
 sftk_MLDSASignUpdate(void *info, const unsigned char *data, unsigned int len)
 {
@@ -3345,29 +3351,25 @@ NSC_SignInit(CK_SESSION_HANDLE hSession,
             rv = MLDSA_SignInit(&privKey->u.mldsa, hedgeType, &signCtx, &ctptr);
             if (rv != SECSuccess) {
                 crv = sftk_MapCryptError(PORT_GetError());
-                if (privKey != key->objectInfo) {
-                    nsslowkey_DestroyPrivateKey(privKey);
-                }
                 break;
             }
             /* set up our cipher info. MLDSA is only a combined hash/sign
              * so the hash update is our sign update, the hash end is a null
              * function returning a zero length value, and the final gets our
-             * signature based on the context. Both the cipher context and the
-             * hash Info is the same. The MLDSA_SignFinal frees the context,
-             * so we don't have to */
+             * signature based on the context. cipherInfo and hashInfo are the
+             * same pointer, so only one of them may free it: destroy does,
+             * hashdestroy doesn't. Freeing from here rather than from
+             * MLDSA_SignFinal is what releases the context when the operation
+             * is abandoned instead of finished. */
             context->multi = PR_TRUE;
             context->cipherInfo = ctptr;
             context->hashInfo = ctptr;
             context->hashUpdate = sftk_MLDSASignUpdate;
             context->end = sftk_NullHashEnd;
             context->hashdestroy = sftk_Null;
-            context->destroy = sftk_Null;
+            context->destroy = sftk_MLDSADestroyContext;
             context->update = sftk_MLDSASignFinal;
             context->maxLen = sftk_MLDSAGetSigLen(privKey->u.mldsa.paramSet);
-            if (privKey != key->objectInfo) {
-                nsslowkey_DestroyPrivateKey(privKey);
-            }
             break;
         }
 
@@ -4223,16 +4225,18 @@ NSC_VerifyInit(CK_SESSION_HANDLE hSession,
             /* set up our cipher info. MLDSA is only a combined hash/sign
              * so the hash update is our sign update, the hash end is a null
              * function returning a zero length value, and the final gets our
-             * signature based on the context. Both the cipher context and the
-             * hash Info is the same. The MLDSA_VerifyFinal frees the context,
-             * so we don't have to */
+             * signature based on the context. cipherInfo and hashInfo are the
+             * same pointer, so only one of them may free it: destroy does,
+             * hashdestroy doesn't. Freeing from here rather than from
+             * MLDSA_VerifyFinal is what releases the context when the
+             * operation is abandoned instead of finished. */
             context->multi = PR_TRUE;
             context->cipherInfo = ctptr;
             context->hashInfo = ctptr;
             context->hashUpdate = sftk_MLDSAVerifyUpdate;
             context->end = sftk_NullHashEnd;
             context->hashdestroy = sftk_Null;
-            context->destroy = sftk_Null;
+            context->destroy = sftk_MLDSADestroyContext;
             context->verify = sftk_MLDSAVerifyFinal;
             context->maxLen = sftk_MLDSAGetSigLen(pubKey->u.mldsa.paramSet);
             break;
@@ -6636,11 +6640,6 @@ NSC_GenerateKeyPair(CK_SESSION_HANDLE hSession,
             PORT_FreeArena(ecPriv->ecParams.arena, PR_TRUE);
             break;
 
-#ifndef NSS_DISABLE_KYBER
-        case CKM_NSS_KYBER_KEY_PAIR_GEN:
-            key_type = CKK_NSS_KYBER;
-            goto do_ml_kem;
-#endif
         case CKM_NSS_ML_KEM_KEY_PAIR_GEN:
             key_type = CKK_NSS_ML_KEM;
             goto do_ml_kem;
@@ -6664,8 +6663,6 @@ NSC_GenerateKeyPair(CK_SESSION_HANDLE hSession,
             seed.len = sizeof(seedData);
             rv = RNG_GenerateGlobalRandomBytes(seed.data, seed.len);
             if (rv != SECSuccess) {
-                fprintf(stderr, "Generate bytes failed nbytes=%d err=%d\n",
-                        seed.len, PORT_GetError());
                 crv = sftk_MapCryptError(PORT_GetError());
                 goto kyber_done;
             }
@@ -6681,8 +6678,6 @@ NSC_GenerateKeyPair(CK_SESSION_HANDLE hSession,
             }
             rv = Kyber_NewKey(kyberParams, &seed, &privKey, &pubKey);
             if (rv != SECSuccess) {
-                fprintf(stderr, "Generate Kyber_NewKey failed nbytes=%d err=%d\n",
-                        seed.len, PORT_GetError());
                 crv = sftk_MapCryptError(PORT_GetError());
                 goto kyber_done;
             }
@@ -7101,6 +7096,7 @@ sftk_PackagePrivateKey(SFTKObject *key, CK_RV *crvp)
             algorithm = SEC_OID_ANSIX9_DSA_SIGNATURE;
             break;
         case NSSLOWKEYECKey:
+            algorithm = SEC_OID_ANSIX962_EC_PUBLIC_KEY;
             prepare_low_ec_priv_key_for_asn1(lk);
             /* Public value is encoded as a bit string so adjust length
              * to be in bits before ASN encoding and readjust
@@ -7125,8 +7121,25 @@ sftk_PackagePrivateKey(SFTKObject *key, CK_RV *crvp)
 #endif
 
             param = SECITEM_DupItem(&lk->u.ec.ecParams.DEREncoding);
-
-            algorithm = SEC_OID_ANSIX962_EC_PUBLIC_KEY;
+            break;
+        /* X25519, ED25519, X448, and ED448 encode the private key
+         * as just a single Octect String. Unlike ECC we don't encode
+         * the public key nor the curve, so no need to use a
+         * special template */
+        case NSSLOWKEYECEdwardsKey:
+            algorithm = SEC_OID_ED25519;
+            goto ec_continue;
+        case NSSLOWKEYECMontgomeryKey:
+            algorithm = SEC_OID_X25519;
+        ec_continue:
+            prepare_low_ec_priv_key_for_asn1(lk);
+            /* don't set the public key, we only encode
+             * v1 versions for maximal compatibility. We
+             * can decode v2 versions */
+            dummy = SEC_ASN1EncodeItem(arena, &pki->privateKey,
+                                       &lk->u.ec.privateValue,
+                                       SEC_ASN1_GET(SEC_OctetStringTemplate));
+            param = NULL;
             break;
         case NSSLOWKEYMLKEMKey: {
             SECItem seed = { siBuffer, NULL, 0 };
@@ -7134,6 +7147,10 @@ sftk_PackagePrivateKey(SFTKObject *key, CK_RV *crvp)
             dummy = NULL;
 
             switch (lk->u.mlkem.mlkemParams) {
+                case params_ml_kem512:
+                case params_ml_kem512_test_mode:
+                    algorithm = SEC_OID_ML_KEM_512;
+                    break;
                 case params_ml_kem768:
                 case params_ml_kem768_test_mode:
                     algorithm = SEC_OID_ML_KEM_768;
@@ -7448,6 +7465,11 @@ sftk_unwrapPrivateKey(SFTKObject *key, SECItem *bpki)
     NSSLOWKEYPrivateKeyInfo *pki = NULL;
     CK_RV crv = CKR_KEY_TYPE_INCONSISTENT;
     CK_ULONG paramSet = 0;
+    const SECOidData *oidData = NULL;
+    SECOidTag pkiAlg = SEC_OID_UNKNOWN;
+    CK_BBOOL ec_sign = CK_FALSE;
+    CK_BBOOL ec_derive = CK_FALSE;
+    unsigned long version;
 
     arena = PORT_NewArena(2048);
     if (!arena) {
@@ -7466,6 +7488,13 @@ sftk_unwrapPrivateKey(SFTKObject *key, SECItem *bpki)
         return SECFailure;
     }
 
+    /* verify the version number */
+    if ((SEC_ASN1DecodeInteger(&pki->version, &version) != SECSuccess) ||
+        (version > 1) || ((version == 0) && (pki->publicKey.data != NULL))) {
+        PORT_FreeArena(arena, PR_TRUE);
+        return SECFailure;
+    }
+
     lpk = (NSSLOWKEYPrivateKey *)PORT_ArenaZAlloc(arena,
                                                   sizeof(NSSLOWKEYPrivateKey));
     if (lpk == NULL) {
@@ -7473,7 +7502,8 @@ sftk_unwrapPrivateKey(SFTKObject *key, SECItem *bpki)
     }
     lpk->arena = arena;
 
-    switch (SECOID_GetAlgorithmTag(&pki->algorithm)) {
+    pkiAlg = SECOID_GetAlgorithmTag(&pki->algorithm);
+    switch (pkiAlg) {
         case SEC_OID_PKCS1_RSA_ENCRYPTION:
         case SEC_OID_PKCS1_RSA_PSS_SIGNATURE:
             keyTemplate = nsslowkey_RSAPrivateKeyTemplate;
@@ -7499,6 +7529,41 @@ sftk_unwrapPrivateKey(SFTKObject *key, SECItem *bpki)
             prepare_low_ec_priv_key_for_asn1(lpk);
             prepare_low_ecparams_for_asn1(&lpk->u.ec.ecParams);
             break;
+        case SEC_OID_X25519:
+            lpk->keyType = NSSLOWKEYECMontgomeryKey;
+            goto ecx_continue;
+        case SEC_OID_ED25519:
+            lpk->keyType = NSSLOWKEYECEdwardsKey;
+        ecx_continue:
+            /* we decode the whole key here rather than do the normal
+             * later decode step */
+            keyTemplate = NULL;
+            paramTemplate = NULL;
+            paramDest = NULL;
+            oidData = SECOID_FindOIDByTag(pkiAlg);
+            if (oidData == NULL) {
+                goto loser;
+            }
+            /* CURVE is provided by the tag, not encoded in the parameters
+             * for the x25519, x448, ed25519 and ed448 keys */
+            if (SEC_ASN1EncodeItem(arena, &(lpk->u.ec.ecParams.DEREncoding),
+                                   &oidData->oid,
+                                   SEC_ASN1_GET(SEC_ObjectIDTemplate)) == NULL) {
+                goto loser;
+            }
+            prepare_low_ec_priv_key_for_asn1(lpk);
+            /* private key is a simple octet string, just decode it now */
+            rv = SEC_QuickDERDecodeItem(arena, &(lpk->u.ec.privateValue),
+                                        SEC_ASN1_GET(SEC_OctetStringTemplate),
+                                        &(pki->privateKey));
+            if (rv != SECSuccess) {
+                goto loser;
+            }
+            /* ignore any v2 publicKey; we can derived it from the private key */
+            break;
+        case SEC_OID_ML_KEM_512:
+            paramSet = CKP_ML_KEM_512;
+            goto mlkem_next;
         case SEC_OID_ML_KEM_768:
             paramSet = CKP_ML_KEM_768;
             goto mlkem_next;
@@ -7534,7 +7599,8 @@ sftk_unwrapPrivateKey(SFTKObject *key, SECItem *bpki)
                     break;
                 default:
                     keyTemplate = NULL;
-                    break;
+                    PORT_SetError(SEC_ERROR_BAD_KEY);
+                    goto loser;
             }
 
             paramTemplate = NULL;
@@ -7545,15 +7611,15 @@ sftk_unwrapPrivateKey(SFTKObject *key, SECItem *bpki)
             keyTemplate = NULL;
             paramTemplate = NULL;
             paramDest = NULL;
-            break;
-    }
-
-    if (!keyTemplate) {
-        goto loser;
+            PORT_SetError(SEC_ERROR_BAD_KEY);
+            goto loser;
     }
 
     /* decode the private key and any algorithm parameters */
-    rv = SEC_QuickDERDecodeItem(arena, lpk, keyTemplate, &pki->privateKey);
+    rv = SECSuccess;
+    if (keyTemplate) {
+        rv = SEC_QuickDERDecodeItem(arena, lpk, keyTemplate, &pki->privateKey);
+    }
 
     if (lpk->keyType == NSSLOWKEYECKey) {
         /* convert length in bits to length in bytes */
@@ -7705,9 +7771,6 @@ sftk_unwrapPrivateKey(SFTKObject *key, SECItem *bpki)
             break;
         case NSSLOWKEYMLDSAKey:
             keyType = CKK_ML_DSA;
-            crv = (sftk_hasAttribute(key, CKA_NSS_DB)) ? CKR_OK : CKR_KEY_TYPE_INCONSISTENT;
-            if (crv != CKR_OK)
-                break;
             crv = sftk_AddAttributeType(key, CKA_KEY_TYPE, &keyType,
                                         sizeof(keyType));
             if (crv != CKR_OK)
@@ -7750,11 +7813,23 @@ sftk_unwrapPrivateKey(SFTKObject *key, SECItem *bpki)
             keyType = CKK_DH;
             break;
 #endif
-        /* what about fortezza??? */
+        case NSSLOWKEYECEdwardsKey:
+            keyType = CKK_EC_EDWARDS;
+            ec_derive = CK_FALSE;
+            ec_sign = CK_TRUE;
+            goto ec_import_continue;
+        case NSSLOWKEYECMontgomeryKey:
+            keyType = CKK_EC_MONTGOMERY;
+            ec_derive = CK_TRUE;
+            ec_sign = CK_FALSE;
+            goto ec_import_continue;
         case NSSLOWKEYECKey:
             keyType = CKK_EC;
+            ec_derive = CK_TRUE;
+            ec_sign = CK_TRUE;
             /* if we weren't passed the CKA_NSS_DB, get it
-             * from the public key */
+             * from the public key. only do this for
+             * CKK_EC keys. */
             if (!sftk_hasAttribute(key, CKA_NSS_DB)) {
                 if (lpk->u.ec.publicValue.len == 0) {
                     crv = CKR_KEY_TYPE_INCONSISTENT;
@@ -7766,11 +7841,12 @@ sftk_unwrapPrivateKey(SFTKObject *key, SECItem *bpki)
                     goto loser;
                 }
             }
+        ec_import_continue:
             crv = sftk_AddAttributeType(key, CKA_KEY_TYPE, &keyType,
                                         sizeof(keyType));
             if (crv != CKR_OK)
                 break;
-            crv = sftk_AddAttributeType(key, CKA_SIGN, &cktrue,
+            crv = sftk_AddAttributeType(key, CKA_SIGN, &ec_sign,
                                         sizeof(CK_BBOOL));
             if (crv != CKR_OK)
                 break;
@@ -7778,7 +7854,7 @@ sftk_unwrapPrivateKey(SFTKObject *key, SECItem *bpki)
                                         sizeof(CK_BBOOL));
             if (crv != CKR_OK)
                 break;
-            crv = sftk_AddAttributeType(key, CKA_DERIVE, &cktrue,
+            crv = sftk_AddAttributeType(key, CKA_DERIVE, &ec_derive,
                                         sizeof(CK_BBOOL));
             if (crv != CKR_OK)
                 break;
@@ -9472,6 +9548,10 @@ NSC_DeriveKey(CK_SESSION_HANDLE hSession,
                 len = stringPtr->ulLen;
             } else {
                 mode = NSS_DES_EDE3_CBC;
+                if (BAD_PARAM_CAST(pMechanism, sizeof(CK_DES_CBC_ENCRYPT_DATA_PARAMS))) {
+                    crv = CKR_MECHANISM_PARAM_INVALID;
+                    break;
+                }
                 desEncryptPtr =
                     (CK_DES_CBC_ENCRYPT_DATA_PARAMS *)
                         pMechanism->pParameter;
@@ -10172,7 +10252,7 @@ NSC_DeriveKey(CK_SESSION_HANDLE hSession,
         case CKM_NSS_HKDF_SHA512:
             hashMech = CKM_SHA512;
             goto hkdf;
-        hkdf : {
+        hkdf: {
             const CK_NSS_HKDFParams *params =
                 (const CK_NSS_HKDFParams *)pMechanism->pParameter;
             CK_HKDF_PARAMS hkdfParams;

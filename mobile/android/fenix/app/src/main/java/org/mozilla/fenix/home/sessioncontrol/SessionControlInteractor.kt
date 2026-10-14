@@ -304,10 +304,6 @@ class SessionControlInteractor(
         recentTabController.handleRecentTabClicked(tabId)
     }
 
-    override fun onRecentTabShowAllClicked() {
-        recentTabController.handleRecentTabShowAllClicked()
-    }
-
     override fun onRemoveRecentTab(tab: RecentTab.Tab) {
         recentTabController.handleRecentTabRemoved(tab)
     }

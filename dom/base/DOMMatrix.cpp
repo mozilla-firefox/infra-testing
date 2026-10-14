@@ -799,29 +799,34 @@ void DOMMatrixReadOnly::Ensure3DMatrix() {
   }
 }
 
+DOMMatrix* DOMMatrix::MultiplySelf(const DOMMatrix& aOther) {
+  if (aOther.IsIdentity()) {
+    return this;
+  }
+
+  if (aOther.Is2D()) {
+    if (mMatrix3D) {
+      *mMatrix3D = gfx::Matrix4x4Double::From2D(*aOther.mMatrix2D) * *mMatrix3D;
+    } else {
+      *mMatrix2D = *aOther.mMatrix2D * *mMatrix2D;
+    }
+  } else {
+    Ensure3DMatrix();
+    *mMatrix3D = *aOther.mMatrix3D * *mMatrix3D;
+  }
+
+  return this;
+}
+
 DOMMatrix* DOMMatrix::MultiplySelf(const DOMMatrixInit& aOtherInit,
                                    ErrorResult& aRv) {
   RefPtr<DOMMatrix> other = FromMatrix(mParent, aOtherInit, aRv);
   if (aRv.Failed()) {
     return nullptr;
   }
+
   MOZ_ASSERT(other);
-  if (other->IsIdentity()) {
-    return this;
-  }
-
-  if (other->Is2D()) {
-    if (mMatrix3D) {
-      *mMatrix3D = gfx::Matrix4x4Double::From2D(*other->mMatrix2D) * *mMatrix3D;
-    } else {
-      *mMatrix2D = *other->mMatrix2D * *mMatrix2D;
-    }
-  } else {
-    Ensure3DMatrix();
-    *mMatrix3D = *other->mMatrix3D * *mMatrix3D;
-  }
-
-  return this;
+  return MultiplySelf(*other);
 }
 
 DOMMatrix* DOMMatrix::PreMultiplySelf(const DOMMatrixInit& aOtherInit,
@@ -988,6 +993,26 @@ DOMMatrix* DOMMatrix::RotateAxisAngleSelf(double aX, double aY, double aZ,
   return this;
 }
 
+DOMMatrix* DOMMatrix::SkewSelf(double aSx, double aSy) {
+  if (fmod(aSx, 360) == 0 && fmod(aSy, 360) == 0) {
+    return this;
+  }
+
+  if (mMatrix3D) {
+    gfx::Matrix4x4Double m;
+    m._21 = tan(aSx * kRadPerDegree);
+    m._12 = tan(aSy * kRadPerDegree);
+    *mMatrix3D = m * *mMatrix3D;
+  } else {
+    gfx::MatrixDouble m;
+    m._21 = tan(aSx * kRadPerDegree);
+    m._12 = tan(aSy * kRadPerDegree);
+    *mMatrix2D = m * *mMatrix2D;
+  }
+
+  return this;
+}
+
 DOMMatrix* DOMMatrix::SkewXSelf(double aSx) {
   if (fmod(aSx, 360) == 0) {
     return this;
@@ -1020,6 +1045,13 @@ DOMMatrix* DOMMatrix::SkewYSelf(double aSy) {
     m._12 = tan(aSy * kRadPerDegree);
     *mMatrix2D = m * *mMatrix2D;
   }
+
+  return this;
+}
+
+DOMMatrix* DOMMatrix::PerspectiveSelf(double aDepth) {
+  Ensure3DMatrix();
+  mMatrix3D->Perspective(aDepth);
 
   return this;
 }

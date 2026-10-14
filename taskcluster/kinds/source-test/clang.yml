@@ -39,7 +39,6 @@ tidy:
     treeherder:
         symbol: cpp(clang-tidy)
     run:
-        clone-with: hg
         cwd: '{checkout}'
         command: >-
             source taskcluster/scripts/misc/source-test-clang-setup.sh &&
@@ -56,13 +55,27 @@ tidy:
             - type: file
               name: public/code-review/clang-tidy.json
               path: /builds/worker/clang-tidy.json
+            - type: file
+              name: public/profile_resource-usage.json
+              path: /builds/worker/profile_resource-usage.json
 
 external:
     description: Run static-analysis (clang-tidy) on C/C++ patches with external checks
     treeherder:
         symbol: cpp(clang-tidy-external)
+    attributes:
+        code-review:
+            # This task has a dependency that requires a secret and shouldn't
+            # run in L1 contexts. We exclude try to preserve backwards
+            # compatibility and because reviewbot is already restricted to
+            # trusted contributors there.
+            by-project:
+                try: true
+                default:
+                    by-level:
+                        "1": false
+                        default: true
     run:
-        clone-with: hg
         cwd: '{checkout}'
         command: >-
             source taskcluster/scripts/misc/source-test-clang-setup.sh &&
@@ -79,6 +92,9 @@ external:
             - type: file
               name: public/code-review/clang-tidy.json
               path: /builds/worker/clang-tidy.json
+            - type: file
+              name: public/profile_resource-usage.json
+              path: /builds/worker/profile_resource-usage.json
 
 
 unittest:
@@ -96,7 +112,6 @@ unittest:
             - 'taskcluster/scripts/misc/source-test-clang-setup.sh'
             - 'tools/clang-tidy/**'
     run:
-        clone-with: hg
         cwd: '{checkout}'
         command: >-
             source taskcluster/scripts/misc/source-test-clang-setup.sh &&

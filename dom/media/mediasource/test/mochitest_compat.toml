@@ -1,7 +1,4 @@
 [DEFAULT]
-skip-if = [
-  "isolated_process", # Bug 1709948
-]
 subsuite = "media"
 tags = "media-engine-compatible media-gpu"
 prefs = ["media.hevc.enabled=1"] # for test_MediaSource_hevc_mp4
@@ -232,6 +229,10 @@ support-files = [
 
 ["test_AbortAfterPartialMediaSegment.html"]
 
+["test_AppendMultipleInitOpusAudio.html"]
+
+["test_AppendMultipleInitTracksLast.html"]
+
 ["test_AppendPartialInitSegment.html"]
 
 ["test_AudioChange_mp4.html"]
@@ -298,8 +299,6 @@ skip-if = [
 ["test_MediaSource_memory_reporting.html"]
 
 ["test_MediaSource_mp4.html"]
-
-["test_AppendMultipleInitOpusAudio.html"]
 
 ["test_MultipleInitSegments.html"]
 

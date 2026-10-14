@@ -23,7 +23,6 @@ let win;
 add_setup(async () => {
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["test.wait300msAfterTabSwitch", true],
       ["browser.tabs.groups.enabled", true],
       ["browser.urlbar.scotchBonnet.enableOverride", true],
     ],
@@ -649,7 +648,7 @@ async function doReopenTests(useVerticalTabs) {
 
   info("restoring saved group via undoClosetab");
   await waitForNoActiveGroups();
-  SessionWindowUI.undoCloseTab(win, undefined, win.__SSi);
+  SessionWindowUI.undoCloseTab(win, undefined, SessionStore.getWindowId(win));
   await waitForReopenRecord();
   assertReopenEvent({
     id: groupId,

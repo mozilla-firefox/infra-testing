@@ -34,6 +34,7 @@
 #include "libwebrtcglue/WebrtcImageBuffer.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
+#include "mozilla/AbstractThread.h"
 #include "mozilla/Logging.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/PeerIdentity.h"
@@ -971,7 +972,7 @@ void MediaPipelineTransmit::UpdateSendState() {
       mSendTrack->RemoveDirectListener(mListener);
     }
     mSendTrack->RemoveListener(mListener)->Then(
-        GetMainThreadSerialEventTarget(), __func__,
+        AbstractThread::MainThread(), __func__,
         [this, self = RefPtr<MediaPipelineTransmit>(this)] {
           mUnsettingSendTrack = false;
           mSendTrack = nullptr;
@@ -1473,6 +1474,21 @@ void MediaPipelineReceiveAudio::UpdateListener() {
   }
 }
 
+static VideoRotation FromWebrtcVideoRotation(webrtc::VideoRotation aRotation) {
+  switch (aRotation) {
+    case webrtc::kVideoRotation_0:
+      return VideoRotation::kDegree_0;
+    case webrtc::kVideoRotation_90:
+      return VideoRotation::kDegree_90;
+    case webrtc::kVideoRotation_180:
+      return VideoRotation::kDegree_180;
+    case webrtc::kVideoRotation_270:
+      return VideoRotation::kDegree_270;
+  }
+  MOZ_ASSERT_UNREACHABLE("Bad webrtc::VideoRotation value");
+  return VideoRotation::kDegree_0;
+}
+
 class MediaPipelineReceiveVideo::PipelineListener
     : public GenericReceiveListener {
  public:
@@ -1563,6 +1579,7 @@ class MediaPipelineReceiveVideo::PipelineListener
     }
 
     VideoSegment segment;
+    VideoRotation rotation = FromWebrtcVideoRotation(aVideoFrame.rotation());
     auto size = image->GetSize();
     auto processingDuration =
         aVideoFrame.processing_time()
@@ -1573,7 +1590,7 @@ class MediaPipelineReceiveVideo::PipelineListener
         image.forget(), size, principal,
         /* aForceBlack */ false, TimeStamp::Now(), processingDuration,
         aVideoFrame.rtp_timestamp(), aVideoFrame.ntp_time_ms(),
-        receiveTime ? receiveTime->us() : 0);
+        receiveTime ? receiveTime->us() : 0, rotation);
     mSource->AppendData(&segment);
   }
 

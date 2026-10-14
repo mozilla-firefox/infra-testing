@@ -250,7 +250,7 @@ addAccessibleTask(
     await reordered;
     // The iframe doc a11y tree might not be built yet.
     const iframeDoc = await TestUtils.waitForCondition(() =>
-      findAccessibleChildByID(topDocAcc, DEFAULT_IFRAME_DOC_BODY_ID)
+      findAccessibleChildByID(topDocAcc, DEFAULT_IFRAME_DOC_ID)
     );
     // Log/verify whether this is an in-process or OOP iframe.
     await comparePIDs(browser, gIsRemoteIframe);
@@ -915,4 +915,66 @@ addAccessibleTask(
     chrome: true,
     topLevel: true,
   }
+);
+
+/**
+ * Test caching of the editable and focusable states for EditContext.
+ */
+addAccessibleTask(
+  `
+  <div id="edit"><p id="p">content</p></div>
+  `,
+  async function testEditContext(browser, docAcc) {
+    await SpecialPowers.pushPrefEnv({
+      set: [["dom.editcontext.enabled", true]],
+    });
+
+    const edit = findAccessibleChildByID(docAcc, "edit");
+    const p = findAccessibleChildByID(docAcc, "p");
+    testStates(edit, 0, 0, STATE_FOCUSABLE, EXT_STATE_EDITABLE);
+    testStates(p, 0, 0, STATE_FOCUSABLE, EXT_STATE_EDITABLE);
+
+    info("Attaching EditContext to edit");
+    await contentSpawnMutation(
+      browser,
+      {
+        expected: [
+          stateChangeEventArgs(edit, EXT_STATE_EDITABLE, true, true),
+          stateChangeEventArgs(edit, STATE_FOCUSABLE, true),
+          stateChangeEventArgs(p, EXT_STATE_EDITABLE, true, true),
+        ],
+        // p is editable because it's a descendant of the EditContext's
+        // associated element, but only the EditContext element itself should
+        // be focusable.
+        unexpected: [stateChangeEventArgs(p, STATE_FOCUSABLE, true)],
+      },
+      () => {
+        content.document.getElementById("edit").editContext =
+          new content.EditContext();
+      }
+    );
+    testStates(edit, STATE_FOCUSABLE, EXT_STATE_EDITABLE);
+    testStates(p, 0, EXT_STATE_EDITABLE, STATE_FOCUSABLE, 0);
+
+    info("Detaching EditContext from edit");
+    await contentSpawnMutation(
+      browser,
+      {
+        expected: [
+          stateChangeEventArgs(edit, EXT_STATE_EDITABLE, false, true),
+          stateChangeEventArgs(edit, STATE_FOCUSABLE, false),
+          stateChangeEventArgs(p, EXT_STATE_EDITABLE, false, true),
+        ],
+        unexpected: [stateChangeEventArgs(p, STATE_FOCUSABLE, false)],
+      },
+      () => {
+        content.document.getElementById("edit").editContext = null;
+      }
+    );
+    testStates(edit, 0, 0, STATE_FOCUSABLE, EXT_STATE_EDITABLE);
+    testStates(p, 0, 0, STATE_FOCUSABLE, EXT_STATE_EDITABLE);
+
+    await SpecialPowers.popPrefEnv();
+  },
+  { topLevel: true, iframe: true, remoteIframe: true, chrome: true }
 );

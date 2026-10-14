@@ -8,4 +8,10 @@ support-files = [
 
 ["browser_command_line_urls.js"]
 
+["browser_disable_devtools_live.js"]
+
+["browser_disable_devtools_live_browser_console.js"]
+
+["browser_disable_devtools_live_browser_toolbox.js"]
+
 ["browser_shim_disable_devtools.js"]

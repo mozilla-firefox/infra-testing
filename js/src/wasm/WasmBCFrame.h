@@ -659,7 +659,7 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
     masm.loadFloat32(addressOfLocal(src), dest);
   }
 
-#ifdef ENABLE_WASM_SIMD
+#ifdef ENABLE_JIT_SIMD
   void loadLocalV128(const Local& src, RegV128 dest) {
     masm.loadUnalignedSimd128(addressOfLocal(src), dest);
   }
@@ -669,7 +669,15 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
     masm.store32(src, addressOfLocal(dest));
   }
 
+  void storeLocalI32(Imm32 src, const Local& dest) {
+    masm.store32(src, addressOfLocal(dest));
+  }
+
   void storeLocalI64(RegI64 src, const Local& dest) {
+    masm.store64(src, addressOfLocal(dest));
+  }
+
+  void storeLocalI64(Imm64 src, const Local& dest) {
     masm.store64(src, addressOfLocal(dest));
   }
 
@@ -685,7 +693,7 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
     masm.storeFloat32(src, addressOfLocal(dest));
   }
 
-#ifdef ENABLE_WASM_SIMD
+#ifdef ENABLE_JIT_SIMD
   void storeLocalV128(RegV128 src, const Local& dest) {
     masm.storeUnalignedSimd128(src, addressOfLocal(dest));
   }
@@ -758,7 +766,7 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
   static constexpr size_t StackSizeOfInt64 = ABIResult::StackSizeOfInt64;
   static constexpr size_t StackSizeOfFloat = ABIResult::StackSizeOfFloat;
   static constexpr size_t StackSizeOfDouble = ABIResult::StackSizeOfDouble;
-#ifdef ENABLE_WASM_SIMD
+#ifdef ENABLE_JIT_SIMD
   static constexpr size_t StackSizeOfV128 = ABIResult::StackSizeOfV128;
 #endif
 
@@ -790,7 +798,7 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
     return currentStackHeight();
   }
 
-#ifdef ENABLE_WASM_SIMD
+#ifdef ENABLE_JIT_SIMD
   uint32_t pushV128(RegV128 r) {
     mozilla::DebugOnly<uint32_t> stackBefore = currentStackHeight();
 #  ifdef RABALDR_CHUNKY_STACK
@@ -854,7 +862,7 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
     MOZ_ASSERT(stackBefore - StackSizeOfDouble == currentStackHeight());
   }
 
-#ifdef ENABLE_WASM_SIMD
+#ifdef ENABLE_JIT_SIMD
   void popV128(RegV128 r) {
     mozilla::DebugOnly<uint32_t> stackBefore = currentStackHeight();
     masm.loadUnalignedSimd128(Address(sp_, stackOffset(currentStackHeight())),
@@ -908,7 +916,7 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
     masm.loadFloat32(Address(sp_, stackOffset(offset)), dest);
   }
 
-#ifdef ENABLE_WASM_SIMD
+#ifdef ENABLE_JIT_SIMD
   void loadStackV128(int32_t offset, RegV128 dest) {
     masm.loadUnalignedSimd128(Address(sp_, stackOffset(offset)), dest);
   }
@@ -1090,7 +1098,7 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
     store64BitsToStack(bits.i64, destHeight, temp);
   }
 
-#ifdef ENABLE_WASM_SIMD
+#ifdef ENABLE_JIT_SIMD
   void storeImmediateV128ToStack(V128 imm, uint32_t destHeight, Register temp) {
     union {
       int32_t i32[4];

@@ -260,8 +260,8 @@ class ShareSheetLauncherTest {
     fun `WHEN showSystemShareSheet is called with multiple items THEN chooser actions share is invoked with numbered urls joined by newlines`() {
         val items =
             listOf(
-                ShareData(url = "https://mozilla.org", title = "Mozilla"),
-                ShareData(url = "https://firefox.com", title = "Firefox"),
+                ShareData(url = "https://mozilla.org", title = "Mozilla", private = false),
+                ShareData(url = "https://firefox.com", title = "Firefox", private = false),
             )
 
         launcher.showSystemShareSheet(items = items)
@@ -282,8 +282,8 @@ class ShareSheetLauncherTest {
         every { mockShareDelegate.shareWithChooserActions(any(), any(), capture(actionsSlot)) } just runs
         val items =
             listOf(
-                ShareData(url = "https://mozilla.org", title = "Mozilla"),
-                ShareData(url = "https://firefox.com", title = "Firefox"),
+                ShareData(url = "https://mozilla.org", title = "Mozilla", private = false),
+                ShareData(url = "https://firefox.com", title = "Firefox", private = false),
             )
 
         launcher.showSystemShareSheet(items = items)
@@ -294,7 +294,7 @@ class ShareSheetLauncherTest {
     @Config(sdk = [34])
     @Test
     fun `WHEN showSystemShareSheet is called with a single item THEN chooser actions share is invoked with that url`() {
-        val items = listOf(ShareData(url = "https://mozilla.org", title = "Mozilla"))
+        val items = listOf(ShareData(url = "https://mozilla.org", title = "Mozilla", private = false))
 
         launcher.showSystemShareSheet(items = items)
 
@@ -312,8 +312,8 @@ class ShareSheetLauncherTest {
     fun `WHEN showSystemShareSheet is called with items containing null urls THEN null urls are excluded from share text`() {
         val items =
             listOf(
-                ShareData(url = "https://mozilla.org", title = "Mozilla"),
-                ShareData(url = null, title = "No URL"),
+                ShareData(url = "https://mozilla.org", title = "Mozilla", private = false),
+                ShareData(url = null, title = "No URL", private = false),
             )
 
         launcher.showSystemShareSheet(items = items)
@@ -340,8 +340,8 @@ class ShareSheetLauncherTest {
     fun `WHEN showSystemShareSheet is called with multiple items and a subject THEN chooser actions share is invoked with the subject`() {
         val items =
             listOf(
-                ShareData(url = "https://mozilla.org", title = "Mozilla"),
-                ShareData(url = "https://firefox.com", title = "Firefox"),
+                ShareData(url = "https://mozilla.org", title = "Mozilla", private = false),
+                ShareData(url = "https://firefox.com", title = "Firefox", private = false),
             )
 
         launcher.showSystemShareSheet(items = items, subject = "My collection")
@@ -360,8 +360,8 @@ class ShareSheetLauncherTest {
     fun `GIVEN API level below 34 WHEN showSystemShareSheet is called with multiple items THEN basic share is used`() {
         val items =
             listOf(
-                ShareData(url = "https://mozilla.org", title = "Mozilla"),
-                ShareData(url = "https://firefox.com", title = "Firefox"),
+                ShareData(url = "https://mozilla.org", title = "Mozilla", private = false),
+                ShareData(url = "https://firefox.com", title = "Firefox", private = false),
             )
 
         launcher.showSystemShareSheet(items = items)

@@ -498,6 +498,7 @@ const TEST_GLOBAL = {
   ShellService: {
     doesAppNeedPin: () => false,
     isDefaultBrowser: () => true,
+    isDefaultBrowserAsync: async () => true,
   },
   FilterExpressions: {
     eval() {

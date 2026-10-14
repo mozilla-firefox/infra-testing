@@ -5,12 +5,6 @@ SpecialPowers.pushPrefEnv({ set: [["dom.disable_window_flip", false]] });
 
 const FILE = getRootDirectory(gTestPath) + "open_window_in_new_tab.html";
 
-add_setup(async function () {
-  await SpecialPowers.pushPrefEnv({
-    set: [["test.wait300msAfterTabSwitch", true]],
-  });
-});
-
 add_task(async function () {
   info("Opening first tab: " + FILE);
   let firstTab = await BrowserTestUtils.openNewForegroundTab(gBrowser, FILE);
@@ -66,6 +60,13 @@ add_task(async function () {
   let secondTab = await promiseTabOpened;
 
   is(gBrowser.selectedTab, secondTab, "Should've switched tabs");
+
+  info("Releasing the mouse button over the new tab");
+  await BrowserTestUtils.synthesizeMouseAtCenter(
+    "#open-mousedown",
+    { type: "mouseup" },
+    secondTab.linkedBrowser
+  );
 
   info("Ensuring we don't switch back");
   await new Promise(resolve => {

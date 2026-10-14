@@ -13,6 +13,7 @@
 #include "IDSet.h"
 #include "JavaBuiltins.h"
 #include "LocalAccessible-inl.h"
+#include "Pivot.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/a11y/Accessible.h"
@@ -24,11 +25,13 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/MouseEventBinding.h"
+#include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/jni/GeckoBundleUtils.h"
 #include "mozilla/jni/NativesInlines.h"
 #include "mozilla/widget/GeckoViewSupport.h"
 #include "nsAccUtils.h"
 #include "nsAccessibilityService.h"
+#include "nsIAccessiblePivot.h"
 #include "nsThreadUtils.h"
 
 #ifdef DEBUG
@@ -148,6 +151,15 @@ void SessionAccessibility::Click(int32_t aID) {
   MonitorAutoLock mal(nsAccessibilityService::GetAndroidMonitor());
   if (Accessible* acc = GetAccessibleByID(aID)) {
     acc->DoAction(0);
+  }
+}
+
+void SessionAccessibility::ChangeValueBySteps(int32_t aID, double aSteps) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MonitorAutoLock mal(nsAccessibilityService::GetAndroidMonitor());
+  if (Accessible* acc = GetAccessibleByID(aID)) {
+    double newValue = acc->CurValue() + (acc->Step() * aSteps);
+    acc->SetCurValue(newValue);
   }
 }
 
@@ -362,7 +374,7 @@ RefPtr<SessionAccessibility> SessionAccessibility::GetInstanceFor(
                                              ->Top();
     dom::BrowserParent* bp = cbc->GetBrowserParent();
     if (!bp) {
-      bp = aAccessible->AsRemote()->Document()->Manager();
+      bp = aAccessible->AsRemote()->Document()->GetBrowserParent();
     }
     if (auto element = bp->GetOwnerElement()) {
       if (auto doc = element->OwnerDoc()) {
@@ -458,10 +470,113 @@ void SessionAccessibility::SendScrollingEvent(Accessible* aAccessible,
   SendWindowContentChangedEvent();
 }
 
-void SessionAccessibility::SendWindowContentChangedEvent() {
+class NamedLeafRule : public PivotRule {
+ public:
+  uint16_t Match(Accessible* aAcc) override {
+    uint16_t result = nsIAccessibleTraversalRule::FILTER_IGNORE;
+
+    if (nsAccUtils::MustPrune(aAcc)) {
+      result |= nsIAccessibleTraversalRule::FILTER_IGNORE_SUBTREE;
+    }
+
+    if (aAcc->State() & states::INVISIBLE) {
+      result |= nsIAccessibleTraversalRule::FILTER_IGNORE_SUBTREE;
+      return result;
+    }
+
+    if ((!aAcc->HasChildren() || nsAccUtils::MustPrune(aAcc)) &&
+        !aAcc->NameIsEmpty()) {
+      result |= nsIAccessibleTraversalRule::FILTER_MATCH;
+    }
+
+    return result;
+  }
+};
+
+void SessionAccessibility::MaybeSendLiveRegionEvents(Accessible* aAccessible,
+                                                     int32_t aStartTextOffset,
+                                                     int32_t aEndTextOffset) {
+  Accessible* liveRegion = nsAccUtils::GetLiveRegionRoot(aAccessible);
+  if (!liveRegion) {
+    // We are not in a live region, do nothing.
+    return;
+  }
+
+  Maybe<bool> atomic;
+  nsAutoString busy;
+  liveRegion->LiveRegionAttributes(nullptr, nullptr, &atomic, &busy);
+  if (busy.EqualsIgnoreCase("true")) {
+    // If we are in a busy live region, do nothing. We don't need to climb to a
+    // parent region because the aria-busy of the child region mutes any changes
+    // in it.
+    return;
+  }
+
+  if (aStartTextOffset < 0) {
+    // This accessible and its subtree have been inserted.
+    // If this region is atomic, walk the region's tree instead of just this
+    // subtree.
+    auto p = a11y::Pivot((atomic && *atomic) ? liveRegion : aAccessible);
+    NamedLeafRule rule = NamedLeafRule();
+    Accessible* match = p.Next(nullptr, rule, true);
+    uint32_t matchCount = 1;
+    while (match) {
+      // Send WINDOW_CONTENT_CHANGED events for each leaf... within a limit.
+      SendWindowContentChangedEvent(match);
+      if (++matchCount > kLiveRegionContentChangedLimit) {
+        break;
+      }
+      match = p.Next(match, rule);
+    }
+  } else if (aEndTextOffset > 0) {
+    // Text leafs have changed within this container, fire an event for each
+    // one.
+    if (HyperTextAccessibleBase* ht = aAccessible->AsHyperTextBase()) {
+      uint32_t childCount = aAccessible->ChildCount();
+      for (uint32_t idx = ht->GetChildIndexAtOffset(aStartTextOffset);
+           idx < childCount && ht->GetChildOffset(idx) < aEndTextOffset;
+           idx++) {
+        Accessible* child = aAccessible->ChildAt(idx);
+        if (!child->IsTextLeaf()) {
+          continue;
+        }
+
+        if (atomic && *atomic) {
+          // A text change in an atomic live region, call this method on the
+          // entire region.
+          MaybeSendLiveRegionEvents(liveRegion);
+          return;
+        }
+
+        // Send WINDOW_CONTENT_CHANGED events on each child leaf that was
+        // inserted.
+        SendWindowContentChangedEvent(child);
+      }
+    }
+  }
+}
+
+void SessionAccessibility::SendWindowContentChangedEvent(
+    Accessible* aAccessible) {
+  int32_t virtualViewId =
+      aAccessible ? AccessibleWrap::GetVirtualViewID(aAccessible) : kNoID;
+  int32_t className = aAccessible
+                          ? AccessibleWrap::AndroidClass(aAccessible)
+                          : java::SessionAccessibility::CLASSNAME_WEBVIEW;
+
+  GECKOBUNDLE_START(eventInfo);
+  if (aAccessible) {
+    // If an accessible has been provided, consider this a subtree change type.
+    GECKOBUNDLE_PUT(
+        eventInfo, "contentChangeType",
+        java::sdk::Integer::ValueOf(
+            java::sdk::AccessibilityEvent::CONTENT_CHANGE_TYPE_SUBTREE));
+  }
+  GECKOBUNDLE_FINISH(eventInfo);
+
   mSessionAccessibility->SendEvent(
-      java::sdk::AccessibilityEvent::TYPE_WINDOW_CONTENT_CHANGED, kNoID,
-      java::SessionAccessibility::CLASSNAME_WEBVIEW, nullptr);
+      java::sdk::AccessibilityEvent::TYPE_WINDOW_CONTENT_CHANGED, virtualViewId,
+      className, eventInfo);
 }
 
 void SessionAccessibility::SendWindowStateChangedEvent(
@@ -522,7 +637,12 @@ void SessionAccessibility::SendTextChangedEvent(Accessible* aAccessible,
                                                 bool aFromUser) {
   MOZ_ASSERT(NS_IsMainThread());
   if (!aFromUser) {
-    // Only dispatch text change events from users, for now.
+    if (aIsInsert) {
+      // This is a non-user insertion. If it is in a live region it needs to be
+      // handled differently.
+      MaybeSendLiveRegionEvents(aAccessible, aStart, aStart + aLen);
+    }
+
     return;
   }
 
@@ -621,6 +741,13 @@ void SessionAccessibility::SendAnnouncementEvent(Accessible* aAccessible,
   mSessionAccessibility->SendEvent(
       java::sdk::AccessibilityEvent::TYPE_ANNOUNCEMENT, kNoID,
       java::SessionAccessibility::CLASSNAME_WEBVIEW, eventInfo);
+}
+
+void SessionAccessibility::SendValueChangedEvent(Accessible* aAccessible) {
+  mSessionAccessibility->SendEvent(
+      java::sdk::AccessibilityEvent::TYPE_VIEW_SCROLLED,
+      AccessibleWrap::GetVirtualViewID(aAccessible),
+      AccessibleWrap::AndroidClass(aAccessible), nullptr);
 }
 
 void SessionAccessibility::PopulateNodeInfo(
@@ -728,6 +855,17 @@ void SessionAccessibility::PopulateNodeInfo(
     inputType = AccessibleWrap::GetInputType(inputTypeAttr);
   }
 
+  // XXX: Instead of generating cpp bindings for `android.view.View`, just use
+  // integers here.
+  nsAutoString live;
+  int32_t liveRegion = 0;  // View.ACCESSIBILITY_LIVE_REGION_NONE
+  nsAccUtils::GetLiveRegionSetting(aAccessible, live);
+  if (live.EqualsLiteral("polite")) {
+    liveRegion = 1;  // View.ACCESSIBILITY_LIVE_REGION_POLITE
+  } else if (live.EqualsLiteral("assertive")) {
+    liveRegion = 2;  // View.ACCESSIBILITY_LIVE_REGION_ASSERTIVE
+  }
+
   auto childCount = aAccessible->ChildCount();
   nsTArray<int32_t> children(childCount);
   if (!nsAccUtils::MustPrune(aAccessible)) {
@@ -746,13 +884,19 @@ void SessionAccessibility::PopulateNodeInfo(
       jni::StringParam(description), jni::StringParam(hint),
       jni::StringParam(geckoRole), jni::StringParam(roleDescription),
       jni::StringParam(nodeID), jni::StringParam(containerTitle),
-      jni::StringParam(language), inputType);
+      jni::StringParam(language), inputType, liveRegion);
 
   if (aAccessible->HasNumericValue()) {
     double curValue = aAccessible->CurValue();
     double minValue = aAccessible->MinValue();
     double maxValue = aAccessible->MaxValue();
     double step = aAccessible->Step();
+
+    // XXX: Currently, the only two accessibles that support SetCurValue are
+    // native ranges and spinners.
+    bool isSettable =
+        (aAccessible->IsHTMLSpinner() || aAccessible->IsHTMLRange()) &&
+        (state & (states::READONLY | states::UNAVAILABLE)) == 0;
 
     int32_t rangeType = 0;  // integer
     if (maxValue == 1 && minValue == 0) {
@@ -763,7 +907,7 @@ void SessionAccessibility::PopulateNodeInfo(
 
     mSessionAccessibility->PopulateNodeRangeInfo(
         aNodeInfo, rangeType, static_cast<float>(minValue),
-        static_cast<float>(maxValue), static_cast<float>(curValue));
+        static_cast<float>(maxValue), static_cast<float>(curValue), isSettable);
   }
 
   if (attributes) {

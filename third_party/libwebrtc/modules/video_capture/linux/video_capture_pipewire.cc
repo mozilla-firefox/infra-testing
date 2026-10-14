@@ -24,7 +24,6 @@
 #include <spa/utils/defs.h>
 #include <spa/utils/result.h>
 #include <spa/utils/type.h>
-#include <sys/mman.h>
 
 #include <algorithm>
 #include <cerrno>
@@ -474,21 +473,18 @@ void VideoCaptureModulePipeWire::ProcessBuffers() {
         static_cast<struct spa_meta_videotransform*>(spa_buffer_find_meta_data(
             spaBuffer, SPA_META_VideoTransform, sizeof(*videotransform)));
     if (videotransform) {
-      VideoRotation rotation =
-          VideorotationFromPipeWireTransform(videotransform->transform);
-      SetCaptureRotation(rotation);
-      SetApplyRotation(rotation != kVideoRotation_0);
+      SetCaptureRotation(
+          VideorotationFromPipeWireTransform(videotransform->transform));
     }
 
     if (spaBuffer->datas[0].type == SPA_DATA_DmaBuf ||
         spaBuffer->datas[0].type == SPA_DATA_MemFd) {
       ScopedBuf frame;
-      frame.initialize(
-          static_cast<uint8_t*>(
-              mmap(nullptr, spaBuffer->datas[0].maxsize, PROT_READ, MAP_SHARED,
-                   spaBuffer->datas[0].fd, spaBuffer->datas[0].mapoffset)),
-          spaBuffer->datas[0].maxsize, spaBuffer->datas[0].fd,
-          spaBuffer->datas[0].type == SPA_DATA_DmaBuf);
+      frame.initialize(spaBuffer->datas[0].fd, spaBuffer->datas[0].maxsize,
+                       spaBuffer->datas[0].mapoffset,
+                       spaBuffer->datas[0].type == SPA_DATA_DmaBuf
+                           ? ScopedBuf::BufferType::kDmaBuf
+                           : ScopedBuf::BufferType::kMemFd);
 
       if (!frame) {
         RTC_LOG(LS_ERROR) << "Failed to mmap the memory: "

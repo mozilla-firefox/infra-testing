@@ -8,6 +8,7 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ContentBlockingAllowList.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/StaticPrefs_mathml.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StorageAccess.h"
 #include "mozilla/StyleSheet.h"
@@ -1194,7 +1195,10 @@ ReferrerInfo::InitWithDocument(const Document* aDocument) {
 static ReferrerPolicy ReferrerPolicyFromAttribute(const Element& aElement) {
   if (!aElement.IsAnyOfHTMLElements(nsGkAtoms::a, nsGkAtoms::area,
                                     nsGkAtoms::script, nsGkAtoms::iframe,
-                                    nsGkAtoms::link, nsGkAtoms::img)) {
+                                    nsGkAtoms::link, nsGkAtoms::img) &&
+      !aElement.IsSVGElement(nsGkAtoms::a) &&
+      !(aElement.IsMathMLElement(nsGkAtoms::a) &&
+        StaticPrefs::mathml_a_element_enabled())) {
     return ReferrerPolicy::_empty;
   }
   return aElement.GetReferrerPolicyAsEnum();

@@ -1,0 +1,50 @@
+#!/bin/sh
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#
+# This script builds openssl, used as a private dependency of the taskcluster
+# python interpreter on macOS (build-cpython.sh) where the worker doesn't ship
+# a matching libssl.
+
+set -e
+set -x
+
+openssl_src=${MOZ_FETCHES_DIR}/openssl-source
+
+target=$1
+case "$target" in
+    aarch64-apple-darwin)
+        openssl_target=darwin64-arm64-cc
+        ;;
+    x86_64-apple-darwin)
+        openssl_target=darwin64-x86_64-cc
+        ;;
+    *)
+        echo "ERROR: unsupported target $target" >&2
+        exit 1
+        ;;
+esac
+
+MACOS_TARGET=$target
+. $GECKO_PATH/taskcluster/scripts/misc/macos-setup.sh
+export CC=$MACOS_CC
+export AR=$MACOS_AR
+export RANLIB=$MACOS_RANLIB
+export CFLAGS=${MACOS_CFLAGS}
+export LDFLAGS=${MACOS_CFLAGS}
+
+work_dir=`pwd`
+tardir=openssl
+
+# The prefix is baked into the shared libraries' install names; build-cpython.sh
+# relies on the resulting /openssl/lib/lib{ssl,crypto}.1.1.dylib references.
+cd `mktemp -d`
+${openssl_src}/Configure --prefix=/${tardir} --openssldir=/${tardir}/ssl shared no-tests ${openssl_target}
+
+export MAKEFLAGS=-j`nproc`
+make
+make DESTDIR=${work_dir} install_sw
+cd ${work_dir}
+
+$GECKO_PATH/taskcluster/scripts/misc/pack.sh ${tardir}

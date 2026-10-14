@@ -6,18 +6,18 @@ import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
-const lazy = {};
-ChromeUtils.defineESModuleGetters(lazy, {
+const lazy = XPCOMUtils.declareLazy({
   ReaderMode: "moz-src:///toolkit/components/reader/ReaderMode.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
+  IDNService: {
+    service: "@mozilla.org/network/idn-service;1",
+    iid: Ci.nsIIDNService,
+  },
+  mathMLNonAnchorLinksDisabled: {
+    pref: "mathml.href_link_on_non_anchor_element.disabled",
+    default: false,
+  },
 });
-
-XPCOMUtils.defineLazyServiceGetter(
-  lazy,
-  "IDNService",
-  "@mozilla.org/network/idn-service;1",
-  Ci.nsIIDNService
-);
 
 ChromeUtils.defineLazyGetter(lazy, "CatManListenerManager", () => {
   const CatManListenerManager = {
@@ -83,6 +83,7 @@ ChromeUtils.defineLazyGetter(lazy, "CatManListenerManager", () => {
               return obj[method](...args);
             };
             fn._descriptiveName = value;
+            fn._module = module;
             return fn;
           } catch (ex) {
             console.error(
@@ -107,6 +108,65 @@ ChromeUtils.defineLazyGetter(lazy, "CatManListenerManager", () => {
   Services.obs.addObserver(CatManListenerManager, "xpcom-category-cleared");
   return CatManListenerManager;
 });
+
+// The module URI schemes that category entries declared in .manifest files
+// use, and the dotted identifier shape of their `object.method` consumers
+// and of error names. Entries registered at runtime, e.g. through the
+// experimental WebExtension API, can name an arbitrary URI or object, which
+// is reported as UNREPORTABLE_VALUE instead of being recorded as-is.
+const REPORTABLE_MODULE_SCHEMES = ["moz-src://", "resource://", "chrome://"];
+const REPORTABLE_IDENTIFIER = /^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*$/;
+const UNREPORTABLE_VALUE = "other";
+
+/**
+ * The name of the error a category consumer threw.
+ *
+ * @param {any} ex
+ *        The value the consumer threw.
+ * @returns {string}
+ *        A JS error or DOMException name such as "TypeError", the
+ *        `NS_ERROR_*` name if the consumer threw an XPCOM exception or a bare
+ *        nsresult, or "" for a thrown value that has neither.
+ */
+function consumerErrorName(ex) {
+  if (DOMException.isInstance(ex)) {
+    return ex.name;
+  }
+  if (ex instanceof Ci.nsIException) {
+    return ChromeUtils.getXPCOMErrorName(ex.result);
+  }
+  if (typeof ex == "number") {
+    return ChromeUtils.getXPCOMErrorName(ex);
+  }
+  return typeof ex?.name == "string" ? ex.name : "";
+}
+
+/**
+ * Report a category consumer that threw to telemetry.
+ *
+ * @param {string} categoryName
+ *        The category the failing consumer is registered in.
+ * @param {Function} fn
+ *        The failing consumer's listener, as built by
+ *        CatManListenerManager.getListeners.
+ * @param {any} ex
+ *        The value the consumer threw.
+ */
+function reportCategoryConsumerError(categoryName, fn, ex) {
+  Glean.browserUtils.categoryConsumerResult.get(categoryName, "failure").add(1);
+  let reportableIdentifier = value =>
+    !value || REPORTABLE_IDENTIFIER.test(value) ? value : UNREPORTABLE_VALUE;
+  Glean.browserUtils.categoryDispatchError.record({
+    category: categoryName,
+    module: REPORTABLE_MODULE_SCHEMES.some(scheme =>
+      fn._module.startsWith(scheme)
+    )
+      ? fn._module
+      : UNREPORTABLE_VALUE,
+    consumer: reportableIdentifier(fn._descriptiveName),
+    errorName: reportableIdentifier(consumerErrorName(ex)),
+  });
+}
 
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
@@ -194,6 +254,21 @@ export var BrowserUtils = {
   },
 
   /**
+   * Escapes a string for safe use in HTML text content or attribute values.
+   *
+   * @param {string} text
+   * @returns {string}
+   */
+  escapeHtmlEntities(text) {
+    return (text || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  },
+
+  /**
    * Copy multiple links to the clipboard. Writes three clipboard flavors:
    *   text/x-moz-url  — "url\ntitle" pairs separated by newlines
    *   text/html       — "<A HREF="url">title</A>" anchors separated by <BR>
@@ -202,19 +277,14 @@ export var BrowserUtils = {
    * @param {Array<{url: string, title: string}>} links
    */
   copyLinks(links) {
-    let htmlEscape = s =>
-      s
-        .replace(/&/g, "&amp;")
-        .replace(/>/g, "&gt;")
-        .replace(/</g, "&lt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&apos;");
-
     let mozURLData = links
       .map(({ url, title }) => `${url}\n${title}`)
       .join("\n");
     let htmlData = links
-      .map(({ url, title }) => `<A HREF="${url}">${htmlEscape(title)}</A>`)
+      .map(
+        ({ url, title }) =>
+          `<A HREF="${this.escapeHtmlEntities(url)}">${this.escapeHtmlEntities(title)}</A>`
+      )
       .join("<BR>\n");
     let textData = links.map(({ url }) => url).join("\n");
 
@@ -553,15 +623,18 @@ export var BrowserUtils = {
       if (
         aElement.localName == "a" ||
         (content.MathMLElement.isInstance(aElement) &&
-          !Services.prefs.getBoolPref(
-            "mathml.href_link_on_non_anchor_element.disabled"
-          ))
+          !lazy.mathMLNonAnchorLinksDisabled)
       ) {
         let href =
-          aElement.getAttribute("href") ||
+          aElement.getAttribute("href") ??
           aElement.getAttributeNS("http://www.w3.org/1999/xlink", "href");
+        // Note that empty string hrefs are valid, and distinct from missing
+        // attributes (null). Passing null to `URL.parse` will be stringified
+        // to "null" and when a base URI is present this may form a valid yet
+        // unintentional URL. So we explicitly check that we got a string.
         href =
-          URL.parse(href, aElement.ownerDocument.baseURIObject.spec)?.href ??
+          (typeof href == "string" &&
+            URL.parse(href, aElement.ownerDocument.baseURI)?.href) ??
           null;
         if (href) {
           // Don't return the aElement we got href from since callers expect
@@ -729,7 +802,9 @@ export var BrowserUtils = {
    * @param {string} options.categoryName
    *        What category's consumers to call.
    * @param {boolean} [options.idleDispatch=false]
-   *        If set to true, call each consumer in an idle task.
+   *        If set to true, call each consumer in an idle task. If jsGlobal is a
+   *        window that has closed by the time the idle task runs, the consumer
+   *        is dropped, so we don't initialize (and leak) a closing window.
    * @param {string} [options.profilerMarker=""]
    *        If specified, will create a profiler marker with the provided
    *        identifier for each consumer.
@@ -761,11 +836,15 @@ export var BrowserUtils = {
       let startTime = profilerMarker ? ChromeUtils.now() : 0;
       try {
         await fn(jsGlobal, ...args);
+        Glean.browserUtils.categoryConsumerResult
+          .get(categoryName, "success")
+          .add(1);
       } catch (ex) {
         console.error(
           `Error in processing ${categoryName} for ${fn._descriptiveName}`
         );
         console.error(ex);
+        reportCategoryConsumerError(categoryName, fn, ex);
         try {
           await failureHandler?.(ex);
         } catch (nestedEx) {
@@ -800,6 +879,12 @@ export var BrowserUtils = {
         allTasks.push(
           new Promise(resolve => {
             ChromeUtils.idleDispatch(() => {
+              // Drop the task if it targets a window that has closed in the
+              // meantime, to avoid initializing (and leaking) a closing window.
+              if (jsGlobal?.closed) {
+                resolve();
+                return;
+              }
               resolve(callSingleListener(listener));
             });
           })
@@ -943,6 +1028,7 @@ let PromoInfo = {
     illegalRegions: [],
   },
   [BrowserUtils.PromoType.RELAY]: {
+    enabledPref: "browser.promo.relay.enabled",
     lazyStringSetPrefs: {},
     illegalRegions: [],
     // Returns true if user is using the FxA "production" instance, or returns

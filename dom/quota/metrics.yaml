@@ -20,8 +20,6 @@ dom.quota.try:
       during specific contexts, in particular during storage
       initialization. No dynamic data is included in the event beyond the
       error code which will be added through Bug 1670555.
-      This event was generated to correspond to the Legacy Telemetry event
-      dom.quota.try.error#step.
     bugs:
       - https://bugzil.la/1665088
     data_reviews:
@@ -68,7 +66,6 @@ dom.quota.try:
         description: >
           Optionally, the stack within process_id.
         type: string
-    telemetry_mirror: DomQuotaTry_Error_Step
 quotamanager:
   restore_origin_directory_metadata_counter:
     type: counter
@@ -88,6 +85,33 @@ quotamanager:
       - technical
     notification_emails:
       - jan.varga@gmail.com
+      - storage-telemetry@mozilla.com
+    expires: never
+  storage_sqlite_corruption_unrecovered:
+    type: labeled_counter
+    description: >
+      Increments when a corruption error (NS_ERROR_FILE_CORRUPTED or
+      NS_ERROR_STORAGE_IOERR) propagates from a storage.sqlite operation
+      during QuotaManager initialization with no recovery path, leaving
+      all storage APIs (localStorage, IndexedDB, Cache API) broken for
+      the session. This covers corruption that passes the initial open
+      check but breaks subsequent operations such as schema upgrades,
+      cache setup, or quota loading. Labeled by the initialization
+      context that failed. See bug 2065480.
+      Note in some cases we recover from corruption: this metric is here to
+      record missing cases where we didn't recover.
+    labels:
+      - storage
+      - persistent_storage
+      - temporary_storage
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2065480
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2065480
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - abienner@mozilla.com
       - storage-telemetry@mozilla.com
     expires: never
 quotamanager.initialize.repository:
@@ -218,9 +242,6 @@ dom.quota:
       Time (ms) for the QuotaManager to load quota information. Keyed by
       conditions during quota info loading, see RecordTimeDeltaHelper::Run in
       https://searchfox.org/firefox-main/source/dom/quota/ActorsParent.cpp
-
-      This metric was generated to correspond to the Legacy Telemetry
-      exponential histogram QM_QUOTA_INFO_LOAD_TIME_V0.
     time_unit: millisecond
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1609625
@@ -232,7 +253,6 @@ dom.quota:
       - jan.varga@gmail.com
       - storage-telemetry@mozilla.com
     expires: never
-    telemetry_mirror: QM_QUOTA_INFO_LOAD_TIME_V0
 
   shutdown_time:
     type: labeled_timing_distribution
@@ -240,9 +260,6 @@ dom.quota:
       Time (ms) for the QuotaManager to shutdown. Keyed by conditions during
       shutdown, see RecordTimeDeltaHelper::Run in
       https://searchfox.org/firefox-main/source/dom/quota/ActorsParent.cpp
-
-      This metric was generated to correspond to the Legacy Telemetry
-      exponential histogram QM_SHUTDOWN_TIME_V0.
     time_unit: millisecond
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1824075
@@ -252,16 +269,12 @@ dom.quota:
       - jan.varga@gmail.com
       - storage-telemetry@mozilla.com
     expires: never
-    telemetry_mirror: QM_SHUTDOWN_TIME_V0
 
   first_initialization_attempt:
     type: dual_labeled_counter
     description: >
       True if the first initialization attempt succeeded, keyed by the
       initialization type.
-
-      This metric was generated to correspond to the Legacy Telemetry boolean
-      histogram QM_FIRST_INITIALIZATION_ATTEMPT.
     dual_labels:
       key:
         description: No static keys unfortunately.
@@ -278,4 +291,3 @@ dom.quota:
       - jan.varga@gmail.com
       - storage-telemetry@mozilla.com
     expires: never
-    telemetry_mirror: QM_FIRST_INITIALIZATION_ATTEMPT

@@ -21,11 +21,16 @@
  * in place for that class */
 typedef enum {
     SFTKFIPSNone = 0,
-    SFTKFIPSDH,   /* allow only specific primes */
-    SFTKFIPSECC,  /* not just keys but specific curves */
-    SFTKFIPSAEAD, /* single shot AEAD functions not allowed in FIPS mode */
-    SFTKFIPSRSAPSS,
-    SFTKFIPSTlsKeyCheck
+    SFTKFIPSDH,           /* allow only specific primes */
+    SFTKFIPSECC,          /* not just keys but specific curves */
+    SFTKFIPSAEAD,         /* single shot AEAD functions not allowed in FIPS mode */
+    SFTKFIPSRSAPSS,       /* make sure salt isn't too big */
+    SFTKFIPSPBKDF2,       /* handle pbkdf2 FIPS restrictions */
+    SFTKFIPSTlsKeyCheck,  /* check the output of TLS prf functions */
+    SFTKFIPSChkHash,      /* make sure the base hash of KDF functions is FIPS */
+    SFTKFIPSChkHashTls,   /* make sure the base hash of TLS KDF functions is FIPS */
+    SFTKFIPSChkHashSp800, /* make sure the base hash of SP-800-108 KDF functions is FIPS */
+    SFTKFIPSRSAOAEP,      /* make sure that both hashes use the same FIPS compliant algorithm */
 } SFTKFIPSSpecialClass;
 
 typedef struct SFTKFIPSAlgorithmListStr SFTKFIPSAlgorithmList;
@@ -34,6 +39,7 @@ struct SFTKFIPSAlgorithmListStr {
     CK_MECHANISM_INFO info;
     CK_ULONG step;
     SFTKFIPSSpecialClass special;
+    size_t offset;
 };
 /* this file should be supplied by the vendor and include all the
  * algorithms which have Algorithm certs and have been reviewed by
@@ -42,6 +48,10 @@ struct SFTKFIPSAlgorithmListStr {
  * return PR_FALSE
  */
 #include "fips_algorithms.h"
+
+#ifndef SFTKFIPS_PBKDF2_MIN_PW_LEN /* allow fips_algorithms.h to override */
+#define SFTKFIPS_PBKDF2_MIN_PW_LEN 8
+#endif
 #define NSS_HAS_FIPS_INDICATORS 1
 #endif
 
@@ -809,7 +819,7 @@ sftk_forceAttribute(SFTKObject *object, CK_ATTRIBUTE_TYPE type,
                         attribute->attrib.ulValueLen);
         }
         if (attribute->freeData) {
-            PORT_Assert(attribute->attrib.pValue != att_val);
+            PORT_ReleaseAssert(attribute->attrib.pValue != att_val);
             PORT_Free(attribute->attrib.pValue);
         }
         attribute->freeData = PR_FALSE;
@@ -1170,14 +1180,13 @@ sftk_GetObjectFromList(PRBool *hasLocks, PRBool optimizeSpace,
         }
         PR_Unlock(list->lock);
         if (object) {
-            // As a safeguard against misuse of the library, ensure we don't
-            // hand out live objects that somehow land in the free list.
-            PORT_Assert(object->refCount == 0);
-            if (object->refCount == 0) {
-                object->next = object->prev = NULL;
-                *hasLocks = PR_TRUE;
-                return object;
-            }
+            /* A live object on the free list means it was destroyed
+             * twice; some other thread still holds a pointer to it and
+             * will corrupt it if it is handed out again. */
+            PORT_ReleaseAssert(object->refCount == 0);
+            object->next = object->prev = NULL;
+            *hasLocks = PR_TRUE;
+            return object;
         }
     }
     size = isSessionObject ? sizeof(SFTKSessionObject) + hashSize * sizeof(SFTKAttribute *) : sizeof(SFTKTokenObject);
@@ -1359,11 +1368,19 @@ sftk_DestroySessionObjectData(SFTKSessionObject *so)
     for (i = 0; i < MAX_OBJS_ATTRS; i++) {
         unsigned char *value = so->attrList[i].attrib.pValue;
         if (value) {
+            /* An attribute value lives in the attribute's inline space
+             * unless the attribute owns a heap allocation for it. Anything
+             * else means this object was already destroyed and its memory
+             * reused; abort rather than zeroize through a wild pointer. */
+            PORT_ReleaseAssert(so->attrList[i].freeData ||
+                               (value == so->attrList[i].space &&
+                                so->attrList[i].attrib.ulValueLen <= ATTR_SPACE));
             PORT_Memset(value, 0, so->attrList[i].attrib.ulValueLen);
             if (so->attrList[i].freeData) {
                 PORT_Free(value);
             }
             so->attrList[i].attrib.pValue = NULL;
+            so->attrList[i].attrib.ulValueLen = 0;
             so->attrList[i].freeData = PR_FALSE;
         }
     }
@@ -1411,7 +1428,9 @@ void
 sftk_ReferenceObject(SFTKObject *object)
 {
     PR_Lock(object->refLock);
-    PORT_Assert(object->refCount > 0);
+    /* A zero count means this object has already been destroyed; abort
+     * before the new reference is used to operate on freed memory. */
+    PORT_ReleaseAssert(object->refCount > 0);
     object->refCount++;
     PR_Unlock(object->refLock);
 }
@@ -1458,6 +1477,10 @@ sftk_FreeObject(SFTKObject *object)
     CK_RV crv;
 
     PR_Lock(object->refLock);
+    /* A zero count means this object has already been destroyed. Abort,
+     * like an allocator that detects a double free, rather than tear the
+     * object down a second time. */
+    PORT_ReleaseAssert(object->refCount > 0);
     if (object->refCount == 1)
         destroy = PR_TRUE;
     object->refCount--;
@@ -1504,33 +1527,61 @@ sftk_getNextHandle(SFTKSlot *slot)
 }
 
 /*
- * add an object to a slot and session queue. These two functions
- * adopt the object.
+ * Claim the right to remove a session object from the slot's object hash.
+ * Must be called with slot->objectLock held.
+ *
+ * Several threads can reach the same object: handles are slot-global, so any
+ * session can resolve one through sftk_ObjectFromHandle, and
+ * sftk_ClearSession claims removals too when the owning session is closed.
+ * Only the thread that finds the object still queued unlinks it; without that,
+ * each would unlink again and drop the queues' reference a second time.
+ *
+ * Returns PR_TRUE if this caller owns the removal, and with it the reference
+ * the queues held. Drop that reference with sftk_FreeObject() after releasing
+ * slot->objectLock.
  */
-void
-sftk_AddSlotObject(SFTKSlot *slot, SFTKObject *object)
+static PRBool
+sftk_ClaimObjectRemovalLocked(SFTKSlot *slot, SFTKObject *object)
 {
     PRUint32 index = sftk_hash(object->handle, slot->sessObjHashSize);
-    sftkqueue_init_element(object);
-    PR_Lock(slot->objectLock);
-    sftkqueue_add2(object, object->handle, index, slot->sessObjHashTable);
-    PR_Unlock(slot->objectLock);
+
+    if (!object->next && !object->prev &&
+        slot->sessObjHashTable[index] != object) {
+        return PR_FALSE;
+    }
+    sftkqueue_delete2(object, object->handle, index, slot->sessObjHashTable);
+    /* sftkqueue_delete2 patches the neighbours but leaves object->next/prev
+     * pointing at them. Clear them here so the next thread to take the lock
+     * sees an unqueued object and does not re-claim the removal. */
+    sftkqueue_clear_deleted_element(object);
+    return PR_TRUE;
 }
 
+/*
+ * add an object to the slot's object hash and to its session's object list
+ */
 void
 sftk_AddObject(SFTKSession *session, SFTKObject *object)
 {
     SFTKSlot *slot = sftk_SlotFromSession(session);
     SFTKSessionObject *so = sftk_narrowToSessionObject(object);
+    PRUint32 index = sftk_hash(object->handle, slot->sessObjHashSize);
 
-    if (so) {
-        PR_Lock(session->objectLock);
-        sftkqueue_add(&so->sessionList, 0, session->objects, 0);
-        so->session = session;
-        PR_Unlock(session->objectLock);
-    }
-    sftk_AddSlotObject(slot, object);
+    /* the reference the queues hold, taken before the object is reachable */
     sftk_ReferenceObject(object);
+
+    /* Both queues are linked under slot->objectLock in one critical section.
+     * That gives the invariant the teardown paths depend on: a session object
+     * is on its owning session's list if and only if it is in the slot's
+     * object hash. See sftk_DeleteObject(). */
+    sftkqueue_init_element(object);
+    PR_Lock(slot->objectLock);
+    if (so) {
+        so->session = session;
+        sftkqueue_add(&so->sessionList, 0, session->objects, 0);
+    }
+    sftkqueue_add2(object, object->handle, index, slot->sessObjHashTable);
+    PR_Unlock(slot->objectLock);
 }
 
 /*
@@ -1542,39 +1593,28 @@ sftk_DeleteObject(SFTKSession *session, SFTKObject *object)
     SFTKSlot *slot = sftk_SlotFromSession(session);
     SFTKSessionObject *so = sftk_narrowToSessionObject(object);
     CK_RV crv = CKR_OK;
-    PRUint32 index = sftk_hash(object->handle, slot->sessObjHashSize);
 
     /* Handle Token case */
     if (so && so->session) {
-        /* Atomically claim the right to remove this object. Two threads
-         * can race here via NSC_DestroyObject after both succeed in
-         * sftk_ObjectFromHandle; without the claim each would unlink
-         * the queue entry and drop the queue's reference, leading to a
-         * double sftk_FreeObject (and on the second pass, a use-after-
-         * free when sftk_FreeObject reads object->refLock). */
-        PRBool ownsRemove = PR_FALSE;
+        PRBool ownsRemove;
+
+        /* so->session is the session that created the object; it need not be
+         * the caller's session, and we hold no reference on it. Winning the
+         * claim is what makes it safe to touch: the object was still in the
+         * slot hash, so by the invariant in sftk_AddObject() it is still on
+         * so->session's list, so sftk_ClearSession() has not run for that
+         * session and the session has not been freed. */
         PR_Lock(slot->objectLock);
-        if (object->next || object->prev ||
-            slot->sessObjHashTable[index] == object) {
-            sftkqueue_delete2(object, object->handle, index,
-                              slot->sessObjHashTable);
-            /* sftkqueue_delete2 patches the neighbour pointers but
-             * leaves object->next/prev pointing at their old neighbours.
-             * Clear them inside the slot lock so a racing thread that
-             * acquires the lock next sees an empty-looking object and
-             * doesn't re-claim ownership, which would lead to a double
-             * sftk_FreeObject of the queue's reference. */
-            sftkqueue_clear_deleted_element(object);
-            ownsRemove = PR_TRUE;
+        ownsRemove = sftk_ClaimObjectRemovalLocked(slot, object);
+        if (ownsRemove) {
+            PORT_Assert(sftkqueue_is_queued(&so->sessionList, 0,
+                                            so->session->objects, 0));
+            sftkqueue_delete(&so->sessionList, 0, so->session->objects, 0);
         }
         PR_Unlock(slot->objectLock);
 
         if (ownsRemove) {
-            session = so->session;
-            PR_Lock(session->objectLock);
-            sftkqueue_delete(&so->sessionList, 0, session->objects, 0);
-            PR_Unlock(session->objectLock);
-            sftk_FreeObject(object); /* drop the queue's reference */
+            sftk_FreeObject(object); /* drop the queues' reference */
         }
     } else {
         SFTKDBHandle *handle = sftk_getDBForTokenObject(slot, object->handle);
@@ -1646,6 +1686,13 @@ static const CK_ATTRIBUTE_TYPE mldsaPubKeyAttrs[] = {
 };
 static const CK_ULONG mldsaPubKeyAttrsCount = PR_ARRAY_SIZE(mldsaPubKeyAttrs);
 
+/* the vendor ML-KEM key types carry CKA_NSS_PARAMETER_SET rather than
+ * CKA_PARAMETER_SET; list both and let the missing one be skipped */
+static const CK_ATTRIBUTE_TYPE mlkemPubKeyAttrs[] = {
+    CKA_PARAMETER_SET, CKA_NSS_PARAMETER_SET, CKA_VALUE
+};
+static const CK_ULONG mlkemPubKeyAttrsCount = PR_ARRAY_SIZE(mlkemPubKeyAttrs);
+
 static const CK_ATTRIBUTE_TYPE commonPrivKeyAttrs[] = {
     CKA_DECRYPT, CKA_SIGN, CKA_SIGN_RECOVER, CKA_UNWRAP, CKA_SUBJECT,
     CKA_SENSITIVE, CKA_EXTRACTABLE, CKA_NSS_DB, CKA_PUBLIC_KEY_INFO
@@ -1681,6 +1728,11 @@ static const CK_ATTRIBUTE_TYPE mldsaPrivKeyAttrs[] = {
     CKA_PARAMETER_SET, CKA_VALUE, CKA_SEED
 };
 static const CK_ULONG mldsaPrivKeyAttrsCount = PR_ARRAY_SIZE(mldsaPrivKeyAttrs);
+
+static const CK_ATTRIBUTE_TYPE mlkemPrivKeyAttrs[] = {
+    CKA_PARAMETER_SET, CKA_NSS_PARAMETER_SET, CKA_VALUE, CKA_SEED
+};
+static const CK_ULONG mlkemPrivKeyAttrsCount = PR_ARRAY_SIZE(mlkemPrivKeyAttrs);
 
 static const CK_ATTRIBUTE_TYPE certAttrs[] = {
     CKA_CERTIFICATE_TYPE, CKA_VALUE, CKA_SUBJECT, CKA_ISSUER, CKA_SERIAL_NUMBER
@@ -1795,11 +1847,18 @@ stfk_CopyTokenPrivateKey(SFTKObject *destObject, SFTKTokenObject *src_to)
             crv = stfk_CopyTokenAttributes(destObject, src_to, mldsaPrivKeyAttrs,
                                            mldsaPrivKeyAttrsCount);
             break;
+        case CKK_NSS_ML_KEM:
+        case CKK_ML_KEM:
+            crv = stfk_CopyTokenAttributes(destObject, src_to, mlkemPrivKeyAttrs,
+                                           mlkemPrivKeyAttrsCount);
+            break;
         case CKK_DH:
             crv = stfk_CopyTokenAttributes(destObject, src_to, dhPrivKeyAttrs,
                                            dhPrivKeyAttrsCount);
             break;
         case CKK_EC:
+        case CKK_EC_EDWARDS:
+        case CKK_EC_MONTGOMERY:
             crv = stfk_CopyTokenAttributes(destObject, src_to, ecPrivKeyAttrs,
                                            ecPrivKeyAttrsCount);
             break;
@@ -1859,11 +1918,18 @@ stfk_CopyTokenPublicKey(SFTKObject *destObject, SFTKTokenObject *src_to)
             crv = stfk_CopyTokenAttributes(destObject, src_to, mldsaPubKeyAttrs,
                                            mldsaPubKeyAttrsCount);
             break;
+        case CKK_NSS_ML_KEM:
+        case CKK_ML_KEM:
+            crv = stfk_CopyTokenAttributes(destObject, src_to, mlkemPubKeyAttrs,
+                                           mlkemPubKeyAttrsCount);
+            break;
         case CKK_DH:
             crv = stfk_CopyTokenAttributes(destObject, src_to, dhPubKeyAttrs,
                                            dhPubKeyAttrsCount);
             break;
         case CKK_EC:
+        case CKK_EC_EDWARDS:
+        case CKK_EC_MONTGOMERY:
             crv = stfk_CopyTokenAttributes(destObject, src_to, ecPubKeyAttrs,
                                            ecPubKeyAttrsCount);
             break;
@@ -2191,10 +2257,8 @@ sftk_InitSession(SFTKSession *session, SFTKSlot *slot, CK_SLOT_ID slotID,
     session->hash_context = NULL;
     session->search = NULL;
     session->objectIDCount = 1;
-    session->objectLock = PR_NewLock();
-    if (session->objectLock == NULL) {
-        return CKR_HOST_MEMORY;
-    }
+    /* session->objects[] is protected by slot->objectLock, not by a
+     * per-session lock -- see the lock notes on SFTKSlotStr. */
     session->objects[0] = NULL;
 
     session->slot = slot;
@@ -2239,26 +2303,60 @@ sftk_NewSession(CK_SLOT_ID slotID, CK_NOTIFY notify, CK_VOID_PTR pApplication,
 void
 sftk_ClearSession(SFTKSession *session)
 {
+    SFTKSlot *slot = sftk_SlotFromSession(session);
     SFTKObjectList *op, *next;
+    SFTKObjectList *toFree = NULL;
 
-    /* clean out the attributes */
-    /* since no one is referencing us, it's safe to walk the chain
-     * without a lock */
+    /* Detach every object this session still owns.
+     *
+     * No one references the session any more, but that does not make it safe
+     * to walk this chain unlocked: object handles are slot-global, so a
+     * C_DestroyObject on any other session may be removing one of these
+     * objects right now. slot->objectLock arbitrates both queues and belongs
+     * to the slot, which outlives every session on it.
+     */
+    PR_Lock(slot->objectLock);
     for (op = session->objects[0]; op != NULL; op = next) {
         next = op->next;
-        /* paranoia */
+        /* Unlink by hand: we are discarding the whole list, so there is no
+         * point patching neighbours. */
         op->next = op->prev = NULL;
-        sftk_DeleteObject(session, op->parent);
+        /* Everything on this list is still in the slot hash -- a claimant
+         * unlinks it from both under this lock -- so the claim normally
+         * succeeds. The test guards against a path that ever removes an
+         * object from only one queue. */
+        if (sftk_ClaimObjectRemovalLocked(slot, op->parent)) {
+            /* We own the queues' reference, so the object stays alive until
+             * we drop it; chain the unlinked element up and free below. */
+            op->next = toFree;
+            toFree = op;
+        }
     }
-    PR_DestroyLock(session->objectLock);
+    session->objects[0] = NULL;
+    PR_Unlock(slot->objectLock);
+
+    /* An object that outlives us -- because another thread still holds a
+     * reference -- keeps a stale so->session pointing here. That is safe:
+     * so->session is only dereferenced under slot->objectLock by a thread
+     * that has just won the removal claim, and the claim can no longer
+     * succeed for an object we have already pulled out of the slot hash. */
+    for (op = toFree; op != NULL; op = next) {
+        next = op->next;
+        op->next = NULL;
+        sftk_FreeObject(op->parent); /* drop the queues' reference */
+    }
+
     if (session->enc_context) {
         sftk_FreeContext(session->enc_context);
+        session->enc_context = NULL;
     }
     if (session->hash_context) {
         sftk_FreeContext(session->hash_context);
+        session->hash_context = NULL;
     }
     if (session->search) {
         sftk_FreeSearch(session->search);
+        session->search = NULL;
     }
 }
 
@@ -2267,7 +2365,7 @@ sftk_ClearSession(SFTKSession *session)
 static void
 sftk_DestroySession(SFTKSession *session)
 {
-    PORT_Assert(session->refCount == 0);
+    PORT_ReleaseAssert(session->refCount == 0);
     sftk_ClearSession(session);
     PORT_Free(session);
 }
@@ -2312,7 +2410,7 @@ sftk_FreeSession(SFTKSession *session)
     PRLock *lock = SFTK_SESSION_LOCK(slot, session->handle);
 
     PR_Lock(lock);
-    PORT_Assert(session->refCount > 0);
+    PORT_ReleaseAssert(session->refCount > 0);
     if (session->refCount == 1)
         destroy = PR_TRUE;
     session->refCount--;
@@ -2749,6 +2847,28 @@ sftk_checkKeyLength(CK_ULONG keyLength, CK_ULONG min,
     return PR_TRUE;
 }
 
+PRBool
+sftk_checkFIPSHash(CK_MECHANISM_TYPE hash, PRBool allowSmall, PRBool allowCMAC)
+{
+    switch (hash) {
+        case CKM_AES_CMAC:
+            return allowCMAC;
+        case CKM_SHA_1:
+        case CKM_SHA_1_HMAC:
+        case CKM_SHA224:
+        case CKM_SHA224_HMAC:
+            return allowSmall;
+        case CKM_SHA256:
+        case CKM_SHA256_HMAC:
+        case CKM_SHA384:
+        case CKM_SHA384_HMAC:
+        case CKM_SHA512:
+        case CKM_SHA512_HMAC:
+            return PR_TRUE;
+    }
+    return PR_FALSE;
+}
+
 /*
  * handle specialized FIPS semantics that are too complicated to
  * handle with just a table. NOTE: this means any additional semantics
@@ -2758,6 +2878,8 @@ sftk_handleSpecial(SFTKSlot *slot, CK_MECHANISM *mech,
                    SFTKFIPSAlgorithmList *mechInfo, SFTKObject *source,
                    CK_ULONG keyLength, CK_ULONG targetKeyLength)
 {
+    PRBool allowSmall = PR_FALSE;
+    PRBool allowCMAC = PR_FALSE;
     switch (mechInfo->special) {
         case SFTKFIPSDH: {
             SECItem dhPrime;
@@ -2827,8 +2949,70 @@ sftk_handleSpecial(SFTKSlot *slot, CK_MECHANISM *mech,
             }
             return PR_TRUE;
         }
+        case SFTKFIPSPBKDF2: {
+            /* from NIST SP 800-132
+             * PBKDF2 must have the following addition restrictions
+             * (independent of keysize).
+             *    1. iteration count must be at least 1000.
+             *    2. salt must be at least 128 bits (16 bytes).
+             *    3. password must match the length specified in the SP
+             */
+            CK_PKCS5_PBKD2_PARAMS2 *pbkdf2 = (CK_PKCS5_PBKD2_PARAMS2 *)
+                                                 mech->pParameter;
+            if (mech->ulParameterLen != sizeof(*pbkdf2)) {
+                return PR_FALSE;
+            }
+            if (pbkdf2 == NULL) {
+                return PR_FALSE;
+            }
+            if (pbkdf2->iterations < 1000) {
+                return PR_FALSE;
+            }
+            if (pbkdf2->ulSaltSourceDataLen < 16) {
+                return PR_FALSE;
+            }
+            if (pbkdf2->ulPasswordLen < SFTKFIPS_PBKDF2_MIN_PW_LEN) {
+                return PR_FALSE;
+            }
+            return PR_TRUE;
+        }
+        /* check the hash mechanisms to make sure they themselves are FIPS */
+        case SFTKFIPSChkHashSp800:
+            allowCMAC = PR_TRUE;
+            /* fallthrough... will pick up allowSmall as well */
+        case SFTKFIPSChkHash:
+            allowSmall = PR_TRUE;
+            /* fallthrough */
+        case SFTKFIPSChkHashTls:
+            if (mech->ulParameterLen < mechInfo->offset + sizeof(CK_ULONG)) {
+                return PR_FALSE;
+            }
+            return sftk_checkFIPSHash(*(CK_MECHANISM_TYPE *)(((char *)mech->pParameter) + mechInfo->offset),
+                                      allowSmall, allowCMAC);
         case SFTKFIPSTlsKeyCheck:
+            if (mech->mechanism != CKM_NSS_TLS_KEY_AND_MAC_DERIVE_SHA256) {
+                /* unless the mechnism has a built-in hash, check the hash */
+                if (mech->ulParameterLen < mechInfo->offset + sizeof(CK_ULONG)) {
+                    return PR_FALSE;
+                }
+                if (!sftk_checkFIPSHash(*(CK_MECHANISM_TYPE *)(((char *)mech->pParameter) + mechInfo->offset),
+                                        PR_FALSE, PR_FALSE)) {
+                    return PR_FALSE;
+                }
+            }
             return sftk_checkKeyLength(targetKeyLength, 112, 512, 1);
+        case SFTKFIPSRSAOAEP: {
+            CK_RSA_PKCS_OAEP_PARAMS *rsaoaep = (CK_RSA_PKCS_OAEP_PARAMS *)
+                                                   mech->pParameter;
+
+            HASH_HashType hash_msg = sftk_GetHashTypeFromMechanism(rsaoaep->hashAlg);
+            HASH_HashType hash_pad = sftk_GetHashTypeFromMechanism(rsaoaep->mgf);
+            /* message hash and mask generation function must be the same */
+            if (hash_pad != hash_msg)
+                return PR_FALSE;
+
+            return sftk_checkFIPSHash(rsaoaep->hashAlg, PR_FALSE, PR_FALSE);
+        }
         default:
             break;
     }

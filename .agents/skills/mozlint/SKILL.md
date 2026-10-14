@@ -3,6 +3,7 @@ name: mozlint
 description: You MUST use this skill when working with Firefox's linting infrastructure (mozlint), adding new linters, modifying existing linters, running linters, or dealing with linting issues.
 ---
 
+# Mozlint
 
 ## Overview
 Firefox's linting infrastructure (mozlint) provides a unified way to run various linters across the codebase. It integrates multiple linters including ESLint, Stylelint, ruff, clippy, clang-format, and many others.
@@ -51,7 +52,6 @@ See `docs/code-quality/lint/create.rst` for the full guide on creating a new lin
 - **prettier**: JavaScript/JSON/YAML formatting
 - **shellcheck**: Shell script linting
 - **yamllint**: YAML file linting
-- **rstcheck**: reStructuredText linting
 - **license**: License header checking
 
 ## Configuration Files

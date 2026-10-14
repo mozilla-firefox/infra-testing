@@ -6,7 +6,7 @@ Submitting a patch, getting it reviewed, and committed to the Firefox
 source tree involves several steps. This article explains how.
 
 :::{note}
-We are also providing a {ref}`Firefox Contributors Quick Reference <Firefox Contributors' Quick Reference>` for contributors.
+We are also providing a {doc}`Firefox Contributors Quick Reference <contribution_quickref>` for contributors.
 :::
 
 The process of submission is illustrated by the following diagram, and
@@ -26,11 +26,11 @@ graph TD;
     d[Getting Reviews] --> Lando[(Lando)];
     Lando[(Lando)] --> h[Push the change];
     h[Push the change] --> Git2[(Git)];
-    style Bugzilla fill:#e1f5ff,stroke:#0366d6
-    style Git fill:#e1f5ff,stroke:#0366d6
-    style Phabricator fill:#e1f5ff,stroke:#0366d6
-    style Lando fill:#e1f5ff,stroke:#0366d6
-    style Git2 fill:#e1f5ff,stroke:#0366d6
+    style Bugzilla fill:#e1f5ff,stroke:#0366d6,color:#1a1a1a
+    style Git fill:#e1f5ff,stroke:#0366d6,color:#1a1a1a
+    style Phabricator fill:#e1f5ff,stroke:#0366d6,color:#1a1a1a
+    style Lando fill:#e1f5ff,stroke:#0366d6,color:#1a1a1a
+    style Git2 fill:#e1f5ff,stroke:#0366d6,color:#1a1a1a
 ```
 
 ## Preparation
@@ -71,7 +71,7 @@ new user interface (UI review), functions (API review), or testcases for
 the proposed change.
 
 If module ownership is not clear, ask on the newsgroups or [on
-Matrix](https://chat.mozilla.org). See {ref}`Getting reviews` for the other
+Matrix](https://chat.mozilla.org). See {doc}`reviews` for the other
 ways of identifying a suitable reviewer or review group.
 
 ## Working on a patch
@@ -107,23 +107,23 @@ further lines for more detail and/or reasoning.
 The `r=reviewers` part specifies that `reviewers` should review the patch
 and provide feedback before it is integrated into the Firefox codebase. For
 choosing reviewers, and the full reviewer syntax, please see
-{ref}`Getting reviews`.
+{doc}`reviews`.
 
 You can edit the message of the current commit at any time using
 `git commit --amend` or `git rebase -i`.
 
-Also look at our {ref}`Reviewer Checklist` for a list
+Also look at our {doc}`reviewer_checklist` for a list
 of best practices for patch content that reviewers will check for or
 require.
 
 ## Testing
 
-All changes must be tested. In most cases, {ref}`Automated Testing` is required for every
+All changes must be tested. In most cases, {doc}`/testing/automated-testing/index` is required for every
 change to the code.
 
 While we desire to have automated tests for all code, we also have a
 linter tool which runs static analysis on our JavaScript, for best
-practices and common mistakes. See {ref}`ESLint` for more information.
+practices and common mistakes. See {doc}`/code-quality/lint/linters/eslint` for more information.
 
 Ensure that your change has not caused regressions, by running the
 automated test suite locally, or using the [Mozilla try
@@ -138,6 +138,12 @@ Make sure you rebase your patch on top of the latest build before you
 submit to prevent any merge conflicts.
 :::
 
+Review your own patch before requesting a peer review: read the full diff
+as if it were someone else's, and make sure you can explain every change.
+If you used AI tools, this step is mandatory, and running an AI review
+locally to catch issues you may have missed is also recommended. See the
+{doc}`AI Coding Policy <ai-coding>` for the full expectations.
+
 Mozilla uses Phabricator for code review. See the [Mozilla Phabricator
 User
 Guide](https://moz-conduit.readthedocs.io/en/latest/phabricator-user.html)
@@ -150,7 +156,7 @@ some code.
 
 ## Getting reviews for my patch
 
-See the dedicated page {ref}`Getting reviews`
+See the dedicated page {doc}`reviews`
 
 (addressing-review-comments)=
 
@@ -221,4 +227,4 @@ A resubmitted patch, or a patch to fix the regression, should be
 accompanied by appropriate tests.
 
 After authoring a few patches, consider requesting commit access to the
-Mozilla source code. See {ref}`Levelling up`.
+Mozilla source code. See {doc}`levelling-up`.

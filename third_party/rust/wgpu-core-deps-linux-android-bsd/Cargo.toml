@@ -11,7 +11,7 @@
 
 [package]
 edition = "2021"
-rust-version = "1.76"
+rust-version = "1.87"
 name = "wgpu-core-deps-linux-android-bsd"
 version = "30.0.0"
 build = false
@@ -40,3 +40,4 @@ path = "src/lib.rs"
 [target.'cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd", target_os = "netbsd"))'.dependencies.wgpu-hal]
 version = "30.0.0"
 path = "../../../wgpu-hal"
+default-features = true

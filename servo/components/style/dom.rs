@@ -19,8 +19,8 @@ use crate::selector_parser::{AttrValue, Lang, PseudoElement, RestyleDamage, Sele
 use crate::shared_lock::{Locked, SharedRwLock};
 use crate::stylesheets::scope_rule::ImplicitScopeRoot;
 use crate::stylist::CascadeData;
-use crate::values::computed::{Display, TreeCountingResult};
 use crate::values::AtomIdent;
+use crate::values::computed::{Display, TreeCountingResult};
 use crate::{LocalName, Namespace, WeakAtom};
 use dom::ElementState;
 use selectors::matching::{ElementSelectorFlags, QuirksMode, VisitedHandlingMode};
@@ -352,7 +352,7 @@ where
     stringify(f, n)?;
     if let Some(e) = n.as_element() {
         for kid in e.traversal_children() {
-            writeln!(f, "")?;
+            writeln!(f)?;
             fmt_subtree(f, stringify, kid, indent + 1)?;
         }
     }
@@ -489,41 +489,6 @@ pub trait TElement:
     /// Return whether this element is an HTML <video> or <audio> element.
     fn is_html_media_element(&self) -> bool {
         false
-    }
-
-    /// Returns the bloom filter for this element's subtree, used for fast
-    /// querySelector optimization by allowing subtrees to be skipped.
-    /// Each element's filter includes hashes for all of it's class names and
-    /// attribute names (not values), along with the names for all descendent
-    /// elements.
-    ///
-    /// The default implementation returns all bits set, meaning the bloom filter
-    /// never filters anything.
-    fn subtree_bloom_filter(&self) -> u64 {
-        u64::MAX
-    }
-
-    /// Check if this element's subtree may contain elements with the given bloom hash.
-    fn bloom_may_have_hash(&self, bloom_hash: u64) -> bool {
-        let bloom = self.subtree_bloom_filter();
-        (bloom & bloom_hash) == bloom_hash
-    }
-
-    /// Convert a 32-bit atom hash to a bloom filter value using k=2 hash functions.
-    /// This must match the C++ implementation of AttrArray::HashForBloomFilter.
-    fn hash_for_bloom_filter(hash: u32) -> u64 {
-        // On 32-bit platforms, we have 31 bits available + 1 tag bit.
-        // On 64-bit platforms, we have 63 bits available + 1 tag bit.
-        #[cfg(target_pointer_width = "32")]
-        const BLOOM_BITS: u32 = 31;
-
-        #[cfg(target_pointer_width = "64")]
-        const BLOOM_BITS: u32 = 63;
-
-        let mut filter = 1u64;
-        filter |= 1u64 << (1 + (hash % BLOOM_BITS));
-        filter |= 1u64 << (1 + ((hash >> 6) % BLOOM_BITS));
-        filter
     }
 
     /// Return the list of slotted nodes of this node.
@@ -702,7 +667,9 @@ pub trait TElement:
     /// animation-only dirty descendants bit, and the lazy frame construction
     /// descendants bit.
     unsafe fn clear_descendant_bits(&self) {
-        self.unset_dirty_descendants();
+        unsafe {
+            self.unset_dirty_descendants();
+        }
     }
 
     /// Returns true if this element is a visited link.
@@ -799,7 +766,7 @@ pub trait TElement:
             Some(d) => d,
             None => return false,
         };
-        return data.hint.has_animation_hint();
+        data.hint.has_animation_hint()
     }
 
     /// Called when a highlight pseudo-element (::selection, ::highlight,
@@ -857,49 +824,49 @@ pub trait TElement:
             }
         }
 
-        if let Some(shadow) = target.shadow_root() {
-            if let Some(data) = shadow.style_data() {
-                f(data, shadow.host());
-            }
+        if let Some(shadow) = target.shadow_root()
+            && let Some(data) = shadow.style_data()
+        {
+            f(data, shadow.host());
         }
 
         let mut current = target.assigned_slot();
         while let Some(slot) = current {
             // Slots can only have assigned nodes when in a shadow tree.
             let shadow = slot.containing_shadow().unwrap();
-            if let Some(data) = shadow.style_data() {
-                if data.any_slotted_rule() {
-                    f(data, shadow.host());
-                }
+            if let Some(data) = shadow.style_data()
+                && data.any_slotted_rule()
+            {
+                f(data, shadow.host());
             }
             current = slot.assigned_slot();
         }
 
-        if target.has_part_attr() {
-            if let Some(mut inner_shadow) = target.containing_shadow() {
-                loop {
-                    let inner_shadow_host = inner_shadow.host();
-                    match inner_shadow_host.containing_shadow() {
-                        Some(shadow) => {
-                            if let Some(data) = shadow.style_data() {
-                                if data.any_part_rule() {
-                                    f(data, shadow.host())
-                                }
-                            }
-                            // TODO: Could be more granular.
-                            if !inner_shadow_host.exports_any_part() {
-                                break;
-                            }
-                            inner_shadow = shadow;
-                        },
-                        None => {
-                            // TODO(emilio): Should probably distinguish with
-                            // MatchesDocumentRules::{No,Yes,IfPart} or something so that we could
-                            // skip some work.
-                            doc_rules_apply = matches_user_and_content_rules;
+        if target.has_part_attr()
+            && let Some(mut inner_shadow) = target.containing_shadow()
+        {
+            loop {
+                let inner_shadow_host = inner_shadow.host();
+                match inner_shadow_host.containing_shadow() {
+                    Some(shadow) => {
+                        if let Some(data) = shadow.style_data()
+                            && data.any_part_rule()
+                        {
+                            f(data, shadow.host())
+                        }
+                        // TODO: Could be more granular.
+                        if !inner_shadow_host.exports_any_part() {
                             break;
-                        },
-                    }
+                        }
+                        inner_shadow = shadow;
+                    },
+                    None => {
+                        // TODO(emilio): Should probably distinguish with
+                        // MatchesDocumentRules::{No,Yes,IfPart} or something so that we could
+                        // skip some work.
+                        doc_rules_apply = matches_user_and_content_rules;
+                        break;
+                    },
                 }
             }
         }
@@ -935,19 +902,21 @@ pub trait TElement:
 
     /// Generate the proper applicable declarations due to presentational hints,
     /// and insert them into `hints`.
-    fn synthesize_presentational_hints_for_legacy_attributes<V>(
+    fn synthesize_presentational_hints_for_legacy_attributes<'a, V>(
         &self,
         visited_handling: VisitedHandlingMode,
         hints: &mut V,
     ) where
-        V: Push<ApplicableDeclarationBlock>;
+        V: Push<ApplicableDeclarationBlock<'a>>,
+        Self: 'a;
 
     /// Generate the proper applicable declarations due to view transition dynamic rules, and
     /// insert them into `rules`.
     /// https://drafts.csswg.org/css-view-transitions-1/#document-dynamic-view-transition-style-sheet
-    fn synthesize_view_transition_dynamic_rules<V>(&self, _rules: &mut V)
+    fn synthesize_view_transition_dynamic_rules<'a, V>(&self, _rules: &mut V)
     where
-        V: Push<ApplicableDeclarationBlock>,
+        V: Push<ApplicableDeclarationBlock<'a>>,
+        Self: 'a,
     {
     }
 
@@ -956,7 +925,7 @@ pub trait TElement:
 
     /// Returns element's namespace.
     fn namespace(&self)
-        -> &<SelectorImpl as selectors::parser::SelectorImpl>::BorrowedNamespaceUrl;
+    -> &<SelectorImpl as selectors::parser::SelectorImpl>::BorrowedNamespaceUrl;
 
     /// Returns the size of the element to be used in container size queries.
     /// This will usually be the size of the content area of the primary box,
@@ -1092,7 +1061,7 @@ impl<'a> AttributeTracker<'a> {
         // a and b can only share style if ns1 and ns2 resolve to the same namespace.
         self.references
             .get_or_insert_default()
-            .entry(name.clone())
+            .entry_ref(name)
             .or_default()
             .push(namespace.clone());
         self.context.get_attr(name, namespace)

@@ -37,16 +37,10 @@ function clearMouseEventListenerAndCheck(aBrowser, aExpectedEvents) {
   });
 }
 
-add_setup(async function () {
-  await SpecialPowers.pushPrefEnv({
-    set: [["test.wait300msAfterTabSwitch", true]],
-  });
-});
-
 add_task(async function testSwitchTabs() {
   const tabFirst = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
-    "http://example.com/browser/browser/base/content/test/general/dummy_page.html",
+    "http://example.com/browser/browser/base/content/test/browser-general/dummy_page.html",
     true
   );
 
@@ -61,7 +55,7 @@ add_task(async function testSwitchTabs() {
   await AddMouseEventListener(tabFirst.linkedBrowser);
   const tabSecond = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
-    "http://example.com/browser/browser/base/content/test/general/dummy_page.html"
+    "http://example.com/browser/browser/base/content/test/browser-general/dummy_page.html"
   );
   // Synthesize a mousemove to generate corresponding mouseenter and mouseleave
   // events.
@@ -100,7 +94,7 @@ add_task(async function testSwitchTabs() {
 add_task(async function testSwitchTabsWithMouseDown() {
   const tabFirst = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
-    "http://example.com/browser/browser/base/content/test/general/dummy_page.html",
+    "http://example.com/browser/browser/base/content/test/browser-general/dummy_page.html",
     true
   );
 
@@ -118,7 +112,7 @@ add_task(async function testSwitchTabsWithMouseDown() {
   await AddMouseEventListener(tabFirst.linkedBrowser);
   const tabSecond = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
-    "http://example.com/browser/browser/base/content/test/general/dummy_page.html"
+    "http://example.com/browser/browser/base/content/test/browser-general/dummy_page.html"
   );
   // Synthesize a mousemove to generate corresponding mouseenter and mouseleave
   // events.

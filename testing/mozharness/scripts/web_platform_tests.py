@@ -230,6 +230,15 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
                     "help": "Sets whether to update the test status if a crash dump is detected",
                 },
             ],
+            [
+                ["--enable-isolated-process"],
+                {
+                    "action": "store_true",
+                    "dest": "isolated_process",
+                    "default": False,
+                    "help": "Run the tests with content service isolated process enabled.",
+                },
+            ],
         ]
         + copy.deepcopy(testing_config_options)
         + copy.deepcopy(code_coverage_config_options)
@@ -366,7 +375,7 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
 
         mozinfo.find_and_update_from_json(dirs["abs_test_install_dir"])
 
-        raw_log_file, error_summary_file, _test_summary_file = self.get_indexed_logs(
+        raw_log_file, error_summary_file, test_summary_file = self.get_indexed_logs(
             dirs["abs_blob_upload_dir"], "wpt"
         )
 
@@ -375,6 +384,7 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
             "--log-wptreport=%s"
             % os.path.join(dirs["abs_blob_upload_dir"], "wptreport.json"),
             "--log-errorsummary=%s" % error_summary_file,
+            "--log-testsummary=%s" % test_summary_file,
             "--symbols-path=%s" % self.symbols_path,
             "--stackwalk-binary=%s" % self.query_minidump_stackwalk(),
             "--stackfix-dir=%s" % os.path.join(dirs["abs_test_install_dir"], "bin"),
@@ -394,16 +404,29 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
             # repeat should repeat the original test, so +1 for first run
             cmd.append("--repeat=%s" % (self.repeat + 1))
 
+        # Only the default testharness jobs: the tag-scoped ones run a
+        # different test selection that hasn't been measured, and the VM pools
+        # have much less memory per guest.
+        is_parallel_capable_mac = (
+            sys.platform.startswith("darwin")
+            and mozinfo.info.get("arch") == "aarch64"
+            and not mozinfo.info.get("macos_vm")
+            and list(test_types) == ["testharness"]
+            and not c["tag"]
+        )
         if (
             self.is_android
             or mozinfo.info["tsan"]
             or "wdspec" in test_types
-            or not c["disable_fission"]
+            or (not c["disable_fission"] and not is_parallel_capable_mac)
             # reftest on osx needs to be 1 process
-            or "reftest" in test_types
-            and sys.platform.startswith("darwin")
+            or ("reftest" in test_types and sys.platform.startswith("darwin"))
         ):
             processes = 1
+        elif is_parallel_capable_mac:
+            # Verified by experiment on the 10-core/16GB Apple M4 workers
+            # (Mac16,10) in 2026-09; see bug 2050488 for the measurements.
+            processes = 3
         else:
             processes = 2
         cmd.append("--processes=%s" % processes)
@@ -454,6 +477,9 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
             cmd.append("--update-status-on-crash")
         else:
             cmd.append("--no-update-status-on-crash")
+
+        if c["isolated_process"]:
+            cmd.append("--enable-isolated-process")
 
         test_paths = set()
         if not (self.verify_enabled or self.per_test_coverage):
@@ -633,6 +659,24 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
         with open(ahem_src, "rb") as src, open(ahem_dest, "wb") as dest:
             dest.write(src.read())
 
+    def query_gmp_path(self, plugin):
+        """Locate a GMP plugin unpacked into the fetches directory.
+
+        Gecko expects each entry on MOZ_GMP_PATH to be the version directory,
+        so return <fetches>/<plugin>/<version>, or None on the platforms we
+        have nothing to fetch for.
+        """
+        dirs = self.query_abs_dirs()
+        base = os.path.join(dirs["abs_fetches_dir"], plugin)
+        versions = sorted(os.listdir(base)) if os.path.isdir(base) else []
+        if not versions:
+            return None
+        if len(versions) > 1:
+            self.fatal(
+                f"Expected a single {plugin} under {base}, found {', '.join(versions)}."
+            )
+        return os.path.join(base, versions[0])
+
     def run_tests(self):
         dirs = self.query_abs_dirs()
 
@@ -657,10 +701,27 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
         if self.is_android:
             env["ADB_PATH"] = self.adb_path
 
-        env["MOZ_GMP_PATH"] = os.pathsep.join(
-            os.path.join(dirs["abs_test_bin_dir"], "plugins", p, "1.0")
-            for p in ("gmp-fake", "gmp-fakeopenh264")
-        )
+        # The real plugins come from fetches where we have them; the fakes
+        # stand in everywhere else.
+        widevine_path = self.query_gmp_path("gmp-widevinecdm")
+        if widevine_path:
+            self.info(f"Using the Widevine CDM in {widevine_path}")
+            gmp_paths = [widevine_path]
+        else:
+            gmp_paths = [
+                os.path.join(dirs["abs_test_bin_dir"], "plugins", "gmp-fake", "1.0")
+            ]
+        openh264_path = self.query_gmp_path("gmp-gmpopenh264")
+        if openh264_path:
+            self.info(f"Using the OpenH264 GMP plugin in {openh264_path}")
+            gmp_paths.append(openh264_path)
+        else:
+            gmp_paths.append(
+                os.path.join(
+                    dirs["abs_test_bin_dir"], "plugins", "gmp-fakeopenh264", "1.0"
+                )
+            )
+        env["MOZ_GMP_PATH"] = os.pathsep.join(gmp_paths)
 
         env = self.query_env(partial_env=env, log_level=INFO)
 
@@ -741,6 +802,8 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
                     output_parser=parser,
                     env=final_env,
                 )
+
+                self.append_test_summary(dirs["abs_blob_upload_dir"])
 
                 if self.per_test_coverage:
                     self.add_per_test_coverage_report(

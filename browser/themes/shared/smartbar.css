@@ -4,6 +4,7 @@
 
 /* TODO (Bug 2008938): Make in-page Smartbar styling not dependent on chrome styles */
 @import url("chrome://browser/skin/urlbar.css");
+@import url("chrome://browser/skin/tabbrowser/tab.tokens.css");
 
 :host,
 :root {
@@ -27,14 +28,14 @@
 }
 
 .smartbar {
-  --urlbarView-favicon-margin-start: 0;
-  --urlbarView-favicon-margin-end: var(--space-small);
-  --urlbarView-row-padding-inline: var(--space-small);
+  --urlbarview-favicon-margin-start: 0;
+  --urlbarview-favicon-margin-end: var(--space-small);
+  --urlbarview-row-padding-inline: var(--space-small);
   --urlbarview-row-padding-block: var(--space-small);
-  --urlbarView-labeled-row-margin-top: 0;
+  --urlbarview-labeled-row-margin-top: 0;
   --urlbar-background-border: var(--border-width) solid var(--border-color-transparent);
 
-  --urlbarView-small-font-size: var(--font-size-small);
+  --urlbarview-small-font-size: var(--font-size-small);
 
   @media not (forced-colors) {
     --urlbarview-background-color-hover: light-dark(var(--color-violet-0), var(--button-background-color-hover));
@@ -61,6 +62,13 @@
       outline-offset: var(--focus-outline-offset);
     }
   }
+
+  /* Neutralize the UA popover rules. */
+  inset: auto;
+  border: none;
+  padding: 0;
+  overflow: visible;
+  background-color: transparent;
 
   display: flex;
   flex-direction: column;
@@ -112,8 +120,8 @@
      */
     /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
     max-height: calc(
-      (var(--urlbarView-row-inner-min-height) + var(--urlbarview-row-padding-block) * 2 + var(--urlbarView-row-gutter) * 2) * var(--smartbar-max-visible-rows) +
-        var(--space-medium) * 2 - var(--urlbarView-row-gutter) * 2
+      (var(--urlbarview-row-inner-min-height) + var(--urlbarview-row-padding-block) * 2 + var(--urlbarview-row-gutter) * 2) * var(--smartbar-max-visible-rows) +
+        var(--space-medium) * 2 - var(--urlbarview-row-gutter) * 2
     );
     /*
      * Scroll fade using an animated mask:
@@ -149,7 +157,7 @@
   }
 
   .urlbarView-row[label] {
-    --urlbarView-labeled-row-margin-top: calc(var(--urlbarView-labeled-row-label-top) + 3.25em);
+    --urlbarview-labeled-row-margin-top: calc(var(--urlbarview-labeled-row-label-top) + 3.25em);
   }
 
   .urlbarView-row:not([type="tip"], [type="dynamic"]) {
@@ -159,7 +167,7 @@
 
   .urlbarView-row-inner {
     /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
-    min-height: var(--urlbarView-row-inner-min-height);
+    min-height: var(--urlbarview-row-inner-min-height);
   }
 }
 
@@ -290,9 +298,11 @@
 }
 
 /* Results */
-.smartbar .urlbarView-results {
-  padding-block: var(--space-medium);
-  padding-inline: var(--space-large);
+@media not -moz-pref("browser.nova.enabled") {
+  .smartbar .urlbarView-results {
+    padding-block: var(--space-medium);
+    padding-inline: var(--space-large);
+  }
 }
 
 /* Button container */
@@ -333,8 +343,10 @@
     }
   }
 
-  .smartbar .urlbarView-results {
-    padding-block: calc(var(--space-medium) - var(--urlbarView-row-gutter));
+  .smartbar > .urlbarView {
+    /* The view's max-height budgets the padding, so keep it inside the box. */
+    box-sizing: border-box;
+    padding: calc(var(--space-medium) - var(--urlbarview-row-gutter)) var(--space-large);
   }
 
   .urlbarView-row {

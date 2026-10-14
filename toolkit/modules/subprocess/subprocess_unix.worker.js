@@ -351,9 +351,9 @@ class Process extends BaseProcess {
         our_pipes.push(new OutputPipe(this, fds[1]));
       }
 
-      libc.fcntl(fds[0], LIBC.F_SETFD, LIBC.FD_CLOEXEC);
-      libc.fcntl(fds[1], LIBC.F_SETFD, LIBC.FD_CLOEXEC);
-      libc.fcntl(fds[1], LIBC.F_SETFL, LIBC.O_NONBLOCK);
+      libc.fcntl(fds[0], LIBC.F_SETFD, ctypes.int(LIBC.FD_CLOEXEC));
+      libc.fcntl(fds[1], LIBC.F_SETFD, ctypes.int(LIBC.FD_CLOEXEC));
+      libc.fcntl(fds[1], LIBC.F_SETFL, ctypes.int(LIBC.O_NONBLOCK));
 
       return fds[0];
     };
@@ -396,6 +396,18 @@ class Process extends BaseProcess {
 
     try {
       this.pid = IOUtils.launchProcess(options.arguments, launchOptions);
+    } catch (e) {
+      // No child holds the other ends, so close ours right away rather than
+      // leaving them to the garbage collector.
+      for (let pipe of this.pipes) {
+        pipe.close();
+      }
+      this.fd.dispose();
+      // The exception from IOUtils cannot be sent to the main thread, so report
+      // a plain error that callers can inspect.
+      let error = new Error(`Failed to launch process: ${e.message || e}`);
+      error.errorCode = SubprocessConstants.ERROR_BAD_EXECUTABLE;
+      throw error;
     } finally {
       for (let fd of new Set(fds.values())) {
         fd.dispose();

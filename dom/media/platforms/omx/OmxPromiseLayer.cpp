@@ -28,6 +28,8 @@ OmxPromiseLayer::OmxPromiseLayer(TaskQueue* aTaskQueue,
   MOZ_ASSERT(!!mPlatformLayer);
 }
 
+OmxPromiseLayer::~OmxPromiseLayer() = default;
+
 RefPtr<OmxPromiseLayer::OmxCommandPromise> OmxPromiseLayer::Init(
     const TrackInfo* aInfo) {
   MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
@@ -351,5 +353,10 @@ nsresult OmxPromiseLayer::Shutdown() {
   MOZ_ASSERT(!GetBufferHolders(OMX_DirOutput)->Length());
   return mPlatformLayer->Shutdown();
 }
+
+OmxPromiseLayer::BufferData::BufferData(OMX_BUFFERHEADERTYPE* aBuffer)
+    : mEos(false), mStatus(BufferStatus::FREE), mBuffer(aBuffer) {}
+
+OmxPromiseLayer::BufferData::~BufferData() = default;
 
 }  // namespace mozilla

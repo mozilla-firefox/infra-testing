@@ -12,7 +12,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   DownloadBehaviorManager:
     "chrome://remote/content/webdriver-bidi/DownloadBehaviorManager.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
-  getWebDriverSessionById:
+  getWebDriverSessionByInternalSessionId:
     "chrome://remote/content/shared/webdriver/Session.sys.mjs",
   Log: "chrome://remote/content/shared/Log.sys.mjs",
   NavigableManager: "chrome://remote/content/shared/NavigableManager.sys.mjs",
@@ -119,7 +119,8 @@ const DownloadBehaviorType = {
  * @property {DownloadBehaviorType} type
  *     A type of download behavior to set.
  * @property {string=} destinationFolder
- *     Optional destination folder to save the downloaded file.
+ *     Destination folder to save the downloaded file. Mandatory when type is
+ *     "allowed", otherwise ignored.
  */
 
 class BrowserModule extends RootBiDiModule {
@@ -177,7 +178,9 @@ class BrowserModule extends RootBiDiModule {
    * in WebDriverBiDiConnection class.
    */
   async close() {
-    const session = lazy.getWebDriverSessionById(this.messageHandler.sessionId);
+    const session = lazy.getWebDriverSessionByInternalSessionId(
+      this.messageHandler.internalSessionId
+    );
 
     // TODO Bug 1838269. Enable browser.close command for the case of classic + bidi session, when
     // session ending for this type of session is supported.
@@ -262,7 +265,9 @@ class BrowserModule extends RootBiDiModule {
       }
     }
 
-    const userContextId = lazy.UserContextManager.createContext("webdriver");
+    const userContextId = lazy.UserContextManager.createContext({
+      prefix: "webdriver",
+    });
     const internalId = lazy.UserContextManager.getInternalIdById(userContextId);
 
     if (acceptInsecureCerts !== null) {
@@ -340,7 +345,7 @@ class BrowserModule extends RootBiDiModule {
 
       behavior = { allowed: type === "allowed" };
 
-      if (behavior.allowed && "destinationFolder" in downloadBehavior) {
+      if (behavior.allowed) {
         const destinationFolder = downloadBehavior.destinationFolder;
         lazy.assert.string(
           destinationFolder,

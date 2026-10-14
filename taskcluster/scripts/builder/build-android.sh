@@ -18,7 +18,7 @@ ac_add_options --without-google-safebrowsing-api-keyfile
 ac_add_options --disable-nodejs
 unset NODEJS
 
-export GRADLE_MAVEN_REPOSITORIES="file://$MOZ_FETCHES_DIR/geckoview","file://$MOZ_FETCHES_DIR/android-gradle-dependencies/mozilla","file://$MOZ_FETCHES_DIR/android-gradle-dependencies/google","file://$MOZ_FETCHES_DIR/android-gradle-dependencies/central","file://$MOZ_FETCHES_DIR/android-gradle-dependencies/gradle-plugins","file:///$MOZ_FETCHES_DIR/android-gradle-dependencies/plugins.gradle.org/m2"
+export GRADLE_MAVEN_REPOSITORIES="file://$MOZ_FETCHES_DIR/geckoview","file://$MOZ_FETCHES_DIR/android-gradle-dependencies/mozilla","file://$MOZ_FETCHES_DIR/android-gradle-dependencies/google","file://$MOZ_FETCHES_DIR/android-gradle-dependencies/central","file://$MOZ_FETCHES_DIR/android-gradle-dependencies/gradle-plugins"
 EOF
 export MOZCONFIG=$mozconfig
 GRADLE=$MOZ_FETCHES_DIR/android-gradle-dependencies/gradle-dist/bin/gradle
@@ -34,6 +34,7 @@ eval $PRE_GRADLEW
 
 eval $GET_SECRETS
 
-$GRADLE listRepositories $GRADLEW_ARGS
+mkdir -p "$BUILD_METRICS_DIR"
+$GRADLE listRepositories $GRADLEW_ARGS -PbuildMetricsOutputDir="$BUILD_METRICS_DIR"
 
 eval $POST_GRADLEW

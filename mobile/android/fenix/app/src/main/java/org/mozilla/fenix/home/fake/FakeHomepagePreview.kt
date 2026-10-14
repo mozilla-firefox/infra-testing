@@ -233,10 +233,6 @@ internal object FakeHomepagePreview {
                     /* no op */
                 }
 
-                override fun onRecentTabShowAllClicked() {
-                    /* no op */
-                }
-
                 override fun onRemoveRecentTab(tab: RecentTab.Tab) {
                     /* no op */
                 }

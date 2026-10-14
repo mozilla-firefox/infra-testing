@@ -12,11 +12,11 @@
  */
 
 const { readFileSync, readdirSync, rmSync } = require("fs");
-const chalk = require("chalk");
+const chalk = require("chalk").default;
 const path = require("path");
 const prettier = require("prettier");
-const StyleDictionary = require("style-dictionary");
-const config = require("../config/tokens-config.js");
+const StyleDictionary = require("style-dictionary").default;
+const config = require("../config/tokens-config.mjs").default;
 
 // Mirror the design-system's real depth in the source tree (toolkit/themes/
 // shared/design-system) so the relative destinations in the config (e.g.
@@ -25,7 +25,7 @@ const config = require("../config/tokens-config.js");
 const TEST_BUILD_PATH = "tests/build/toolkit/themes/shared/design-system/";
 const PROJECT_ROOT = path.resolve(__dirname, "../../../../../");
 
-function buildFilesWithTestConfig() {
+async function buildFilesWithTestConfig() {
   // Use our real config, just modify some values for the test. This prevents us
   // from re-building the CSS files that get checked in when we run the tests.
   let testConfig = Object.assign({}, config);
@@ -35,7 +35,8 @@ function buildFilesWithTestConfig() {
 
   // This is effectively the same as running `npm run build` and allows us to
   // use the modified config.
-  StyleDictionary.extend(testConfig).buildAllPlatforms();
+  const sd = new StyleDictionary(testConfig);
+  await sd.buildAllPlatforms();
 }
 
 /**
@@ -74,15 +75,15 @@ const tests = {
     let currentCSS = {};
     let cssFiles = getBuiltCSSFiles();
 
+    try {
+      await buildFilesWithTestConfig();
+    } catch {
+      errors.push("CSS build did not run successfully");
+    }
+
     // Read the contents of our built CSS files.
     for (let { name, path: currentPath } of cssFiles) {
       currentCSS[name] = readFileSync(currentPath, "utf8");
-    }
-
-    try {
-      buildFilesWithTestConfig();
-    } catch {
-      errors.push("CSS build did not run successfully");
     }
 
     let prettierConfig = require(path.resolve(PROJECT_ROOT, ".prettierrc.js"));
@@ -110,7 +111,7 @@ const tests = {
 
       if (builtCSS.includes("/** Unspecified **/")) {
         errors.push(
-          "Tokens present in the 'Unspecified' section. Please update TOKEN_SECTIONS in tokens-config.js"
+          "Tokens present in the 'Unspecified' section. Please update TOKEN_SECTIONS in tokens-config.mjs"
         );
       }
     }
@@ -145,13 +146,49 @@ const tests = {
     rmSync("tests/build", { recursive: true, force: true });
     return errors.length === 0;
   },
+
+  // A component family that declares any text color (e.g. --panel-text-color
+  // or --urlbarview-text-color-selected) must declare one for every background
+  // color variant it has, so that each background has a text color to pair
+  // with.
+  async pairedTextColors() {
+    logStart("paired text colors");
+
+    let { tokensTable } = await import("../dist/semantic-categories.mjs");
+    let tokenNames = new Set(
+      Object.values(tokensTable)
+        .flat()
+        .map(token => token.name)
+    );
+
+    let familiesWithText = new Set(
+      [...tokenNames].map(name => name.match(/^--(.+?)text-color/)?.[1])
+    );
+
+    let errors = [];
+    for (let tokenName of tokenNames) {
+      let match = tokenName.match(
+        /^--(?<family>.+?)background-color(?<variant>.*)$/
+      );
+      if (!match || !familiesWithText.has(match.groups.family)) {
+        continue;
+      }
+      let counterpart = `--${match.groups.family}text-color${match.groups.variant}`;
+      if (!tokenNames.has(counterpart)) {
+        errors.push(`${tokenName} has no ${counterpart} to pair with`);
+      }
+    }
+
+    logErrors("paired text colors", errors);
+    return errors.length === 0;
+  },
 };
 
-(function runTests() {
+(async function runTests() {
   let results = [];
 
   for (let testName of Object.keys(tests)) {
-    results.push([testName, tests[testName]()]);
+    results.push([testName, await tests[testName]()]);
   }
 
   for (const [name, result] of results) {

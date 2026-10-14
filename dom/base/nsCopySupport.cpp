@@ -10,6 +10,7 @@
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/DataTransfer.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/Range.h"
 #include "nsComponentManagerUtils.h"
 #include "nsFocusManager.h"
 #include "nsFrameSelection.h"
@@ -27,8 +28,8 @@
 #include "nsISupports.h"
 #include "nsISupportsPrimitives.h"
 #include "nsPIDOMWindow.h"
-#include "nsRange.h"
 #include "nsServiceManagerUtils.h"
+#include "nsURLHelper.h"
 #include "nsWidgetsCID.h"
 #include "nsXPCOM.h"
 
@@ -289,27 +290,6 @@ static nsresult CreateTransferable(
                         kTextMime);
       NS_ENSURE_SUCCESS(rv, rv);
     }
-
-    // Try and get source URI of the items that are being dragged
-    nsIURI* uri = aDocument.GetDocumentURI();
-    if (uri) {
-      nsAutoCString spec;
-      nsresult rv = uri->GetSpec(spec);
-      NS_ENSURE_SUCCESS(rv, rv);
-      if (!spec.IsEmpty()) {
-        nsAutoString shortcut;
-        AppendUTF8toUTF16(spec, shortcut);
-
-        // Add the URL DataFlavor to the transferable. Don't use kURLMime,
-        // as it will cause an unnecessary UniformResourceLocator to be
-        // added which confuses some apps eg. Outlook 2000 - (See Bug
-        // 315370). Don't use kURLDataMime, as it will cause a bogus 'url '
-        // flavor to show up on the Mac clipboard, confusing other apps,
-        // like Terminal (see bug 336012).
-        rv = AppendString(aTransferable, shortcut, kURLPrivateMime);
-        NS_ENSURE_SUCCESS(rv, rv);
-      }
-    }
   } else {
     if (!aEncodedDocumentWithContext.mSerializationForTextPlain.IsEmpty()) {
       // Add the unicode DataFlavor to the transferable
@@ -320,7 +300,47 @@ static nsresult CreateTransferable(
     }
   }
 
-  return rv;
+  // Append the source of the item being dragged.
+  return nsCopySupport::AppendSourceURL(
+      *aTransferable, nsCopySupport::GetDocumentSourceURL(aDocument));
+}
+
+nsString nsCopySupport::GetDocumentSourceURL(
+    mozilla::dom::Document& aDocument) {
+  // This a trusted document, so we don't need to attach any source.
+  if (nsContentUtils::IsChromeDoc(&aDocument) ||
+      nsContentUtils::IsAddonDoc(&aDocument) ||
+      aDocument.ChromeRulesEnabled()) {
+    return EmptyString();
+  }
+
+  // In private browsing mode only return about:internet like
+  // WinUtils::MaybeWriteFileZoneIdSync.
+  if (aDocument.IsInPrivateBrowsing()) {
+    return u"about:internet"_ns;
+  }
+
+  nsAutoCString origin;
+  MOZ_ALWAYS_SUCCEEDS(aDocument.NodePrincipal()->GetOriginNoSuffix(origin));
+
+  return NS_ConvertUTF8toUTF16(origin);
+}
+
+nsresult nsCopySupport::AppendSourceURL(nsITransferable& aTransferable,
+                                        const nsAString& aSourceURL) {
+  if (aSourceURL.IsEmpty()) {
+    return NS_OK;
+  }
+
+  // Don't use kURLMime, as it will cause an unnecessary
+  // UniformResourceLocator to be added which confuses some apps, such as
+  // Outlook 2000 (bug 315370). Don't use kURLDataMime, as it will cause a
+  // bogus 'url ' flavor to show up on the Mac clipboard, confusing other
+  // apps, such as Terminal (bug 336012).
+  //
+  // This MIME type will be used by Microsoft Defender to detect TerminalFix
+  // style attacks and prompt the user before pasting into their console.
+  return AppendString(&aTransferable, aSourceURL, kURLPrivateMime);
 }
 
 static nsresult PutToClipboard(
@@ -422,7 +442,7 @@ nsresult nsCopySupport::GetTransferableForNode(
   // XXX We should try to get rid of the Selection object here.
   // XXX bug 1245883
   RefPtr<Selection> selection = new Selection(SelectionType::eNormal, nullptr);
-  RefPtr<nsRange> range = nsRange::Create(aNode);
+  RefPtr<dom::Range> range = dom::Range::Create(aNode);
   ErrorResult result;
   range->SelectNode(*aNode, result);
   if (NS_WARN_IF(result.Failed())) {
@@ -704,7 +724,7 @@ static bool IsSelectionInsideRuby(Selection* aSelection) {
   uint32_t rangeCount = aSelection->RangeCount();
   for (auto i : IntegerRange(rangeCount)) {
     MOZ_ASSERT(aSelection->RangeCount() == rangeCount);
-    const nsRange* range = aSelection->GetRangeAt(i);
+    const dom::Range* range = aSelection->GetRangeAt(i);
     if (!IsInsideRuby(range->GetClosestCommonInclusiveAncestor())) {
       return false;
     }
@@ -795,7 +815,7 @@ bool nsCopySupport::FireClipboardEvent(
 
   // Retrieve the event target node from the start of the selection.
   if (sel) {
-    const nsRange* range = sel->GetRangeAt(0);
+    const dom::Range* range = sel->GetRangeAt(0);
     if (range) {
       targetElement = GetElementOrNearestFlattenedTreeParentElement(
           range->GetStartContainer());
@@ -948,6 +968,11 @@ bool nsCopySupport::FireClipboardEvent(
           clipboardData->GetTransferable(0, doc->GetLoadContext());
 
       NS_ENSURE_TRUE(transferable, false);
+
+      if (NS_FAILED(
+              AppendSourceURL(*transferable, GetDocumentSourceURL(*doc)))) {
+        return false;
+      }
 
       // put the transferable on the clipboard
       WindowContext* settingWindowContext = nullptr;

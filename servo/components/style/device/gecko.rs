@@ -18,14 +18,14 @@ use crate::properties::ComputedValues;
 use crate::string_cache::Atom;
 use crate::values::computed::font::GenericFontFamily;
 use crate::values::computed::{ColorScheme, Length, LinkParameters, NonNegativeLength};
+use crate::values::specified::ViewportVariant;
 use crate::values::specified::color::{ColorSchemeFlags, ForcedColors, SystemColor};
 use crate::values::specified::font::{
-    QueryFontMetricsFlags, FONT_MEDIUM_CAP_PX, FONT_MEDIUM_CH_PX, FONT_MEDIUM_EX_PX,
-    FONT_MEDIUM_IC_PX, FONT_MEDIUM_LINE_HEIGHT_PX, FONT_MEDIUM_PX,
+    FONT_MEDIUM_CAP_PX, FONT_MEDIUM_CH_PX, FONT_MEDIUM_EX_PX, FONT_MEDIUM_IC_PX,
+    FONT_MEDIUM_LINE_HEIGHT_PX, FONT_MEDIUM_PX, QueryFontMetricsFlags,
 };
-use crate::values::specified::ViewportVariant;
 use crate::values::{CustomIdent, KeyframesName};
-use app_units::{Au, AU_PER_PX};
+use app_units::{AU_PER_PX, Au};
 use euclid::default::Size2D;
 use euclid::{Scale, SideOffsets2D};
 use parking_lot::RwLock;
@@ -52,8 +52,8 @@ impl Device {
         let default_values = ComputedValues::default_values(doc);
         let root_style = RwLock::new(Arc::clone(&default_values));
         Device {
-            default_values: default_values,
-            root_style: root_style,
+            default_values,
+            root_style,
             root_font_size: AtomicU32::new(FONT_MEDIUM_PX.to_bits()),
             root_line_height: AtomicU32::new(FONT_MEDIUM_LINE_HEIGHT_PX.to_bits()),
             root_font_metrics_ex: AtomicU32::new(FONT_MEDIUM_EX_PX.to_bits()),
@@ -69,7 +69,7 @@ impl Device {
             environment: CssEnvironment,
             // This gets updated when we see the <body>, so it doesn't really
             // matter which color-scheme we look at here.
-            body_text_color: AtomicU32::new(prefs.mLightColors.mDefault),
+            body_text_color: RwLock::new(AbsoluteColor::from_nscolor(prefs.mLightColors.mDefault)),
             extra: ExtraDeviceData { document },
         }
     }
@@ -84,10 +84,10 @@ impl Device {
         element: Option<GeckoElement>,
     ) -> NonNegativeLength {
         let pres_context = self.pres_context();
-        let line_height = font.clone_line_height();
+        let line_height = font.get_line_height();
         let au = Au(unsafe {
             bindings::Gecko_CalcLineHeight(
-                &line_height,
+                line_height,
                 pres_context.map_or(std::ptr::null(), |pc| pc),
                 writing_mode.is_text_vertical(),
                 &**font,
@@ -183,6 +183,13 @@ impl Device {
     #[inline]
     pub fn document(&self) -> &structs::Document {
         unsafe { &*self.extra.document }
+    }
+
+    /// Returns a value that identifies this document, used to vary the random
+    /// base values of `random()` functions between document instances.
+    #[inline]
+    pub fn document_random_seed(&self) -> u64 {
+        self.extra.document as u64
     }
 
     /// Gets the pres context associated with this document.
@@ -477,9 +484,7 @@ impl fmt::Debug for Device {
         use nsstring::nsCString;
 
         let mut doc_uri = nsCString::new();
-        unsafe {
-            bindings::Gecko_nsIURI_Debug((*self.document()).mDocumentURI.raw(), &mut doc_uri)
-        };
+        unsafe { bindings::Gecko_nsIURI_Debug(self.document().mDocumentURI.raw(), &mut doc_uri) };
 
         f.debug_struct("Device")
             .field("document_url", &doc_uri)

@@ -11,6 +11,7 @@
 #include "mozilla/dom/ContentList.h"
 #include "mozilla/dom/CustomElementRegistry.h"
 #include "mozilla/dom/HTMLFieldSetElementBinding.h"
+#include "nsContentUtils.h"
 #include "nsQueryObject.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(FieldSet)
@@ -88,7 +89,8 @@ void HTMLFieldSetElement::GetType(nsAString& aType) const {
 bool HTMLFieldSetElement::MatchListedElements(Element* aElement,
                                               int32_t aNamespaceID,
                                               nsAtom* aAtom, void* aData) {
-  return nsIFormControl::FromNodeOrNull(aElement) != nullptr;
+  auto* control = nsIFormControl::FromNodeOrNull(aElement);
+  return control && !!control->GetFieldSet();
 }
 
 HTMLCollection* HTMLFieldSetElement::Elements() {
@@ -185,9 +187,13 @@ void HTMLFieldSetElement::AddElement(nsGenericHTMLFormElement* aElement) {
   // If the element is a form-associated custom element, adding element might be
   // caused by FACE upgrade which won't trigger mutation observer, so mark
   // mElements dirty manually here.
-  CustomElementData* data = aElement->GetCustomElementData();
-  if (data && data->IsFormAssociated() && mElements) {
-    mElements->SetDirty();
+  if (CustomElementData* data = aElement->GetCustomElementData();
+      data && data->IsFormAssociated()) {
+    for (auto* fs = this; fs; fs = fs->GetFieldSet()) {
+      if (fs->mElements) {
+        fs->mElements->SetDirty();
+      }
+    }
   }
 
   // We need to update the validity of the fieldset.
@@ -275,7 +281,8 @@ void HTMLFieldSetElement::NotifyElementsForFirstLegendChange(bool aNotify) {
         new ContentList(this, MatchListedElements, nullptr, nullptr, true);
   }
 
-  uint32_t length = mElements->Length(true);
+  nsAutoScriptBlocker scriptBlocker;
+  uint32_t length = mElements->Length();
   for (uint32_t i = 0; i < length; ++i) {
     static_cast<nsGenericHTMLFormElement*>(mElements->Item(i))
         ->FieldSetFirstLegendChanged(aNotify);

@@ -222,7 +222,7 @@ class DefaultRecentlyClosedControllerTest {
 
         createController().handleShare(tabs.toSet())
 
-        val items = listOf(ShareData(url = tabs[0].url, title = tabs[0].title))
+        val items = listOf(ShareData(url = tabs[0].url, title = tabs[0].title, private = tabs[0].private))
         verify {
             shareUseCases.shareItems(
                 items = items,
@@ -245,8 +245,8 @@ class DefaultRecentlyClosedControllerTest {
 
         val items =
             listOf(
-                ShareData(url = tabs[0].url, title = tabs[0].title),
-                ShareData(url = tabs[1].url, title = tabs[1].title),
+                ShareData(url = tabs[0].url, title = tabs[0].title, private = tabs[0].private),
+                ShareData(url = tabs[1].url, title = tabs[1].title, private = tabs[1].private),
             )
         verify {
             shareUseCases.shareItems(

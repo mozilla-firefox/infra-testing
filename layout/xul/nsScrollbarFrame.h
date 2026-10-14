@@ -32,8 +32,7 @@ class nsScrollbarFrame final : public nsContainerFrame,
   using CSSIntCoord = mozilla::CSSIntCoord;
 
  public:
-  explicit nsScrollbarFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
-      : nsContainerFrame(aStyle, aPresContext, kClassID) {}
+  explicit nsScrollbarFrame(ComputedStyle* aStyle, nsPresContext* aPresContext);
 
   NS_DECL_QUERYFRAME
   NS_DECL_FRAMEARENA_HELPERS(nsScrollbarFrame)
@@ -67,6 +66,8 @@ class nsScrollbarFrame final : public nsContainerFrame,
   nscoord ScrollbarTrackSize() const;
   nsSize ScrollbarMinSize() const;
   bool IsHorizontal() const;
+
+  std::pair<nscoord, nscoord> ScrollbarInset() const;
 
   void Destroy(DestroyContext&) override;
 

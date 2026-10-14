@@ -70,8 +70,8 @@ fun TabCounter(
     val formattedTabCount = remember(tabCount) { tabCount.toLocaleString() }
     val (counterBoxBackground, counterBoxTestTag) =
         when (tabCount > MAX_VISIBLE_TABS) {
-            true -> Pair(R.drawable.mozac_ui_infinite_tabcounter_box, TabCounterTestTags.TAB_COUNTER_INFINITY_ICON)
-            false -> Pair(R.drawable.mozac_ui_tabcounter_box, TabCounterTestTags.TAB_COUNTER_ICON)
+            true -> Pair(iconsR.drawable.mozac_ic_infinite_tabs_24, TabCounterTestTags.TAB_COUNTER_INFINITY_ICON)
+            false -> Pair(iconsR.drawable.mozac_ic_tab_24, TabCounterTestTags.TAB_COUNTER_ICON)
         }
     val tabsCounterDescription =
         if (showPrivacyBadge) {

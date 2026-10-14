@@ -153,10 +153,10 @@ QA Test Plan approval due                             Nightly W1       Friday   
 Nightly features Go/No-Go decisions                   Nightly W2       Wednesday
 String freeze                                         Nightly W2       Wednesday         Modification or deletion of strings exposed to the end-users is not allowed
 Beta release notes draft                              Nightly W2       Thursday
-Nightly QA sign-off.                                  Nightly W2       Thursday
+Nightly QA sign-off.                                  Nightly W2       Wednesday
 Merge Day                                             Nightly W2       Thursday          Day 1 of the new Beta cycle
 User affecting changes identified & provided to SUMO  Beta W1          Thursday
-Deadline for security-approval requests               Beta W2          Wednesday
+Deadline for security bug uplifts                     Beta W2          Tuesday
 Release note submission deadline                      Beta W2          Wednesday
 What’s new page & release notes ready                 Beta W2          Thursday
 Firefox Release Candidate build creation              Beta W2          Thursday          End of the current Beta cycle in preparation for the upcoming Firefox Release
@@ -196,10 +196,10 @@ Within Firefox we allow the ability to enable/disable bits of code or entire fea
   release process
 - Control features which are experimental or not ready to be shown to a specific channel
   population (e.g. enabled for Beta but disabled for Release)
-- A/B testing via {ref}`telemetry <telemetry>` experiments
+- A/B testing via {doc}`telemetry </toolkit/components/telemetry/index>` experiments
 
 :::{note}
-{ref}`Nimbus <nimbus>` Pref Rollout is a feature that allows Mozilla to change the state of a
+{doc}`Nimbus </toolkit/components/nimbus/docs/index>` Pref Rollout is a feature that allows Mozilla to change the state of a
 preference for a targeted set of users, without deploying an update to Firefox. This is
 especially useful when conducting experiments or a gradual rollout of high risk features
 to our Release population.

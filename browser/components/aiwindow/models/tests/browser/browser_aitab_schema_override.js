@@ -3,44 +3,60 @@
 
 "use strict";
 
-// The browser.smartwindow.aitab.components pref replaces the packaged component
-// schemas with a set read from the pref, so schemas can be iterated on without
-// rebuilding. Covers both directions: the override taking effect, and reverting
-// to the packaged set once the pref is cleared.
+// The browser.smartwindow.aitab.components pref replaces the packaged A2UI
+// catalog with one read from the pref, so the catalog can be iterated on
+// without rebuilding. Covers both directions: the override taking effect, and
+// reverting to the packaged catalog once the pref is cleared.
 
 const { AITab } = ChromeUtils.importESModule(
   "moz-src:///browser/components/aiwindow/models/aitab/AITab.sys.mjs"
 );
-const { loadAssets, buildPage } = AITab;
+const { loadAssets, buildSurface } = AITab;
+const { FEATURE_MAJOR_VERSIONS, MODEL_FEATURES } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/aiwindow/models/Utils.sys.mjs"
+);
 
 const COMPONENTS_PREF = "browser.smartwindow.aitab.components";
+const AITAB_MAJOR = FEATURE_MAJOR_VERSIONS[MODEL_FEATURES.AITAB];
 
-// Minimal override schema set: a page of "note" blocks. Each schema's bare $id
-// is its key, so "note" introduces a "note" block type the packaged schemas
-// don't have.
-const OVERRIDE_PAGE_SCHEMA = {
+// A minimal override catalog: a Page container plus a custom "Note" component
+// the packaged catalog doesn't have. Includes just the $defs its Page.children
+// reference needs.
+const OVERRIDE_CATALOG = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
-  $id: "page",
-  type: "object",
-  required: ["blocks"],
-  additionalProperties: false,
-  properties: {
-    blocks: {
-      type: "array",
-      items: { oneOf: [{ $ref: "note" }] },
+  $id: "urn:test:catalog",
+  catalogId: "urn:test:catalog",
+  $defs: {
+    ComponentId: { type: "string" },
+    ChildList: {
+      oneOf: [
+        { type: "array", items: { $ref: "#/$defs/ComponentId" } },
+        {
+          type: "object",
+          required: ["componentId", "path"],
+          additionalProperties: false,
+          properties: {
+            componentId: { $ref: "#/$defs/ComponentId" },
+            path: { type: "string" },
+          },
+        },
+      ],
     },
   },
-};
-
-const OVERRIDE_NOTE_SCHEMA = {
-  $schema: "https://json-schema.org/draft/2020-12/schema",
-  $id: "note",
-  type: "object",
-  required: ["type", "text"],
-  additionalProperties: false,
-  properties: {
-    type: { const: "note" },
-    text: { type: "string", minLength: 1 },
+  functions: [],
+  components: {
+    Page: {
+      type: "object",
+      required: ["children"],
+      additionalProperties: false,
+      properties: { children: { $ref: "#/$defs/ChildList" } },
+    },
+    Note: {
+      type: "object",
+      required: ["text"],
+      additionalProperties: false,
+      properties: { text: { type: "string", minLength: 1 } },
+    },
   },
 };
 
@@ -54,32 +70,43 @@ add_setup(async function () {
 
 add_task(async function test_pref_override() {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      [
-        COMPONENTS_PREF,
-        JSON.stringify([OVERRIDE_PAGE_SCHEMA, OVERRIDE_NOTE_SCHEMA]),
-      ],
-    ],
+    set: [[COMPONENTS_PREF, JSON.stringify(OVERRIDE_CATALOG)]],
   });
 
   const { env } = await loadAssets();
 
   Assert.deepEqual(
     [...env.names].sort(),
-    ["note", "page"],
-    "schemas are read from the pref, replacing the packaged set rather than merging with it"
+    ["Note", "Page"],
+    "components are read from the pref, replacing the packaged catalog rather than merging with it"
   );
 
-  let result = buildPage({ blocks: [{ type: "note", text: "hi" }] }, env);
+  let result = buildSurface(
+    {
+      components: [
+        { id: "root", component: "Page", children: ["n"] },
+        { id: "n", component: "Note", text: "hi" },
+      ],
+    },
+    env
+  );
   Assert.ok(
     result.ok,
-    `an override-schema page validates; errors: ${JSON.stringify(result.errors)}`
+    `an override-catalog surface validates; errors: ${JSON.stringify(result.errors)}`
   );
 
-  result = buildPage({ blocks: [{ type: "list", fields: [], data: [] }] }, env);
+  result = buildSurface(
+    {
+      components: [
+        { id: "root", component: "Page", children: ["t"] },
+        { id: "t", component: "RankedTable", columns: [], rows: [] },
+      ],
+    },
+    env
+  );
   Assert.ok(
     !result.ok,
-    "a packaged block type is unknown under the override schema set"
+    "a packaged component type is unknown under the override catalog"
   );
 
   // Popped here rather than at teardown: the next task asserts the revert.
@@ -91,40 +118,56 @@ add_task(async function test_reverts_to_packaged_when_unset() {
   // immediately.
   const { env } = await loadAssets();
   Assert.ok(
-    env.names.includes("list"),
-    "reverts to the packaged schemas once the pref is cleared"
+    env.names.includes("RankedTable"),
+    "reverts to the packaged catalog once the pref is cleared"
   );
 });
 
-add_task(async function test_path_style_id_is_registered_under_bare_name() {
-  // The packaged schemas all use bare $ids, so only an override can produce a
-  // path-style one. It must be keyed — and registered with the validator —
-  // under its last segment, which is the token the page schema's $ref uses.
+add_task(async function test_override_version_must_match_build_major() {
+  // An override that declares a version is held to the same pairing rule as
+  // the packaged catalog: its major must match the build's aitab major.
   await SpecialPowers.pushPrefEnv({
     set: [
       [
         COMPONENTS_PREF,
-        JSON.stringify([
-          OVERRIDE_PAGE_SCHEMA,
-          { ...OVERRIDE_NOTE_SCHEMA, $id: "components/note" },
-        ]),
+        JSON.stringify({
+          ...OVERRIDE_CATALOG,
+          version: `${AITAB_MAJOR + 1}.0`,
+        }),
       ],
     ],
   });
+  await Assert.rejects(
+    loadAssets(),
+    err => err.clientReason === "catalogVersionMismatch",
+    "an override catalog from another major is rejected"
+  );
+  await SpecialPowers.popPrefEnv();
 
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [
+        COMPONENTS_PREF,
+        JSON.stringify({ ...OVERRIDE_CATALOG, version: `${AITAB_MAJOR}.3` }),
+      ],
+    ],
+  });
   const { env } = await loadAssets();
-
-  Assert.deepEqual(
-    [...env.names].sort(),
-    ["note", "page"],
-    "a path-style $id is keyed by its bare last segment"
+  Assert.equal(
+    env.catalog.version,
+    `${AITAB_MAJOR}.3`,
+    "an override catalog at the build's major (any minor) is accepted"
   );
+  await SpecialPowers.popPrefEnv();
+});
 
-  const result = buildPage({ blocks: [{ type: "note", text: "hi" }] }, env);
-  Assert.ok(
-    result.ok,
-    `the page schema's $ref resolves to it; errors: ${JSON.stringify(result.errors)}`
-  );
-
+add_task(async function test_override_without_version_is_accepted() {
+  // Dev iteration: a pref catalog with no version is taken as-is (the earlier
+  // tasks rely on this), unlike the packaged catalog which must declare one.
+  await SpecialPowers.pushPrefEnv({
+    set: [[COMPONENTS_PREF, JSON.stringify(OVERRIDE_CATALOG)]],
+  });
+  const { env } = await loadAssets();
+  Assert.equal(env.catalog.version, undefined, "no version on the override");
   await SpecialPowers.popPrefEnv();
 });

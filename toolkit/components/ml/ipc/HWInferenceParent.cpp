@@ -3,11 +3,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "ModelFileUtils.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPtr.h"
 #include "nsTHashSet.h"
+#include "HWInferenceLog.h"
 #include "HWInferenceParent.h"
-#include "HWInferenceManagerParent.h"
+#include "HWInferenceProcess.h"
 #include "mozilla/dom/Blob.h"
 #include "mozilla/dom/BlobBinding.h"
 #include "mozilla/ipc/FileDescriptor.h"
@@ -44,14 +47,20 @@
 
 namespace mozilla::hwinference {
 
-extern LazyLogModule gHWInferenceLog;
 #define LOGE(...) MOZ_LOG_FMT(gHWInferenceLog, LogLevel::Error, __VA_ARGS__)
 #define LOGD(...) MOZ_LOG_FMT(gHWInferenceLog, LogLevel::Debug, __VA_ARGS__)
 #define LOGV(...) MOZ_LOG_FMT(gHWInferenceLog, LogLevel::Verbose, __VA_ARGS__)
 
-StaticRefPtr<HWInferenceParent> HWInferenceParent::sInstance;
-
 static StaticAutoPtr<nsTHashSet<nsCString>> sMockInstalledModels;
+
+// The mock hub's contents live only as long as browser.ml.modelHub.testing is
+// on, so a test that pushes that pref starts from an empty hub rather than
+// inheriting whatever an earlier test in the same run installed.
+static void ClearMockInstalledModels(const char*, void*) {
+  if (sMockInstalledModels) {
+    sMockInstalledModels->Clear();
+  }
+}
 
 static nsCString MockModelKey(const nsACString& aModel,
                               const nsACString& aRevision,
@@ -120,7 +129,7 @@ class ModelDownloadCallbacks final
     LOGD("{} - model={} revision={}", __func__, NS_ConvertUTF16toUTF8(aModel),
          NS_ConvertUTF16toUTF8(aRevision));
     Notify(100, 0, 0, 0, true, true);
-    mResolver(true);
+    mResolver(ModelInstallResult::Installed);
     return NS_OK;
   }
 
@@ -128,7 +137,7 @@ class ModelDownloadCallbacks final
     LOGE("{} - Error when downloading {}", __func__,
          NS_ConvertUTF16toUTF8(aError));
     Notify(0, 0, 0, 0, true, false);
-    mResolver(false);
+    mResolver(ModelInstallResult::Failed);
     return NS_OK;
   }
 
@@ -163,63 +172,56 @@ class ModelDownloadCallbacks final
 NS_IMPL_ISUPPORTS(ModelDownloadCallbacks, nsIMLModelDownloadProgressCallback,
                   nsIMLModelDownloadCompletionCallback)
 
-/* static */
-RefPtr<HWInferenceParent> HWInferenceParent::GetSingleton() {
-  AssertIsOnMainThread();
+template <typename Send>
+void HWInferenceParent::SendWhenReady(Send&& aSend) {
+  WhenReady()->Then(
+      GetMainThreadSerialEventTarget(), __func__,
+      [self = RefPtr{this}, send = std::forward<Send>(aSend)]() mutable {
+        if (!send(*self)) {
+          LOGD("Failed to send the endpoint to HWInference");
+        }
+      },
+      []() { LOGD("HWInference never came up: dropping the endpoint"); });
+}
 
-  // Evict an instance whose process is already gone. Its PHWInference channel
-  // is separate from PUtilityProcess, so it keeps reporting CanSend() until
-  // the peer actually dies and the channel errors, one main-thread dispatch
-  // later. Handing it out in that window would make StartUtility take its
-  // CanSend() fast path and resolve success on a doomed actor rather than
-  // relaunching. Checked here rather than at teardown so it covers an
-  // unexpected process death too, not just CleanShutdown.
-  if (sInstance && sInstance->CanSend()) {
-    RefPtr<ipc::UtilityProcessManager> upm =
-        ipc::UtilityProcessManager::GetIfExists();
-    if (!upm || !upm->Process(ipc::SandboxingKind::HW_INFERENCE)) {
-      LOGD("{} - evicting stale instance", __func__);
-      RefPtr<HWInferenceParent> stale = sInstance;
-      sInstance = nullptr;
-      // Synchronously runs ActorDestroy, so CanSend() is false on return.
-      stale->Close();
-    }
-  }
+void HWInferenceParent::StartContentSpeechRecognition(
+    Endpoint<PSpeechRecognitionParent>&& aEndpoint,
+    dom::ContentParentId aChildId) {
+  SendWhenReady([endpoint = std::move(aEndpoint),
+                 aChildId](HWInferenceParent& aSelf) mutable {
+    return aSelf.SendNewContentSpeechRecognition(std::move(endpoint), aChildId);
+  });
+}
 
-  if (!sInstance) {
-    sInstance = new HWInferenceParent();
-    ClearOnShutdown(&sInstance);
-  }
-  return sInstance;
+void HWInferenceParent::StartTextGeneration(
+    Endpoint<PTextGenerationChild>&& aEndpoint,
+    const ipc::FileDescriptor& aModel, const TextGenerationOptions& aOptions) {
+  SendWhenReady([endpoint = std::move(aEndpoint), model = aModel,
+                 options = aOptions](HWInferenceParent& aSelf) mutable {
+    return aSelf.SendNewTextGeneration(std::move(endpoint), model, options);
+  });
 }
 
 void HWInferenceParent::ActorDestroy(ActorDestroyReason aReason) {
-  LOGD("{}", __func__);
-  // Only clear ourselves: a late ActorDestroy from a superseded instance must
-  // not evict the replacement created after it.
-  if (sInstance == this) {
-    sInstance = nullptr;
+  LOGD("{} - reason={}", __func__, static_cast<int>(aReason));
+  // A no-op once bound: let go of anyone waiting on an actor that never made it
+  // to its process.
+  mReadyPromise->Reject(NS_ERROR_NOT_AVAILABLE, __func__);
+  if (mOwner) {
+    mOwner->OnActorDestroyed(this, aReason);
   }
 }
 
 nsresult HWInferenceParent::BindToUtilityProcess(
     const RefPtr<ipc::UtilityProcessParent>& aUtilityParent) {
   LOGD("{}", __func__);
-  Endpoint<hwinference::PHWInferenceParent> parentEnd;
-  Endpoint<hwinference::PHWInferenceChild> childEnd;
-  MOZ_ALWAYS_SUCCEEDS(PHWInference::CreateEndpoints(
-      ipc::EndpointProcInfo::Current(), aUtilityParent->OtherEndpointProcInfo(),
-      &parentEnd, &childEnd));
-
-  LOGD("Sending StartHWInferenceService to utility process");
-  if (!aUtilityParent->SendStartHWInferenceService(std::move(childEnd))) {
-    LOGE("Failed to send StartHWInferenceService");
-    MOZ_ASSERT(false, "StartHWInference service failure");
+  if (!aUtilityParent->SendPHWInferenceConstructor(this)) {
+    LOGE("Failed to construct the HWInference actor");
+    MOZ_ASSERT(false, "HWInference actor construction failure");
     return NS_ERROR_FAILURE;
   }
 
-  LOGD("StartHWInferenceService sent successfully, binding parent endpoint");
-  MOZ_ALWAYS_TRUE(parentEnd.Bind(this));
+  mReadyPromise->Resolve(true, __func__);
   return NS_OK;
 }
 
@@ -333,11 +335,13 @@ static void PerformModelInstall(
     if (!sMockInstalledModels) {
       sMockInstalledModels = new nsTHashSet<nsCString>();
       ClearOnShutdown(&sMockInstalledModels);
+      Preferences::RegisterCallback(ClearMockInstalledModels,
+                                    "browser.ml.modelHub.testing");
     }
     sMockInstalledModels->Insert(MockModelKey(aModel, aRevision, aFilename));
     LOGD("PerformModelInstall - testing mock: installed {}",
          MockModelKey(aModel, aRevision, aFilename));
-    aResolver(true);
+    aResolver(ModelInstallResult::Installed);
     return;
   }
 
@@ -346,7 +350,7 @@ static void PerformModelInstall(
 
   if (!modelHubService) {
     LOGE("PerformModelInstall - Failed to get ModelHub XPCOM service");
-    aResolver(false);
+    aResolver(ModelInstallResult::Failed);
     return;
   }
 
@@ -404,7 +408,7 @@ class ModelDownloadAuthorizationCallback final
     if (!aAllow) {
       LOGD("ModelDownloadAuthorizationCallback - download of {} not authorized",
            mModel);
-      resolver(false);
+      resolver(ModelInstallResult::Denied);
       return NS_OK;
     }
     PerformModelInstall(mEngine, mTask, mModel, mRevision, mFilename,
@@ -415,7 +419,7 @@ class ModelDownloadAuthorizationCallback final
  private:
   ~ModelDownloadAuthorizationCallback() {
     if (mResolver) {
-      mResolver(false);
+      mResolver(ModelInstallResult::Failed);
     }
   }
 
@@ -440,7 +444,7 @@ ipc::IPCResult HWInferenceParent::RecvInstallModel(
   nsCOMPtr<nsIMLModelResolver> resolver =
       ResolveModelId(aTask, aId, engine, model, revision, filename);
   if (!resolver) {
-    aResolver(false);
+    aResolver(ModelInstallResult::Failed);
     return IPC_OK();
   }
 
@@ -451,7 +455,7 @@ ipc::IPCResult HWInferenceParent::RecvInstallModel(
   if (aContentId != 0 && (!window || window->ContentParentId() != aContentId)) {
     LOGE("{} - window {} not owned by requester {}", __func__, aInnerWindowId,
          uint64_t(aContentId));
-    aResolver(false);
+    aResolver(ModelInstallResult::Failed);
     return IPC_OK();
   }
 
@@ -460,7 +464,7 @@ ipc::IPCResult HWInferenceParent::RecvInstallModel(
   if (StaticPrefs::browser_ml_modelHub_testing() && sMockInstalledModels &&
       sMockInstalledModels->Contains(MockModelKey(model, revision, filename))) {
     LOGD("{} - testing mock: already installed", __func__);
-    aResolver(true);
+    aResolver(ModelInstallResult::Installed);
     return IPC_OK();
   }
 
@@ -478,57 +482,6 @@ ipc::IPCResult HWInferenceParent::RecvInstallModel(
   resolver->AuthorizeDownload(model, revision, filename, window, progressToken,
                               callback);
   return IPC_OK();
-}
-
-static nsresult BlobJSObjectToFileDescriptor(JSContext* aCx,
-                                             JS::Handle<JS::Value> aValue,
-                                             ipc::FileDescriptor* aDesc) {
-  if (!aValue.isObject()) {
-    return NS_ERROR_UNEXPECTED;
-  }
-
-  RefPtr<dom::Blob> blob;
-  nsresult rv = UNWRAP_OBJECT(Blob, &aValue.toObject(), blob);
-  if (NS_FAILED(rv)) {
-    LOGE("BlobJSObjectToFileDescriptor - ERROR: Failed to unwrap Blob: {}", rv);
-    return rv;
-  }
-
-  ErrorResult errorResult;
-  nsCOMPtr<nsIInputStream> stream;
-  blob->CreateInputStream(getter_AddRefs(stream), errorResult);
-  if (errorResult.Failed()) {
-    LOGE(
-        "BlobJSObjectToFileDescriptor - ERROR: Failed to create input stream "
-        "from blob");
-    return NS_ERROR_UNEXPECTED;
-  }
-
-  nsCOMPtr<nsIFileMetadata> fileMetadata = do_QueryInterface(stream);
-  if (!fileMetadata) {
-    LOGE(
-        "BlobJSObjectToFileDescriptor - ERROR: Stream doesn't support "
-        "nsIFileMetadata");
-    return NS_ERROR_UNEXPECTED;
-  }
-
-  PRFileDesc* fileDesc;
-  nsresult getRv = fileMetadata->GetFileDescriptor(&fileDesc);
-  if (NS_FAILED(getRv)) {
-    LOGE("BlobJSObjectToFileDescriptor - ERROR: GetFileDescriptor failed: {}",
-         getRv);
-    return getRv;
-  }
-
-  ipc::FileDescriptor fd(ipc::FileDescriptor::PlatformHandleType(
-      PR_FileDesc2NativeHandle(fileDesc)));
-  if (!fd.IsValid()) {
-    LOGE("BlobJSObjectToFileDescriptor - ERROR: Failed to get native handle");
-    return NS_ERROR_UNEXPECTED;
-  }
-
-  *aDesc = std::move(fd);
-  return NS_OK;
 }
 
 ipc::IPCResult HWInferenceParent::RecvGetModelFile(

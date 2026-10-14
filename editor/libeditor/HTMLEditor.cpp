@@ -42,7 +42,6 @@
 #include "mozilla/StaticPrefs_editor.h"
 #include "mozilla/StyleSheet.h"
 #include "mozilla/StyleSheetInlines.h"
-#include "mozilla/glean/EditorLibeditorMetrics.h"
 #include "mozilla/TextControlElement.h"
 #include "mozilla/TextEditor.h"
 #include "mozilla/TextEvents.h"
@@ -260,25 +259,6 @@ HTMLEditor::HTMLEditor(const Document& aDocument)
       mDefaultParagraphSeparator(ParagraphSeparator::div) {}
 
 HTMLEditor::~HTMLEditor() {
-  glean::htmleditors::with_beforeinput_listeners
-      .EnumGet(static_cast<glean::htmleditors::WithBeforeinputListenersLabel>(
-          MayHaveBeforeInputEventListenersForTelemetry() ? 1 : 0))
-      .Add();
-  glean::htmleditors::overridden_by_beforeinput_listeners
-      .EnumGet(static_cast<
-               glean::htmleditors::OverriddenByBeforeinputListenersLabel>(
-          mHasBeforeInputBeenCanceled ? 1 : 0))
-      .Add();
-  glean::htmleditors::with_mutation_observers_without_beforeinput_listeners
-      .EnumGet(static_cast<
-               glean::htmleditors::
-                   WithMutationObserversWithoutBeforeinputListenersLabel>(
-          !MayHaveBeforeInputEventListenersForTelemetry() &&
-                  MutationObserverHasObservedNodeForTelemetry()
-              ? 1
-              : 0))
-      .Add();
-
   mPendingStylesToApplyToNewContent = nullptr;
 
   if (mDisabledLinkHandling) {
@@ -482,11 +462,11 @@ void HTMLEditor::PreDestroy() {
 }
 
 bool HTMLEditor::IsStyleEditable(const Element* aEditingHost) const {
-  if (IsInDesignMode()) {
-    return true;
-  }
   if (IsPlaintextMailComposer()) {
     return false;
+  }
+  if (IsInDesignMode()) {
+    return true;
   }
   const Element* const editingHost =
       aEditingHost ? aEditingHost : ComputeEditingHost(LimitInBodyElement::No);
@@ -597,7 +577,7 @@ bool HTMLEditor::UpdateMetaCharsetWithTransaction(
     return false;
   }
 
-  for (uint32_t i = 0; i < metaElementList->Length(true); ++i) {
+  for (uint32_t i = 0; i < metaElementList->Length(); ++i) {
     RefPtr<Element> metaElement = metaElementList->Item(i);
     MOZ_ASSERT(metaElement);
 
@@ -1207,7 +1187,7 @@ void HTMLEditor::InitializeSelectionAncestorLimit(
   bool tryToCollapseSelectionAtFirstEditableNode = true;
   if (SelectionRef().RangeCount() == 1 && SelectionRef().IsCollapsed()) {
     Element* editingHost = ComputeEditingHost();
-    const nsRange* range = SelectionRef().GetRangeAt(0);
+    const dom::Range* range = SelectionRef().GetRangeAt(0);
     if (range->GetStartContainer() == editingHost && !range->StartOffset()) {
       // JS or user operation has already collapsed selection at start of
       // the editing host.  So, we don't need to try to change selection
@@ -1254,7 +1234,7 @@ nsresult HTMLEditor::MaybeCollapseSelectionAtFirstEditableNode(
   // start of the editing host, we shouldn't reset selection.  E.g., window
   // is activated when the editor had focus before inactivated.
   if (aIgnoreIfSelectionInEditingHost && SelectionRef().RangeCount() == 1) {
-    const nsRange* range = SelectionRef().GetRangeAt(0);
+    const dom::Range* range = SelectionRef().GetRangeAt(0);
     if (!range->Collapsed() ||
         range->GetStartContainer() != editingHost.get() ||
         range->StartOffset()) {
@@ -2277,11 +2257,11 @@ nsresult HTMLEditor::AppendContentToSelectionAsRange(nsIContent& aContent) {
     return NS_ERROR_FAILURE;
   }
 
-  RefPtr<nsRange> range = nsRange::Create(
+  RefPtr<dom::Range> range = dom::Range::Create(
       atContent.ToRawRangeBoundary(),
       atContent.NextPoint().ToRawRangeBoundary(), IgnoreErrors());
   if (NS_WARN_IF(!range)) {
-    NS_WARNING("nsRange::Create() failed");
+    NS_WARNING("Range::Create() failed");
     return NS_ERROR_FAILURE;
   }
 
@@ -2543,7 +2523,7 @@ nsresult HTMLEditor::GetCSSBackgroundColorState(
   // the default background color is transparent
   aOutColor.AssignLiteral("transparent");
 
-  RefPtr<const nsRange> firstRange = SelectionRef().GetRangeAt(0);
+  RefPtr<const dom::Range> firstRange = SelectionRef().GetRangeAt(0);
   if (NS_WARN_IF(!firstRange)) {
     return NS_ERROR_FAILURE;
   }
@@ -3317,7 +3297,7 @@ already_AddRefed<Element> HTMLEditor::GetSelectedElement(const nsAtom* aTagName,
   bool isLinkTag = aTagName && IsLinkTag(*aTagName);
   bool isNamedAnchorTag = aTagName && IsNamedAnchorTag(*aTagName);
 
-  RefPtr<nsRange> firstRange = SelectionRef().GetRangeAt(0);
+  RefPtr<dom::Range> firstRange = SelectionRef().GetRangeAt(0);
   MOZ_ASSERT(firstRange);
 
   const RangeBoundary& startRef = firstRange->StartRef();
@@ -4031,11 +4011,12 @@ Result<CaretPoint, nsresult> HTMLEditor::DeleteTextWithTransaction(
 }
 
 Result<InsertTextResult, nsresult> HTMLEditor::ReplaceTextWithTransaction(
-    dom::Text& aTextNode, const ReplaceWhiteSpacesData& aData) {
+    dom::Text& aTextNode, const ReplaceWhiteSpacesData& aData,
+    InsertTextFor aPurpose) {
   Result<InsertTextResult, nsresult> insertTextResultOrError =
       ReplaceTextWithTransaction(aTextNode, aData.mReplaceStartOffset,
-                                 aData.ReplaceLength(),
-                                 aData.mNormalizedString);
+                                 aData.ReplaceLength(), aData.mNormalizedString,
+                                 aPurpose);
   if (MOZ_UNLIKELY(insertTextResultOrError.isErr()) ||
       aData.mNewOffsetAfterReplace > aTextNode.TextDataLength()) {
     return insertTextResultOrError;
@@ -4049,7 +4030,7 @@ Result<InsertTextResult, nsresult> HTMLEditor::ReplaceTextWithTransaction(
 
 Result<InsertTextResult, nsresult> HTMLEditor::ReplaceTextWithTransaction(
     Text& aTextNode, uint32_t aOffset, uint32_t aLength,
-    const nsAString& aStringToInsert) {
+    const nsAString& aStringToInsert, InsertTextFor aPurpose) {
   MOZ_ASSERT(IsEditActionDataAvailable());
   MOZ_ASSERT(aLength > 0 || !aStringToInsert.IsEmpty());
 
@@ -4066,9 +4047,9 @@ Result<InsertTextResult, nsresult> HTMLEditor::ReplaceTextWithTransaction(
 
   if (!aLength) {
     Result<InsertTextResult, nsresult> insertTextResult =
-        InsertTextWithTransaction(aStringToInsert,
-                                  EditorDOMPoint(&aTextNode, aOffset),
-                                  InsertTextTo::ExistingTextNodeIfAvailable);
+        InsertTextWithTransaction(
+            aStringToInsert, EditorDOMPoint(&aTextNode, aOffset),
+            InsertTextTo::ExistingTextNodeIfAvailable, aPurpose);
     NS_WARNING_ASSERTION(insertTextResult.isOk(),
                          "HTMLEditor::InsertTextWithTransaction() failed");
     return insertTextResult;
@@ -4152,18 +4133,18 @@ Result<InsertTextResult, nsresult> HTMLEditor::ReplaceTextWithTransaction(
 Result<InsertTextResult, nsresult>
 HTMLEditor::InsertOrReplaceTextWithTransaction(
     const EditorDOMPoint& aPointToInsert,
-    const NormalizedStringToInsertText& aData) {
+    const NormalizedStringToInsertText& aData, InsertTextFor aPurpose) {
   MOZ_ASSERT(aPointToInsert.IsInContentNodeAndValid());
   MOZ_ASSERT_IF(aData.ReplaceLength(), aPointToInsert.IsInTextNode());
 
   Result<InsertTextResult, nsresult> insertTextResultOrError =
       !aData.ReplaceLength()
           ? InsertTextWithTransaction(aData.mNormalizedString, aPointToInsert,
-                                      InsertTextTo::SpecifiedPoint)
+                                      InsertTextTo::SpecifiedPoint, aPurpose)
           : ReplaceTextWithTransaction(
                 MOZ_KnownLive(*aPointToInsert.ContainerAs<Text>()),
                 aData.mReplaceStartOffset, aData.ReplaceLength(),
-                aData.mNormalizedString);
+                aData.mNormalizedString, aPurpose);
   if (MOZ_UNLIKELY(insertTextResultOrError.isErr())) {
     NS_WARNING(!aData.ReplaceLength()
                    ? "HTMLEditor::InsertTextWithTransaction() failed"
@@ -4202,7 +4183,7 @@ HTMLEditor::InsertOrReplaceTextWithTransaction(
 
 Result<InsertTextResult, nsresult> HTMLEditor::InsertTextWithTransaction(
     const nsAString& aStringToInsert, const EditorDOMPoint& aPointToInsert,
-    InsertTextTo aInsertTextTo) {
+    InsertTextTo aInsertTextTo, InsertTextFor aPurpose) {
   if (NS_WARN_IF(!aPointToInsert.IsSet())) {
     return Err(NS_ERROR_INVALID_ARG);
   }
@@ -4214,7 +4195,7 @@ Result<InsertTextResult, nsresult> HTMLEditor::InsertTextWithTransaction(
   }
 
   return EditorBase::InsertTextWithTransaction(aStringToInsert, aPointToInsert,
-                                               aInsertTextTo);
+                                               aInsertTextTo, aPurpose);
 }
 
 Result<EditorDOMPoint, nsresult> HTMLEditor::PrepareToInsertLineBreak(
@@ -4458,23 +4439,6 @@ nsresult HTMLEditor::EnsureNoFollowingUnnecessaryLineBreak(
   MOZ_ASSERT(aNextOrAfterModifiedPoint.IsInContentNode());
   MOZ_ASSERT(aNextOrAfterModifiedPoint.IsSetAndValid());
 
-  // If the point is in a mailcite in plaintext mail composer (it is a <span>
-  // styled as block), we should not treat its padding <br> as unnecessary
-  // because it's required by the serializer to give next content of the
-  // mailcite has its own line.
-  if (IsPlaintextMailComposer()) {
-    const Element* const blockElement =
-        HTMLEditUtils::GetInclusiveAncestorElement(
-            *aNextOrAfterModifiedPoint.ContainerAs<nsIContent>(),
-            HTMLEditUtils::ClosestEditableBlockElement,
-            BlockInlineCheck::UseComputedDisplayStyle);
-    if (blockElement && HTMLEditUtils::IsMailCiteElement(*blockElement) &&
-        HTMLEditUtils::IsInlineContent(*blockElement,
-                                       BlockInlineCheck::UseHTMLDefaultStyle)) {
-      return NS_OK;
-    }
-  }
-
   const bool isWhiteSpacePreformatted = EditorUtils::IsWhiteSpacePreformatted(
       *aNextOrAfterModifiedPoint.ContainerAs<nsIContent>());
   const DebugOnly<bool> isNewLinePreformatted =
@@ -4488,21 +4452,13 @@ nsresult HTMLEditor::EnsureNoFollowingUnnecessaryLineBreak(
       nextThing.MaybeIgnoredLineBreak();
   if (unnecessaryLineBreak.isNothing() ||
       !unnecessaryLineBreak->IsInclusiveDescendantOf(aEditingHost) ||
-      !unnecessaryLineBreak->IsDeletableFromComposedDoc()) [[likely]] {
+      !unnecessaryLineBreak->IsDeletableFromComposedDoc() ||
+      (IsPlaintextMailComposer() &&
+       nextThing.IgnoredLineBreakIsRequiredInPlaintextMailComposer()))
+      [[likely]] {
     return NS_OK;
   }
   if (unnecessaryLineBreak->IsHTMLBRElement()) {
-    // If the found unnecessary <br> is a preceding one of a mailcite which is a
-    // <span> styled as block, we need to preserve the <br> element for the
-    // serializer to cause a line break before the mailcite.
-    if (IsPlaintextMailComposer()) {
-      if (nextThing.ReachedOtherBlockElement() &&
-          HTMLEditUtils::IsMailCiteElement(*nextThing.ElementPtr()) &&
-          HTMLEditUtils::IsInlineContent(
-              *nextThing.ElementPtr(), BlockInlineCheck::UseHTMLDefaultStyle)) {
-        return NS_OK;
-      }
-    }
     // If the invisible break is a placeholder of ancestor inline elements, we
     // should not delete it to allow users to insert text with the format
     // specified by them.
@@ -4991,7 +4947,7 @@ bool HTMLEditor::SetCaretInTableCell(Element* aElement) {
  * Uses HTMLEditor::JoinNodesWithTransaction() so action is undoable.
  * Should be called within the context of a batch transaction.
  */
-nsresult HTMLEditor::CollapseAdjacentTextNodes(nsRange& aRange) {
+nsresult HTMLEditor::CollapseAdjacentTextNodes(dom::Range& aRange) {
   AutoTransactionsConserveSelection dontChangeMySelection(*this);
 
   // we can't actually do anything during iteration, so store the text nodes in
@@ -5406,7 +5362,7 @@ Result<SplitNodeResult, nsresult> HTMLEditor::DoSplitNode(
     }
 
     for (uint32_t j : IntegerRange(savingRange.mSelection->RangeCount())) {
-      const nsRange* r = savingRange.mSelection->GetRangeAt(j);
+      const dom::Range* r = savingRange.mSelection->GetRangeAt(j);
       MOZ_ASSERT(r);
       MOZ_ASSERT(r->IsPositioned());
       // XXX Looks like that SavedRange should have mStart and mEnd which
@@ -5455,17 +5411,18 @@ Result<SplitNodeResult, nsresult> HTMLEditor::DoSplitNode(
                            "Text::SubstringData() failed, but ignored");
       error.SuppressException();
 
-      // XXX This call may destroy us.
-      DoDeleteText(MOZ_KnownLive(*originalTextNode), cutStartOffset, cutLength,
-                   error);
-      NS_WARNING_ASSERTION(!error.Failed(),
-                           "EditorBase::DoDeleteText() failed, but ignored");
-      error.SuppressException();
-
-      // XXX This call may destroy us.
-      DoSetText(MOZ_KnownLive(*newTextNode), movingText, error);
-      NS_WARNING_ASSERTION(!error.Failed(),
-                           "EditorBase::DoSetText() failed, but ignored");
+      nsresult rvDeleteText = DoDeleteText(MOZ_KnownLive(*originalTextNode),
+                                           cutStartOffset, cutLength);
+      // To avoid dataloss, we should keep setting to the new node.
+      nsresult rvSetText = DoSetText(MOZ_KnownLive(*newTextNode), movingText);
+      if (NS_FAILED(rvDeleteText)) [[unlikely]] {
+        NS_WARNING("EditorBase::DoDeleteText() failed");
+        return rvDeleteText;
+      }
+      if (NS_FAILED(rvSetText)) [[unlikely]] {
+        NS_WARNING("EditorBase::DoSetText() failed");
+        return rvSetText;
+      }
       return NS_OK;
     }
 
@@ -5573,11 +5530,11 @@ Result<SplitNodeResult, nsresult> HTMLEditor::DoSplitNode(
     AdjustDOMPoint(savedRange.mStartContainer, savedRange.mStartOffset);
     AdjustDOMPoint(savedRange.mEndContainer, savedRange.mEndOffset);
 
-    RefPtr<nsRange> newRange =
-        nsRange::Create(savedRange.mStartContainer, savedRange.mStartOffset,
-                        savedRange.mEndContainer, savedRange.mEndOffset, error);
+    RefPtr<dom::Range> newRange = dom::Range::Create(
+        savedRange.mStartContainer, savedRange.mStartOffset,
+        savedRange.mEndContainer, savedRange.mEndOffset, error);
     if (MOZ_UNLIKELY(error.Failed())) {
-      NS_WARNING("nsRange::Create() failed");
+      NS_WARNING("Range::Create() failed");
       return Err(error.StealNSResult());
     }
     // The `MOZ_KnownLive` annotation is only necessary because of a bug
@@ -5761,7 +5718,7 @@ nsresult HTMLEditor::DoJoinNodes(nsIContent& aContentToKeep,
       const uint32_t rangeCount = savingRange.mSelection->RangeCount();
       for (const uint32_t j : IntegerRange(rangeCount)) {
         MOZ_ASSERT(savingRange.mSelection->RangeCount() == rangeCount);
-        const RefPtr<nsRange> r = savingRange.mSelection->GetRangeAt(j);
+        const RefPtr<dom::Range> r = savingRange.mSelection->GetRangeAt(j);
         MOZ_ASSERT(r);
         MOZ_ASSERT(r->IsPositioned());
         savingRange.mStartContainer = r->GetStartContainer();
@@ -5816,15 +5773,13 @@ nsresult HTMLEditor::DoJoinNodes(nsIContent& aContentToKeep,
       }
       // Even if we've already destroyed, let's update aContentToKeep for
       // avoiding a dataloss bug.
-      IgnoredErrorResult ignoredError;
-      DoInsertText(MOZ_KnownLive(*aContentToKeep.AsText()),
-                   aContentToKeep.AsText()->TextDataLength(), rightText,
-                   ignoredError);
-      if (NS_WARN_IF(Destroyed())) {
-        return NS_ERROR_EDITOR_DESTROYED;
+      nsresult rv =
+          DoInsertText(MOZ_KnownLive(*aContentToKeep.AsText()),
+                       aContentToKeep.AsText()->TextDataLength(), rightText);
+      if (NS_FAILED(rv)) [[unlikely]] {
+        NS_WARNING("EditorBase::DoSetText() failed");
+        return rv;
       }
-      NS_WARNING_ASSERTION(!ignoredError.Failed(),
-                           "EditorBase::DoSetText() failed, but ignored");
       return NS_OK;
     }
     // Otherwise it's an interior node, so shuffle around the children.
@@ -5916,11 +5871,11 @@ nsresult HTMLEditor::DoJoinNodes(nsIContent& aContentToKeep,
     AdjustDOMPoint(savedRange.mStartContainer, savedRange.mStartOffset);
     AdjustDOMPoint(savedRange.mEndContainer, savedRange.mEndOffset);
 
-    const RefPtr<nsRange> newRange = nsRange::Create(
+    const RefPtr<dom::Range> newRange = dom::Range::Create(
         savedRange.mStartContainer, savedRange.mStartOffset,
         savedRange.mEndContainer, savedRange.mEndOffset, IgnoreErrors());
     if (!newRange) {
-      NS_WARNING("nsRange::Create() failed");
+      NS_WARNING("Range::Create() failed");
       return NS_ERROR_FAILURE;
     }
 
@@ -6545,7 +6500,7 @@ nsresult HTMLEditor::SetBlockBackgroundColorWithCSSAsSubAction(
 
   AutoClonedSelectionRangeArray selectionRanges(SelectionRef());
   MOZ_ALWAYS_TRUE(selectionRanges.SaveAndTrackRanges(*this));
-  for (const OwningNonNull<nsRange>& domRange : selectionRanges.Ranges()) {
+  for (const OwningNonNull<dom::Range>& domRange : selectionRanges.Ranges()) {
     EditorDOMRange range(domRange);
     if (NS_WARN_IF(!range.IsPositioned())) {
       continue;
@@ -6993,7 +6948,7 @@ Element* HTMLEditor::GetSelectionContainerElement() const {
     MOZ_ASSERT(rangeCount, "If 0, Selection::IsCollapsed() should return true");
 
     if (rangeCount == 1) {
-      const nsRange* range = SelectionRef().GetRangeAt(0);
+      const dom::Range* range = SelectionRef().GetRangeAt(0);
 
       const RangeBoundary& startRef = range->StartRef();
       const RangeBoundary& endRef = range->EndRef();
@@ -7021,7 +6976,7 @@ Element* HTMLEditor::GetSelectionContainerElement() const {
     } else {
       for (const uint32_t i : IntegerRange(rangeCount)) {
         MOZ_ASSERT(SelectionRef().RangeCount() == rangeCount);
-        const nsRange* range = SelectionRef().GetRangeAt(i);
+        const dom::Range* range = SelectionRef().GetRangeAt(i);
         MOZ_ASSERT(range);
         nsINode* startContainer = range->GetStartContainer();
         if (!focusNode) {
@@ -7300,7 +7255,7 @@ Element* HTMLEditor::ComputeEditingHostInternal(
     // editing host because selection ranges may be visible for users.
     nsIContent* selectionCommonAncestor = nullptr;
     for (uint32_t i : IntegerRange(SelectionRef().RangeCount())) {
-      nsRange* range = SelectionRef().GetRangeAt(i);
+      dom::Range* range = SelectionRef().GetRangeAt(i);
       MOZ_ASSERT(range);
       nsIContent* commonAncestor =
           nsIContent::FromNodeOrNull(range->GetCommonAncestorContainer(
@@ -7625,7 +7580,7 @@ Result<widget::IMEState, nsresult> HTMLEditor::GetPreferredIMEState() const {
     }
     // Don't show IME when first selection range is in a non-editable node.
     // (Currently, first selection range determines whether input is allowed.)
-    const nsRange* range = selection->GetRangeAt(0);
+    const dom::Range* range = selection->GetRangeAt(0);
     return range->IsPositioned() && range->GetStartContainer()->IsEditable() &&
            range->GetEndContainer()->IsEditable();
   }();

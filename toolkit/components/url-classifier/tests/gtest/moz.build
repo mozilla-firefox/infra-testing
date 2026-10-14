@@ -25,6 +25,7 @@ UNIFIED_SOURCES += [
     "TestSafebrowsingHash.cpp",
     "TestSafeBrowsingProtobuf.cpp",
     "TestTable.cpp",
+    "TestUrlClassifierPrefixSetReporter.cpp",
     "TestUrlClassifierTableUpdateV4.cpp",
     "TestUrlClassifierUtils.cpp",
     "TestURLsAndHashing.cpp",
@@ -32,3 +33,7 @@ UNIFIED_SOURCES += [
 ]
 
 FINAL_LIBRARY = "xul-gtest"
+
+SOURCE_HEADERS += [
+    "Common.h",
+]

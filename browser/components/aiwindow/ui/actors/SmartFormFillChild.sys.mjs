@@ -25,6 +25,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
 /** @typedef {import("moz-src:///browser/components/aiwindow/ui/modules/SmartFormFillDocument.sys.mjs").SmartFormFillDocument} SmartFormFillDocument */
 /** @typedef {import("moz-src:///browser/components/aiwindow/ui/modules/SmartFormFillDocument.sys.mjs").FormData} FormData */
 /** @typedef {import("moz-src:///browser/components/aiwindow/ui/modules/SmartFormFillDocument.sys.mjs").FocusedForm} FocusedForm */
+/** @typedef {import("moz-src:///browser/components/aiwindow/ui/modules/SmartFormFillDocument.sys.mjs").FieldOutcomes} FieldOutcomes */
+/** @typedef {import("moz-src:///browser/components/aiwindow/ui/modules/SmartFormFillDocument.sys.mjs").FillFormOperationResult} FillFormOperationResult */
 
 /**
  * @typedef {{
@@ -33,11 +35,19 @@ ChromeUtils.defineESModuleGetters(lazy, {
  * } |
  * {
  *  data?: undefined,
+ *  name: "SmartFormFill:StopFilling"
+ * } |
+ * {
+ *  data?: undefined,
  *  name: "SmartFormFill:GetFocusedForm"
  * } |
  * {
  *  data?: undefined,
  *  name: "SmartFormFill:RefreshAutocomplete"
+ * } |
+ * {
+ *  data?: undefined,
+ *  name: "SmartFormFill:ShowAutocompletePopup"
  * }} SmartFormFillMessage
  */
 
@@ -58,6 +68,14 @@ export class SmartFormFillChild extends JSWindowActorChild {
    * @type {boolean}
    */
   #destroyed = false;
+
+  /**
+   * Cancels a pending attempt to reopen the autocomplete popup after focus
+   * returns from a tab-modal dialog.
+   *
+   * @type {AbortController | null}
+   */
+  #autocompletePopupFocusAbortController = null;
 
   /**
    * Current document preparation request.
@@ -150,7 +168,11 @@ export class SmartFormFillChild extends JSWindowActorChild {
     }
 
     this.#smartFormFillDocument = new lazy.SmartFormFillDocument(this.document);
-    await this.#smartFormFillDocument.initialize(this.#onFormUpdate.bind(this));
+    await this.#smartFormFillDocument.initialize(
+      this.#onFormUpdate.bind(this),
+      this.#onFieldOutcomes.bind(this),
+      this.#onFieldsFilled.bind(this)
+    );
     this.#registerAutocompleteFields();
   }
 
@@ -158,7 +180,8 @@ export class SmartFormFillChild extends JSWindowActorChild {
    * Forwards parent messages to the document manager.
    *
    * @param {SmartFormFillMessage} message
-   * @returns {Promise<FocusedForm | null | undefined>}
+   * @returns {Promise<FocusedForm | FillFormOperationResult | null |
+   * undefined>}
    */
   async receiveMessage({ data, name }) {
     if (
@@ -174,7 +197,10 @@ export class SmartFormFillChild extends JSWindowActorChild {
 
     switch (name) {
       case "SmartFormFill:FillForm":
-        this.#smartFormFillDocument.fillForm(data);
+        return this.#smartFormFillDocument.fillForm(data);
+
+      case "SmartFormFill:StopFilling":
+        this.#smartFormFillDocument.stopFilling();
         return undefined;
 
       case "SmartFormFill:GetFocusedForm":
@@ -183,6 +209,11 @@ export class SmartFormFillChild extends JSWindowActorChild {
       case "SmartFormFill:RefreshAutocomplete":
         this.#refreshAutocomplete();
         return undefined;
+
+      case "SmartFormFill:ShowAutocompletePopup": {
+        this.#showAutocompletePopup();
+        return undefined;
+      }
     }
 
     return null;
@@ -192,6 +223,8 @@ export class SmartFormFillChild extends JSWindowActorChild {
    * Destroys document state.
    */
   didDestroy() {
+    this.#autocompletePopupFocusAbortController?.abort();
+    this.#autocompletePopupFocusAbortController = null;
     this.#smartFormFillDocument?.destroy();
     this.#smartFormFillDocument = null;
     this.#documentPreparationPromise = null;
@@ -214,14 +247,95 @@ export class SmartFormFillChild extends JSWindowActorChild {
   }
 
   /**
-   * Reruns an open autocomplete search after Smart Form Fill changes state.
+   * Reopens the autocomplete popup once focus has returned from a dialog.
+   */
+  #showAutocompletePopup() {
+    if (this.#tryShowAutocompletePopup()) {
+      return;
+    }
+
+    this.#autocompletePopupFocusAbortController?.abort();
+
+    const abortController = new AbortController();
+    this.#autocompletePopupFocusAbortController = abortController;
+
+    const clearPendingAttempt = () => {
+      abortController.abort();
+      if (this.#autocompletePopupFocusAbortController === abortController) {
+        this.#autocompletePopupFocusAbortController = null;
+      }
+    };
+
+    const retryAfterFocus = () => {
+      Services.tm.dispatchToMainThread(() => {
+        if (abortController.signal.aborted || this.#destroyed) {
+          return;
+        }
+
+        clearPendingAttempt();
+        this.#tryShowAutocompletePopup();
+      });
+    };
+
+    this.document.addEventListener("focusin", retryAfterFocus, {
+      capture: true,
+      once: true,
+      signal: abortController.signal,
+    });
+
+    Services.tm.dispatchToMainThread(() => {
+      if (abortController.signal.aborted || this.#destroyed) {
+        return;
+      }
+
+      if (this.#tryShowAutocompletePopup()) {
+        clearPendingAttempt();
+      }
+    });
+  }
+
+  /**
+   * Attempts to open the autocomplete popup for the focused field.
+   *
+   * @returns {boolean} Whether the popup was opened.
+   */
+  #tryShowAutocompletePopup() {
+    if (this.#destroyed || !this.#smartFormFillDocument) {
+      return false;
+    }
+
+    let autocompleteActor;
+    try {
+      autocompleteActor = this.manager.getActor("AutoComplete");
+    } catch {
+      return false;
+    }
+
+    if (!autocompleteActor || autocompleteActor.popupOpen) {
+      return false;
+    }
+
+    const focusedElement = this.document.activeElement;
+    if (
+      !this.#smartFormFillDocument.isSupportedField(focusedElement) ||
+      lazy.formFillController.controlledElement !== focusedElement
+    ) {
+      return false;
+    }
+
+    lazy.formFillController.showPopup();
+    return true;
+  }
+
+  /**
+   * Refreshes autocomplete state after Smart Form Fill changes; reruns
+   * the search if the popup is open, otherwise clears cached results
+   * for the next open.
    */
   #refreshAutocomplete() {
-    const autocompleteActor = this.manager.getActor("AutoComplete");
     const focusedElement = this.document.activeElement;
 
     if (
-      !autocompleteActor?.popupOpen ||
       !this.#smartFormFillDocument?.isSupportedField(focusedElement) ||
       lazy.formFillController.controlledElement !== focusedElement
     ) {
@@ -231,9 +345,15 @@ export class SmartFormFillChild extends JSWindowActorChild {
     const autocompleteInput = lazy.formFillController.QueryInterface(
       Ci.nsIAutoCompleteInput
     );
-    autocompleteInput.controller.startSearch(
-      autocompleteInput.controller.searchString
-    );
+    const autocompleteController = autocompleteInput.controller;
+    const autocompleteActor = this.manager.getActor("AutoComplete");
+
+    if (!autocompleteActor?.popupOpen) {
+      autocompleteController.resetInternalState();
+      return;
+    }
+
+    autocompleteController.startSearch(autocompleteController.searchString);
   }
 
   /*
@@ -271,10 +391,10 @@ export class SmartFormFillChild extends JSWindowActorChild {
    * @param {HTMLInputElement | HTMLTextAreaElement} input
    *   The input associated with the autocomplete search.
    * @returns {boolean}
-   *   Whether Smart Form Fill supports the input.
+   *   Whether Smart Form Fill has an entry to offer for the input.
    */
   shouldSearchForAutoComplete(input) {
-    return this.#smartFormFillDocument?.isSupportedField(input) ?? false;
+    return this.#smartFormFillDocument?.shouldOfferFill(input) ?? false;
   }
 
   /**
@@ -325,5 +445,35 @@ export class SmartFormFillChild extends JSWindowActorChild {
    */
   get actorName() {
     return "SmartFormFill";
+  }
+
+  /**
+   * Callback for SmartFormFillDocument to use when the fill of one or more
+   * fields ends
+   *
+   * @param {FieldOutcomes} outcomes
+   */
+  #onFieldOutcomes(outcomes) {
+    if (this.#destroyed) {
+      return;
+    }
+
+    this.sendAsyncMessage("SmartFormFill:FieldOutcomes", outcomes);
+  }
+
+  /**
+   * Reports which fields a fill wrote to, so the parent can record what the
+   * model decided for each of them. Pushed rather than returned from the fill
+   * itself: the page is the only side that knows what it wrote, and filling
+   * stays a message the parent does not wait on.
+   *
+   * @param {{ id: string, fieldIds: Array<string> }} filled
+   */
+  #onFieldsFilled(filled) {
+    if (this.#destroyed) {
+      return;
+    }
+
+    this.sendAsyncMessage("SmartFormFill:FieldsFilled", filled);
   }
 }

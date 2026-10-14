@@ -17,8 +17,9 @@ add_task(async function test_confirmation_hint_prefs_disabled() {
   const EXCLUDED_SITE = "https://example.org";
 
   sandbox.stub(IPPProxyManager, "state").value(IPPProxyStates.ACTIVE);
+  sandbox.stub(IPPProxyManager, "mode").value(IPPMode.MODE_FULL);
   sandbox
-    .stub(IPPExceptionsManager, "getPrincipalRule")
+    .stub(IPPSiteRuleManager, "getRule")
     .returns(IPPPrincipalRules.EXCLUDED);
 
   let protectedTab = await BrowserTestUtils.openNewForegroundTab(
@@ -56,8 +57,9 @@ add_task(async function test_confirmation_hint_exclusions_page_reloads() {
   const EXCLUDED_SITE = "https://example.org";
 
   sandbox.stub(IPPProxyManager, "state").value(IPPProxyStates.ACTIVE);
+  sandbox.stub(IPPProxyManager, "mode").value(IPPMode.MODE_FULL);
   sandbox
-    .stub(IPPExceptionsManager, "getPrincipalRule")
+    .stub(IPPSiteRuleManager, "getRule")
     .returns(IPPPrincipalRules.EXCLUDED);
 
   let tab = await BrowserTestUtils.openNewForegroundTab(
@@ -103,14 +105,13 @@ add_task(async function test_confirmation_hint_visbility_different_tab() {
   const EXCLUDED_SITE_2 = "https://example.net";
 
   sandbox.stub(IPPProxyManager, "state").value(IPPProxyStates.ACTIVE);
-  sandbox
-    .stub(IPPExceptionsManager, "getPrincipalRule")
-    .callsFake(principal => {
-      return principal?.origin === EXCLUDED_SITE ||
-        principal?.origin === EXCLUDED_SITE_2
-        ? IPPPrincipalRules.EXCLUDED
-        : IPPPrincipalRules.DEFAULT;
-    });
+  sandbox.stub(IPPProxyManager, "mode").value(IPPMode.MODE_FULL);
+  sandbox.stub(IPPSiteRuleManager, "getRule").callsFake(principal => {
+    return principal?.origin === EXCLUDED_SITE ||
+      principal?.origin === EXCLUDED_SITE_2
+      ? IPPPrincipalRules.EXCLUDED
+      : IPPPrincipalRules.DEFAULT;
+  });
 
   let showConfirmationHintSpy = sandbox.spy(window.ConfirmationHint, "show");
 
@@ -216,14 +217,13 @@ add_task(async function test_confirmation_hint_visbility_same_tab() {
   const EXCLUDED_SITE_2 = "https://example.net";
 
   sandbox.stub(IPPProxyManager, "state").value(IPPProxyStates.ACTIVE);
-  sandbox
-    .stub(IPPExceptionsManager, "getPrincipalRule")
-    .callsFake(principal => {
-      return principal?.origin === EXCLUDED_SITE ||
-        principal?.origin === EXCLUDED_SITE_2
-        ? IPPPrincipalRules.EXCLUDED
-        : IPPPrincipalRules.DEFAULT;
-    });
+  sandbox.stub(IPPProxyManager, "mode").value(IPPMode.MODE_FULL);
+  sandbox.stub(IPPSiteRuleManager, "getRule").callsFake(principal => {
+    return principal?.origin === EXCLUDED_SITE ||
+      principal?.origin === EXCLUDED_SITE_2
+      ? IPPPrincipalRules.EXCLUDED
+      : IPPPrincipalRules.DEFAULT;
+  });
 
   let showConfirmationHintSpy = sandbox.spy(window.ConfirmationHint, "show");
 
@@ -309,14 +309,13 @@ add_task(async function test_confirmation_hint_visbility_tab_switch() {
   const EXCLUDED_SITE_2 = "https://example.net";
 
   sandbox.stub(IPPProxyManager, "state").value(IPPProxyStates.ACTIVE);
-  sandbox
-    .stub(IPPExceptionsManager, "getPrincipalRule")
-    .callsFake(principal => {
-      return principal?.origin === EXCLUDED_SITE ||
-        principal?.origin === EXCLUDED_SITE_2
-        ? IPPPrincipalRules.EXCLUDED
-        : IPPPrincipalRules.DEFAULT;
-    });
+  sandbox.stub(IPPProxyManager, "mode").value(IPPMode.MODE_FULL);
+  sandbox.stub(IPPSiteRuleManager, "getRule").callsFake(principal => {
+    return principal?.origin === EXCLUDED_SITE ||
+      principal?.origin === EXCLUDED_SITE_2
+      ? IPPPrincipalRules.EXCLUDED
+      : IPPPrincipalRules.DEFAULT;
+  });
 
   // Load all tabs as background tabs first
   let protectedTab = BrowserTestUtils.addTab(gBrowser, PROTECTED_SITE);
@@ -393,13 +392,12 @@ add_task(async function test_confirmation_hint_once_per_unique_excluded_site() {
   const EXCLUDED_SITE_A = "https://example.org";
 
   sandbox.stub(IPPProxyManager, "state").value(IPPProxyStates.ACTIVE);
-  sandbox
-    .stub(IPPExceptionsManager, "getPrincipalRule")
-    .callsFake(principal => {
-      return principal?.origin === EXCLUDED_SITE_A
-        ? IPPPrincipalRules.EXCLUDED
-        : IPPPrincipalRules.DEFAULT;
-    });
+  sandbox.stub(IPPProxyManager, "mode").value(IPPMode.MODE_FULL);
+  sandbox.stub(IPPSiteRuleManager, "getRule").callsFake(principal => {
+    return principal?.origin === EXCLUDED_SITE_A
+      ? IPPPrincipalRules.EXCLUDED
+      : IPPPrincipalRules.DEFAULT;
+  });
 
   let showConfirmationHintSpy = sandbox.spy(window.ConfirmationHint, "show");
 
@@ -458,6 +456,7 @@ add_task(async function test_confirmation_hint_exclusions_toggle() {
   });
 
   sandbox.stub(IPPProxyManager, "state").value(IPPProxyStates.ACTIVE);
+  sandbox.stub(IPPProxyManager, "mode").value(IPPMode.MODE_FULL);
 
   let tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,

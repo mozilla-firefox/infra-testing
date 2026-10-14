@@ -4,14 +4,10 @@
 
 package org.mozilla.fenix.onboarding.view
 
-import io.mockk.every
-import io.mockk.mockk
-import mozilla.components.service.nimbus.evalJexlSafe
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
-import org.mozilla.experiments.nimbus.NimbusMessagingHelperInterface
 import org.mozilla.experiments.nimbus.StringHolder
 import org.mozilla.fenix.R
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
@@ -30,19 +26,17 @@ class OnboardingMapperTest {
 
     private lateinit var junoOnboardingFeature: JunoOnboarding
     private lateinit var jexlConditions: Map<String, String>
-    private lateinit var jexlHelper: NimbusMessagingHelperInterface
-    private lateinit var evalFunction: (String) -> Boolean
+    private val fakeJexlEvaluator: (String) -> Boolean = { evalStringInput ->
+        when (evalStringInput) {
+            "true" -> true
+            else -> false
+        }
+    }
 
     @Before
     fun setup() {
         junoOnboardingFeature = FxNimbus.features.junoOnboarding.value()
         jexlConditions = junoOnboardingFeature.conditions
-
-        jexlHelper = mockk(relaxed = true)
-        evalFunction = { condition -> jexlHelper.evalJexlSafe(condition) }
-
-        every { evalFunction("true") } returns true
-        every { evalFunction("false") } returns false
     }
 
     @Test
@@ -56,7 +50,7 @@ class OnboardingMapperTest {
                 showAddWidgetPage = false,
                 showToolbarPage = false,
                 jexlConditions = jexlConditions,
-                jexlEvaluator = evalFunction,
+                jexlEvaluator = fakeJexlEvaluator,
             ),
         )
     }
@@ -72,7 +66,7 @@ class OnboardingMapperTest {
                 showAddWidgetPage = false,
                 showToolbarPage = false,
                 jexlConditions = jexlConditions,
-                jexlEvaluator = evalFunction,
+                jexlEvaluator = fakeJexlEvaluator,
             ),
         )
     }
@@ -88,7 +82,7 @@ class OnboardingMapperTest {
                 showAddWidgetPage = true,
                 showToolbarPage = false,
                 jexlConditions = jexlConditions,
-                jexlEvaluator = evalFunction,
+                jexlEvaluator = fakeJexlEvaluator,
             ),
         )
     }
@@ -104,7 +98,7 @@ class OnboardingMapperTest {
                 showAddWidgetPage = true,
                 showToolbarPage = false,
                 jexlConditions = jexlConditions,
-                jexlEvaluator = evalFunction,
+                jexlEvaluator = fakeJexlEvaluator,
             ),
         )
     }
@@ -126,7 +120,7 @@ class OnboardingMapperTest {
                 showAddWidgetPage = true,
                 showToolbarPage = false,
                 jexlConditions = jexlConditions,
-                jexlEvaluator = evalFunction,
+                jexlEvaluator = fakeJexlEvaluator,
             ),
         )
     }
@@ -149,7 +143,7 @@ class OnboardingMapperTest {
                 showAddWidgetPage = true,
                 showToolbarPage = true,
                 jexlConditions = jexlConditions,
-                jexlEvaluator = evalFunction,
+                jexlEvaluator = fakeJexlEvaluator,
             ),
         )
     }
@@ -223,7 +217,7 @@ class OnboardingMapperTest {
                     showAddWidgetPage = false,
                     showToolbarPage = false,
                     jexlConditions = jexlConditions,
-                    jexlEvaluator = evalFunction,
+                    jexlEvaluator = fakeJexlEvaluator,
                 )
                 .last(),
         )
@@ -243,7 +237,7 @@ class OnboardingMapperTest {
                     showAddWidgetPage = false,
                     showToolbarPage = false,
                     jexlConditions = jexlConditions,
-                    jexlEvaluator = evalFunction,
+                    jexlEvaluator = fakeJexlEvaluator,
                 ),
         )
     }
@@ -262,7 +256,7 @@ class OnboardingMapperTest {
                     showAddWidgetPage = false,
                     showToolbarPage = false,
                     jexlConditions = jexlConditions,
-                    jexlEvaluator = evalFunction,
+                    jexlEvaluator = fakeJexlEvaluator,
                 ),
         )
     }
@@ -281,7 +275,7 @@ class OnboardingMapperTest {
                     showAddWidgetPage = false,
                     showToolbarPage = false,
                     jexlConditions = jexlConditions,
-                    jexlEvaluator = evalFunction,
+                    jexlEvaluator = fakeJexlEvaluator,
                 ),
         )
     }
@@ -300,7 +294,7 @@ class OnboardingMapperTest {
                     showAddWidgetPage = false,
                     showToolbarPage = false,
                     jexlConditions = jexlConditions,
-                    jexlEvaluator = evalFunction,
+                    jexlEvaluator = fakeJexlEvaluator,
                 ),
         )
     }
@@ -319,7 +313,7 @@ class OnboardingMapperTest {
                     showAddWidgetPage = false,
                     showToolbarPage = false,
                     jexlConditions = jexlConditions,
-                    jexlEvaluator = evalFunction,
+                    jexlEvaluator = fakeJexlEvaluator,
                 ),
         )
     }
@@ -338,7 +332,7 @@ class OnboardingMapperTest {
                     showAddWidgetPage = false,
                     showToolbarPage = false,
                     jexlConditions = jexlConditions,
-                    jexlEvaluator = evalFunction,
+                    jexlEvaluator = fakeJexlEvaluator,
                 ),
         )
     }
@@ -357,7 +351,7 @@ class OnboardingMapperTest {
                     showAddWidgetPage = false,
                     showToolbarPage = false,
                     jexlConditions = jexlConditions,
-                    jexlEvaluator = evalFunction,
+                    jexlEvaluator = fakeJexlEvaluator,
                 ),
         )
     }
@@ -376,7 +370,7 @@ class OnboardingMapperTest {
                     showAddWidgetPage = false,
                     showToolbarPage = false,
                     jexlConditions = jexlConditions,
-                    jexlEvaluator = evalFunction,
+                    jexlEvaluator = fakeJexlEvaluator,
                 ),
         )
     }
@@ -395,7 +389,7 @@ class OnboardingMapperTest {
                     showAddWidgetPage = false,
                     showToolbarPage = false,
                     jexlConditions = jexlConditions,
-                    jexlEvaluator = evalFunction,
+                    jexlEvaluator = fakeJexlEvaluator,
                 ),
         )
     }
@@ -414,7 +408,7 @@ class OnboardingMapperTest {
                     showAddWidgetPage = false,
                     showToolbarPage = false,
                     jexlConditions = jexlConditions,
-                    jexlEvaluator = evalFunction,
+                    jexlEvaluator = fakeJexlEvaluator,
                 ),
         )
     }
@@ -437,7 +431,39 @@ class OnboardingMapperTest {
                 showAddWidgetPage = true,
                 showToolbarPage = false,
                 jexlConditions = jexlConditions,
-                jexlEvaluator = evalFunction,
+                jexlEvaluator = fakeJexlEvaluator,
+            ),
+        )
+    }
+
+    @Test
+    fun givenANullType_whenConvertingToPageUiData_thenCardIsDiscarded() {
+        // When a config contains an unsupported card type, Nimbus builds a OnboardingCardData
+        // with a null type.
+        val cardDataWithoutType =
+            OnboardingCardData(
+                cardType = null,
+                imageRes = R.drawable.ic_onboarding_search_widget,
+                title = StringHolder(null, "add search widget title"),
+                body = StringHolder(null, "add search widget body"),
+                primaryButtonLabel = StringHolder(null, "add search widget primary button text"),
+                secondaryButtonLabel = StringHolder(null, "add search widget secondary button text"),
+                ordering = 15,
+                prerequisites = listOf(),
+                disqualifiers = listOf(),
+            )
+
+        val expected = listOf(defaultBrowserPageUiData)
+        val cardData = listOf(defaultBrowserCardData, cardDataWithoutType)
+        assertEquals(
+            expected,
+            cardData.toPageUiData(
+                showDefaultBrowserPage = true,
+                showNotificationPage = true,
+                showAddWidgetPage = true,
+                showToolbarPage = false,
+                jexlConditions = jexlConditions,
+                jexlEvaluator = fakeJexlEvaluator,
             ),
         )
     }

@@ -370,11 +370,6 @@ if CONFIG["OS_ARCH"] == "WINNT":
         "runtimeobject",
     ]
 
-    # `std` uses `raw-dylib` to link this dll, but that doesn't work properly on x86 MinGW, so we explicitly
-    # have to link it.
-    if CONFIG["CC_TYPE"] != "clang-cl":
-        OS_LIBS += ["bcryptprimitives"]
-
     if CONFIG["ACCESSIBILITY"]:
         OS_LIBS += [
             "oleacc",
@@ -391,7 +386,10 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
     ]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "android":
-    OS_LIBS += ["mediandk"]
+    OS_LIBS += [
+        "mediandk",
+        "sync",
+    ]
 
 # The buildid is refreshed on every (incremental) build. But we want to avoid
 # rebuilding libxul every time, so instead of having a source file that

@@ -300,6 +300,7 @@ PK11_CreateGenericObject
 PK11_CreateMergeLog
 PK11_CreatePBEV2AlgorithmID
 PK11_CreatePrivateKeyFromTemplate
+PK11_Decapsulate
 PK11_Decrypt
 PK11_DeleteTokenCertAndKey
 PK11_DeleteTokenPrivateKey
@@ -318,6 +319,7 @@ PK11_DigestBegin
 PK11_DigestFinal
 PK11_DigestOp
 PK11_DoesMechanism
+PK11_Encapsulate
 PK11_Encrypt
 PK11_ExportDERPrivateKeyInfo
 PK11_ExportEncryptedPrivKeyInfo
@@ -502,6 +504,7 @@ PORT_ZFree_Util
 SEC_AnyTemplate_Util @DATA@
 SEC_ASN1Decode
 SEC_ASN1DecodeInteger
+SEC_ASN1DecodeInteger_Util
 SEC_ASN1DecodeItem
 SEC_ASN1DecodeItem_Util
 SEC_ASN1Decode_Util

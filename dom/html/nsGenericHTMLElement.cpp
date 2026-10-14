@@ -58,6 +58,7 @@
 #include "mozilla/dom/Link.h"
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/dom/PerformanceContainerTiming.h"
+#include "mozilla/dom/Range.h"
 #include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/dom/ShadowIncludingTreeIterator.h"
 #include "mozilla/dom/ToggleEvent.h"
@@ -92,13 +93,16 @@
 #include "nsPIDOMWindow.h"
 #include "nsPresContext.h"
 #include "nsQueryObject.h"
-#include "nsRange.h"
 #include "nsString.h"
 #include "nsStyleUtil.h"
 #include "nsTableCellFrame.h"
 #include "nsTextNode.h"
 #include "nsThreadUtils.h"
 #include "nscore.h"
+
+#ifdef ACCESSIBILITY
+#  include "nsAccessibilityService.h"
+#endif
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -201,6 +205,8 @@ static constexpr nsAttrValue::EnumTableEntry kPopoverTable[] = {
 static const nsAttrValue::EnumTableEntry* kPopoverTableInvalidValueDefault =
     &kPopoverTable[3];
 }  // namespace
+
+static void MakeContentDescendantsEditable(nsIContent* aContent);
 
 void nsGenericHTMLElement::GetFetchPriority(nsAString& aFetchPriority) const {
   // <https://html.spec.whatwg.org/multipage/urls-and-fetching.html#fetch-priority-attributes>.
@@ -409,14 +415,15 @@ void nsGenericHTMLElement::SetEditContext(mozilla::dom::EditContext* aContext,
       return;
     }
   }
+  RefPtr doc = OwnerDoc();
   // 3. Let oldEditContext be the value of this's internal [[EditContext]] slot.
   RefPtr<EditContext> oldEditContext = GetEditContext();
   if (oldEditContext) {
     // 4. If oldEditContext is not null and oldEditContext is this's node
     //    document's active EditContext, then:
-    if (oldEditContext == OwnerDoc()->GetActiveEditContext()) {
+    if (oldEditContext == doc->GetActiveEditContext()) {
       // 1. Run the steps to deactivate an EditContext with oldEditContext.
-      oldEditContext->Deactivate();
+      doc->DeactivateEditContextAndEndComposition();
       // 2. If oldEditContext's associated element is not equal to this, then
       //    terminate these steps.
       if (oldEditContext->GetAssociatedElement() != this) {
@@ -449,16 +456,46 @@ void nsGenericHTMLElement::SetEditContext(mozilla::dom::EditContext* aContext,
   }
   EditContext::SetForElement(*this, aContext);
 
-  // Update the active EditContext since it might have changed.
-  // It's important to do this before ChangeEditableState, since
-  // we want the active EditContext to be up-to-date for
-  // HTMLEditor::NotifyEditingHostMaybeChanged.
-  RefPtr doc = OwnerDoc();
-  doc->UpdateTextEditContext();
+  if (!IsInComposedDoc()) {
+    // Don't update editable state if the element is disconnected.
+    return;
+  }
 
   int32_t delta = (aContext != nullptr) - (oldEditContext != nullptr);
+  // First, update the editable state of this element and its descendants.
+  // Computing the active EditContext depends on having the right editable
+  // state, so this needs to happen first.
   if (delta) {
-    ChangeEditableState(delta);
+    nsAutoScriptBlocker scriptBlocker;
+    MakeContentDescendantsEditable(this);
+  }
+  if (MOZ_UNLIKELY(GetEditContext() != aContext)) {
+    // A script that ran above detached the EditContext.
+    return;
+  }
+  // Update active EditContext.
+  doc->UpdateTextEditContext();
+  if (MOZ_UNLIKELY(GetEditContext() != aContext)) {
+    // A script that ran above detached the EditContext.
+    return;
+  }
+  if (delta) {
+    // Change content editable count for document.
+    // This needs to happen after updating active EditContext, since this may
+    // call HTMLEditor::FocusedElementOrDocumentBecomesEditable which needs to
+    // know the correct active EditContext.
+    doc->ChangeContentEditableCount(this, delta);
+    // Inform HTMLEditor that the editing host might have changed due to
+    // attaching/detaching EditContext. This also needs to have the correct
+    // active EditContext.
+    if (RefPtr<HTMLEditor> editor = doc->GetHTMLEditor()) {
+      editor->NotifyEditingHostMaybeChanged();
+    }
+#ifdef ACCESSIBILITY
+    if (nsAccessibilityService* accService = GetAccService()) {
+      accService->NotifyOfEditContextAttachmentChange(this);
+    }
+#endif
   }
 }
 
@@ -811,13 +848,15 @@ void nsGenericHTMLElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
         }
         if (IsInUncomposedDoc()) {
           RecomputeContainerTimingRootForSubtree();
-          // Removing containertiming unregisters this element as a container
-          // root; drop its accumulated painted region so the record can't
-          // outlive the registration (and dangle), or be inherited if the
-          // attribute is added back later.
-          if (aName == nsGkAtoms::containertiming && !aValue) {
-            ContainerTimingHelpers::DropRecordForContainerRoot(this);
-          }
+        }
+        // Removing containertiming unregisters this element as a container
+        // root; drop its accumulated painted region so the record can't
+        // outlive the registration (and dangle), or be inherited if the
+        // attribute is added back later. This must run even when detached or
+        // in a shadow tree, where the record would otherwise linger with a
+        // dangling key until the element is freed.
+        if (aName == nsGkAtoms::containertiming && !aValue) {
+          ContainerTimingHelpers::DropRecordForContainerRoot(this);
         }
       }
     } else if (aName == nsGkAtoms::dir) {
@@ -1161,7 +1200,8 @@ bool nsGenericHTMLElement::ParseBackgroundAttribute(int32_t aNamespaceID,
   return false;
 }
 
-bool nsGenericHTMLElement::IsAttributeMapped(const nsAtom* aAttribute) const {
+bool nsGenericHTMLElement::IsNoNamespaceAttrMapped(
+    const nsAtom* aAttribute) const {
   static const MappedAttributeEntry* const map[] = {sCommonAttributeMap};
 
   return FindAttributeDependence(aAttribute, map);
@@ -1299,31 +1339,6 @@ bool nsGenericHTMLElement::ParseImageAttribute(nsAtom* aAttribute,
   return false;
 }
 
-static constexpr nsAttrValue::EnumTableEntry kReferrerPolicyTable[] = {
-    {GetEnumString(ReferrerPolicy::No_referrer).get(),
-     static_cast<int16_t>(ReferrerPolicy::No_referrer)},
-    {GetEnumString(ReferrerPolicy::Origin).get(),
-     static_cast<int16_t>(ReferrerPolicy::Origin)},
-    {GetEnumString(ReferrerPolicy::Origin_when_cross_origin).get(),
-     static_cast<int16_t>(ReferrerPolicy::Origin_when_cross_origin)},
-    {GetEnumString(ReferrerPolicy::No_referrer_when_downgrade).get(),
-     static_cast<int16_t>(ReferrerPolicy::No_referrer_when_downgrade)},
-    {GetEnumString(ReferrerPolicy::Unsafe_url).get(),
-     static_cast<int16_t>(ReferrerPolicy::Unsafe_url)},
-    {GetEnumString(ReferrerPolicy::Strict_origin).get(),
-     static_cast<int16_t>(ReferrerPolicy::Strict_origin)},
-    {GetEnumString(ReferrerPolicy::Same_origin).get(),
-     static_cast<int16_t>(ReferrerPolicy::Same_origin)},
-    {GetEnumString(ReferrerPolicy::Strict_origin_when_cross_origin).get(),
-     static_cast<int16_t>(ReferrerPolicy::Strict_origin_when_cross_origin)},
-};
-
-bool nsGenericHTMLElement::ParseReferrerAttribute(const nsAString& aString,
-                                                  nsAttrValue& aResult) {
-  using mozilla::dom::ReferrerInfo;
-  return aResult.ParseEnumValue(aString, kReferrerPolicyTable, false);
-}
-
 bool nsGenericHTMLElement::ParseFrameborderValue(const nsAString& aString,
                                                  nsAttrValue& aResult) {
   return aResult.ParseEnumValue(aString, kFrameborderTable, false);
@@ -1361,8 +1376,10 @@ static inline void MapLangAttributeInto(MappedDeclarationsBuilder& aBuilder) {
   // so that code checking for particular codes can assume canonical casing.
   // Note that in some cases this will also map 3-character ISO 639-3 tags to
   // their corresponding 2-char ISO 639-1 tags.
+  //
+  // FIXME(emilio): We don't bother doing this for xml:lang... Should we?
   RefPtr<nsAtom> lang = langValue->GetAtomValue();
-  nsAtomCString langStr(lang);
+  nsAutoAtomCString langStr(lang);
   intl::Locale loc;
   if (intl::LocaleParser::TryParse(langStr, loc).isOk() &&
       loc.Canonicalize().isOk()) {
@@ -1373,7 +1390,7 @@ static inline void MapLangAttributeInto(MappedDeclarationsBuilder& aBuilder) {
     }
   }
 
-  aBuilder.SetIdentAtomValueIfUnset(eCSSProperty__x_lang, lang);
+  aBuilder.SetIdentAtomValue(eCSSProperty__x_lang, lang);
   if (!aBuilder.PropertyIsSet(eCSSProperty_text_emphasis_position)) {
     if (nsStyleUtil::MatchesLanguagePrefix(lang, u"zh")) {
       aBuilder.SetKeywordValue(eCSSProperty_text_emphasis_position,
@@ -1394,6 +1411,8 @@ static inline void MapLangAttributeInto(MappedDeclarationsBuilder& aBuilder) {
 void nsGenericHTMLElement::MapCommonAttributesIntoExceptHidden(
     MappedDeclarationsBuilder& aBuilder) {
   MapLangAttributeInto(aBuilder);
+  // Intentionally after `lang`, so it overrides if needed.
+  MapXmlLangAttrInto(aBuilder);
 }
 
 void nsGenericHTMLElement::MapCommonAttributesInto(
@@ -1901,9 +1920,6 @@ void nsGenericHTMLFormElement::ClearForm(bool aRemoveFromForm,
   MOZ_ASSERT(IsFormAssociatedElement());
 
   HTMLFormElement* form = GetFormInternal();
-  NS_ASSERTION((form != nullptr) == HasFlag(ADDED_TO_FORM),
-               "Form control should have had flag set correctly");
-
   if (!form) {
     return;
   }
@@ -1943,10 +1959,9 @@ nsresult nsGenericHTMLFormElement::BindToTree(BindContext& aContext,
     if (HasAttr(nsGkAtoms::form) ? IsInComposedDoc() : aParent.IsContent()) {
       UpdateFormOwner(true, nullptr);
     }
+    // Set parent fieldset which should be used for the disabled state.
+    UpdateFieldSet(false);
   }
-
-  // Set parent fieldset which should be used for the disabled state.
-  UpdateFieldSet(false);
   return NS_OK;
 }
 
@@ -1954,7 +1969,8 @@ void nsGenericHTMLFormElement::UnbindFromTree(UnbindContext& aContext) {
   // Save state before doing anything else.
   SaveState();
 
-  if (IsFormAssociatedElement()) {
+  const bool formAssociated = IsFormAssociatedElement();
+  if (formAssociated) {
     if (HTMLFormElement* form = GetFormInternal()) {
       // Might need to unset form
       if (aContext.IsUnbindRoot(this)) {
@@ -1980,8 +1996,10 @@ void nsGenericHTMLFormElement::UnbindFromTree(UnbindContext& aContext) {
 
   nsGenericHTMLElement::UnbindFromTree(aContext);
 
-  // The element might not have a fieldset anymore.
-  UpdateFieldSet(false);
+  if (formAssociated) {
+    // The element might not have a fieldset anymore.
+    UpdateFieldSet(false);
+  }
 }
 
 void nsGenericHTMLFormElement::BeforeSetAttr(int32_t aNameSpaceID,
@@ -1990,7 +2008,7 @@ void nsGenericHTMLFormElement::BeforeSetAttr(int32_t aNameSpaceID,
                                              bool aNotify) {
   if (aNameSpaceID == kNameSpaceID_None && IsFormAssociatedElement()) {
     nsAutoString tmp;
-    HTMLFormElement* form = GetFormInternal();
+    HTMLFormElement* form = GetFormIfRegistered();
 
     // remove the control from the hashtable as needed
 
@@ -2046,7 +2064,7 @@ void nsGenericHTMLFormElement::AfterSetAttr(
         // Ensure that empty @form value clears the form owner.
         ClearForm(true, false);
       }
-    } else if (HTMLFormElement* form = GetFormInternal()) {
+    } else if (HTMLFormElement* form = GetFormIfRegistered()) {
       // add the control to the hashtable as needed
       if (aName == nsGkAtoms::type) {
         nsAutoString tmp;
@@ -2257,43 +2275,47 @@ void nsGenericHTMLFormElement::UpdateFormOwner(bool aBindToTree,
 }
 
 void nsGenericHTMLFormElement::UpdateFieldSet(bool aNotify) {
-  if (IsInNativeAnonymousSubtree() || !IsFormAssociatedElement()) {
-    MOZ_ASSERT_IF(IsFormAssociatedElement(), !GetFieldSetInternal());
+  MOZ_ASSERT(IsFormAssociatedElement());
+  if (IsInNativeAnonymousSubtree()) {
+    MOZ_ASSERT(!GetFieldSetInternal());
     return;
   }
+  if (IsFormAssociatedCustomElement() &&
+      GetCustomElementData()->mState != CustomElementData::State::eCustom) {
+    MOZ_ASSERT(!GetFieldSetInternal());
+    return;
+  }
+  auto* oldFieldSet = GetFieldSetInternal();
+  auto* newFieldSet = FirstAncestorOfType<HTMLFieldSetElement>();
+  if (newFieldSet == oldFieldSet) {
+    // We already have the right fieldset;
+    return;
+  }
+  if (oldFieldSet) {
+    oldFieldSet->RemoveElement(this);
+  }
+  SetFieldSetInternal(newFieldSet);
+  if (newFieldSet) {
+    newFieldSet->AddElement(this);
+  }
+  // The disabled state may have changed
+  FieldSetDisabledChanged(aNotify);
+}
 
-  nsIContent* parent = nullptr;
-  nsIContent* prev = nullptr;
-  HTMLFieldSetElement* fieldset = GetFieldSetInternal();
-
-  for (parent = GetParent(); parent;
-       prev = parent, parent = parent->GetParent()) {
-    HTMLFieldSetElement* parentFieldset = HTMLFieldSetElement::FromNode(parent);
-    if (parentFieldset && (!prev || parentFieldset->GetFirstLegend() != prev)) {
-      if (fieldset == parentFieldset) {
-        // We already have the right fieldset;
-        return;
-      }
-
-      if (fieldset) {
-        fieldset->RemoveElement(this);
-      }
-      SetFieldSetInternal(parentFieldset);
-      parentFieldset->AddElement(this);
-
-      // The disabled state may have changed
-      FieldSetDisabledChanged(aNotify);
-      return;
+// https://html.spec.whatwg.org/#concept-fe-disabled
+bool nsGenericHTMLFormElement::IsDisabledByAncestorFieldSet() const {
+  for (auto* fieldset = GetFieldSetInternal(); fieldset;
+       fieldset = fieldset->GetFieldSet()) {
+    if (!fieldset->IsDisabled()) {
+      continue;
     }
+    const nsIContent* legend = fieldset->GetFirstLegend();
+    if (legend && IsInclusiveDescendantOf(legend)) {
+      continue;
+    }
+    return true;
   }
-
-  // No fieldset found.
-  if (fieldset) {
-    fieldset->RemoveElement(this);
-    SetFieldSetInternal(nullptr);
-    // The disabled state may have changed
-    FieldSetDisabledChanged(aNotify);
-  }
+  return false;
 }
 
 void nsGenericHTMLFormElement::UpdateDisabledState(bool aNotify) {
@@ -2301,9 +2323,8 @@ void nsGenericHTMLFormElement::UpdateDisabledState(bool aNotify) {
     return;
   }
 
-  HTMLFieldSetElement* fieldset = GetFieldSetInternal();
   const bool isDisabled =
-      HasAttr(nsGkAtoms::disabled) || (fieldset && fieldset->IsDisabled());
+      HasAttr(nsGkAtoms::disabled) || IsDisabledByAncestorFieldSet();
 
   const ElementState disabledStates =
       isDisabled ? ElementState::DISABLED : ElementState::ENABLED;
@@ -2681,8 +2702,19 @@ nsGenericHTMLFormControlElement::~nsGenericHTMLFormControlElement() {
   NS_ASSERTION(!mForm, "mForm should be null at this point!");
 }
 
-NS_IMPL_ISUPPORTS_INHERITED(nsGenericHTMLFormControlElement,
-                            nsGenericHTMLFormElement, nsIFormControl)
+NS_IMPL_CYCLE_COLLECTION_CLASS(nsGenericHTMLFormControlElement)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(nsGenericHTMLFormControlElement,
+                                                nsGenericHTMLFormElement)
+  tmp->ClearForm(true, true);
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(
+    nsGenericHTMLFormControlElement, nsGenericHTMLFormElement)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mForm)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
+NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(nsGenericHTMLFormControlElement,
+                                             nsGenericHTMLFormElement,
+                                             nsIFormControl)
 
 nsINode* nsGenericHTMLFormControlElement::GetScopeChainParent() const {
   return mForm ? mForm : nsGenericHTMLElement::GetScopeChainParent();
@@ -3295,7 +3327,7 @@ void nsGenericHTMLElement::GetInnerText(mozilla::dom::DOMString& aValue,
   if (!IsRendered()) {
     GetTextContentInternal(aValue, aError);
   } else {
-    nsRange::GetInnerTextNoFlush(aValue, aError, this);
+    dom::Range::GetInnerTextNoFlush(aValue, aError, this);
   }
 }
 

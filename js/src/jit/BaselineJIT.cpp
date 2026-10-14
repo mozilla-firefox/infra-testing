@@ -162,8 +162,7 @@ static JitExecStatus EnterBaseline(JSContext* cx, EnterJitData& data) {
   // Release temporary buffer used for OSR into Ion.
   cx->runtime()->jitRuntime()->freeIonOsrTempData();
 
-  MOZ_ASSERT_IF(data.result.isMagic(), data.result.isMagic(JS_ION_ERROR));
-  return data.result.isMagic() ? JitExec_Error : JitExec_Ok;
+  return data.result.isMagic(JS_ION_ERROR) ? JitExec_Error : JitExec_Ok;
 }
 
 JitExecStatus jit::EnterBaselineInterpreterAtBranch(JSContext* cx,
@@ -280,7 +279,7 @@ static bool DispatchOffThreadBaselineCompile(JSContext* cx,
 // Either through stencil instantiation where we perform eager baseline
 // compilations speculatively based on Jit Hints, or on demand through the JIT.
 static bool DispatchOffThreadBaselineBatchImpl(JSContext* cx, bool isEager) {
-  BaselineCompileQueue& queue = cx->realm()->baselineCompileQueue();
+  BaselineCompileQueue& queue = cx->realm()->jitRealm().baselineCompileQueue();
   MOZ_ASSERT(queue.numQueued() > 0);
 
   // We maintain the invariant that there's always room to push an entry into
@@ -473,10 +472,6 @@ MethodStatus jit::BaselineCompile(JSContext* cx, JSScript* script,
 
 static MethodStatus CanEnterBaselineJIT(JSContext* cx, HandleScript script,
                                         AbstractFramePtr osrSourceFrame) {
-  if (!CanBaselineCompileScript(cx, script)) {
-    return Method_CantCompile;
-  }
-
   // This check is needed in the following corner case. Consider a function h,
   //
   //   function h(x) {
@@ -504,6 +499,10 @@ static MethodStatus CanEnterBaselineJIT(JSContext* cx, HandleScript script,
 
   if (script->hasBaselineScript()) {
     return Method_Compiled;
+  }
+
+  if (!CanBaselineCompileScript(cx, script)) {
+    return Method_CantCompile;
   }
 
   if (script->isBaselineCompilingOffThread()) {
@@ -644,6 +643,12 @@ static MethodStatus CanEnterBaselineInterpreter(JSContext* cx,
     return Method_Error;
   }
 
+  if (!JitOptions.disableJitHints &&
+      cx->runtime()->jitRuntime()->hasJitHintsMap()) {
+    JitHintsMap* jitHints = cx->runtime()->jitRuntime()->getJitHintsMap();
+    jitHints->setEagerBaselineInterpreterHint(script);
+  }
+
   if (JitOptions.emitInterpreterEntryTrampoline) {
     if (!MaybeCreateBaselineInterpreterEntryScript(cx, script)) {
       ReportOutOfMemory(cx);
@@ -762,6 +767,27 @@ void BaselineCompileQueue::trace(JSTracer* trc) {
   for (uint32_t i = 0; i < numQueued_; i++) {
     TraceEdge(trc, &queue_[i], "baseline_compile_queue");
   }
+}
+
+JSScript* BaselineCompileQueue::pop() {
+  // To keep our invariants simple, we pop from the end of the queue.
+  MOZ_ASSERT(!isEmpty());
+  assertInvariants();
+  numQueued_--;
+  JSScript* result = queue_[numQueued_];
+  queue_[numQueued_] = nullptr;
+  assertInvariants();
+  return result;
+}
+
+bool BaselineCompileQueue::enqueue(JSScript* script) {
+  if (numQueued_ >= JitOptions.baselineQueueCapacity) {
+    return false;  // Queue is full
+  }
+  queue_[numQueued_] = script;
+  numQueued_++;
+  assertInvariants();
+  return true;
 }
 
 void BaselineCompileQueue::remove(JSScript* script) {
@@ -1353,7 +1379,7 @@ void BaselineInterpreter::init(
     uint32_t profilerExitToggleOffset, uint32_t debugTrapHandlerOffset,
     CodeOffsetVector&& debugInstrumentationOffsets,
     CodeOffsetVector&& debugTrapOffsets, CodeOffsetVector&& codeCoverageOffsets,
-    ICReturnOffsetVector&& icReturnOffsets,
+    ICBailoutStubOffsetVector&& icBailoutStubOffsets,
     const CallVMOffsets& callVMOffsets) {
   code_ = code;
   interpretOpOffset_ = interpretOpOffset;
@@ -1366,12 +1392,12 @@ void BaselineInterpreter::init(
   debugInstrumentationOffsets_ = std::move(debugInstrumentationOffsets);
   debugTrapOffsets_ = std::move(debugTrapOffsets);
   codeCoverageOffsets_ = std::move(codeCoverageOffsets);
-  icReturnOffsets_ = std::move(icReturnOffsets);
+  icBailoutStubOffsets_ = std::move(icBailoutStubOffsets);
   callVMOffsets_ = callVMOffsets;
 }
 
-uint8_t* BaselineInterpreter::retAddrForIC(JSOp op) const {
-  for (const ICReturnOffset& entry : icReturnOffsets_) {
+uint8_t* BaselineInterpreter::bailoutStubAddrForIC(JSOp op) const {
+  for (const ICBailoutStubOffset& entry : icBailoutStubOffsets_) {
     if (entry.op == op) {
       return codeAtOffset(entry.offset);
     }

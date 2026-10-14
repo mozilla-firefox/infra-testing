@@ -98,16 +98,8 @@ async function getMessageValidators(skipValidation) {
       "./content-src/templates/OnboardingMessage/BookmarksBarButton.schema.json",
       { common: true }
     ),
-    cfr_doorhanger: await getValidator(
-      "./content-src/templates/CFR/templates/ExtensionDoorhanger.schema.json",
-      { common: true }
-    ),
-    cfr_urlbar_chiclet: await getValidator(
-      "./content-src/templates/CFR/templates/CFRUrlbarChiclet.schema.json",
-      { common: true }
-    ),
     infobar: await getValidator(
-      "./content-src/templates/CFR/templates/InfoBar.schema.json",
+      "./content-src/templates/InfoBar/InfoBar.schema.json",
       { common: true }
     ),
     pb_newtab: await getValidator(
@@ -144,8 +136,6 @@ async function getMessageValidators(skipValidation) {
       { common: true }
     ),
   };
-
-  messageValidators.milestone_message = messageValidators.cfr_doorhanger;
 
   return { experimentValidator, messageValidators };
 }
@@ -254,7 +244,8 @@ async function main() {
 
   const recipes = records.filter(
     record =>
-      record.application === "firefox-desktop" &&
+      (record.application === "firefox-desktop" ||
+        record.appId === "firefox-desktop") &&
       record.featureIds.some(id =>
         MESSAGING_EXPERIMENTS_DEFAULT_FEATURES.includes(id)
       ) &&
@@ -301,7 +292,6 @@ async function main() {
       }
       for (const feature of features) {
         if (
-          feature.enabled &&
           MESSAGING_EXPERIMENTS_DEFAULT_FEATURES.includes(feature.featureId) &&
           feature.value &&
           typeof feature.value === "object" &&

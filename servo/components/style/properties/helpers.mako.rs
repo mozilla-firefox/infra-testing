@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-<%! from data import to_rust_ident, to_camel_case, SYSTEM_FONT_LONGHANDS %>
+<%! from data import to_camel_case, SYSTEM_FONT_LONGHANDS %>
 
 <%def name="longhand(property)">
 /// ${property.spec}
@@ -22,6 +22,10 @@ pub mod ${property.ident} {
     #[allow(unused_imports)]
     use crate::properties::{longhands, LonghandId, CSSWideKeyword, PropertyDeclaration};
 
+    /// # Safety
+    ///
+    /// `declaration` must be a declaration of this longhand, since its value is
+    /// read back with `unchecked_value_as`.
     #[allow(unused_variables)]
     pub unsafe fn cascade_property(
         declaration: &PropertyDeclaration,
@@ -66,13 +70,13 @@ pub mod ${property.ident} {
                             if !context.builder.effective_zoom_for_inheritance.is_one() {
                                 let old_zoom = context.builder.effective_zoom;
                                 context.builder.effective_zoom = context.builder.effective_zoom_for_inheritance;
-                                let computed = context.builder.inherited_style.clone_${property.ident}();
+                                let computed = context.builder.inherited_style.slow_clone_${property.ident}();
                                 let specified = computed::ToComputedValue::from_computed_value(&computed);
                                 % if property.boxed:
                                 let specified = Box::new(specified);
                                 % endif
                                 let decl = PropertyDeclaration::${property.camel_case}(specified);
-                                cascade_property(&decl, context);
+                                unsafe { cascade_property(&decl, context) };
                                 context.builder.effective_zoom = old_zoom;
                                 return;
                             }
@@ -134,10 +138,10 @@ pub mod ${property.ident} {
         % endif
     }
 
-    pub fn parse_declared<'i, 't>(
+    pub fn parse_declared(
         context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<PropertyDeclaration, ParseError<'i>> {
+        input: &mut Parser,
+    ) -> Result<PropertyDeclaration, ParseError> {
         parse(context, input)
         % if property.boxed:
             .map(Box::new)
@@ -176,10 +180,10 @@ pub mod ${property.ident} {
     % endif
     #[allow(unused_variables)]
     #[inline]
-    pub fn parse<'i, 't>(
+    pub fn parse(
         context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<SpecifiedValue, ParseError<'i>> {
+        input: &mut Parser,
+    ) -> Result<SpecifiedValue, ParseError> {
         % if property.allow_quirks:
         specified::${property.predefined_type}::${property.parse_method}_quirky(context, input, AllowQuirks::Yes)
         % elif property.parse_method != "parse":
@@ -187,79 +191,6 @@ pub mod ${property.ident} {
         % else:
         <specified::${property.predefined_type} as crate::parser::Parse>::parse(context, input)
         % endif
-    }
-    % elif property.keyword:
-    pub use self::computed_value::T as SpecifiedValue;
-    pub mod computed_value {
-        #[allow(unused_imports)]
-        use crate::derives::*;
-        #[derive(
-            Clone,
-            Copy,
-            Debug,
-            Deserialize,
-            Eq,
-            FromPrimitive,
-            Hash,
-            MallocSizeOf,
-            Parse,
-            PartialEq,
-            Serialize,
-            SpecifiedValueInfo,
-            ToAnimatedValue,
-            ToComputedValue,
-            ToCss,
-            ToResolvedValue,
-            ToShmem,
-            ToTyped,
-        )]
-        pub enum T {
-        % for variant in property.keyword.values_for(engine):
-        <%
-            aliases = []
-            for alias, v in property.keyword.aliases_for(engine).items():
-                if variant == v:
-                    aliases.append(alias)
-        %>
-        % if aliases:
-        #[parse(aliases = "${','.join(sorted(aliases))}")]
-        % endif
-        ${to_camel_case(variant)},
-        % endfor
-        }
-    }
-    #[inline]
-    pub fn get_initial_value() -> computed_value::T {
-        computed_value::T::${to_camel_case(property.keyword.values[0])}
-    }
-    #[inline]
-    pub fn get_initial_specified_value() -> SpecifiedValue {
-        SpecifiedValue::${to_camel_case(property.keyword.values[0])}
-    }
-    #[inline]
-    pub fn parse<'i, 't>(_context: &ParserContext, input: &mut Parser<'i, 't>)
-                         -> Result<SpecifiedValue, ParseError<'i>> {
-        SpecifiedValue::parse(input)
-    }
-
-    #[cfg(feature = "gecko")]
-    impl SpecifiedValue {
-        /// Obtain a specified value from a Gecko keyword value
-        ///
-        /// Intended for use with presentation attributes, not style structs
-        pub fn from_gecko_keyword(kw: u32) -> Self {
-            use crate::gecko_bindings::structs;
-            % for value in property.keyword.values_for(engine):
-            // We can't match on enum values if we're matching on a u32
-            const ${to_rust_ident(value).upper()}: u32 = structs::${property.keyword.gecko_constant(value)} as u32;
-            % endfor
-            match kw {
-                % for value in property.keyword.values_for(engine):
-                ${to_rust_ident(value).upper()} => Self::${to_camel_case(value)},
-                % endfor
-                _ => panic!("Found unexpected value in style struct for ${property.name} property"),
-            }
-        }
     }
     % endif
     % if property.vector:
@@ -279,7 +210,7 @@ pub mod ${property.ident} {
     // machinery and set_foo_from, and just compute the value like any other
     // longhand.
     % if property.vector:
-    <% allow_empty = not property.initial_value and not property.keyword %>
+    <% allow_empty = not property.initial_value %>
     #[allow(unused_imports)]
     use smallvec::SmallVec;
 
@@ -328,7 +259,7 @@ pub mod ${property.ident} {
         /// Making this type generic allows the compiler to figure out the
         /// animated value for us, instead of having to implement it
         /// manually for every type we care about.
-        #[derive(Clone, Debug, MallocSizeOf, PartialEq, ToAnimatedValue, ToResolvedValue, ToCss, ToTyped)]
+        #[derive(Clone, Debug, Deref, MallocSizeOf, PartialEq, ToAnimatedValue, ToResolvedValue, ToCss, ToTyped)]
         % if property.vector.separator == "Comma":
         #[css(comma)]
         % endif
@@ -348,7 +279,7 @@ pub mod ${property.ident} {
         % else:
         pub use self::ComputedList as List;
 
-        #[derive(Clone, Debug, MallocSizeOf, PartialEq, ToCss, ToTyped)]
+        #[derive(Clone, Debug, Deref, MallocSizeOf, PartialEq, ToCss, ToTyped)]
         % if property.vector.separator == "Comma":
         #[css(comma)]
         % endif
@@ -488,10 +419,10 @@ pub mod ${property.ident} {
         % endif
     }
 
-    pub fn parse<'i, 't>(
+    pub fn parse(
         context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<SpecifiedValue, ParseError<'i>> {
+        input: &mut Parser,
+    ) -> Result<SpecifiedValue, ParseError> {
         use style_traits::Separator;
 
         % if allow_empty or property.vector.none_value:
@@ -643,11 +574,11 @@ pub mod ${property.ident} {
 
         /// Parse the given shorthand and fill the result into the
         /// `declarations` vector.
-        pub fn parse_into<'i, 't>(
+        pub fn parse_into(
             declarations: &mut SourcePropertyDeclaration,
             context: &ParserContext,
-            input: &mut Parser<'i, 't>,
-        ) -> Result<(), ParseError<'i>> {
+            input: &mut Parser,
+        ) -> Result<(), ParseError> {
             #[allow(unused_imports)]
             use crate::properties::{NonCustomPropertyId, LonghandId};
             % if not shorthand.kind and "IS_LEGACY_SHORTHAND" not in shorthand.flags:
@@ -696,10 +627,10 @@ pub mod ${property.ident} {
 <%def name="two_properties_shorthand(shorthand)">
     type Single = crate::properties::longhands::${shorthand.sub_properties[0].ident}::SpecifiedValue;
 
-    fn parse_value<'i, 't>(
+    fn parse_value(
         context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Longhands, ParseError<'i>> {
+        input: &mut Parser,
+    ) -> Result<Longhands, ParseError> {
         let first = <Single as crate::parser::Parse>::parse(context, input)?;
         let second =
             input.try_parse(|input| <Single as crate::parser::Parse>::parse(context, input)).unwrap_or_else(|_| first.clone());
@@ -728,11 +659,11 @@ pub mod ${property.ident} {
     use crate::values::generics::rect::Rect;
 
     type Single = crate::properties::longhands::${shorthand.sub_properties[0].ident}::SpecifiedValue;
-    fn parse_value<'i, 't>(
+    fn parse_value(
         context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Longhands, ParseError<'i>> {
-        let rect = Rect::parse_with(context, input, |c, i| -> Result<Single, ParseError<'i> > {
+        input: &mut Parser,
+    ) -> Result<Longhands, ParseError> {
+        let rect = Rect::parse_with(context, input, |c, i| -> Result<Single, ParseError > {
         % if shorthand.allow_quirks:
             Single::parse_quirky(c, i, crate::values::specified::AllowQuirks::Yes)
         % else:
@@ -762,10 +693,10 @@ pub mod ${property.ident} {
 </%def>
 
 <%def name="single_border_shorthand(shorthand)">
-    fn parse_value<'i, 't>(
+    fn parse_value(
         context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Longhands, ParseError<'i>> {
+        input: &mut Parser,
+    ) -> Result<Longhands, ParseError> {
         let (width, style, color) = crate::properties::shorthands::parse_border(context, input)?;
         Ok(crate::properties::shorthands::expanded! {
             ${shorthand.sub_properties[0].ident}: width,
@@ -788,10 +719,10 @@ pub mod ${property.ident} {
 
 <%def name="legacy_shorthand(shorthand)">
     type Value = crate::properties::longhands::${shorthand.sub_properties[0].ident}::SpecifiedValue;
-    fn parse_value<'i, 't>(
+    fn parse_value(
         context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Longhands, ParseError<'i>> {
+        input: &mut Parser,
+    ) -> Result<Longhands, ParseError> {
         let v = Value::parse_legacy(context, input)?;
         Ok(crate::properties::shorthands::expanded! {
             ${shorthand.sub_properties[0].ident}: v,

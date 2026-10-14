@@ -510,21 +510,25 @@ void PointerLockManager::SetLockedRemoteTarget(BrowserParent* aBrowserParent,
     return;
   }
 
+  if (nsCOMPtr<nsIDragService> dragService =
+          do_GetService("@mozilla.org/widget/dragservice;1")) {
+    dragService->Suppress();
+  }
+  presContext->EventStateManager()->StopTrackingDragGesture(true);
+
   MOZ_POINTERLOCK_LOG("Set locked remote target to 0x%p", aBrowserParent);
   sLockedRemoteTarget = aBrowserParent;
   PointerEventHandler::ReleaseAllPointerCaptureRemoteTarget();
-  if (StaticPrefs::dom_pointer_lock_reset_to_center_from_parent_enabled()) {
-    // Capture pointer to the top level browser element, so that mouse event can
-    // be always retargeted to the content when pointer lock is active, even if
-    // the pointer is out of the content area.
-    // XXX Now that we also capture the pointer in the parent process for
-    // pointer lock, we could potentially rely on the captured content for
-    // cross-process event dispatching instead of tracking the locked remote
-    // target separately.
-    PresShell::SetCapturingContent(element, CaptureFlags::PointerLock);
-    EventStateManager::RequestLockPointer(widget, presContext,
-                                          aUnadjustedMovement);
-  }
+  // Capture pointer to the top level browser element, so that mouse event can
+  // be always retargeted to the content when pointer lock is active, even if
+  // the pointer is out of the content area.
+  // XXX Now that we also capture the pointer in the parent process for
+  // pointer lock, we could potentially rely on the captured content for
+  // cross-process event dispatching instead of tracking the locked remote
+  // target separately.
+  PresShell::SetCapturingContent(element, CaptureFlags::PointerLock);
+  EventStateManager::RequestLockPointer(widget, presContext,
+                                        aUnadjustedMovement);
 }
 
 /* static */
@@ -539,17 +543,19 @@ void PointerLockManager::ReleaseLockedRemoteTarget(
 
     nsCOMPtr<nsIWidget> widget = aBrowserParent->GetTopLevelWidget();
     EventStateManager::ReleaseLockedPointer(widget);
+
+    if (nsCOMPtr<nsIDragService> dragService =
+            do_GetService("@mozilla.org/widget/dragservice;1")) {
+      dragService->Unsuppress();
+    }
   }
 }
 
 /* static */
 bool PointerLockManager::ShouldResetPointer() {
-  if (!StaticPrefs::dom_pointer_lock_reset_to_center_from_parent_enabled()) {
-    return IsLocked();
-  }
-
-  // If the pref is enabled, we should reset pointer position to center of the
-  // widget in parent process.
+  // Only the parent process repositions the pointer.
+  // Pointer lock might be held by a content process or a document in the parent
+  // process.
   return XRE_IsParentProcess() && (GetLockedRemoteTarget() || IsLocked());
 }
 

@@ -98,9 +98,9 @@ interface nsPIWindowWatcher : nsISupports
             (which is determined based on the JS stack and the value of
             aParent).  This is not guaranteed, however.
   */
-  [noscript]
+  [can_run_script, noscript]
   BrowsingContext openWindow2(in mozIDOMWindowProxy aParent, in nsIURI aUri,
-                              in ACString aName, in ACString aFeatures,
+                              in AString aName, in ACString aFeatures,
                               in UserActivationModifiersRef aModifiers,
                               in boolean aCalledFromScript,
                               in boolean aDialog,

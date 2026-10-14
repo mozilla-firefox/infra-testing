@@ -7,30 +7,31 @@
 use super::{
     rule::Descriptors as PropertyDescriptors,
     syntax::{
-        data_type::DataType, Component as SyntaxComponent, ComponentName, Descriptor, Multiplier,
+        Component as SyntaxComponent, ComponentName, Descriptor, Multiplier, data_type::DataType,
     },
 };
+use crate::FxHashMap;
 use crate::custom_properties::{AttrTaint, ComputedValue as ComputedPropertyValue};
 use crate::derives::*;
 use crate::parser::{Parse, ParserContext};
 use crate::properties;
-use crate::properties::{CSSWideKeyword, CustomDeclarationValue};
+use crate::properties::{CSSWideKeyword, CustomDeclarationValue, PropertyIdRef};
 use crate::stylesheets::{CssRuleType, Origin, UrlExtraData};
 use crate::values::{
+    CustomIdent,
     animated::{self, Animate, Procedure},
     computed::{self, ToComputedValue},
-    specified, CustomIdent,
+    specified,
 };
 use crate::{Namespace, Prefix};
 use cssparser::{BasicParseErrorKind, ParseErrorKind, Parser as CSSParser, TokenSerializationType};
-use rustc_hash::FxHashMap;
 use selectors::matching::QuirksMode;
 use servo_arc::Arc;
 use smallvec::SmallVec;
 use std::fmt::{self, Write};
 use style_traits::{
-    owned_str::OwnedStr, CssWriter, ParseError as StyleParseError, ParsingMode,
-    PropertySyntaxParseError, StyleParseErrorKind, ToCss,
+    CssWriter, ParseError as StyleParseError, ParsingMode, PropertySyntaxParseError,
+    StyleParseErrorKind, ToCss, owned_str::OwnedStr,
 };
 
 /// A single component of the computed value.
@@ -218,11 +219,9 @@ pub struct Value<Component> {
 }
 
 impl<Component: PartialEq> PartialEq for Value<Component> {
-    // Ignore the url_data field when comparing values for equality.
-    // attr_tainted is compared so the cascade doesn't treat a tainted
-    // value as equal to an untainted one, which could lose the taint.
+    // Ignore the url_data and tainting fields when comparing values for equality.
     fn eq(&self, other: &Self) -> bool {
-        self.v == other.v && self.attr_tainted == other.attr_tainted
+        self.v == other.v
     }
 }
 
@@ -315,14 +314,15 @@ pub type ComputedValue = Value<ComputedValueComponent>;
 impl SpecifiedValue {
     /// Convert a registered custom property to a Computed custom property value, given input and a
     /// property registration.
-    pub fn compute<'i, 't>(
-        input: &mut CSSParser<'i, 't>,
+    pub fn compute(
+        input: &mut CSSParser,
         registration: &PropertyDescriptors,
         namespaces: Option<&FxHashMap<Prefix, Namespace>>,
         url_data: &UrlExtraData,
         context: &computed::Context,
         allow_computationally_dependent: AllowComputationallyDependent,
         attr_taint: AttrTaint,
+        property_id: Option<PropertyIdRef>,
     ) -> Result<ComputedValue, ()> {
         debug_assert!(!registration.is_universal(), "Shouldn't be needed");
         let Some(ref syntax) = registration.syntax else {
@@ -335,6 +335,7 @@ impl SpecifiedValue {
             namespaces,
             allow_computationally_dependent,
             attr_taint,
+            property_id,
         ) else {
             return Err(());
         };
@@ -344,16 +345,17 @@ impl SpecifiedValue {
 
     /// Parse and validate a registered custom property value according to its syntax descriptor,
     /// and check for computational independence.
-    pub fn parse<'i, 't>(
-        mut input: &mut CSSParser<'i, 't>,
+    pub fn parse(
+        input: &mut CSSParser,
         syntax: &Descriptor,
         url_data: &UrlExtraData,
         namespaces: Option<&FxHashMap<Prefix, Namespace>>,
         allow_computationally_dependent: AllowComputationallyDependent,
         attr_taint: AttrTaint,
-    ) -> Result<Self, StyleParseError<'i>> {
+        property_id: Option<PropertyIdRef>,
+    ) -> Result<Self, StyleParseError> {
         if syntax.is_universal() {
-            let parsed = ComputedPropertyValue::parse(&mut input, namespaces, url_data)?;
+            let parsed = ComputedPropertyValue::parse(input, namespaces, url_data)?;
             return Ok(Self::new(
                 ValueInner::Universal(Arc::new(parsed)),
                 url_data.clone(),
@@ -365,10 +367,11 @@ impl SpecifiedValue {
         {
             let mut parser = Parser::new(syntax, &mut values, &mut multiplier);
             parser.parse(
-                &mut input,
+                input,
                 url_data,
                 allow_computationally_dependent,
                 attr_taint,
+                property_id,
             )?;
         }
         let v = if let Some(multiplier) = multiplier {
@@ -448,19 +451,20 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse<'i, 't>(
+    fn parse(
         &mut self,
-        input: &mut CSSParser<'i, 't>,
+        input: &mut CSSParser,
         url_data: &UrlExtraData,
         allow_computationally_dependent: AllowComputationallyDependent,
         attr_taint: AttrTaint,
-    ) -> Result<(), StyleParseError<'i>> {
+        property_id: Option<PropertyIdRef>,
+    ) -> Result<(), StyleParseError> {
         use self::AllowComputationallyDependent::*;
         let parsing_mode = match allow_computationally_dependent {
             No => ParsingMode::DISALLOW_COMPUTATIONALLY_DEPENDENT,
             Yes => ParsingMode::DEFAULT,
         };
-        let ref context = ParserContext::new(
+        let mut context = ParserContext::new(
             Origin::Author,
             url_data,
             Some(CssRuleType::Style),
@@ -471,28 +475,37 @@ impl<'a> Parser<'a> {
             None,
             attr_taint,
         );
-        for component in self.syntax.components.iter() {
-            let result = input.try_parse(|input| {
-                input.parse_entirely(|input| {
-                    Self::parse_value(context, input, &component.unpremultiplied())
-                })
-            });
-            let Ok(values) = result else { continue };
-            self.output.extend(values);
-            *self.output_multiplier = component.multiplier();
-            break;
+
+        let mut parse_components = |context: &ParserContext| {
+            for component in self.syntax.components.iter() {
+                let result = input.try_parse(|input| {
+                    input.parse_entirely(|input| {
+                        Self::parse_value(context, input, &component.unpremultiplied())
+                    })
+                });
+                let Ok(values) = result else { continue };
+                self.output.extend(values);
+                *self.output_multiplier = component.multiplier();
+                break;
+            }
+        };
+        match property_id {
+            Some(id) => context.with_property_declaration(id, parse_components),
+            None => parse_components(&context),
         }
         if self.output.is_empty() {
-            return Err(input.new_error(BasicParseErrorKind::EndOfInput));
+            return Err(StyleParseError::from_basic_kind(
+                BasicParseErrorKind::EndOfInput,
+            ));
         }
         Ok(())
     }
 
-    fn parse_value<'i, 't>(
+    fn parse_value(
         context: &ParserContext,
-        input: &mut CSSParser<'i, 't>,
+        input: &mut CSSParser,
         component: &SyntaxComponent,
-    ) -> Result<SmallComponentVec, StyleParseError<'i>> {
+    ) -> Result<SmallComponentVec, StyleParseError> {
         let mut values = SmallComponentVec::new();
         values.push(Self::parse_component_without_multiplier(
             context, input, component,
@@ -513,17 +526,19 @@ impl<'a> Parser<'a> {
         Ok(values)
     }
 
-    fn parse_component_without_multiplier<'i, 't>(
+    fn parse_component_without_multiplier(
         context: &ParserContext,
-        input: &mut CSSParser<'i, 't>,
+        input: &mut CSSParser,
         component: &SyntaxComponent,
-    ) -> Result<SpecifiedValueComponent, StyleParseError<'i>> {
+    ) -> Result<SpecifiedValueComponent, StyleParseError> {
         let data_type = match component.name() {
             ComponentName::DataType(ty) => ty,
-            ComponentName::Ident(ref name) => {
+            ComponentName::Ident(name) => {
                 let ident = CustomIdent::parse(input, &[])?;
                 if ident != *name {
-                    return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+                    return Err(StyleParseError::custom(
+                        StyleParseErrorKind::UnspecifiedError,
+                    ));
                 }
                 return Ok(SpecifiedValueComponent::CustomIdent(ident));
             },
@@ -574,11 +589,11 @@ impl<'a> Parser<'a> {
                 let mut values = vec![];
                 let Some(multiplier) = component.unpremultiplied().multiplier() else {
                     debug_assert!(false, "Unpremultiplied <transform-list> had no multiplier?");
-                    return Err(
-                        input.new_custom_error(StyleParseErrorKind::PropertySyntaxField(
+                    return Err(StyleParseError::custom(
+                        StyleParseErrorKind::PropertySyntaxField(
                             PropertySyntaxParseError::UnexpectedEOF,
-                        )),
-                    );
+                        ),
+                    ));
                 };
                 debug_assert_eq!(multiplier, Multiplier::Space);
                 loop {
@@ -605,7 +620,7 @@ impl<'a> Parser<'a> {
         Ok(value)
     }
 
-    fn expect_multiplier_yielded_eof_error<'i>(result: &Result<(), StyleParseError<'i>>) -> bool {
+    fn expect_multiplier_yielded_eof_error(result: &Result<(), StyleParseError>) -> bool {
         matches!(
             result,
             Err(StyleParseError {
@@ -615,16 +630,18 @@ impl<'a> Parser<'a> {
         )
     }
 
-    fn expect_multiplier<'i, 't>(
-        input: &mut CSSParser<'i, 't>,
+    fn expect_multiplier(
+        input: &mut CSSParser,
         multiplier: &Multiplier,
-    ) -> Result<(), StyleParseError<'i>> {
+    ) -> Result<(), StyleParseError> {
         match multiplier {
             Multiplier::Space => {
                 input.expect_whitespace()?;
                 if input.is_exhausted() {
                     // If there was trailing whitespace, do not interpret it as a multiplier
-                    return Err(input.new_error(BasicParseErrorKind::EndOfInput));
+                    return Err(StyleParseError::from_basic_kind(
+                        BasicParseErrorKind::EndOfInput,
+                    ));
                 }
                 Ok(())
             },
@@ -686,8 +703,7 @@ impl CustomAnimatedValue {
                     // FIXME: Do we need to perform substitution here somehow?
                     ComputedValue::universal(Arc::clone(value))
                 } else {
-                    let mut input = cssparser::ParserInput::new(&value.css);
-                    let mut input = CSSParser::new(&mut input);
+                    let mut input = CSSParser::new(&value.css);
                     SpecifiedValue::compute(
                         &mut input,
                         registration,
@@ -696,6 +712,7 @@ impl CustomAnimatedValue {
                         context,
                         AllowComputationallyDependent::Yes,
                         /* attr_taint */ Default::default(),
+                        Some(PropertyIdRef::from(&declaration.name)),
                     )
                     .unwrap_or_else(|_| ComputedValue::universal(Arc::clone(value)))
                 }

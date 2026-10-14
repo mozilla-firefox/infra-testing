@@ -58,6 +58,19 @@ bool StackScriptEntriesCollapser(const char* aStackEntry,
           !strcmp(aStackEntry, "(content script)"));
 }
 
+namespace geckoprofiler::markers {
+
+struct HangMarker : public mozilla::BaseMarkerType<HangMarker> {
+  static constexpr const char* Name = "BHR-detected hang";
+  using MS = mozilla::MarkerSchema;
+  static constexpr MS::Location Locations[] = {
+      MS::Location::MarkerChart,
+      MS::Location::MarkerTable,
+  };
+};
+
+}  // namespace geckoprofiler::markers
+
 namespace mozilla {
 
 /**
@@ -415,10 +428,10 @@ void BackgroundHangThread::ReportHang(TimeDuration aHangTime,
   // Recovered from a hang; called on the monitor thread
   // mManager->mLock IS locked
 
-  HangDetails hangDetails(aHangTime,
-                          nsDependentCString(XRE_GetProcessTypeString()),
-                          NOT_REMOTE_TYPE, mThreadName, mRunnableName,
-                          std::move(mHangStack), std::move(mAnnotations));
+  HangDetails hangDetails(
+      aHangTime, nsDependentCString(XRE_GetProcessTypeString()),
+      dom::RemoteType::NotRemote().Stringify(), mThreadName, mRunnableName,
+      std::move(mHangStack), std::move(mAnnotations));
 
   PersistedToDisk persistedToDisk = aPersistedToDisk;
   if (aPersistedToDisk == PersistedToDisk::Yes && XRE_IsParentProcess() &&
@@ -444,25 +457,12 @@ void BackgroundHangThread::ReportHang(TimeDuration aHangTime,
 
   if (profiler_thread_is_being_profiled_for_markers(
           mStackHelper.GetThreadId())) {
-    struct HangMarker {
-      static constexpr Span<const char> MarkerTypeName() {
-        return MakeStringSpan("BHR-detected hang");
-      }
-      static void StreamJSONMarkerData(
-          baseprofiler::SpliceableJSONWriter& aWriter) {}
-      static MarkerSchema MarkerTypeDisplay() {
-        using MS = MarkerSchema;
-        MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
-        return schema;
-      }
-    };
-
     const TimeStamp endTime = TimeStamp::Now();
     const TimeStamp startTime = endTime - aHangTime;
     profiler_add_marker("BHR-detected hang", geckoprofiler::category::OTHER,
                         {MarkerThreadId(mStackHelper.GetThreadId()),
                          MarkerTiming::Interval(startTime, endTime)},
-                        HangMarker{});
+                        geckoprofiler::markers::HangMarker{});
   }
 }
 

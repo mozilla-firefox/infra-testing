@@ -20,6 +20,7 @@ const { IPPChannelFilter } = ChromeUtils.importESModule(
 const TIMEOUT_PREF = "browser.ipProtection.guardian.timeout";
 const RETRY_AFTER_PREF = "browser.ipProtection.guardian.retryAfter";
 const ATTEMPT_TIMEOUT_PREF = "browser.ipProtection.guardian.attemptTimeout";
+const MODE_PREF = "browser.ipProtection.mode";
 
 /**
  * Returns a promise that never resolves and rejects with the signal's reason
@@ -418,6 +419,52 @@ add_task(async function test_IPPProxyManager_non_string_error_normalized() {
   await resetPromise;
 
   IPProtectionService.uninit();
+});
+
+/**
+ * Tests the source reported with an error state. FOG is reset between the
+ * cases because each one asserts on the single event it just recorded.
+ */
+add_task(async function test_IPPProxyManager_error_source() {
+  const source = () =>
+    Glean.ipprotection.error.testGetValue()?.at(-1).extra.source;
+
+  Services.fog.testResetFOG();
+  const error = new Error("boom");
+  error.stack = [
+    "activate@moz-src:///toolkit/components/ipprotection/IPPProxyManager.sys.mjs:1:2",
+    "onClick@https://example.com/page.js:3:4",
+    "run@resource://gre/modules/Foo.sys.mjs:5:6",
+    "start@chrome://browser/content/ipprotection/ipprotection-content.mjs:7:8",
+  ].join("\n");
+  IPPProxyManager.setErrorState(error);
+  Assert.equal(
+    source(),
+    [
+      "activate@IPPProxyManager.sys.mjs:1:2",
+      "run@Foo.sys.mjs:5:6",
+      "start@ipprotection-content.mjs:7:8",
+    ].join("\n"),
+    "A thrown error reports its privileged frames, without paths"
+  );
+
+  Services.fog.testResetFOG();
+  IPPProxyManager.setErrorState({ code: 500 });
+  Assert.stringContains(
+    source() ?? "",
+    "@IPPProxyManager.sys.mjs:",
+    "An error that was never thrown reports where we handled it"
+  );
+
+  Services.fog.testResetFOG();
+  IPPProxyManager.setErrorState(ERRORS.SERVER_NOT_FOUND);
+  Assert.equal(
+    source(),
+    "ProxyManager",
+    "One of our error codes reports the module"
+  );
+
+  Services.fog.testResetFOG();
 });
 
 /**
@@ -2156,6 +2203,223 @@ add_task(async function test_IPPProxyManager_switch_no_server_found() {
   );
 
   await IPPProxyManager.stop();
+  IPProtectionService.uninit();
+  sandbox.restore();
+});
+
+/**
+ * A start() issued while an activation is running must join it rather than
+ * open a second one racing for the same channel filter.
+ */
+add_task(
+  async function test_IPPProxyManager_start_joins_activation_in_flight() {
+    await IPPProxyManager.reset();
+    await putServerInRemoteSettings();
+    setupStubs();
+    await initServiceToReady();
+    await IPProtectionServerlist.maybeFetchList();
+
+    const sandbox = sinon.createSandbox();
+    const fetching = Promise.withResolvers();
+    const fetchingList = Promise.withResolvers();
+    const fetchList = sandbox
+      .stub(IPProtectionServerlist, "maybeFetchList")
+      .callsFake(() => {
+        fetching.resolve();
+        return fetchingList.promise;
+      });
+
+    const first = IPPProxyManager.start(true, false);
+    await fetching.promise;
+
+    const second = IPPProxyManager.start(false, false);
+    Assert.equal(
+      fetchList.callCount,
+      1,
+      "the second start() joins the activation instead of opening another"
+    );
+
+    const active = waitForProxyState(IPPProxyStates.ACTIVE);
+    fetchingList.resolve();
+    Assert.deepEqual(
+      await Promise.all([first, second]),
+      [{ started: true }, { started: true }],
+      "both callers get the result of the one activation"
+    );
+    await active;
+
+    await IPPProxyManager.stop();
+    IPProtectionService.uninit();
+    sandbox.restore();
+  }
+);
+
+add_task(async function test_IPPProxyManager_modes() {
+  await IPPProxyManager.reset();
+  await putServerInRemoteSettings();
+  setupStubs();
+  await initServiceToReady();
+  registerCleanupFunction(() => Services.prefs.clearUserPref(MODE_PREF));
+
+  const connect = async mode => {
+    const activeEvent = waitForProxyState(IPPProxyStates.ACTIVE);
+    await IPPProxyManager.start(true, false, undefined, mode);
+    await activeEvent;
+  };
+
+  Assert.deepEqual(
+    IPPProxyManager.setMode(IPPMode.MODE_TRACKER),
+    { changed: false, error: ERRORS.NOT_READY },
+    "setMode should refuse while the proxy is not active"
+  );
+
+  Services.prefs.setIntPref(MODE_PREF, IPPMode.MODE_INCLUSION);
+  await connect();
+
+  Assert.equal(
+    IPPProxyManager.mode,
+    IPPMode.MODE_INCLUSION,
+    "the mode pref should seed a connection"
+  );
+  Assert.equal(
+    IPPProxyManager.channelFilter().mode,
+    IPPMode.MODE_INCLUSION,
+    "the channel filter should be routing in the seeded mode"
+  );
+
+  await IPPProxyManager.stop();
+
+  Assert.equal(
+    IPPProxyManager.mode,
+    null,
+    "a stopped proxy should have no mode"
+  );
+
+  await connect(IPPMode.MODE_TRACKER);
+
+  Assert.equal(
+    IPPProxyManager.mode,
+    IPPMode.MODE_TRACKER,
+    "a mode passed to start() should beat the pref"
+  );
+
+  const sandbox = sinon.createSandbox();
+  const suspendSpy = sandbox.spy(IPPChannelFilter.prototype, "suspend");
+  const initSpy = sandbox.spy(IPPChannelFilter.prototype, "initialize");
+  const modeEvent = waitForEvent(
+    IPPProxyManager,
+    "IPPProxyManager:ModeChanged"
+  );
+
+  Assert.deepEqual(
+    IPPProxyManager.setMode(42),
+    { changed: true },
+    "setMode should report success"
+  );
+  const { detail } = await modeEvent;
+
+  Assert.equal(
+    detail.mode,
+    IPPMode.MODE_FULL,
+    "an unknown mode should fall back to MODE_FULL and be announced as such"
+  );
+  Assert.equal(
+    IPPProxyManager.channelFilter().mode,
+    IPPMode.MODE_FULL,
+    "the live channel filter should have the new mode"
+  );
+  Assert.ok(
+    suspendSpy.notCalled && initSpy.notCalled,
+    "a mode change should not re-point the connection"
+  );
+
+  await IPPProxyManager.stop();
+  IPProtectionService.uninit();
+  sandbox.restore();
+});
+
+/**
+ * Tests that start() before the service is READY holds traffic in the asked
+ * mode and consults nothing until the service arrives, then completes the
+ * activation on its own. It starts before the service init, as a helper does,
+ * so the cached non-READY state the init publishes lands on the wait.
+ */
+add_task(async function test_IPPProxyManager_start_waits_for_the_service() {
+  await IPPProxyManager.reset();
+  setupStubs({ signedIn: false });
+  // Reopens the startup cache window the manifest closes for every test. Both
+  // getters are shadowed: the real `state` throws once startup has completed.
+  Object.defineProperty(IPPStartupCache, "isStartupCompleted", {
+    get: () => false,
+    configurable: true,
+  });
+  Object.defineProperty(IPPStartupCache, "state", {
+    get: () => IPProtectionStates.UNAUTHENTICATED,
+    configurable: true,
+  });
+  const sandbox = sinon.createSandbox();
+  const fetchList = sandbox.spy(IPProtectionServerlist, "maybeFetchList");
+  const aboutToStart = sandbox.spy(IPPDummyAuthProvider, "aboutToStart");
+
+  const states = [];
+  const record = () =>
+    states.push({
+      state: IPPProxyManager.state,
+      connected: !!IPPProxyManager.channelFilter()?.proxyInfo,
+    });
+  IPPProxyManager.addEventListener("IPPProxyManager:StateChanged", record);
+
+  const startPromise = IPPProxyManager.start(
+    false,
+    false,
+    undefined,
+    IPPMode.MODE_INCLUSION
+  );
+  IPProtectionService.init();
+
+  Assert.equal(
+    IPPProxyManager.state,
+    IPPProxyStates.ACTIVATING,
+    "The wait should read as activating"
+  );
+  Assert.ok(
+    IPPProxyManager.channelFilter()?.active,
+    "The filter should hold traffic while the service is not ready"
+  );
+  Assert.equal(
+    IPPProxyManager.channelFilter().mode,
+    IPPMode.MODE_INCLUSION,
+    "The filter should hold traffic for the mode this activation asked for"
+  );
+  Assert.ok(
+    !fetchList.called && !aboutToStart.called,
+    "Neither the server list nor the auth provider should be consulted yet"
+  );
+
+  setupStubs({ signedIn: true });
+  delete IPPStartupCache.isStartupCompleted;
+  delete IPPStartupCache.state;
+  IPProtectionService.updateState();
+  await IPProtectionService.initOnStartupCompleted();
+  const result = await startPromise;
+
+  Assert.ok(result.started, "The activation should complete on its own");
+  Assert.ok(
+    fetchList.called && aboutToStart.called,
+    "The server list and the auth provider should be consulted once ready"
+  );
+  Assert.ok(IPPProxyManager.hasValidProxyPass, "A pass should be fetched");
+  IPPProxyManager.removeEventListener("IPPProxyManager:StateChanged", record);
+  Assert.deepEqual(
+    states,
+    [
+      { state: IPPProxyStates.ACTIVATING, connected: false },
+      { state: IPPProxyStates.ACTIVE, connected: true },
+    ],
+    "The activation should own the state from the ask to the connection"
+  );
+
+  await IPPProxyManager.stop(false);
   IPProtectionService.uninit();
   sandbox.restore();
 });

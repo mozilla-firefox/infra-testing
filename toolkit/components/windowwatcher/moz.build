@@ -21,7 +21,6 @@ XPIDL_MODULE = "windowwatcher"
 
 EXPORTS += [
     "nsOpenWindowInfo.h",
-    "nsPromptUtils.h",
     "nsWindowWatcher.h",
 ]
 
@@ -40,3 +39,8 @@ LOCAL_INCLUDES += [
 ]
 
 include("/ipc/chromium/chromium-config.mozbuild")
+
+SOURCE_HEADERS += [
+    "nsAutoWindowStateHelper.h",
+    "nsDialogParamBlock.h",
+]

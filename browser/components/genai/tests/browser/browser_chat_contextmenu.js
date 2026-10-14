@@ -28,12 +28,6 @@ async function waitMenuState(menu, shouldHide, description) {
   }, description);
 }
 
-add_setup(async function () {
-  await SpecialPowers.pushPrefEnv({
-    set: [["test.wait300msAfterTabSwitch", true]],
-  });
-});
-
 registerCleanupFunction(() => {
   Services.prefs.clearUserPref("browser.ml.chat.page.menuBadge");
 });
@@ -161,7 +155,7 @@ add_task(async function test_visible_in_smart_window() {
   });
 
   const { GenAI } = ChromeUtils.importESModule(
-    "resource:///modules/GenAI.sys.mjs"
+    "moz-src:///browser/components/genai/GenAI.sys.mjs"
   );
   const menu = document.getElementById("context-ask-chat");
   const aiWindowDoc = {
@@ -229,7 +223,7 @@ add_task(async function test_smart_window_sidebar_ask_chat() {
   });
 
   const { GenAI } = ChromeUtils.importESModule(
-    "resource:///modules/GenAI.sys.mjs"
+    "moz-src:///browser/components/genai/GenAI.sys.mjs"
   );
   const { sinon } = ChromeUtils.importESModule(
     "resource://testing-common/Sinon.sys.mjs"

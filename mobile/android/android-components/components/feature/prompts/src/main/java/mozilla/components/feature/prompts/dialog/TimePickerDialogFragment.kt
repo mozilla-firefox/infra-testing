@@ -20,6 +20,7 @@ import androidx.annotation.VisibleForTesting
 import androidx.annotation.VisibleForTesting.Companion.PRIVATE
 import androidx.appcompat.app.AlertDialog
 import com.google.android.material.datepicker.CalendarConstraints
+import com.google.android.material.datepicker.CompositeDateValidator
 import com.google.android.material.datepicker.DateValidatorPointBackward
 import com.google.android.material.datepicker.DateValidatorPointForward
 import com.google.android.material.datepicker.MaterialDatePicker
@@ -154,14 +155,17 @@ internal class TimePickerDialogFragment :
     }
 
     @VisibleForTesting
-    internal fun buildCalendarConstraints(): CalendarConstraints =
-        CalendarConstraints.Builder()
-            .apply {
-                // TODO Bug 2063227 - Date picker ignores the min attribute when the input also specifies max
-                minimumDate?.let { setValidator(DateValidatorPointForward.from(it.toLocalDayStartAsUtcMillis())) }
-                maximumDate?.let { setValidator(DateValidatorPointBackward.before(it.toLocalDayStartAsUtcMillis())) }
-            }
-            .build()
+    internal fun buildCalendarConstraints(): CalendarConstraints {
+        val validators = buildList {
+            minimumDate?.let { add(DateValidatorPointForward.from(it.toLocalDayStartAsUtcMillis())) }
+            maximumDate?.let { add(DateValidatorPointBackward.before(it.toLocalDayStartAsUtcMillis())) }
+        }
+        val builder = CalendarConstraints.Builder()
+        if (validators.isNotEmpty()) {
+            builder.setValidator(CompositeDateValidator.allOf(validators))
+        }
+        return builder.build()
+    }
 
     private fun createMaterialDatePickerDialog(isDateTimePicker: Boolean = false) {
         val initialUtcTime = initialDate.time + TimeZone.getDefault().getOffset(initialDate.time)

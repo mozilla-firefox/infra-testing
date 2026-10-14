@@ -6,11 +6,6 @@
 
 use std::ptr;
 
-use pkcs11_bindings::{
-    CK_FALSE, CKA_VALUE, CKM_EC_EDWARDS_KEY_PAIR_GEN, CKM_EC_KEY_PAIR_GEN,
-    CKM_EC_MONTGOMERY_KEY_PAIR_GEN,
-};
-
 // use std::ptr::null;
 // use std::ptr::null_mut;
 use crate::{
@@ -18,7 +13,10 @@ use crate::{
     err::{Error, IntoResult as _, secstatus_to_res},
     init,
     p11::{
-        KU_ALL, PK11_ExportDERPrivateKeyInfo, PK11_GenerateKeyPair,
+        CK_INVALID_HANDLE, CK_MECHANISM_TYPE, CKA_SIGN, CKA_VALUE, CKD_NULL,
+        CKM_EC_EDWARDS_KEY_PAIR_GEN, CKM_EC_KEY_PAIR_GEN, CKM_EC_MONTGOMERY_KEY_PAIR_GEN,
+        CKM_ECDH1_DERIVE, CKM_ECDSA, CKM_EDDSA, CKM_SHA512_HMAC, KU_ALL,
+        PK11_ExportDERPrivateKeyInfo, PK11_GenerateKeyPair,
         PK11_ImportDERPrivateKeyInfoAndReturnKey, PK11_ImportPublicKey, PK11_PubDeriveWithKDF,
         PK11_ReadRawAttribute, PK11ObjectType::PK11_TypePrivKey,
         SECKEY_DecodeDERSubjectPublicKeyInfo, Slot,
@@ -42,6 +40,7 @@ pub enum EcCurve {
 pub type EcdhPublicKey = PublicKey;
 pub type EcdhPrivateKey = PrivateKey;
 
+#[derive(Clone, Debug)]
 pub struct EcdhKeypair {
     pub public: EcdhPublicKey,
     pub private: EcdhPrivateKey,
@@ -66,18 +65,15 @@ pub const OID_EC_PUBLIC_KEY_BYTES: &[u8] = &[
     /* RFC 5480 (id-ecPublicKey) */
     0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01,
 ];
-pub const OID_SECP256R1_BYTES: &[u8] = &[
-    /* RFC 5480 (secp256r1) */
-    0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07,
-];
-pub const OID_SECP384R1_BYTES: &[u8] = &[
-    /* RFC 5480 (secp384r1) */
-    0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x34,
-];
-pub const OID_SECP521R1_BYTES: &[u8] = &[
-    /* RFC 5480 (secp521r1) */
-    0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x35,
-];
+
+/// OID per RFC 5480 (secp256r1)
+pub const OID_SECP256R1_BYTES: &[u8] = &[0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07];
+
+/// OID per RFC 5480 (secp384r1)
+pub const OID_SECP384R1_BYTES: &[u8] = &[0x2b, 0x81, 0x04, 0x00, 0x22];
+
+/// OID per RFC 5480 (secp521r1)
+pub const OID_SECP521R1_BYTES: &[u8] = &[0x2b, 0x81, 0x04, 0x00, 0x23];
 
 pub const OID_ED25519_BYTES: &[u8] = &[/* RFC 8410 (id-ed25519) */ 0x2b, 0x65, 0x70];
 pub const OID_RS256_BYTES: &[u8] = &[
@@ -91,11 +87,9 @@ pub const OID_X25519_BYTES: &[u8] = &[
     0x2b, 0x06, 0x01, 0x04, 0x01, 0xDA, 0x47, 0x0F, 0x01,
 ];
 
+#[deprecated = "use der::object_id"]
 pub fn object_id(val: &[u8]) -> Result<Vec<u8>, Error> {
-    let mut out = Vec::with_capacity(der::MAX_TAG_AND_LENGTH_BYTES + val.len());
-    der::write_tag_and_length(&mut out, der::TAG_OBJECT_ID, val.len())?;
-    out.extend_from_slice(val);
-    Ok(out)
+    der::object_id(val)
 }
 
 fn ec_curve_to_oid(alg: &EcCurve) -> Vec<u8> {
@@ -108,7 +102,7 @@ fn ec_curve_to_oid(alg: &EcCurve) -> Vec<u8> {
     }
 }
 
-const fn ec_curve_to_ckm(alg: &EcCurve) -> pkcs11_bindings::CK_MECHANISM_TYPE {
+const fn ec_curve_to_ckm(alg: &EcCurve) -> CK_MECHANISM_TYPE {
     match alg {
         EcCurve::P256 | EcCurve::P384 | EcCurve::P521 => CKM_EC_KEY_PAIR_GEN,
         EcCurve::Ed25519 => CKM_EC_EDWARDS_KEY_PAIR_GEN,
@@ -125,7 +119,7 @@ pub fn ecdh_keygen(curve: &EcCurve) -> Result<EcdhKeypair, Error> {
 
     // Get the OID for the Curve
     let curve_oid = ec_curve_to_oid(curve);
-    let oid_bytes = object_id(&curve_oid)?;
+    let oid_bytes = der::object_id(&curve_oid)?;
     let mut oid = SECItemBorrowed::wrap(&oid_bytes)?;
     let oid_ptr: *mut SECItem = oid.as_mut();
 
@@ -145,8 +139,8 @@ pub fn ecdh_keygen(curve: &EcCurve) -> Result<EcdhKeypair, Error> {
             ckm,
             oid_ptr.cast(),
             &raw mut pk_ptr,
-            CK_FALSE.into(),
-            CK_FALSE.into(),
+            PRBool::from(false),
+            PRBool::from(false),
             ptr::null_mut(),
         )
         .into_result()?;
@@ -183,7 +177,7 @@ pub fn import_ec_public_key_from_spki(spki: &[u8]) -> Result<PublicKey, Error> {
                 .into_result()?;
 
         let handle = PK11_ImportPublicKey(*slot, *pk, PRBool::from(false));
-        if handle == pkcs11_bindings::CK_INVALID_HANDLE {
+        if handle == CK_INVALID_HANDLE {
             return Err(Error::InvalidInput);
         }
 
@@ -223,9 +217,9 @@ pub fn import_ec_private_key_pkcs8(pki: &[u8]) -> Result<PrivateKey, Error> {
 pub fn export_ec_private_key_from_raw(key: &PrivateKey) -> Result<Vec<u8>, Error> {
     init()?;
     let mut key_item = SECItemMut::make_empty();
-    unsafe {
-        PK11_ReadRawAttribute(PK11_TypePrivKey, key.cast(), CKA_VALUE, key_item.as_mut());
-    }
+    secstatus_to_res(unsafe {
+        PK11_ReadRawAttribute(PK11_TypePrivKey, key.cast(), CKA_VALUE, key_item.as_mut())
+    })?;
     Ok(key_item.as_slice().to_owned())
 }
 
@@ -238,11 +232,11 @@ pub fn ecdh(sk: &PrivateKey, pk: &PublicKey) -> Result<Vec<u8>, Error> {
             0,
             ptr::null_mut(),
             ptr::null_mut(),
-            pkcs11_bindings::CKM_ECDH1_DERIVE,
-            pkcs11_bindings::CKM_SHA512_HMAC,
-            pkcs11_bindings::CKA_SIGN,
+            CKM_ECDH1_DERIVE,
+            CKM_SHA512_HMAC,
+            CKA_SIGN,
             0,
-            pkcs11_bindings::CKD_NULL,
+            CKD_NULL,
             ptr::null_mut(),
             ptr::null_mut(),
         )
@@ -264,7 +258,7 @@ pub fn convert_to_public(sk: &PrivateKey) -> Result<PublicKey, Error> {
 pub fn sign(
     private_key: &PrivateKey,
     data: &[u8],
-    mechanism: std::os::raw::c_ulong,
+    mechanism: CK_MECHANISM_TYPE,
 ) -> Result<Vec<u8>, Error> {
     init()?;
     let data_signature = vec![0u8; 0x40];
@@ -285,23 +279,19 @@ pub fn sign(
     }
 }
 
-#[allow(clippy::allow_attributes)]
-#[allow(clippy::useless_conversion)]
 pub fn sign_ecdsa(private_key: &PrivateKey, data: &[u8]) -> Result<Vec<u8>, Error> {
-    sign(private_key, data, crate::p11::CKM_ECDSA.into())
+    sign(private_key, data, CKM_ECDSA)
 }
 
-#[allow(clippy::allow_attributes)]
-#[allow(clippy::useless_conversion)]
 pub fn sign_eddsa(private_key: &PrivateKey, data: &[u8]) -> Result<Vec<u8>, Error> {
-    sign(private_key, data, crate::p11::CKM_EDDSA.into())
+    sign(private_key, data, CKM_EDDSA)
 }
 
 pub fn verify(
     public_key: &PublicKey,
     data: &[u8],
     signature: &[u8],
-    mechanism: std::os::raw::c_ulong,
+    mechanism: CK_MECHANISM_TYPE,
 ) -> Result<bool, Error> {
     init()?;
     unsafe {
@@ -324,14 +314,10 @@ pub fn verify(
     }
 }
 
-#[allow(clippy::allow_attributes)]
-#[allow(clippy::useless_conversion)]
 pub fn verify_ecdsa(public_key: &PublicKey, data: &[u8], signature: &[u8]) -> Result<bool, Error> {
-    verify(public_key, data, signature, crate::p11::CKM_ECDSA.into())
+    verify(public_key, data, signature, CKM_ECDSA)
 }
 
-#[allow(clippy::allow_attributes)]
-#[allow(clippy::useless_conversion)]
 pub fn verify_eddsa(public_key: &PublicKey, data: &[u8], signature: &[u8]) -> Result<bool, Error> {
-    verify(public_key, data, signature, crate::p11::CKM_EDDSA.into())
+    verify(public_key, data, signature, CKM_EDDSA)
 }

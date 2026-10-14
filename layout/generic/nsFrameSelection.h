@@ -29,7 +29,9 @@
 #include "nsISelectionListener.h"
 #include "nsITableCellLayout.h"
 
-class nsRange;
+namespace mozilla::dom {
+class Range;
+}  // namespace mozilla::dom
 
 #define BIDI_LEVEL_UNDEFINED mozilla::intl::BidiEmbeddingLevel(0x80)
 
@@ -49,6 +51,19 @@ struct SelectionDetails {
     while (next) {
       next = std::move(next->mNext);
     }
+  }
+
+  friend auto format_as(const SelectionDetails& aDetails) {
+    return fmt::format(
+        "{{ mStart={}, mSelectionType={} }}",
+        aDetails.mStart == aDetails.mEnd
+            ? fmt::format("mEnd={}", aDetails.mStart)
+            : fmt::format("{}, mEnd={}", aDetails.mStart, aDetails.mEnd),
+        aDetails.mSelectionType);
+  }
+  friend std::ostream& operator<<(std::ostream& aStream,
+                                  const SelectionDetails& aDetails) {
+    return aStream << format_as(aDetails);
   }
 
   int32_t mStart;
@@ -1251,7 +1266,7 @@ class nsFrameSelection final {
                                  int32_t& aColIndex);
 
   [[nodiscard]] static nsIContent* GetFirstCellNodeInRange(
-      const nsRange* aRange);
+      const mozilla::dom::Range* aRange);
   // Returns non-null table if in same table, null otherwise
   [[nodiscard]] static nsIContent* IsInSameTable(const nsIContent* aContent1,
                                                  const nsIContent* aContent2);
@@ -1272,12 +1287,14 @@ class nsFrameSelection final {
     // Get our first range, if its first selected node is a cell.  If this does
     // not return null, then the first node in the returned range is a cell
     // (according to GetFirstCellNodeInRange).
-    nsRange* GetFirstCellRange(const mozilla::dom::Selection& aNormalSelection);
+    mozilla::dom::Range* GetFirstCellRange(
+        const mozilla::dom::Selection& aNormalSelection);
 
     // Get our next range, if its first selected node is a cell.  If this does
     // not return null, then the first node in the returned range is a cell
     // (according to GetFirstCellNodeInRange).
-    nsRange* GetNextCellRange(const mozilla::dom::Selection& aNormalSelection);
+    mozilla::dom::Range* GetNextCellRange(
+        const mozilla::dom::Selection& aNormalSelection);
 
     [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
     HandleSelection(nsINode* aParentContent, int32_t aContentOffset,
@@ -1363,7 +1380,7 @@ class nsFrameSelection final {
         const mozilla::dom::Selection& aNormalSelection,
         nsSelectionAmount aAmount);
 
-    RefPtr<nsRange> mRange;
+    RefPtr<mozilla::dom::Range> mRange;
     nsSelectionAmount mAmount = eSelectNoAmount;
   };
 

@@ -662,11 +662,15 @@ public class GeckoSessionTestRule implements TestRule {
       return mExternalDelegates;
     }
 
-    /** Generate a JS function to set new prefs and return a set of saved prefs. */
+    /**
+     * Generate a JS function to set new prefs and return a set of saved prefs. This and
+     * restorePrefs() use the harness default timeout, not a test's {@link TimeoutMillis}.
+     */
     public void setPrefs(final @NonNull Map<String, ?> prefs) {
       mOldPrefs =
           (JSONObject)
               webExtensionApiCall(
+                  null,
                   "SetPrefs",
                   args -> {
                     final JSONObject existingPrefs =
@@ -686,7 +690,8 @@ public class GeckoSessionTestRule implements TestRule {
 
                     args.put("oldPrefs", existingPrefs);
                     args.put("newPrefs", newPrefs);
-                  });
+                  },
+                  env.getDefaultTimeoutMillis());
     }
 
     /** Generate a JS function to set new prefs and reset a set of saved prefs. */
@@ -696,11 +701,13 @@ public class GeckoSessionTestRule implements TestRule {
       }
 
       webExtensionApiCall(
+          null,
           "RestorePrefs",
           args -> {
             args.put("oldPrefs", mOldPrefs);
             mOldPrefs = null;
-          });
+          },
+          env.getDefaultTimeoutMillis());
     }
 
     public void clear() {
@@ -2536,7 +2543,7 @@ public class GeckoSessionTestRule implements TestRule {
     final WebExtension.Port port = mPorts.get(session);
     port.postMessage(message);
 
-    return waitForMessage(port, id);
+    return waitForMessage(port, id, mTimeoutMillis);
   }
 
   public int getSessionPid(final @NonNull GeckoSession session) {
@@ -2595,9 +2602,10 @@ public class GeckoSessionTestRule implements TestRule {
     webExtensionApiCall(session, "TeardownAlertsService", null);
   }
 
-  private Object waitForMessage(final WebExtension.Port port, final String id) {
+  private Object waitForMessage(
+      final WebExtension.Port port, final String id, final long timeoutMillis) {
     mPendingResponses.add(port, id);
-    UiThreadUtils.waitForCondition(() -> mPendingMessages.containsKey(id), mTimeoutMillis);
+    UiThreadUtils.waitForCondition(() -> mPendingMessages.containsKey(id), timeoutMillis);
     mPendingResponses.remove(port);
 
     final EvalJSResult result = mPendingMessages.get(id);
@@ -2894,9 +2902,9 @@ public class GeckoSessionTestRule implements TestRule {
     return (Boolean) webExtensionApiCall("IsFissionRunning", null);
   }
 
-  /** Simulate user gesture activation */
-  public void notifyUserGestureActivation(final GeckoSession session) {
-    webExtensionApiCall(session, "NotifyUserGestureActivation", null);
+  /** Opens the picker of the element matching selector with a simulated user gesture. */
+  public void showPicker(final GeckoSession session, final String selector) {
+    webExtensionApiCall(session, "ShowPicker", args -> args.put("selector", selector));
   }
 
   /** Adds a virtual WebAuthn authenticator. Returns the authenticator ID. */
@@ -2982,12 +2990,20 @@ public class GeckoSessionTestRule implements TestRule {
       final GeckoSession session,
       final @NonNull String apiName,
       final @NonNull SetArgs argsSetter) {
+    return webExtensionApiCall(session, apiName, argsSetter, mTimeoutMillis);
+  }
+
+  private Object webExtensionApiCall(
+      final GeckoSession session,
+      final @NonNull String apiName,
+      final @NonNull SetArgs argsSetter,
+      final long timeoutMillis) {
     // Ensure background script is connected
-    UiThreadUtils.waitForCondition(() -> RuntimeCreator.backgroundPort() != null, mTimeoutMillis);
+    UiThreadUtils.waitForCondition(() -> RuntimeCreator.backgroundPort() != null, timeoutMillis);
 
     if (session != null) {
       // Ensure content script is connected
-      UiThreadUtils.waitForCondition(() -> mPorts.get(session) != null, mTimeoutMillis);
+      UiThreadUtils.waitForCondition(() -> mPorts.get(session) != null, timeoutMillis);
     }
 
     final String id = UUID.randomUUID().toString();
@@ -3018,7 +3034,7 @@ public class GeckoSessionTestRule implements TestRule {
     }
 
     port.postMessage(message);
-    return waitForMessage(port, id);
+    return waitForMessage(port, id, timeoutMillis);
   }
 
   /**
@@ -3093,6 +3109,10 @@ public class GeckoSessionTestRule implements TestRule {
    * wait, the delegate is automatically unregistered. Delegates added by {@code
    * addExternalDelegateDuringNextWait} can temporarily take precedence over delegates added by
    * {@link #delegateUntilTestEnd}.
+   *
+   * <p>Register the delegate before triggering the event it is meant to catch. An event that
+   * reaches Gecko or Java while no delegate is registered is dropped or denied, not queued, and the
+   * wait then times out.
    *
    * @param delegate Delegate instance to register.
    * @param register DelegateRegistrar instance that represents a function to register the delegate.

@@ -37,8 +37,6 @@
   <string name="open_in_app_cfr_positive_button_text">بڕۆ بۆ ڕێکخستن</string>
   <!-- Text for the negative action button -->
   <string name="open_in_app_cfr_negative_button_text">پشتگوێخستن</string>
-  <!-- Private browsing erase action "contextual feature recommendation" (CFR) -->
-
   <!-- Text for the info dialog when camera permissions have been denied but user tries to access a camera feature. -->
   <string name="camera_permissions_needed_message">داواکاری کامێرا چالاک کرا. بڕۆ بۆ ڕێکخستنەکانی ئاندرۆید، پەنجەبنێ بە دەسەڵاتەکان و ئینجا ڕێگەپێدان هەڵبژێرە.</string>
   <!-- Text for the positive action button to go to Android Settings to grant permissions. -->
@@ -127,10 +125,6 @@
   <string name="search_engine_suggestions_title">بگەڕێ بۆ %s</string>
   <!-- Search engine suggestion description text -->
   <string name="search_engine_suggestions_description">ڕاستەوخۆ گەڕان بکە لە توڵی ناونیشانەوە</string>
-  <!-- ==== Project "Nova" onboarding strings ==== -->
-
-  <!-- ==== End of Project "Nova" onboarding strings ==== -->
-
   <!-- Text preview for smaller sized widgets -->
   <string name="search_widget_text_short">گەڕان</string>
   <!-- Text preview for larger sized widgets -->
@@ -366,8 +360,6 @@
     Title of preference for tabs management
   -->
   <string name="preferences_tabs">بازدەرەکان</string>
-  <!-- Title of preference that allows a user to specify the tab view -->
-  <string name="preferences_tab_view">پێشبینینی بازدەر</string>
   <!-- Option for a list tab view -->
   <string name="tab_view_list">لیست</string>
   <!-- Option for a grid tab view -->
@@ -441,16 +433,6 @@
     %1$d is the number of bookmarks selected
   -->
   <string name="history_multi_select_title">%1$d دیاریکراوە</string>
-  <!-- Text for the header that groups the history for today -->
-  <string name="history_today">ئەمڕۆ</string>
-  <!-- Text for the header that groups the history for yesterday -->
-  <string name="history_yesterday">دوێنێ</string>
-  <!-- Text for the header that groups the history the past 7 days -->
-  <string name="history_7_days">کۆتا 7 ڕۆژ</string>
-  <!-- Text for the header that groups the history the past 30 days -->
-  <string name="history_30_days">کۆتا 30 ڕۆژ</string>
-  <!-- Text for the header that groups the history older than the last month -->
-  <string name="history_older">کۆنتر</string>
   <!-- Text shown when no history exists -->
   <string name="history_empty_message">هیچ مێژووییەک نیە</string>
   <!--
@@ -845,8 +827,6 @@
   <string name="add_to_homescreen_cancel">پاشگەزبوونەوە</string>
   <!-- Add button text for the Add to Homescreen dialog -->
   <string name="add_to_homescreen_add">زیادکردن</string>
-  <!-- Continue to website button text for the first-time Add to Homescreen dialog -->
-  <string name="add_to_homescreen_continue">بەردەوام بە بۆ ماڵپەڕەکە</string>
   <!-- Placeholder text for the TextView in the Add to Homescreen dialog -->
   <string name="add_to_homescreen_text_placeholder">ناوی قەدبڕ</string>
   <!-- Preference option for asking to save passwords in Fenix -->
@@ -973,13 +953,4 @@
   <string name="radio_preference_info_content_description">کرتە بکە بۆ زانیاری زیاتر</string>
   <!-- Content description for the action bar "up" button -->
   <string name="action_bar_up_description">بچۆ سەرەوە</string>
-  <!-- Translations feature -->
-
-  <!-- TextField Design System Component -->
-
-  <!-- ==== Terms of use pop up prompt ==== -->
-
-  <!-- ==== Experiment strings. ==== -->
-
-  <!-- ==== End of Terms of use popup prompt. ==== -->
 </resources>

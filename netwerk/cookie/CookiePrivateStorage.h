@@ -6,8 +6,7 @@
 #define mozilla_net_CookiePrivateStorage_h
 
 #include "CookieStorage.h"
-
-class nsICookieTransactionCallback;
+#include "mozilla/net/Cookie.h"
 
 namespace mozilla {
 namespace net {
@@ -23,13 +22,6 @@ class CookiePrivateStorage final : public CookieStorage {
 
   void EnsureInitialized() override {};
 
-  nsresult RunInTransaction(nsICookieTransactionCallback* aCallback) override {
-    // It might make sense for this to be a no-op, or to return
-    // `NS_ERROR_NOT_AVAILABLE`, or to evalute `aCallback` (in case it has
-    // side-effects), but for now, just crash.
-    MOZ_CRASH("RunInTransaction is not supported for private storage");
-  };
-
  protected:
   const char* NotificationTopic() const override {
     return "private-cookie-changed";
@@ -40,7 +32,7 @@ class CookiePrivateStorage final : public CookieStorage {
 
   void RemoveAllInternal() override {}
 
-  void RemoveCookieFromDB(const Cookie& aCookie) override {}
+  void RemoveCookieFromDB(Cookie* aCookie) override {}
 
   already_AddRefed<nsIArray> PurgeCookies(int64_t aCurrentTimeInUsec,
                                           uint16_t aMaxNumberOfCookies,

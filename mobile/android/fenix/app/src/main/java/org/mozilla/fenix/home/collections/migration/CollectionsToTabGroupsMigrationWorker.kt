@@ -16,7 +16,6 @@ import androidx.work.WorkerParameters
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.minutes
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.utils.Settings
 
 @VisibleForTesting internal const val MIGRATION_WORK_NAME = "org.mozilla.fenix.collections.migration.work"
 
@@ -38,7 +37,7 @@ class CollectionsToTabGroupsMigrationWorker(
                     tabCollectionStorage = components.core.tabCollectionStorage,
                     restoreUseCase = components.useCases.tabsUseCases.restore,
                     tabGroupRepository = components.core.tabGroupRepository,
-                    settings = components.settings,
+                    collectionsMigrationRepository = components.collectionsMigrationRepository,
                     engine = components.core.engine,
                     filesDir = applicationContext.filesDir,
                     crashReporter = components.analytics.crashReporter,
@@ -60,10 +59,10 @@ class CollectionsToTabGroupsMigrationWorker(
          * Schedules the migration as a background task.
          *
          * @param context The [Context] used to enqueue the work.
-         * @param settings [Settings] for accessing user preferences.
+         * @param collectionsMigrationRepository [CollectionsMigrationRepository] for reading the migration state.
          */
-        fun enqueueIfNeeded(context: Context, settings: Settings) {
-            if (!CollectionsToTabGroupsMigration.shouldMigrate(settings)) {
+        fun enqueueIfNeeded(context: Context, collectionsMigrationRepository: CollectionsMigrationRepository) {
+            if (!collectionsMigrationRepository.shouldMigrate()) {
                 return
             }
 

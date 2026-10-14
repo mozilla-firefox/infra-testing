@@ -108,10 +108,6 @@ SearchTestUtils.init(this);
 SearchUITestUtils.init(this);
 
 add_setup(async function () {
-  await SpecialPowers.pushPrefEnv({
-    set: [["test.wait300msAfterTabSwitch", true]],
-  });
-
   // Install the primary visual search engine via the search config.
   SearchSERPTelemetry.overrideSearchTelemetryForTests(TEST_PROVIDER_INFO);
   await SearchTestUtils.updateRemoteSettingsConfig(SEARCH_CONFIG);
@@ -206,6 +202,8 @@ add_task(async function nonPrivateWindow() {
         source: "contextmenu_visual",
         has_ai_summary: "unknown",
         shopping_tab_displayed: "unknown",
+        prescan: "not_run",
+        scan: "not_run",
       },
       abandonment: {
         reason: SearchSERPTelemetryUtils.ABANDONMENTS.TAB_CLOSE,
@@ -291,6 +289,8 @@ async function doPrivateWindowTest(shouldRecordCounts) {
           is_private: "true",
           has_ai_summary: "unknown",
           shopping_tab_displayed: "unknown",
+          prescan: "not_run",
+          scan: "not_run",
         },
         abandonment: {
           reason: SearchSERPTelemetryUtils.ABANDONMENTS.TAB_CLOSE,

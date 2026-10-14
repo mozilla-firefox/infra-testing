@@ -41,3 +41,7 @@ include("/ipc/chromium/chromium-config.mozbuild")
 TEST_DIRS += ["tests/gtest"]
 
 FINAL_LIBRARY = "xul"
+
+SOURCE_HEADERS += [
+    "PositionStateEvent.h",
+]

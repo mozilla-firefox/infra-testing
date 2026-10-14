@@ -5,6 +5,8 @@
 
 #include "OSKeyStore.h"
 
+#include <memory>
+
 #include "mozilla/Base64.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/dom/Promise.h"
@@ -64,9 +66,9 @@ OSKeyStore::OSKeyStore() : mKs(nullptr) {
   mKs.reset(new CredentialManagerSecret());
 #elif defined(MOZ_WIDGET_GTK)
   if (NS_SUCCEEDED(MaybeLoadLibSecret())) {
-    mKs.reset(new LibSecret());
+    mKs = std::make_unique<LibSecret>();
   } else {
-    mKs.reset(new NSSKeyStore());
+    mKs = std::make_unique<NSSKeyStore>();
   }
 #else
   mKs.reset(new NSSKeyStore());

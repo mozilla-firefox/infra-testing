@@ -10,6 +10,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <utility>
+
 #include "AsyncDBus.h"
 #include "GRefPtr.h"
 #include "MozContainer.h"
@@ -30,6 +32,7 @@
 #include "nsIWidget.h"
 #include "nsNetUtil.h"
 #include "nsReadableUtils.h"
+#include "nsThreadUtils.h"
 #include "nsWindow.h"
 #include "nsXULAppAPI.h"
 
@@ -664,7 +667,7 @@ void nsFilePicker::DonePortal(GVariant* aResult) {
   }
 
   ClearPortalState();
-  DoneCommon(result);
+  DoneCommon(result, std::move(mCallback));
 }
 #endif
 
@@ -804,6 +807,11 @@ already_AddRefed<nsIFile> nsFilePicker::GetDefaultPath() {
   } else if (sPrevDisplayDirectory) {
     sPrevDisplayDirectory->Clone(getter_AddRefs(defaultPath));
   }
+
+  if (!defaultPath || !IsPotentiallyReadableDirectory(*defaultPath)) {
+    return nullptr;
+  }
+
   return defaultPath.forget();
 }
 
@@ -878,6 +886,12 @@ void nsFilePicker::DoneNonPortal(GtkWidget* file_chooser, gint response) {
     return;
   }
 
+  // A null callback means a re-entrant call; the outer one owns the teardown.
+  nsCOMPtr<nsIFilePickerShownCallback> callback = std::move(mCallback);
+  if (!callback) {
+    return;
+  }
+
   mFileChooser = nullptr;
 
   nsIFilePicker::ResultCode result;
@@ -927,11 +941,12 @@ void nsFilePicker::DoneNonPortal(GtkWidget* file_chooser, gint response) {
     mFileChooserDelegate = nullptr;
   }
 
-  DoneCommon(result);
+  DoneCommon(result, std::move(callback));
   NS_RELEASE_THIS();
 }
 
-void nsFilePicker::DoneCommon(ResultCode aResult) {
+void nsFilePicker::DoneCommon(ResultCode aResult,
+                              nsCOMPtr<nsIFilePickerShownCallback> aCallback) {
   if (aResult == ResultCode::returnOK) {
     if (mMode == nsIFilePicker::modeSave) {
       nsCOMPtr<nsIFile> file;
@@ -961,10 +976,74 @@ void nsFilePicker::DoneCommon(ResultCode aResult) {
     }
   }
 
-  if (mCallback) {
-    mCallback->Done(aResult);
-    mCallback = nullptr;
+  if (aResult != nsIFilePicker::returnCancel && ShouldRunContentAnalysis()) {
+    CheckContentAnalysis(GetSelectedFilesOrFolder())
+        ->Then(
+            GetMainThreadSerialEventTarget(), __func__,
+            [self = RefPtr{this}, callback = aCallback,
+             aResult](nsCOMArray<nsIFile> aAllowedFiles) {
+              if (aAllowedFiles.IsEmpty()) {
+                self->ClearSelection();
+                if (callback) {
+                  callback->Done(nsIFilePicker::returnCancel);
+                }
+                return;
+              }
+              // If the mode is `modeOpen` (i.e. a single file), either:
+              //  - the file was blocked, so `aAllowedFiles` will be empty,
+              //    so we will have returned above
+              //  - the file was allowed, so the one file in `mFiles` and
+              //    `mFileURL` is still correct, so we don't need to do
+              //    any processing here.
+              if (self->mMode == nsIFilePicker::modeOpenMultiple) {
+                self->mFiles.Clear();
+                aAllowedFiles.SwapElements(self->mFiles);
+                // The portal also records the first selected file in
+                // mFileURL; keep it pointing at an allowed file.
+                if (!self->mFileURL.IsEmpty()) {
+                  NS_GetURLSpecFromFile(self->mFiles[0], self->mFileURL);
+                }
+              }
+              if (callback) {
+                callback->Done(aResult);
+              }
+            },
+            [self = RefPtr{this}, callback = aCallback](nsresult aError) {
+              self->ClearSelection();
+              if (callback) {
+                callback->Done(nsIFilePicker::returnCancel);
+              }
+            });
+    return;
   }
+
+  if (aCallback) {
+    aCallback->Done(aResult);
+  }
+}
+
+nsCOMArray<nsIFile> nsFilePicker::GetSelectedFilesOrFolder() {
+  nsCOMArray<nsIFile> files;
+  if (mMode == nsIFilePicker::modeOpenMultiple) {
+    for (nsIFile* file : mFiles) {
+      if (file) {
+        files.AppendElement(file);
+      }
+    }
+  } else {
+    // Fails for non-file: URIs, which leaves the list empty so that Content
+    // Analysis rejects the selection.
+    nsCOMPtr<nsIFile> file;
+    if (NS_SUCCEEDED(GetFile(getter_AddRefs(file))) && file) {
+      files.AppendElement(file);
+    }
+  }
+  return files;
+}
+
+void nsFilePicker::ClearSelection() {
+  mFiles.Clear();
+  mFileURL.Truncate();
 }
 
 #undef LOG

@@ -21,28 +21,20 @@ class AccShowEvent;
  */
 class DocAccessibleChild : public PDocAccessibleChild {
  public:
+  NS_INLINE_DECL_REFCOUNTING(DocAccessibleChild, override)
+
   DocAccessibleChild(DocAccessible* aDoc,
                      mozilla::ipc::IRefCountedProtocol* aManager)
       : mDoc(aDoc) {
-    MOZ_COUNT_CTOR(DocAccessibleChild);
     SetManager(aManager);
-  }
-
-  ~DocAccessibleChild() {
-    // Shutdown() should have been called, but maybe it isn't if the process is
-    // killed?
-    MOZ_ASSERT(!mDoc);
-    if (mDoc) {
-      mDoc->SetIPCDoc(nullptr);
-    }
-
-    MOZ_COUNT_DTOR(DocAccessibleChild);
   }
 
   void Shutdown() {
     DetachDocument();
     SendShutdown();
   }
+
+  DocAccessible* GetDocAccessible() const { return mDoc; }
 
   /**
    * Serializes a shown tree and pushes the show event data to the mutation
@@ -200,6 +192,13 @@ class DocAccessibleChild : public PDocAccessibleChild {
   MutationEventBatcher mMutationEventBatcher;
 
   friend void DocAccessible::DoInitialUpdate();
+
+ private:
+  ~DocAccessibleChild() {
+    // ActorDestroy() always runs (and clears mDoc) before our last reference
+    // is released.
+    MOZ_ASSERT(!mDoc);
+  }
 };
 
 }  // namespace a11y

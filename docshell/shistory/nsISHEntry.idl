@@ -218,9 +218,9 @@ interface nsISHEntry : nsISupports
     attribute AString srcdocData;
 
     /**
-     * When isSrcdocEntry is true, this contains the baseURI of the srcdoc
-     * document for use in situations where it cannot otherwise be determined,
-     * for example with view-source.
+     * The baseURI for situations where it cannot otherwise be determined.
+     * This is needed for srcdoc or when privileged code sets it on
+     * LoadURIOptions, e.g. for view selection source.
      */
     [infallible] attribute nsIURI baseURI;
 
@@ -369,14 +369,6 @@ interface nsISHEntry : nsISupports
      * Get child at an index.
      */
     nsISHEntry GetChildAt(in long aIndex);
-
-    /**
-     * If this entry has no dynamically added child, get the child SHEntry
-     * at the given offset. The loadtype of the returned entry is set
-     * to its parent's loadtype.
-     */
-    [notxpcom] void GetChildSHEntryIfHasNoDynamicallyAddedChild(in long aChildOffset,
-                                                                out nsISHEntry aChild);
 
     /**
      * Replaces a child which is for the same docshell as aNewChild

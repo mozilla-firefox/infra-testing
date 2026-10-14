@@ -242,6 +242,8 @@ def handle_keyed_by(config, tasks):
         "virtualization",
         "fetches.fetch",
         "fetches.toolchain",
+        "fetches.openh264-plugin",
+        "dependencies.openh264-plugin",
         "target",
         "webrender-run-on-projects",
         "mozharness.extra-options",
@@ -362,6 +364,11 @@ def setup_browsertime(config, tasks):
                     "macosx64-geckodriver",
                     "macosx64-aarch64-node",
                 ],
+                "macosx2700.*": [
+                    "browsertime",
+                    "macosx64-geckodriver",
+                    "macosx64-aarch64-node",
+                ],
                 "windows.*aarch64.*": [
                     "browsertime",
                     "win32-geckodriver",
@@ -383,6 +390,7 @@ def setup_browsertime(config, tasks):
                 "macosx1470.*": ["mac64-ffmpeg-7.1"],
                 "macosx1400.*": ["mac64-ffmpeg-7.1"],
                 "macosx1500.*": ["mac64-ffmpeg-7.1"],
+                "macosx2700.*": ["mac64-ffmpeg-7.1"],
                 "windows.*aarch64.*": ["win64-ffmpeg-7.1"],
                 "windows.*-64.*": ["win64-ffmpeg-7.1"],
             },
@@ -581,16 +589,6 @@ def enable_code_coverage(config, tasks):
                 task["run-on-projects"] = []
                 continue
 
-            # Skip this transform for android code coverage builds.
-            if "android" in task["build-platform"]:
-                task.setdefault("fetches", {}).setdefault("toolchain", []).append(
-                    "linux64-grcov"
-                )
-                task["mozharness"].setdefault("extra-options", []).append(
-                    "--java-code-coverage"
-                )
-                yield task
-                continue
             task["mozharness"].setdefault("extra-options", []).append("--code-coverage")
             task["instance-size"] = "xlarge-noscratch"
             if "jittest" in task["test-name"]:
@@ -612,13 +610,15 @@ def enable_code_coverage(config, tasks):
             task["optimization"] = None
 
             # Add a toolchain and a fetch task for the grcov binary.
-            if any(p in task["build-platform"] for p in ("linux", "osx", "win")):
+            if any(
+                p in task["build-platform"] for p in ("linux", "osx", "win", "android")
+            ):
                 task.setdefault("fetches", {})
                 task["fetches"].setdefault("fetch", [])
                 task["fetches"].setdefault("toolchain", [])
                 task["fetches"].setdefault("build", [])
 
-            if "linux" in task["build-platform"]:
+            if any(p in task["build-platform"] for p in ("linux", "android")):
                 task["fetches"]["toolchain"].append("linux64-grcov")
             elif "osx" in task["build-platform"]:
                 task["fetches"]["toolchain"].append("macosx64-grcov")
@@ -661,6 +661,11 @@ def handle_tier(config, tasks):
     """Set the tier based on policy for all test descriptions that do not
     specify a tier otherwise."""
     for task in tasks:
+        if "-appservices/" in task["test-platform"]:
+            task["tier"] = 3
+            yield task
+            continue
+
         if "tier" in task:
             resolve_keyed_by(
                 task,
@@ -723,7 +728,6 @@ def handle_tier(config, tasks):
                 "android-em-14-x86_64-shippable-lite/opt",
                 "android-em-14-x86_64-lite/opt",
                 "android-em-14-x86_64/debug",
-                "android-em-14-x86_64/debug-isolated-process",
                 "android-em-14-x86-shippable/opt",
                 "android-em-14-x86/opt",
             ]:
@@ -759,9 +763,9 @@ def apply_raptor_tier_optimization(config, tasks):
             continue
 
         if not task["test-platform"].startswith("android-hw"):
-            task["optimization"] = {"skip-unless-expanded": None}
+            task["optimization"] = {"perf-cadence-expanded": None}
             if task["tier"] > 1:
-                task["optimization"] = {"skip-unless-backstop": None}
+                task["optimization"] = {"perf-cadence-backstop": None}
 
         if task["attributes"].get("unittest_variant"):
             task["tier"] = max(task["tier"], 2)
@@ -854,7 +858,7 @@ class PlatformSchema(Schema, kw_only=True):
 class BuildSchema(Schema, kw_only=True, forbid_unknown_fields=False):
     """Build configuration schema."""
 
-    type: Literal["opt", "debug", "debug-isolated-process"]
+    type: Literal["opt", "debug"]
     asan: Optional[bool] = None
     ccov: Optional[bool] = None
     clang_trunk: Optional[bool] = None
@@ -1124,23 +1128,28 @@ def add_gecko_profile_symbolication_deps(config, tasks):
 
     try_task_config = config.params.get("try_task_config", {})
     gecko_profile_from_try = try_task_config.get("gecko-profile", False)
-    startup_profile = try_task_config.get("env", {}).get("MOZ_PROFILER_STARTUP") == "1"
 
     for task in tasks:
         extra_options = task.get("mozharness", {}).get("extra-options", [])
-        has_gecko_profile_option = any(
-            "--gecko-profile" in option for option in extra_options
+        has_profiling_option = any(
+            "--gecko-profile" in option or "--extra-profiler-run" in option
+            for option in extra_options
         )
-        gecko_profile = gecko_profile_from_try or has_gecko_profile_option
+        gecko_profile = gecko_profile_from_try or has_profiling_option
 
-        if (gecko_profile and task["suite"] in ["talos", "raptor"]) or (
-            startup_profile and "mochitest" in task["suite"]
-        ):
+        if gecko_profile and task["suite"] in ["talos", "raptor"]:
             fetches = task.setdefault("fetches", {})
             fetch_toolchains = fetches.setdefault("toolchain", [])
 
             if "profiler-node-tools" not in fetch_toolchains:
                 fetch_toolchains.append("profiler-node-tools")
+
+            # Unless we're running an "external browser" (e.g. Chrome), fetch Firefox symbols.
+            if not is_external_browser(task["try-name"]):
+                symbols_zip = "target.crashreporter-symbols.zip"
+                fetch_builds = fetches.setdefault("build", [])
+                if not any(f.get("artifact") == symbols_zip for f in fetch_builds):
+                    fetch_builds.append({"artifact": symbols_zip, "extract": False})
 
             test_platform = task["test-platform"]
 
@@ -1171,16 +1180,6 @@ def add_gecko_profile_symbolication_deps(config, tasks):
                 if node_toolchain not in fetch_toolchains:
                     fetch_toolchains.append(node_toolchain)
 
-        yield task
-
-
-@transforms.add
-def set_tag(config, tasks):
-    """Set test for a specific tag."""
-    tag = None
-    for task in tasks:
-        if tag:
-            task["mozharness"]["extra-options"].extend(["--tag", tag])
         yield task
 
 
@@ -1252,4 +1251,54 @@ def set_webgpu_ignore_blocklist(config, tasks):
             extra_options = task["mozharness"].setdefault("extra-options", [])
             extra_options.append("--setpref=gfx.webgpu.ignore-blocklist=true")
 
+        yield task
+
+
+@transforms.add
+def add_symbols_to_xpcshell_mochitest(config, tests):
+    for test in tests:
+        name = test.get("test-name", "").lower()
+        if "xpcshell" in name or "mochitest" in name:
+            test_platform = test.get("test-platform", "")
+            if not any(san in test_platform for san in ("asan", "tsan")):
+                fetches = test.setdefault("fetches", {})
+                fetches.setdefault("build", []).append({
+                    "artifact": "target.crashreporter-symbols.zip",
+                    "extract": False,
+                })
+        yield test
+
+
+@transforms.add
+def resolve_openh264_version(config, tasks):
+    """Substitute the OpenH264 version into openh264-plugin fetch paths.
+
+    The version lives on the fetch-openh264-source task, so the artifact
+    names do not have to be updated by hand when it changes.
+    """
+    version = None
+    for task in tasks:
+        fetches = task.get("fetches", {}).get("openh264-plugin")
+        if fetches:
+            if version is None:
+                dep = config.kind_dependencies_tasks.get("fetch-openh264-source")
+                if not dep:
+                    raise Exception("fetch-openh264-source not in kind dependencies")
+                version = dep.attributes["openh264_version"]
+            for fetch in fetches:
+                for key in ("artifact", "dest"):
+                    if key in fetch:
+                        fetch[key] = fetch[key].format(openh264_version=version)
+        yield task
+
+
+@transforms.add
+def set_perfherder_extra_options(config, tasks):
+    for task in tasks:
+        options = [task["attributes"]["unittest_suite"]]
+        variant = task["attributes"].get("unittest_variant")
+        if variant:
+            options.append(variant)
+        env = task.setdefault("worker", {}).setdefault("env", {})
+        env.setdefault("PERFHERDER_EXTRA_OPTIONS", " ".join(options))
         yield task

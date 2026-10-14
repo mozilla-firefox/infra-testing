@@ -7,6 +7,7 @@ const lazy = {};
 import {
   classMap,
   html,
+  ifDefined,
   when,
   nothing,
 } from "chrome://global/content/vendor/lit.all.mjs";
@@ -65,6 +66,9 @@ export class SidebarHistory extends SidebarPage {
     this._menuSortByLastVisited = doc.getElementById(
       "sidebar-history-sort-by-last-visited"
     );
+    this._menuSortByMostVisited = doc.getElementById(
+      "sidebar-history-sort-by-most-visited"
+    );
     this._menu.addEventListener("command", this);
     this._menu.addEventListener("popuphidden", this.handlePopupEvent);
     this._contextMenu.addEventListener("popupshowing", this);
@@ -121,6 +125,9 @@ export class SidebarHistory extends SidebarPage {
       if (isPrivateWindowMenuItem && !lazy.PrivateBrowsingUtils.enabled) {
         shouldHide = true;
       }
+      if (lazy.PlacesUIUtils.shouldHideOpenMenuItem(child)) {
+        shouldHide = true;
+      }
       child.hidden = shouldHide;
     }
   }
@@ -167,6 +174,9 @@ export class SidebarHistory extends SidebarPage {
         break;
       case "sidebar-history-sort-by-last-visited":
         this.#changeSortOption(e, "lastvisited");
+        break;
+      case "sidebar-history-sort-by-most-visited":
+        this.#changeSortOption(e, "mostvisited");
         break;
       case "sidebar-history-clear": {
         const button = await lazy.Sanitizer.showUI(this.topWindow);
@@ -237,6 +247,7 @@ export class SidebarHistory extends SidebarPage {
       site: "site",
       datesite: "date_and_site",
       lastvisited: "last_visited",
+      mostvisited: "most_visited",
     };
     Glean.browserUiInteraction.sidebarSortHistory.record({
       sort_type: sortTypeMap[sortOption],
@@ -326,11 +337,19 @@ export class SidebarHistory extends SidebarPage {
   }
 
   onKeyDown(e) {
-    if (
-      (e.code === "Delete" || e.code === "Backspace") &&
-      e.composedTarget.localName === "sidebar-tab-row"
-    ) {
+    if (e.code === "Delete" || e.code === "Backspace") {
+      const row = e
+        .composedPath()
+        .find(el => el.localName === "sidebar-tab-row");
+      if (!row) {
+        return;
+      }
+
       e.preventDefault();
+      if (this.isMultipleRowsSelected) {
+        this.#deleteMultipleFromHistory().catch(console.error);
+        return;
+      }
       this.triggerNode = e.composedTarget;
       this.controller.deleteFromHistory().catch(console.error);
     }
@@ -351,22 +370,39 @@ export class SidebarHistory extends SidebarPage {
     return this.#emptyMessageTemplate();
   }
 
+  get #hasAccordionCards() {
+    return (
+      !this.controller.searchResults &&
+      !this.controller.isHistoryPending &&
+      !this.controller.isHistoryEmpty &&
+      ["date", "site", "datesite"].includes(this.controller.sortOption)
+    );
+  }
+
   #historyCardsTemplate() {
     const { historyVisits } = this.controller;
     switch (this.controller.sortOption) {
       case "date":
         return historyVisits.map(({ l10nId, items }, i) =>
-          this.#dateCardTemplate(l10nId, i, items)
+          this.#dateCardTemplate(l10nId, i, items, {
+            setSize: historyVisits.length,
+          })
         );
       case "site":
         return historyVisits.map(({ domain, items }, i) =>
-          this.#siteCardTemplate(domain, i, items)
+          this.#siteCardTemplate(domain, i, items, {
+            setSize: historyVisits.length,
+          })
         );
       case "datesite":
         return historyVisits.map(({ l10nId, items }, i) =>
-          this.#dateCardTemplate(l10nId, i, items, true)
+          this.#dateCardTemplate(l10nId, i, items, {
+            isDateSite: true,
+            setSize: historyVisits.length,
+          })
         );
       case "lastvisited":
+      case "mostvisited":
         return historyVisits.map(
           ({ items }) =>
             html`<moz-card>
@@ -378,10 +414,14 @@ export class SidebarHistory extends SidebarPage {
     }
   }
 
-  #dateCardTemplate(l10nId, index, items, isDateSite = false) {
+  #dateCardTemplate(l10nId, index, items, { isDateSite = false, setSize }) {
     return html` <moz-card
       type="accordion"
       class="date-card"
+      treeItem
+      aria-level="1"
+      aria-posinset=${index + 1}
+      aria-setsize=${setSize}
       ?expanded=${index < DAYS_EXPANDED_INITIALLY}
       data-l10n-id=${l10nId}
       data-l10n-args=${JSON.stringify({
@@ -391,16 +431,16 @@ export class SidebarHistory extends SidebarPage {
       @toggle=${this.#onCardToggle}
     >
       ${isDateSite
-        ? items.map(([domain, visits], i) =>
-            this.#siteCardTemplate(
-              domain,
-              i,
-              visits,
-              true,
-              i == items.length - 1
-            )
-          )
-        : this.#tabListTemplate(this.getTabItems(items))}
+        ? html`<div role="group">
+            ${items.map(([domain, visits], i) =>
+              this.#siteCardTemplate(domain, i, visits, {
+                isDateSite: true,
+                isLastCard: i == items.length - 1,
+                setSize: items.length,
+              })
+            )}
+          </div>`
+        : this.#tabListTemplate(this.getTabItems(items), { treeLevel: 2 })}
     </moz-card>`;
   }
 
@@ -408,8 +448,7 @@ export class SidebarHistory extends SidebarPage {
     domain,
     index,
     items,
-    isDateSite = false,
-    isLastCard = false
+    { isDateSite = false, isLastCard = false, setSize }
   ) {
     return html` <moz-card
       class=${classMap({
@@ -418,6 +457,10 @@ export class SidebarHistory extends SidebarPage {
         "site-card": true,
       })}
       type="accordion"
+      treeItem
+      aria-level=${isDateSite ? 2 : 1}
+      aria-posinset=${index + 1}
+      aria-setsize=${setSize}
       ?expanded=${!isDateSite}
       heading=${domain}
       @keydown=${this.keydownHandler}
@@ -425,7 +468,9 @@ export class SidebarHistory extends SidebarPage {
       data-l10n-id=${domain ? nothing : "sidebar-history-site-localhost"}
       data-l10n-attrs=${domain ? nothing : "heading"}
     >
-      ${this.#tabListTemplate(this.getTabItems(items))}
+      ${this.#tabListTemplate(this.getTabItems(items), {
+        treeLevel: isDateSite ? 3 : 2,
+      })}
     </moz-card>`;
   }
 
@@ -508,15 +553,17 @@ export class SidebarHistory extends SidebarPage {
         )}
         ${this.#tabListTemplate(
           this.getTabItems(this.controller.searchResults),
-          this.controller.searchQuery
+          { searchQuery: this.controller.searchQuery }
         )}
       </div>
     </moz-card>`;
   }
 
-  #tabListTemplate(tabItems, searchQuery) {
+  #tabListTemplate(tabItems, { searchQuery, treeLevel = 1 } = {}) {
     return html`<sidebar-tab-list
       .handleFocusElementToCard=${this.handleFocusElementToCard}
+      inTree
+      .level=${treeLevel}
       maxTabsLength="-1"
       .searchQuery=${searchQuery}
       secondaryActionClass="delete-button"
@@ -569,6 +616,10 @@ export class SidebarHistory extends SidebarPage {
       "checked",
       this.controller.sortOption == "lastvisited"
     );
+    this._menuSortByMostVisited.toggleAttribute(
+      "checked",
+      this.controller.sortOption == "mostvisited"
+    );
   }
 
   render() {
@@ -603,7 +654,11 @@ export class SidebarHistory extends SidebarPage {
             </moz-button>
           </div>
         </sidebar-panel-header>
-        <div class="sidebar-panel-scrollable-content" tabindex="-1">
+        <div
+          class="sidebar-panel-scrollable-content"
+          role=${ifDefined(this.#hasAccordionCards ? "tree" : undefined)}
+          tabindex="-1"
+        >
           ${this.cardsTemplate}
         </div>
       </div>

@@ -28,6 +28,7 @@
 
 :root[customtitlebar]:not([lwtheme], [builtintheme]) {
   @media (-moz-windows-mica) or ((-moz-windows-accent-color-in-titlebar) and -moz-pref("browser.theme.windows.accent-color-in-tabs.enabled")) {
+    --toolbox-background-image: image(transparent);
     --toolbox-background-color: ActiveCaption;
     --toolbox-text-color: CaptionText;
     --toolbox-background-color-inactive: InactiveCaption;
@@ -234,12 +235,6 @@
     #searchbar:not(:focus-within),
     .findbar-textbox:not(:focus) {
       border-color: ThreeDShadow;
-    }
-  }
-
-  @media -moz-pref("browser.nova.enabled") {
-    .urlbar[breakout-extend] > .urlbar-background {
-      border-color: currentColor;
     }
   }
 

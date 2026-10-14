@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/// <reference path="./moz-radio-group.tagmap.d.ts" />
+
 import { html, ifDefined } from "../vendor/lit.all.mjs";
 import {
   SelectControlBaseElement,
@@ -58,6 +60,7 @@ customElements.define("moz-radio-group", MozRadioGroup);
  * @property {string} value - Value of the radio input.
  * @property {string} ariaLabel - The aria-label text when there is no visible label.
  * @property {string} ariaDescription - The aria-description text when there is no visible description.
+ * @property {string} title - The title attribute, mapped onto the inner input.
  */
 export class MozRadio extends SelectControlItemMixin(MozBaseInputElement) {
   static activatedProperty = "checked";
@@ -84,6 +87,7 @@ export class MozRadio extends SelectControlItemMixin(MozBaseInputElement) {
       aria-description=${ifDefined(
         this.hasDescription ? undefined : this.ariaDescription
       )}
+      title=${ifDefined(this.title)}
       @click=${this.handleClick}
       @change=${this.handleChange}
     />`;

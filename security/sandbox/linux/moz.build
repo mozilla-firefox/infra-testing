@@ -2,6 +2,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files("**"):
+    SCHEDULES.exclusive = ["linux", "android"]
+
 SharedLibrary("mozsandbox")
 
 # Depend on mozglue if and only if it's a shared library;
@@ -89,6 +92,7 @@ SOURCES += [
 
 SOURCES += [
     "/third_party/abseil-cpp/absl/base/internal/raw_logging.cc",
+    "/third_party/abseil-cpp/absl/base/throw_delegate.cc",
     "/third_party/abseil-cpp/absl/numeric/int128.cc",
     "/third_party/abseil-cpp/absl/strings/ascii.cc",
     "/third_party/abseil-cpp/absl/strings/charconv.cc",
@@ -106,8 +110,25 @@ SOURCES += [
     "/third_party/abseil-cpp/absl/strings/numbers.cc",
 ]
 
+SOURCE_HEADERS += [
+    "LinuxSched.h",
+    "SandboxBrokerClient.h",
+    "SandboxChrootProto.h",
+    "SandboxFilter.h",
+    "SandboxFilterUtil.h",
+    "SandboxInternal.h",
+    "SandboxLogging.h",
+    "SandboxOpenedFiles.h",
+    "SandboxProfilerChild.h",
+    "SandboxProfilerParent.h",
+    "SandboxReporterClient.h",
+]
+
 if CONFIG["CC_TYPE"] in ("clang", "gcc"):
     SOURCES["/third_party/abseil-cpp/absl/strings/numbers.cc"].flags += ["-Wno-comma"]
+    SOURCES[
+        "/third_party/abseil-cpp/absl/strings/internal/str_format/float_conversion.cc"
+    ].flags += ["-Wno-unused-template"]
 
 # This copy of SafeSPrintf doesn't need to avoid the Chromium logging
 # dependency like the one in libxul does, but this way the behavior is

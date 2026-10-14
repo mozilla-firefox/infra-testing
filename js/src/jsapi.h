@@ -135,6 +135,14 @@ extern JS_PUBLIC_API bool JS_WrapObject(JSContext* cx,
 extern JS_PUBLIC_API bool JS_WrapValue(JSContext* cx,
                                        JS::MutableHandleValue vp);
 
+/**
+ * Wrap a jsid after entering a new compartment. Different zones separately mark
+ * the ids in a runtime, and this must be used any time an id is obtained from
+ * one compartment and then used in another compartment, unless the two
+ * compartments are guaranteed to be in the same zone.
+ */
+extern JS_PUBLIC_API bool JS_WrapId(JSContext* cx, JS::MutableHandle<jsid> id);
+
 extern JS_PUBLIC_API JSObject* JS_TransplantObject(JSContext* cx,
                                                    JS::HandleObject origobj,
                                                    JS::HandleObject target);
@@ -834,8 +842,7 @@ extern JS_PUBLIC_API void JS_SetOffthreadIonCompilationEnabled(JSContext* cx,
   Register(WASM_FOLD_OFFSETS, "wasm.fold-offsets") \
   Register(WASM_DELAY_TIER2, "wasm.delay-tier2") \
   Register(WASM_JIT_BASELINE, "wasm.baseline") \
-  Register(WASM_JIT_OPTIMIZING, "wasm.optimizing") \
-  Register(REGEXP_BUFFER_BOUNDARIES, "regexp.buffer-boundaries")  // clang-format on
+  Register(WASM_JIT_OPTIMIZING, "wasm.optimizing")  // clang-format on
 
 typedef enum JSJitCompilerOption {
 #define JIT_COMPILER_DECLARE(key, str) JSJITCOMPILER_##key,

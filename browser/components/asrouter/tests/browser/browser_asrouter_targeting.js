@@ -8,24 +8,33 @@ ChromeUtils.defineESModuleGetters(this, {
   ASRouterTargeting: "resource:///modules/asrouter/ASRouterTargeting.sys.mjs",
   AttributionCode:
     "moz-src:///browser/components/attribution/AttributionCode.sys.mjs",
-  BrowserInitState: "resource:///modules/BrowserGlue.sys.mjs",
+  BrowserInitState: "moz-src:///browser/components/BrowserGlue.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
-  CFRMessageProvider: "resource:///modules/asrouter/CFRMessageProvider.sys.mjs",
   ClientID: "resource://gre/modules/ClientID.sys.mjs",
+  ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
+  FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
   FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
   HomePage: "resource:///modules/HomePage.sys.mjs",
   InfoBar: "resource:///modules/asrouter/InfoBar.sys.mjs",
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   NimbusTestUtils: "resource://testing-common/NimbusTestUtils.sys.mjs",
+  OnboardingMessageProvider:
+    "resource:///modules/asrouter/OnboardingMessageProvider.sys.mjs",
+  PanelTestProvider: "resource:///modules/asrouter/PanelTestProvider.sys.mjs",
+  PermissionTestUtils: "resource://testing-common/PermissionTestUtils.sys.mjs",
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
   QueryCache: "resource:///modules/asrouter/ASRouterTargeting.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
+  ReinstallCheck: "moz-src:///browser/components/ReinstallCheck.sys.mjs",
+  ResetProfile: "resource://gre/modules/ResetProfile.sys.mjs",
   SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
+  DEFAULT_FORM_HISTORY_PARAM:
+    "moz-src:///toolkit/components/search/SearchSuggestionController.sys.mjs",
   SelectableProfileService:
     "resource:///modules/profiles/SelectableProfileService.sys.mjs",
   SessionStartup:
@@ -35,8 +44,9 @@ ChromeUtils.defineESModuleGetters(this, {
   Spotlight: "resource:///modules/asrouter/Spotlight.sys.mjs",
   TabNotes: "moz-src:///browser/components/tabnotes/TabNotes.sys.mjs",
   TargetingContext: "resource://messaging-system/targeting/Targeting.sys.mjs",
-  TaskbarTabs: "resource:///modules/taskbartabs/TaskbarTabs.sys.mjs",
-  TaskbarTabsPin: "resource:///modules/taskbartabs/TaskbarTabsPin.sys.mjs",
+  TaskbarTabs: "moz-src:///browser/components/taskbartabs/TaskbarTabs.sys.mjs",
+  TaskbarTabsPin:
+    "moz-src:///browser/components/taskbartabs/TaskbarTabsPin.sys.mjs",
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
   TelemetrySession: "resource://gre/modules/TelemetrySession.sys.mjs",
 });
@@ -355,6 +365,83 @@ add_task(async function check_canCreateSelectableProfiles() {
   await SpecialPowers.popPrefEnv();
 });
 
+add_task(async function check_canResetProfile() {
+  const sandbox = sinon.createSandbox();
+  const resetSupported = sandbox.stub(ResetProfile, "resetSupported");
+
+  resetSupported.returns(true);
+  is(
+    await ASRouterTargeting.Environment.canResetProfile,
+    true,
+    "should be true when the profile supports being reset"
+  );
+
+  const message = { id: "foo", targeting: "canResetProfile" };
+  is(
+    await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
+    message,
+    "should select the right item by canResetProfile"
+  );
+
+  resetSupported.returns(false);
+  is(
+    await ASRouterTargeting.Environment.canResetProfile,
+    false,
+    "should be false when the profile doesn't support being reset"
+  );
+
+  sandbox.restore();
+});
+
+add_task(async function check_profileLastUse() {
+  is(
+    await ASRouterTargeting.Environment.profileLastUse,
+    Math.max(
+      Services.appinfo.replacedLockTime,
+      Services.prefs.userPrefsFileLastModifiedAtStartup
+    ),
+    "should be the most recent lock file and prefs.js timestamps"
+  );
+
+  const message = {
+    id: "foo",
+    targeting: "profileLastUse <= currentDate|date",
+  };
+  is(
+    await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
+    message,
+    "should select correct item by profileLastUse"
+  );
+});
+
+add_task(async function check_isFirefoxReinstalled() {
+  const sandbox = sinon.createSandbox();
+  const wasReinstalled = sandbox.stub(ReinstallCheck, "wasReinstalled");
+
+  wasReinstalled.get(() => true);
+  is(
+    await ASRouterTargeting.Environment.isFirefoxReinstalled,
+    true,
+    "should be true when a reinstall was detected"
+  );
+
+  const message = { id: "foo", targeting: "isFirefoxReinstalled" };
+  is(
+    await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
+    message,
+    "should select correct item by isFirefoxReinstalled"
+  );
+
+  wasReinstalled.get(() => false);
+  is(
+    await ASRouterTargeting.Environment.isFirefoxReinstalled,
+    false,
+    "should be false when no reinstall was detected"
+  );
+
+  sandbox.restore();
+});
+
 add_task(async function check_hasSelectableProfiles() {
   is(
     await ASRouterTargeting.Environment.hasSelectableProfiles,
@@ -509,6 +596,45 @@ add_task(async function check_totalBookmarksCount() {
   await PlacesUtils.bookmarks.remove(bookmark.guid);
 });
 
+add_task(async function check_allowedNotificationOrigins() {
+  const message = { id: "foo", targeting: "allowedNotificationOrigins > 0" };
+
+  ok(
+    !(await ASRouterTargeting.findMatchingMessage({ messages: [message] })),
+    "Should not match when no origin is allowed"
+  );
+
+  PermissionTestUtils.add(
+    "https://example.com",
+    "desktop-notification",
+    Services.perms.DENY_ACTION
+  );
+  ok(
+    !(await ASRouterTargeting.findMatchingMessage({ messages: [message] })),
+    "Should not count a blocked origin"
+  );
+
+  PermissionTestUtils.add(
+    "https://example.org",
+    "desktop-notification",
+    Services.perms.ALLOW_ACTION
+  );
+  is(
+    await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
+    message,
+    "Should match once an origin is allowed"
+  );
+  is(
+    await ASRouterTargeting.Environment.allowedNotificationOrigins,
+    1,
+    "Should count the allowed origin but not the blocked one"
+  );
+
+  // Cleanup
+  PermissionTestUtils.remove("https://example.com", "desktop-notification");
+  PermissionTestUtils.remove("https://example.org", "desktop-notification");
+});
+
 add_task(async function check_needsUpdate() {
   QueryCache.queries.CheckBrowserNeedsUpdate.setUp(true);
 
@@ -599,8 +725,75 @@ add_task(async function checksearchEngines() {
   );
 });
 
+add_task(async function check_recentSearchCount() {
+  const FIELDNAME = DEFAULT_FORM_HISTORY_PARAM;
+  const message = { id: "foo", targeting: "recentSearchCount > 2" };
+
+  const clear = () =>
+    FormHistory.update({ op: "remove", fieldname: FIELDNAME });
+  await clear();
+  registerCleanupFunction(clear);
+
+  is(
+    await ASRouterTargeting.Environment.recentSearchCount,
+    0,
+    "recentSearchCount should be 0 with no search history"
+  );
+
+  await FormHistory.update([
+    { op: "bump", fieldname: FIELDNAME, value: "cats" },
+    { op: "bump", fieldname: FIELDNAME, value: "dogs" },
+    { op: "bump", fieldname: FIELDNAME, value: "weather" },
+  ]);
+
+  is(
+    await ASRouterTargeting.Environment.recentSearchCount,
+    3,
+    "recentSearchCount should count the three distinct recent searches"
+  );
+  is(
+    await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
+    message,
+    "Should select message because recentSearchCount > 2"
+  );
+
+  // Since form history dedupes, repeating a term should not increase the count.
+  await FormHistory.update({ op: "bump", fieldname: FIELDNAME, value: "cats" });
+  is(
+    await ASRouterTargeting.Environment.recentSearchCount,
+    3,
+    "Repeated searches of the same term should not increase the count"
+  );
+
+  // Exclude searches outside the recency window (28 days). Use a margin
+  // beyond the window rather than landing exactly on the cutoff, since the
+  // getter computes its own Date.now()-based cutoff a moment later and an
+  // exact boundary value can land on either side of it. The lastUsed time
+  // is in microseconds, so we need to multiply by 1000 to get the correct
+  // time.
+  const RECENT_SEARCH_WINDOW_DAYS = 28;
+  const STALE_MARGIN_DAYS = 1;
+  const oldLastUsed =
+    (Date.now() -
+      (RECENT_SEARCH_WINDOW_DAYS + STALE_MARGIN_DAYS) * 24 * 60 * 60 * 1000) *
+    1000;
+  await FormHistory.update({
+    op: "add",
+    fieldname: FIELDNAME,
+    value: "stale",
+    lastUsed: oldLastUsed,
+  });
+  is(
+    await ASRouterTargeting.Environment.recentSearchCount,
+    3,
+    "Searches older than the recency window should be excluded"
+  );
+
+  await clear();
+});
+
 add_task(async function checkisDefaultBrowser() {
-  const expected = ShellService.isDefaultBrowser();
+  const expected = await ShellService.isDefaultBrowserAsync();
   const result = await ASRouterTargeting.Environment.isDefaultBrowser;
   is(typeof result, "boolean", "isDefaultBrowser should be a boolean value");
   is(
@@ -617,6 +810,38 @@ add_task(async function checkisDefaultBrowser() {
     message,
     "should select correct item by isDefaultBrowser"
   );
+});
+
+add_task(async function checkHasAttemptedSetDefault() {
+  is(
+    await ASRouterTargeting.Environment.hasAttemptedSetDefault,
+    false,
+    "hasAttemptedSetDefault should be false before the attempt"
+  );
+  const shellStub = sinon
+    .stub(ShellService, "shellService")
+    .value({ setDefaultBrowser: () => {} });
+  const guidanceStub = sinon
+    .stub(ShellService, "_maybeShowSetDefaultGuidanceNotification")
+    .resolves();
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.shell.setDefaultBrowserUserChoice", false]],
+  });
+
+  try {
+    await ShellService.setDefaultBrowser(false);
+
+    is(
+      await ASRouterTargeting.Environment.hasAttemptedSetDefault,
+      true,
+      "hasAttemptedSetDefault should be true once after the attempt"
+    );
+  } finally {
+    ShellService._attemptedSetDefaultThisSession = false;
+    guidanceStub.restore();
+    shellStub.restore();
+    await SpecialPowers.popPrefEnv();
+  }
 });
 
 add_task(async function checkisDefaultHandler_pdf() {
@@ -1506,12 +1731,15 @@ add_task(async function checkPatternMatches() {
 });
 
 add_task(async function checkPatternsValid() {
-  const messages = (await CFRMessageProvider.getMessages()).filter(
-    m => m.trigger?.patterns
-  );
+  const messages = [
+    ...(await OnboardingMessageProvider.getMessages()),
+    ...(await PanelTestProvider.getMessages()),
+  ].filter(m => m.trigger?.patterns);
+
+  Assert.greater(messages.length, 0, "Found messages with trigger patterns");
 
   for (const message of messages) {
-    Assert.ok(new MatchPatternSet(message.trigger.patterns));
+    Assert.ok(new MatchPatternSet(message.trigger.patterns), message.id);
   }
 });
 
@@ -1661,9 +1889,8 @@ add_task(async function check_newTabSettings_webExtension() {
 
 add_task(async function check_openUrlTrigger_context() {
   const message = {
-    ...(await CFRMessageProvider.getMessages()).find(
-      m => m.id === "YOUTUBE_ENHANCE_3"
-    ),
+    id: "check_openUrlTrigger_context",
+    trigger: { id: "openURL", params: ["www.youtube.com", "youtube.com"] },
     targeting: "visitsCount == 3",
   };
   const trigger = {
@@ -2352,7 +2579,7 @@ add_task(async function check_totalSearches() {
 });
 
 add_task(async function checkisDefaultBrowserUncached() {
-  const expected = ShellService.isDefaultBrowser();
+  const expected = await ShellService.isDefaultBrowserAsync();
   const result = await ASRouterTargeting.Environment.isDefaultBrowserUncached;
   is(
     typeof result,
@@ -2419,7 +2646,7 @@ add_task(
 
 add_task(async function check_activeNotifications_infobar_shown() {
   let message = {
-    ...(await CFRMessageProvider.getMessages()).find(
+    ...(await PanelTestProvider.getMessages()).find(
       m => m.id === "INFOBAR_ACTION_86"
     ),
   };

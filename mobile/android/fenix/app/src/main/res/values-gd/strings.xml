@@ -100,8 +100,6 @@
   <string name="open_in_app_cfr_positive_button_text">Tadhail air na roghainnean</string>
   <!-- Text for the negative action button -->
   <string name="open_in_app_cfr_negative_button_text">Leig seachad</string>
-  <!-- Private browsing erase action "contextual feature recommendation" (CFR) -->
-
   <!-- Text for the info dialog when camera permissions have been denied but user tries to access a camera feature. -->
   <string name="camera_permissions_needed_message">Tha feum air inntrigeadh dhan chamara. Tadhail air roghainnean Android, thoir gnogag air na ceadan is an uairsin air “Ceadaich”.</string>
   <!-- Text for the positive action button to go to Android Settings to grant permissions. -->
@@ -139,16 +137,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Taba prìobhaideach ùr</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Faclan-faire</string>
-  <!--
-    Recent Tabs
-
-    Header text for jumping back into the recent tab in the home screen
-  -->
-  <string name="recent_tabs_header">Till gu far an robh thu</string>
   <!-- Button text for showing all the tabs in the tabs tray -->
   <string name="recent_tabs_show_all">Seall na h-uile</string>
-  <!-- Content description for the button which navigates the user to show all recent tabs in the tabs tray. -->
-  <string name="recent_tabs_show_all_content_description_2">Am putan airson gach taba a bha fosgailte o chionn goirid a shealltainn</string>
   <!-- Text for button in synced tab card that opens synced tabs tray -->
   <string name="recent_tabs_see_all_synced_tabs_button_text">Seall gach taba sioncronaichte</string>
   <!-- Accessibility description for device icon used for recent synced tab -->
@@ -299,8 +289,6 @@
   <string name="browser_menu_default_banner_title">Cleachd %1$s mar am brabhsair bunaiteach agad</string>
   <!-- Label text within the set as default banner -->
   <string name="browser_menu_default_banner_subtitle_2">Luath, prìobhaideach is air a dhèanamh dhutsa.</string>
-  <!-- Content description (not visible, for screen readers etc.) for the button that dismisses the set as default banner in the menu -->
-  <string name="browser_menu_default_banner_dismiss_promotion">Leig seachad an iomairt</string>
   <!-- Content description (not visible, for screen readers etc.) for recommended extensions in main menu -->
   <string name="browser_menu_recommended_extensions_content_description">Barrachd fiosrachaidh</string>
   <!--
@@ -481,8 +469,6 @@
   <string name="onboarding_marketing_body_1" tools:ignore="BrandUsage,UnusedResources">Innis do chom-pàirtichean margaideachd mar a fhuair thusa lorg air Firefox is gu bheil thu ga chleachdadh. Cha tèid an dàta seo a reic idir.</string>
   <!-- Marketing onboarding page button label variant. Button to confirm choice and start browsing. -->
   <string name="onboarding_marketing_positive_button_1" tools:ignore="UnusedResources">Aontaich is tòisich air brabhsadh</string>
-  <!-- ==== Project "Nova" onboarding strings ==== -->
-
   <!-- "Continue" onboarding button. -->
   <string name="nova_onboarding_continue_button">Lean air adhart</string>
   <!-- "Not now" onboarding button. -->
@@ -561,8 +547,6 @@
   <string name="nova_onboarding_add_search_widget_subtitle" tools:ignore="BrandUsage">Tòisich gach lorg on sgrìn mhòr aig an fhòn agad is làn-fhios agad gu bheil na gleusan tèarainteachd aig Firefox gad dhìon.</string>
   <!-- "Add search widget" onboarding button. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_add_search_widget_button" tools:ignore="BrandUsage">Cuir ris widget Firefox</string>
-  <!-- ==== End of Project "Nova" onboarding strings ==== -->
-
   <!--
     Widget Picker
 
@@ -644,8 +628,6 @@
   <string name="preferences_pbm_lock_screen_title">Cleachd glas na sgrìn airson tabaichean a chur am falach ann am brabhsadh prìobhaideach</string>
   <!-- Informs the user how to access the tabs when "Use screen lock to hide tabs in private browsing" is enabled -->
   <string name="preferences_pbm_lock_screen_summary_3">Coimhead air tabaichean le lorg do mheòir, PIN no d’ aodann. Ma chuireas tu seo air, bacaidh seo glacadh agus co-roinneadh na sgrìn cuideachd.</string>
-  <!-- Preference for removing cookie/consent banners from sites automatically in private mode. See reduce_cookie_banner_summary for additional context. -->
-  <string name="preferences_cookie_banner_reduction_private_mode">Blocaiche bratach bhriosgaidean ann am brabhsadh prìobhaideach</string>
   <!-- Description of the preference to enable "HTTPS-Only" mode. -->
   <string name="preferences_https_only_summary">Nì seo oidhirp leis fhèin ceangal a dhèanamh ri làraichean le pròtacal crioptachadh HTTPS airson tèarainteachd a bharrachd.</string>
   <!-- Summary of https only preference if https only is set to off -->
@@ -833,8 +815,6 @@
     Title for the customize home screen section with privacy report.
   -->
   <string name="customize_toggle_privacy_report">Aithisg na prìobhaideachd</string>
-  <!-- Header text for jumping back into the recent tab in customize the home screen -->
-  <string name="customize_toggle_jump_back_in">Till gu far an robh thu</string>
   <!-- Title for the customize home screen section with bookmarks. -->
   <string name="customize_toggle_bookmarks">Comharran-lìn</string>
   <!--
@@ -1117,8 +1097,6 @@
   <string name="preference_simple_toolbar">Sìmplidh</string>
   <!-- Preference for using expanded toolbar -->
   <string name="preference_expanded_toolbar">Air a leudachadh</string>
-  <!-- Preference description indicating the toolbar location preference is disabled when the tab strip is enabled -->
-  <string name="preference_toolbar_pref_disabled_explanation">Feumaidh bàr an t-seòlaidh a bhith aig a’ bhàrr nuair a tha bàr nan tabaichean ris.</string>
   <!-- New tab shortcut in toolbar customization -->
   <string name="toolbar_customize_shortcut_new_tab">Fosgail taba ùr</string>
   <!-- Share shortcut in toolbar customization -->
@@ -1233,8 +1211,6 @@
     Title of preference for tabs management
   -->
   <string name="preferences_tabs">Tabaichean</string>
-  <!-- Title of preference that allows a user to specify the tab view -->
-  <string name="preferences_tab_view">Sealladh nan taba</string>
   <!-- Option for a list tab view -->
   <string name="tab_view_list">Liosta</string>
   <!-- Option for a grid tab view -->
@@ -1279,13 +1255,7 @@
   <string name="opening_screen_last_tab_summary">Fosgail san taba mu dheireadh</string>
   <!-- Summary for homepage preference indicating opening the homepage when re-opening the app after four hours of inactivity -->
   <string name="opening_screen_after_four_hours_of_inactivity_summary">Fosgail air an duilleag-dhachaigh an dèidh ceithir uairean a thìde</string>
-  <!--
-    Inactive tabs
-
-    Category header of a preference that allows a user to enable or disable the inactive tabs feature
-  -->
-  <string name="preferences_inactive_tabs">Gluais seann-tabaichean gun earrann neo-ghnìomhach</string>
-  <!-- Title of inactive tabs preference -->
+  <!-- Summary of the preference that allows a user to enable or disable the inactive tabs feature. -->
   <string name="preferences_inactive_tabs_title">Thèid tabaichean nach tug thu sùil orra fad cola-deug a ghluasad gun earrann neo-ghnìomhach.</string>
   <!--
     Studies
@@ -1433,16 +1403,6 @@
     %1$d is the number of bookmarks selected
   -->
   <string name="history_multi_select_title">%1$d air an taghadh</string>
-  <!-- Text for the header that groups the history for today -->
-  <string name="history_today">An-diugh</string>
-  <!-- Text for the header that groups the history for yesterday -->
-  <string name="history_yesterday">An-dè</string>
-  <!-- Text for the header that groups the history the past 7 days -->
-  <string name="history_7_days">Na 7 làithean seo chaidh</string>
-  <!-- Text for the header that groups the history the past 30 days -->
-  <string name="history_30_days">Na 30 latha seo chaidh</string>
-  <!-- Text for the header that groups the history older than the last month -->
-  <string name="history_older">Nas sine</string>
   <!-- Text shown when no history exists -->
   <string name="history_empty_message">Chan eil eachdraidh an-seo</string>
   <!--
@@ -1642,8 +1602,6 @@
   <string name="webcompat_reporter_preview_report">Ro-seall an aithisg</string>
   <!-- The title shown at the top of the WebCompat Report preview panel. This appears after the user taps the “Preview” button before sending a report. -->
   <string name="webcompat_reporter_preview_bottom_sheet_header">Ro-shealladh na h-aithisge</string>
-  <!-- Label for the “Send” button shown in the WebCompat Report preview panel, which the user taps to submit the report. -->
-  <string name="webcompat_reporter_preview_bottom_sheet_send">Cuir</string>
   <!--
     These reason strings are dropdown options on a WebCompat reporter form, indicating what is broken on the site.
 
@@ -2447,12 +2405,8 @@
   <string name="add_to_homescreen_cancel">Sguir dheth</string>
   <!-- Add button text for the Add to Homescreen dialog -->
   <string name="add_to_homescreen_add">Cuir ris</string>
-  <!-- Continue to website button text for the first-time Add to Homescreen dialog -->
-  <string name="add_to_homescreen_continue">Lean air adhart gun làrach-lìn</string>
   <!-- Placeholder text for the TextView in the Add to Homescreen dialog -->
   <string name="add_to_homescreen_text_placeholder">Ainm na h-ath-ghoirid</string>
-  <!-- Describes the add to homescreen functionality -->
-  <string name="add_to_homescreen_description_2">Tha e furasta an duilleag seo a chur ri duilleag-dhachaigh an uidheim agad airson greim fhaighinn air gu luath.</string>
   <!-- Preference for managing the settings for logins and passwords in Fenix -->
   <string name="preferences_passwords_logins_and_passwords_2">Faclan-faire</string>
   <!-- Preference for managing the saving of logins and passwords in Fenix -->
@@ -2985,8 +2939,6 @@
   <string name="a11y_action_label_expand">leudaich</string>
   <!-- Action label for links to a website containing documentation about a wallpaper collection. Talkback will append this to say "Double tap to open link to learn more about this collection". -->
   <string name="a11y_action_label_wallpaper_collection_learn_more">fosgail an ceangal airson barrachd fiosrachaidh mun chruinneachadh seo</string>
-  <!-- Translations feature -->
-
   <!--
     Translation request dialog
 
@@ -3555,8 +3507,6 @@
   <string name="certificate_warning_push_notification_pnw2_message" tools:ignore="UnusedResources">Ùraich ron 14mh latha dhen Mhàrt e airson ’s gun obraich na tuilleadain is gleusan eile fhathast.</string>
   <!-- Push notification message about old Firefox version -->
   <string name="certificate_warning_push_notification_pnw3_message" tools:ignore="UnusedResources">Chan obraich cuid a ghleusan tuilleadh o màireach.</string>
-  <!-- TextField Design System Component -->
-
   <!--
     Setup checklist feature
 
@@ -3715,8 +3665,6 @@
   <string name="settings_search_no_results_message">Feuch lorg eile ’s dòcha?</string>
   <!-- Content Description for the button to open Settings Search (to search through settings). -->
   <string name="settings_search_button_content_description">Putan lorg nan roghainnean</string>
-  <!-- ==== Terms of use pop up prompt ==== -->
-
   <!-- Title for the pop up prompt -->
   <string name="terms_of_use_prompt_title">Fhuair sinn ùrachadh</string>
   <!--
@@ -3741,8 +3689,6 @@
   <string name="terms_of_use_prompt_accept">Gabh ris</string>
   <!-- Label for a button to postpone accepting the terms of use -->
   <string name="terms_of_use_prompt_postpone">Cuir nam chuimhne an ceann greis</string>
-  <!-- ==== Experiment strings. ==== -->
-
   <!-- A title for the popup prompt. -->
   <string name="terms_of_use_prompt_title_option_a" tools:ignore="UnusedResources">Teirmichean a’ chleachdaidh</string>
   <!--
@@ -3757,8 +3703,6 @@
   <string name="terms_of_use_prompt_body_line_two_alternative" tools:ignore="UnusedResources">Gheibh thu barrachd fiosrachaidh %1$s.</string>
   <!-- Link text for terms_of_use_prompt_body_line_two_alternative that links to a site with more information about the Terms of Use -->
   <string name="terms_of_use_prompt_body_line_two_alternative_link" tools:ignore="UnusedResources">an-seo</string>
-  <!-- ==== End of Terms of use popup prompt. ==== -->
-
   <!--
     Privacy notice homepage banner
 

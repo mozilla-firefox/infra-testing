@@ -61,7 +61,7 @@ It's still important to report these bugs but they should include additional inf
 
 - Are you using a proxy? What kind?
 -  Are you using DNS-over-HTTPS?
-    -  If the `DoH mode` at about:networking#dns is 2 or 3 then the answer is yes.
+    -  If the `DoH mode` at about:networking#dns is `TRR first` or `TRR only` then the answer is yes.
 -  What platform are you using? (Operating system, Linux distribution, etc)
     - It's best to simply copy the output of `about:support`
 

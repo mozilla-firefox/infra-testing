@@ -233,7 +233,7 @@ namespace {
  * Constants
  ******************************************************************************/
 
-const uint32_t kSQLitePageSizeOverride = 512;
+const uint32_t kSQLitePageSizeOverride = 4096;
 
 // Important version history:
 // - Bug 1290481 bumped our schema from major.minor 2.0 to 3.0 in Firefox 57
@@ -254,7 +254,7 @@ const uint32_t kSQLitePageSizeOverride = 512;
 const uint32_t kMajorStorageVersion = 2;
 
 // Minor storage version. Bump for backwards-compatible changes.
-const uint32_t kMinorStorageVersion = 3;
+const uint32_t kMinorStorageVersion = 4;
 
 // The storage version we store in the SQLite database is a (signed) 32-bit
 // integer. The major version is left-shifted 16 bits so the max value is
@@ -1401,7 +1401,7 @@ void GetJarPrefix(bool aInIsolatedMozBrowser, nsACString& aJarPrefix) {
 
 // This method computes and returns our best guess for the temporary storage
 // limit (in bytes), based on disk capacity.
-Result<uint64_t, nsresult> GetTemporaryStorageLimit(nsIFile& aStorageDir) {
+Result<int64_t, nsresult> GetTemporaryStorageLimit(nsIFile& aStorageDir) {
   if (nsContentUtils::ShouldResistFingerprinting(
           "The storage limit is set only once and not webpage specific.",
           RFPTarget::DiskStorageLimit)) {
@@ -2118,7 +2118,7 @@ void QuotaManager::RemovePendingDirectoryLock(DirectoryLockImpl& aLock) {
 }
 
 uint64_t QuotaManager::CollectOriginsForEviction(
-    uint64_t aMinSizeToBeFreed, nsTArray<RefPtr<OriginDirectoryLock>>& aLocks) {
+    int64_t aMinSizeToBeFreed, nsTArray<RefPtr<OriginDirectoryLock>>& aLocks) {
   AssertIsOnOwningThread();
   MOZ_ASSERT(aLocks.IsEmpty());
 
@@ -2256,7 +2256,7 @@ uint64_t QuotaManager::CollectOriginsForEviction(
         // Create a list of inactive and the least recently used origins
         // whose aggregate size is greater or equals the minimal size to be
         // freed.
-        uint64_t sizeToBeFreed = 0;
+        int64_t sizeToBeFreed = 0;
         for (uint32_t count = inactiveOrigins.Length(), index = 0;
              index < count; index++) {
           if (sizeToBeFreed >= aMinSizeToBeFreed) {
@@ -2710,12 +2710,29 @@ void QuotaManager::InitQuotaForOrigin(
   // write, we can skip the dirty-queue push: the existing row is
   // already correct.
   bool cacheRowMatches = false;
+
+  // Usages are accumulated as a sum, so a scan has to replace them wholesale.
+  // Timestamps accumulate as a maximum instead: a scan can only derive
+  // timestamps from file modification times, so an existing row that knows
+  // about a more recent value wins.
+  FullOriginMetadata fullOriginMetadata = aFullOriginMetadata.Clone();
+
   if (aCacheMap.IsActive()) {
     Maybe<FullOriginMetadata> cachedMetadata = aCacheMap.Extract(
-        aFullOriginMetadata.mPersistenceType, aFullOriginMetadata.mOrigin);
+        fullOriginMetadata.mPersistenceType, fullOriginMetadata.mOrigin);
     if (cachedMetadata.isSome()) {
-      cachedMetadata->CopyIntrinsicFieldsFrom(aFullOriginMetadata);
-      if (cachedMetadata->Equals(aFullOriginMetadata)) {
+      if (cachedMetadata->mLastAccessTime >
+          fullOriginMetadata.mLastAccessTime) {
+        fullOriginMetadata.mLastAccessTime = cachedMetadata->mLastAccessTime;
+      }
+
+      if (cachedMetadata->mLastMaintenanceDate >
+          fullOriginMetadata.mLastMaintenanceDate) {
+        fullOriginMetadata.mLastMaintenanceDate =
+            cachedMetadata->mLastMaintenanceDate;
+      }
+
+      if (cachedMetadata->EqualsIgnoringIntrinsicFields(fullOriginMetadata)) {
         cacheRowMatches = true;
       }
     }
@@ -2724,15 +2741,14 @@ void QuotaManager::InitQuotaForOrigin(
   MutexAutoLock lock(mQuotaMutex);
 
   RefPtr<GroupInfo> groupInfo = LockedGetOrCreateGroupInfo(
-      aFullOriginMetadata.mPersistenceType, aFullOriginMetadata.mSuffix,
-      aFullOriginMetadata.mGroup);
+      fullOriginMetadata.mPersistenceType, fullOriginMetadata.mSuffix,
+      fullOriginMetadata.mGroup);
 
   auto originInfo = MakeRefPtr<OriginInfo>(
-      groupInfo, aFullOriginMetadata.mOrigin,
-      aFullOriginMetadata.mStorageOrigin, aFullOriginMetadata.mIsPrivate,
-      aFullOriginMetadata.mClientUsages, aFullOriginMetadata.mOriginUsage,
-      aFullOriginMetadata.mLastAccessTime,
-      aFullOriginMetadata.mLastMaintenanceDate, aFullOriginMetadata.mPersisted,
+      groupInfo, fullOriginMetadata.mOrigin, fullOriginMetadata.mStorageOrigin,
+      fullOriginMetadata.mIsPrivate, fullOriginMetadata.mClientUsages,
+      fullOriginMetadata.mOriginUsage, fullOriginMetadata.mLastAccessTime,
+      fullOriginMetadata.mLastMaintenanceDate, fullOriginMetadata.mPersisted,
       aDirectoryExists);
 
   // A full directory scan is always performed before InitQuotaForOrigin
@@ -2749,7 +2765,7 @@ void QuotaManager::InitQuotaForOrigin(
   // true when mAccessed is true. Dirty origins fall through to
   // InitializeOrigin.
   //
-  // So the usage data in aFullOriginMetadata reflects the actual on-disk
+  // So the usage data in fullOriginMetadata reflects the actual on-disk
   // state. Enqueuing here ensures the corrected metadata is flushed back.
   //
   // We set mMetadataDirty directly because the OriginInfo is not yet
@@ -2760,21 +2776,15 @@ void QuotaManager::InitQuotaForOrigin(
   //
   // During a disk scan, dirty origins are enqueued so corrected metadata
   // is flushed back.  When the storage database is fresh (no origin
-  // rows, inactive reconciliation map), every origin with usage is
-  // enqueued to populate it for the first time.
+  // rows, inactive reconciliation map), every origin with a directory
+  // is enqueued to populate it for the first time.
   //
   // Origins loaded directly from the storage database are already
   // correct.  Callers pass an active reconciliation map for these, so
   // cacheRowMatches is true and no enqueue happens.
-  //
-  // TODO: The mOriginUsage > 0 guard avoids queuing origins whose
-  // directory may not exist, which would cause the flush path to
-  // requeue them indefinitely.  This should be replaced by checking
-  // mDirectoryExists, with the flush path skipping origins without a
-  // directory instead of requeueing them.
   if (!cacheRowMatches &&
-      (aFullOriginMetadata.mDirty || !aCacheMap.IsActive()) &&
-      aFullOriginMetadata.mOriginUsage > 0) {
+      (fullOriginMetadata.mDirty || !aCacheMap.IsActive()) &&
+      aDirectoryExists && !mUsageModificationDisabled.load()) {
     originInfo->mMetadataDirty = true;
     auto* message = new UnboundedMPSCQueue<RefPtr<OriginInfo>>::Message();
     message->data = originInfo;
@@ -2955,6 +2965,10 @@ nsresult QuotaManager::LoadQuota() {
   AssertIsOnIOThread();
   MOZ_ASSERT(mStorageConnection);
   MOZ_ASSERT(!mTemporaryStorageInitializedInternal);
+
+  // If we are shutting down, it's too late to load quota. Stop now: any rescan
+  // needed will be done on next startup.
+  QM_TRY(OkIf(!IsShuttingDown()), NS_ERROR_ABORT);
 
   // A list of all unaccessed default or temporary origins.
   nsTArray<FullOriginMetadata> unaccessedOrigins;
@@ -3169,6 +3183,8 @@ nsresult QuotaManager::LoadQuota() {
       nsTArray<RenameAndInitInfo> renameAndInitInfos;
       nsTArray<FullOriginMetadata> failedOrigins;
       for (auto& dirtyOrigin : dirtyOrigins) {
+        QM_TRY(OkIf(!IsShuttingDown()), NS_ERROR_ABORT);
+
         QM_WARNONLY_TRY_UNWRAP(
             auto maybeOk,
             RestoreAndInitializeOrigin(dirtyOrigin, renameAndInitInfos));
@@ -3176,6 +3192,8 @@ nsresult QuotaManager::LoadQuota() {
           failedOrigins.AppendElement(std::move(dirtyOrigin));
         }
       }
+
+      QM_TRY(OkIf(!IsShuttingDown()), NS_ERROR_ABORT);
 
       if (failedOrigins.IsEmpty()) {
         QM_TRY(MOZ_TO_RESULT(InitializeFlushTimer()));
@@ -3208,7 +3226,7 @@ nsresult QuotaManager::LoadQuota() {
         } else {
           AddTemporaryOrigin(failedOrigin);
 
-          InitQuotaForOrigin(failedOrigin);
+          InitQuotaForOrigin(failedOrigin, /* aDirectoryExists */ false);
         }
       }
 
@@ -3227,6 +3245,11 @@ nsresult QuotaManager::LoadQuota() {
     RemoveQuota();
     RemoveTemporaryOrigins();
     unaccessedOrigins.Clear();
+
+    // RemoveQuota sets mUsageModificationDisabled to prevent concurrent
+    // dirty-origin pushes during teardown. Re-enable it now so that the
+    // disk scan below can register dirty origins for DB write.
+    mUsageModificationDisabled.store(false);
 
     // A keeper to defer the return only in Nightly, so that the telemetry data
     // for whole profile can be collected.
@@ -3293,11 +3316,25 @@ void QuotaManager::UnloadQuota() {
 
   auto autoRemoveQuota = MakeScopeExit([&] { RemoveQuota(); });
 
-  // Each per-origin CreateDirectoryMetadata2 auto-commits its own
-  // statement; a crash mid-loop leaves the cache `valid` bit unchanged
-  // (still 0 from InvalidateQuotaCache earlier), and the next startup's
-  // InitializeRepository reconciliation will patch up any divergent
-  // rows and delete orphans.
+  // Group cache-DB upserts (OriginUpserter::Refresh, also reached through
+  // SettleDirectoryMetadata2) into common transactions, to prevent each loop
+  // iteration from triggering a fsync.
+  // Avoid a single transaction though: if UnloadQuota still takes too long and
+  // gets killed at shutdown for this reason, we don't want all the UnloadQuota
+  // work to be lost, as this could result in a lot of work upon restart.
+  const auto createTransaction =
+      [this](Maybe<mozStorageTransaction>& transaction) {
+        transaction.reset();
+        transaction.emplace(mStorageConnection, /* aCommitOnComplete */ false,
+                            mozIStorageConnection::TRANSACTION_IMMEDIATE);
+        QM_WARNONLY_TRY(MOZ_TO_RESULT(transaction->Start()));
+      };
+  Maybe<mozStorageTransaction> transaction;
+  createTransaction(transaction);
+
+  static const int32_t kTransactionBatchSize = 50;
+  int32_t transactionCount = 0;
+
   {
     MutexAutoLock lock(mQuotaMutex);
 
@@ -3336,6 +3373,7 @@ void QuotaManager::UnloadQuota() {
               DebugOnly<nsresult> rv =
                   SettleDirectoryMetadata2(*originDirectory.ref(), metadata);
               MOZ_ASSERT(NS_FAILED(rv) == metadata.mDirty);
+              ++transactionCount;
             }
           } else if (mCacheRequiresFullScan) {
             // The cache DB was freshly created (or recreated after
@@ -3346,6 +3384,13 @@ void QuotaManager::UnloadQuota() {
             // could have been updated on disk after initialization).
             MOZ_ASSERT(mOriginUpserter, "We must have an origin upserter here");
             QM_WARNONLY_TRY(mOriginUpserter->Refresh(metadata));
+            ++transactionCount;
+          }
+
+          if (transactionCount >= kTransactionBatchSize) {
+            QM_WARNONLY_TRY(MOZ_TO_RESULT(transaction->Commit()));
+            createTransaction(transaction);
+            transactionCount = 0;
           }
         }
 
@@ -3366,6 +3411,8 @@ void QuotaManager::UnloadQuota() {
   QM_TRY(MOZ_TO_RESULT(stmt->BindUTF8StringByName("buildId"_ns, *gBuildId)),
          QM_VOID);
   QM_TRY(MOZ_TO_RESULT(stmt->Execute()), QM_VOID);
+
+  QM_TRY(MOZ_TO_RESULT(transaction->Commit()), QM_VOID);
 }
 
 void QuotaManager::RemoveOriginFromCacheForEviction(
@@ -3579,10 +3626,12 @@ void QuotaManager::PersistOrigin(const OriginMetadata& aOriginMetadata) {
   AssertIsOnIOThread();
 
   DirtyTrackingAutoLock lock(mQuotaMutex, mGroupInfoPairs, aOriginMetadata);
-  RefPtr<OriginInfo> originInfo =
-      LockedGetOriginInfo(PERSISTENCE_TYPE_DEFAULT, aOriginMetadata);
+  if (!lock.IsValid()) {
+    return;
+  }
 
-  if (originInfo && !originInfo->LockedPersisted()) {
+  RefPtr<OriginInfo> originInfo = lock.GetOriginInfo();
+  if (!originInfo->LockedPersisted()) {
     originInfo->LockedPersist(lock);
   }
 }
@@ -4252,23 +4301,27 @@ Result<Ok, nsresult> QuotaManager::InitializeOriginDirectory(
     PersistenceType aPersistenceType,
     nsTArray<RenameAndInitInfo>& aRenameAndInitInfos, OriginFunc&& aOriginFunc,
     OriginCacheMap& aCacheMap) {
-  QM_TRY_UNWRAP(auto maybeMetadata,
-                QM_OR_ELSE_WARN_IF(
-                    // Expression
-                    LoadFullOriginMetadataWithRestore(aChildDirectory)
-                        .map([](FullOriginMetadata&& metadata)
-                                 -> Maybe<FullOriginMetadata> {
-                          return Some(std::move(metadata));
-                        }),
-                    // Predicate.
-                    IsSpecificError<NS_ERROR_MALFORMED_URI>,
-                    // Fallback.
-                    ErrToDefaultOk<Maybe<FullOriginMetadata>>));
+  QM_TRY_UNWRAP(
+      auto maybeMetadata,
+      QM_OR_ELSE_WARN_IF(
+          // Expression
+          LoadFullOriginMetadataWithRestore(aChildDirectory)
+              .map([](FullOriginMetadata&& metadata)
+                       -> Maybe<FullOriginMetadata> {
+                return Some(std::move(metadata));
+              }),
+          // Predicate.
+          IsSpecificError<NS_ERROR_MALFORMED_URI>,
+          // Fallback. The origin is permanently unresolvable
+          // (e.g. an orphaned moz-extension directory whose
+          // extension has been uninstalled), so remove it.
+          ([&aChildDirectory](
+               const nsresult) -> Result<Maybe<FullOriginMetadata>, nsresult> {
+            QM_TRY(MOZ_TO_RESULT(aChildDirectory->Remove(true)));
+            return Maybe<FullOriginMetadata>{};
+          })));
 
   if (!maybeMetadata) {
-    // Unknown directories during initialization are
-    // allowed. Just warn if we find them.
-    UNKNOWN_FILE_WARNING(aLeafName);
     return Ok{};
   }
 
@@ -4400,6 +4453,10 @@ nsresult QuotaManager::InitializeRepository(PersistenceType aPersistenceType,
              aPersistenceType == PERSISTENCE_TYPE_TEMPORARY ||
              aPersistenceType == PERSISTENCE_TYPE_DEFAULT);
 
+  // If we are shutting down, it's too late to initialize the repository.
+  // Stop now: any rescan needed will be done on next startup.
+  QM_TRY(OkIf(!IsShuttingDown()), NS_ERROR_ABORT);
+
   // Pre-load the L1 cache rows for this repository so the disk walk
   // can decide per-origin whether the cached row already matches the
   // metadata we'd otherwise rewrite. Keys claimed during the walk are
@@ -4468,6 +4525,10 @@ nsresult QuotaManager::InitializeRepository(PersistenceType aPersistenceType,
 
   for (auto& info : renameAndInitInfos) {
     QM_TRY(([&]() -> Result<Ok, nsresult> {
+      if (NS_WARN_IF(IsShuttingDown())) {
+        RETURN_STATUS_OR_RESULT(statusKeeper, NS_ERROR_ABORT);
+      }
+
       QM_TRY(
           ([&directory, &info, this, aPersistenceType, &aOriginFunc,
             &cacheMap]() -> Result<Ok, nsresult> {
@@ -4722,8 +4783,9 @@ nsresult QuotaManager::InitializeOrigin(
 
   if (trackQuota) {
     const auto usage = std::accumulate(
-        clientUsages.cbegin(), clientUsages.cend(), CheckedUint64(0),
-        [](CheckedUint64 value, const Maybe<uint64_t>& clientUsage) {
+        clientUsages.cbegin(), clientUsages.cend(), CheckedInt64(0),
+        [](CheckedInt64 value, const Maybe<int64_t>& clientUsage) {
+          QM_ASSERT_NOT_NEGATIVE(clientUsage.valueOr(0));
           return value + clientUsage.valueOr(0);
         });
 
@@ -5107,6 +5169,38 @@ nsresult QuotaManager::UpgradeStorageFrom2_2To2_3(
   };
 
   return ExecuteInitialization(Initialization::UpgradeStorageFrom2_2To2_3,
+                               innerFunc);
+}
+
+nsresult QuotaManager::UpgradeStorageFrom2_3To2_4(
+    mozIStorageConnection* aConnection) {
+  AssertIsOnIOThread();
+  MOZ_ASSERT(aConnection);
+
+  const auto innerFunc = [&aConnection](const auto&) -> nsresult {
+#ifdef DEBUG
+    {
+      QM_TRY_INSPECT(
+          const int32_t& storageVersion,
+          MOZ_TO_RESULT_INVOKE_MEMBER(aConnection, GetSchemaVersion));
+
+      MOZ_ASSERT(storageVersion == MakeStorageVersion(2, 3));
+    }
+#endif
+
+    QM_TRY(MOZ_TO_RESULT(aConnection->ExecuteSimpleSQL(nsPrintfCString(
+        "PRAGMA page_size = %" PRIu32 ";", kSQLitePageSizeOverride))));
+
+    QM_TRY(MOZ_TO_RESULT(
+        aConnection->ExecuteSimpleSQL("PRAGMA auto_vacuum = INCREMENTAL;"_ns)));
+
+    QM_TRY(
+        MOZ_TO_RESULT(aConnection->SetSchemaVersion(MakeStorageVersion(2, 4))));
+
+    return NS_OK;
+  };
+
+  return ExecuteInitialization(Initialization::UpgradeStorageFrom2_3To2_4,
                                innerFunc);
 }
 
@@ -5546,12 +5640,17 @@ nsresult QuotaManager::MaybeCreateOrUpgradeStorage(
         QM_TRY(MOZ_TO_RESULT(aConnection.ExecuteSimpleSQL(nsPrintfCString(
             "PRAGMA page_size = %" PRIu32 ";", kSQLitePageSizeOverride))));
       }
+
+      QM_TRY(MOZ_TO_RESULT(aConnection.ExecuteSimpleSQL(
+          "PRAGMA auto_vacuum = INCREMENTAL;"_ns)));
     }
 
     mozStorageTransaction transaction(
         &aConnection, false, mozIStorageConnection::TRANSACTION_IMMEDIATE);
 
     QM_TRY(MOZ_TO_RESULT(transaction.Start()));
+
+    bool vacuum = false;
 
     // An upgrade method can upgrade the database, the storage or both.
     // The upgrade loop below can only be avoided when there's no database and
@@ -5574,7 +5673,7 @@ nsresult QuotaManager::MaybeCreateOrUpgradeStorage(
                            "VALUES (0)"))));
     } else {
       // This logic needs to change next time we change the storage!
-      static_assert(kStorageVersion == int32_t((2 << 16) + 3),
+      static_assert(kStorageVersion == int32_t((2 << 16) + 4),
                     "Upgrade function needed due to storage version increase.");
 
       while (storageVersion != kStorageVersion) {
@@ -5588,6 +5687,9 @@ nsresult QuotaManager::MaybeCreateOrUpgradeStorage(
           QM_TRY(MOZ_TO_RESULT(UpgradeStorageFrom2_1To2_2(&aConnection)));
         } else if (storageVersion == MakeStorageVersion(2, 2)) {
           QM_TRY(MOZ_TO_RESULT(UpgradeStorageFrom2_2To2_3(&aConnection)));
+        } else if (storageVersion == MakeStorageVersion(2, 3)) {
+          QM_TRY(MOZ_TO_RESULT(UpgradeStorageFrom2_3To2_4(&aConnection)));
+          vacuum = true;
         } else {
           QM_FAIL(NS_ERROR_FAILURE, []() {
             NS_WARNING(
@@ -5604,6 +5706,14 @@ nsresult QuotaManager::MaybeCreateOrUpgradeStorage(
     }
 
     QM_TRY(MOZ_TO_RESULT(transaction.Commit()));
+
+    // Best-effort VACUUM to apply the page_size and auto_vacuum PRAGMAs
+    // set inside UpgradeStorageFrom2_3To2_4. If it fails, the database
+    // remains functional with the old page size.
+    if (vacuum) {
+      QM_WARNONLY_TRY(
+          MOZ_TO_RESULT(aConnection.ExecuteSimpleSQL("VACUUM;"_ns)));
+    }
   }
 
   return NS_OK;
@@ -5875,6 +5985,29 @@ nsresult QuotaManager::EnsureStorageIsInitializedInternal() {
             // Fallback.
             ErrToDefaultOk<nsCOMPtr<mozIStorageConnection>>));
 
+    // OpenUnsharedDatabase only validates the SQLite header
+    // (page 1). Internal corruption (such as freelist inconsistency from
+    // an interrupted schema migration) passes the open check but breaks
+    // all subsequent storage operations. Run a quick integrity check to
+    // catch this class of corruption; if it fails, close and null the
+    // connection so the nuke-and-rebuild path below handles recovery.
+    // See bug 2065480 for details.
+    if (connection) {
+      QM_WARNONLY_TRY(DatabasePassesIntegrityCheck(*connection)
+                          .andThen([](bool ok) -> Result<Ok, nsresult> {
+                            return ok ? Result<Ok, nsresult>{Ok{}}
+                                      : Err(NS_ERROR_FILE_CORRUPTED);
+                          }),
+                      // Clean-up: called if DatabasePassesIntegrityCheck failed
+                      // or found that the database is corrupted (!ok)
+                      [&](const auto&) {
+                        // Reset the connection to force database file to be
+                        // recreated
+                        connection->Close();
+                        connection = nullptr;
+                      });
+    }
+
     bool storageFileWasCorrupted = false;
 
     if (!connection) {
@@ -6012,11 +6145,6 @@ void QuotaManager::FlushDirtyOriginInfos() {
     // call (e.g. via InitializeOrigin) since it was queued. Skip the redundant
     // write in that case.
     if (!info->LockedDirty()) {
-      continue;
-    }
-
-    if (flushed >= maxOriginsToSaveInOneBatch) {
-      itemsToRequeue.AppendElement(std::move(info));
       continue;
     }
 
@@ -6861,8 +6989,6 @@ QuotaManager::EnsurePersistentOriginIsInitializedInternal(
           // Get the metadata. We only use the timestamp.
           QM_TRY_INSPECT(const auto& metadata,
                          LoadFullOriginMetadataWithRestore(directory));
-
-          MOZ_ASSERT(metadata.mLastAccessTime <= PR_Now());
 
           return metadata;
         }()));
@@ -8248,19 +8374,19 @@ void QuotaManager::SetThumbnailPrivateIdentityId(
 }
 
 /* static */
-uint64_t QuotaManager::GetGroupLimitForLimit(uint64_t aLimit) {
+int64_t QuotaManager::GetGroupLimitForLimit(int64_t aLimit) {
   // To avoid one group evicting all the rest, limit the amount any one group
   // can use to 20% resp. a fifth. To prevent individual sites from using
   // exorbitant amounts of storage where there is a lot of free space, cap the
   // group limit to 10GB.
-  const auto x = std::min<uint64_t>(aLimit / 5, 10 GB);
+  const auto x = std::min<int64_t>(aLimit / 5, 10 GB);
 
   // In low-storage situations, make an exception (while not exceeding the total
   // storage limit).
-  return std::min<uint64_t>(aLimit, std::max<uint64_t>(x, 10 MB));
+  return std::min<int64_t>(aLimit, std::max<int64_t>(x, 10 MB));
 }
 
-uint64_t QuotaManager::GetGroupLimit() const {
+int64_t QuotaManager::GetGroupLimit() const {
   return GetGroupLimitForLimit(mTemporaryStorageLimit);
 }
 
@@ -8285,7 +8411,8 @@ std::pair<uint64_t, uint64_t> QuotaManager::GetUsageAndLimitForEstimate(
     const OriginMetadata& aOriginMetadata) {
   AssertIsOnIOThread();
 
-  uint64_t totalGroupUsage = 0;
+  int64_t originUsage = 0;
+  bool persisted = false;
 
   {
     MutexAutoLock lock(mQuotaMutex);
@@ -8294,35 +8421,90 @@ std::pair<uint64_t, uint64_t> QuotaManager::GetUsageAndLimitForEstimate(
     if (mGroupInfoPairs.Get(aOriginMetadata.mGroup, &pair)) {
       for (const PersistenceType type : kBestEffortPersistenceTypes) {
         RefPtr<GroupInfo> groupInfo = pair->LockedGetGroupInfo(type);
-        if (groupInfo) {
-          if (type == PERSISTENCE_TYPE_DEFAULT) {
-            RefPtr<OriginInfo> originInfo =
-                groupInfo->LockedGetOriginInfo(aOriginMetadata.mOrigin);
+        if (!groupInfo) {
+          continue;
+        }
 
-            // A persisted origin is exempt from group-limit eviction and is
-            // bound by the global temporary storage limit instead, so it
-            // reports its own origin usage against that limit.
-            if (originInfo && originInfo->LockedPersisted()) {
-              return std::pair(originInfo->LockedUsage(),
-                               static_cast<uint64_t>(mTemporaryStorageLimit));
-            }
-          }
+        RefPtr<OriginInfo> originInfo =
+            groupInfo->LockedGetOriginInfo(aOriginMetadata.mOrigin);
+        if (!originInfo) {
+          continue;
+        }
 
-          AssertNoOverflow(totalGroupUsage, groupInfo->mUsage);
-          totalGroupUsage += groupInfo->mUsage;
+        // The estimate covers everything the origin stores, so the usage of
+        // all best-effort repositories is summed up, like GetOriginUsage does:
+        // the private repository holds the origin's data in private browsing
+        // and the temporary repository holds data stored with the "temporary"
+        // persistence type. Only the default repository can be persisted, so
+        // this also includes the non-persisted temporary usage of a persisted
+        // origin (which used to report its default repository usage only).
+        AssertNoOverflow(originUsage, originInfo->LockedUsage());
+        originUsage += originInfo->LockedUsage();
+
+        if (type == PERSISTENCE_TYPE_DEFAULT && originInfo->LockedPersisted()) {
+          persisted = true;
         }
       }
     }
   }
 
-  return std::pair(totalGroupUsage, GetGroupLimit());
+  // The usage is the origin's own usage as required by
+  // https://storage.spec.whatwg.org/#storage-usage, while the limit is still
+  // tracked per group (bug 1305665). A persisted origin is exempt from
+  // group-limit eviction and is bound by the global temporary storage limit
+  // instead. Both values are exposed to content via
+  // navigator.storage.estimate() so the usage is clamped to 0.
+  return std::pair(QM_CLAMP_TO_ZERO(originUsage),
+                   persisted ? mTemporaryStorageLimit : GetGroupLimit());
+}
+
+std::pair<uint64_t, uint64_t> QuotaManager::GetGroupUsageAndLimitForEstimate(
+    const OriginMetadata& aOriginMetadata) {
+  AssertIsOnIOThread();
+
+  int64_t groupUsage = 0;
+
+  {
+    MutexAutoLock lock(mQuotaMutex);
+
+    GroupInfoPair* pair;
+    if (mGroupInfoPairs.Get(aOriginMetadata.mGroup, &pair)) {
+      for (const PersistenceType type : kBestEffortPersistenceTypes) {
+        RefPtr<GroupInfo> groupInfo = pair->LockedGetGroupInfo(type);
+        if (!groupInfo) {
+          continue;
+        }
+
+        if (type == PERSISTENCE_TYPE_DEFAULT) {
+          RefPtr<OriginInfo> originInfo =
+              groupInfo->LockedGetOriginInfo(aOriginMetadata.mOrigin);
+
+          // A persisted origin is exempt from the group limit (its usage is
+          // not part of the group usage) and is bound by the global temporary
+          // storage limit instead, so it reports its own usage as the total
+          // group usage and also against that the temporary storage limit.
+          if (originInfo && originInfo->LockedPersisted()) {
+            return std::pair(QM_CLAMP_TO_ZERO(originInfo->LockedUsage()),
+                             mTemporaryStorageLimit);
+          }
+        }
+
+        AssertNoOverflow(groupUsage, groupInfo->mUsage);
+        groupUsage += groupInfo->mUsage;
+      }
+    }
+  }
+
+  // This is only handed out to the parent process (see
+  // nsIQuotaManagerService::estimateGroupUsage).
+  return std::pair(QM_CLAMP_TO_ZERO(groupUsage), GetGroupLimit());
 }
 
 uint64_t QuotaManager::GetOriginUsage(
     const PrincipalMetadata& aPrincipalMetadata) {
   AssertIsOnIOThread();
 
-  uint64_t usage = 0;
+  int64_t usage = 0;
 
   {
     MutexAutoLock lock(mQuotaMutex);
@@ -8343,7 +8525,9 @@ uint64_t QuotaManager::GetOriginUsage(
     }
   }
 
-  return usage;
+  // Exposed to callers outside the quota manager (e.g. via
+  // GetCachedOriginUsageOp).
+  return QM_CLAMP_TO_ZERO(usage);
 }
 
 Maybe<FullOriginMetadata> QuotaManager::GetFullOriginMetadata(
@@ -8633,7 +8817,7 @@ QuotaManager::GetOriginInfosExceedingGroupLimit() const {
     MOZ_ASSERT(!entry.GetKey().IsEmpty());
     MOZ_ASSERT(pair);
 
-    uint64_t groupUsage = 0;
+    int64_t groupUsage = 0;
 
     const RefPtr<GroupInfo> temporaryGroupInfo =
         pair->LockedGetGroupInfo(PERSISTENCE_TYPE_TEMPORARY);

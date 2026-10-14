@@ -2,8 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/**
+ * @import {MozAdsCacheConfig, MozAdsCallbackOptions, MozAdsClient, MozAdsRequestOptions, MozAdsTelemetry} from "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustAdsClient.sys.mjs"
+ */
+
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
+  AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
   MozAdsCacheConfig:
     "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustAdsClient.sys.mjs",
   MozAdsCallbackOptions:
@@ -23,6 +28,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 const PREF_ADSCLIENT_ENABLED = "unifiedAds.adsClient.enabled";
+const PREF_BLOCKED_LIST = "unifiedAds.blockedAds";
+
 const PREF_ADSCLIENT_LOG =
   "browser.newtabpage.activity-stream.unifiedAds.adsClient.log";
 
@@ -54,6 +61,14 @@ ChromeUtils.defineLazyGetter(lazy, "logConsole", function () {
 export class _AdsClient {
   #client;
 
+  // Flag that gets set by `uninit` function, marking Whether or not the module has shut down.
+  // This is for testing use, and if necessary, future usage in `uninit()` logic.
+  #hasShutdown = false;
+
+  get hasShutdown() {
+    return this.#hasShutdown;
+  }
+
   /**
    * @param {object} prefValues The New Tab store's Prefs.values.
    * @returns {boolean}
@@ -62,6 +77,23 @@ export class _AdsClient {
     return Boolean(
       prefValues?.trainhopConfig?.adsClient?.enabled ||
       prefValues?.[PREF_ADSCLIENT_ENABLED]
+    );
+  }
+
+  /**
+   * @param {object} prefValues The New Tab store's Prefs.values.
+   * @param {string | Array<string>} additionalBlocks Additional value(s) to add to blocks.
+   * @returns {Array<string>} Trimmed, non-empty, blocked ads.
+   */
+  getBlocks(prefValues, additionalBlocks = []) {
+    return Array.from(
+      new Set(
+        (prefValues[PREF_BLOCKED_LIST] ?? "")
+          .split(",")
+          .concat(additionalBlocks)
+          .map(block => block.trim())
+          .filter(block => Boolean(block))
+      )
     );
   }
 
@@ -95,10 +127,12 @@ export class _AdsClient {
    * configured from prefs, and flags from passed in prefValues.
    *
    * @param {object} prefValues The New Tab store's Prefs.values.
+   * @param {string | Array<string>} additionalBlocks Additional value(s) to add to blocks.
    * @returns {MozAdsRequestOptions}
    */
-  requestOptions(prefValues) {
+  requestOptions(prefValues, additionalBlocks = []) {
     return new lazy.MozAdsRequestOptions({
+      blocks: this.getBlocks(prefValues, additionalBlocks),
       flags: new Map(Object.entries(prefValues?.adsBackendConfig || {})),
       ohttp: this.#configureOhttp(),
     });
@@ -203,15 +237,60 @@ export class _AdsClient {
 
   #build() {
     try {
-      return lazy.MozAdsClientBuilder.init()
-        .environment(lazy.MozAdsEnvironment.PROD)
+      if (lazy.AsyncShutdown.profileChangeTeardown.isClosed) {
+        // Corner case, where we're already in the shutdown phase while being constructed.
+        // In this case, do not initialize.
+        // (https://bugzilla.mozilla.org/show_bug.cgi?id=1990569#c11)
+        return null;
+      }
+
+      const builtAdsClient = lazy.MozAdsClientBuilder.init()
+        /**
+         * @backward-compat { version 158 }
+         *
+         * The environment constructor depends on the app-services commit.
+         * Once 158 reaches release, this can just be `new
+         * lazy.MozAdsEnvironment.Prod()`
+         */
+        .environment(
+          lazy.MozAdsEnvironment.PROD !== undefined
+            ? lazy.MozAdsEnvironment.PROD
+            : new lazy.MozAdsEnvironment.Prod()
+        )
         .cacheConfig(this.cacheConfig)
         .telemetry(this.buildTelemetry())
         .build();
+
+      // If we're not in the above corner case, then register a shutdown blocker to uninitialize.
+      // Interrupt sooner prior to the `profile-before-change` phase to allow
+      // all the in-progress IOs to exit.
+      lazy.AsyncShutdown.profileChangeTeardown.addBlocker(
+        "AdsClient: Drop uniffi callbacks and close database connections",
+        async () => {
+          await this.uninit(builtAdsClient);
+        }
+      );
+
+      return builtAdsClient;
     } catch (error) {
       console.error("MozAdsClient failed to initialize", error);
       return null;
     }
+  }
+
+  /**
+   * Uninitialize the ads-client and allow it to release any necessary resources.
+   *
+   * @param {MozAdsClient} [client] Optional client passed to shutdown, defaulting to `this.#client` (eg: if `this.#client` is not set yet).
+   */
+  async uninit(client) {
+    lazy.logConsole.info(`Uninitializing ads-client`);
+    if (client) {
+      await client.shutdown();
+    } else if (this.#client) {
+      await this.#client.shutdown();
+    }
+    this.#hasShutdown = true;
   }
 }
 

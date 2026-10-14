@@ -481,7 +481,7 @@ class GeckoEngineTest {
     }
 
     @Test
-    fun `WHEN a recommended tracking protection policy is set THEN Bounce Tracking Protection must be in standby mode`() {
+    fun `WHEN a recommended tracking protection policy is set THEN Bounce Tracking Protection must be in dry run mode`() {
         val mockRuntime = mock<GeckoRuntime>()
         whenever(mockRuntime.settings).thenReturn(mock())
         whenever(mockRuntime.settings.contentBlocking).thenReturn(mock())
@@ -491,7 +491,7 @@ class GeckoEngineTest {
         engine.settings.trackingProtectionPolicy = TrackingProtectionPolicy.recommended()
 
         verify(mockRuntime.settings.contentBlocking)
-            .setBounceTrackingProtectionMode(EngineSession.BounceTrackingProtectionMode.ENABLED_STANDBY.mode)
+            .setBounceTrackingProtectionMode(EngineSession.BounceTrackingProtectionMode.ENABLED_DRY_RUN.mode)
     }
 
     @Test
@@ -509,7 +509,49 @@ class GeckoEngineTest {
     }
 
     @Test
-    fun `WHEN a custom tracking protection policy is set THEN Bounce Tracking Protection must be in standby mode`() {
+    fun `WHEN a strict tracking protection policy is set THEN fingerprinting protection is enabled on the runtime`() {
+        val mockRuntime = mock<GeckoRuntime>()
+        whenever(mockRuntime.settings).thenReturn(mock())
+        whenever(mockRuntime.settings.contentBlocking).thenReturn(mock())
+
+        val engine = GeckoEngine(testContext, runtime = mockRuntime)
+
+        engine.settings.trackingProtectionPolicy = TrackingProtectionPolicy.strict()
+
+        verify(mockRuntime.settings).setFingerprintingProtection(true)
+        verify(mockRuntime.settings).setFingerprintingProtectionPrivateBrowsing(true)
+    }
+
+    @Test
+    fun `WHEN a recommended tracking protection policy is set THEN fingerprinting protection matches the standard defaults`() {
+        val mockRuntime = mock<GeckoRuntime>()
+        whenever(mockRuntime.settings).thenReturn(mock())
+        whenever(mockRuntime.settings.contentBlocking).thenReturn(mock())
+
+        val engine = GeckoEngine(testContext, runtime = mockRuntime)
+
+        engine.settings.trackingProtectionPolicy = TrackingProtectionPolicy.recommended()
+
+        verify(mockRuntime.settings).setFingerprintingProtection(false)
+        verify(mockRuntime.settings).setFingerprintingProtectionPrivateBrowsing(true)
+    }
+
+    @Test
+    fun `WHEN a policy without fingerprinting protection is set THEN the fingerprinting protection prefs are left untouched`() {
+        val mockRuntime = mock<GeckoRuntime>()
+        whenever(mockRuntime.settings).thenReturn(mock())
+        whenever(mockRuntime.settings.contentBlocking).thenReturn(mock())
+
+        val engine = GeckoEngine(testContext, runtime = mockRuntime)
+
+        engine.settings.trackingProtectionPolicy = TrackingProtectionPolicy.select()
+
+        verify(mockRuntime.settings, never()).setFingerprintingProtection(anyBoolean())
+        verify(mockRuntime.settings, never()).setFingerprintingProtectionPrivateBrowsing(anyBoolean())
+    }
+
+    @Test
+    fun `WHEN a custom tracking protection policy is set THEN Bounce Tracking Protection must be in dry run mode`() {
         val mockRuntime = mock<GeckoRuntime>()
         whenever(mockRuntime.settings).thenReturn(mock())
         whenever(mockRuntime.settings.contentBlocking).thenReturn(mock())
@@ -523,7 +565,7 @@ class GeckoEngineTest {
             )
 
         verify(mockRuntime.settings.contentBlocking)
-            .setBounceTrackingProtectionMode(EngineSession.BounceTrackingProtectionMode.ENABLED_STANDBY.mode)
+            .setBounceTrackingProtectionMode(EngineSession.BounceTrackingProtectionMode.ENABLED_DRY_RUN.mode)
     }
 
     @Test

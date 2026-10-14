@@ -25,7 +25,6 @@
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WeakPtr.h"
 #include "mozilla/gfx/Point.h"
-#include "mozilla/layers/GpuFence.h"
 
 class nsIThread;
 
@@ -42,6 +41,7 @@ class LayersIPCChannel;
 class SharedSurfaceTextureClient;
 class SurfaceDescriptor;
 class TextureClient;
+class TextureHost;
 enum class TextureFlags : uint32_t;
 enum class TextureType : int8_t;
 }  // namespace layers
@@ -83,6 +83,7 @@ class SharedSurface {
  protected:
   bool mIsLocked = false;
   bool mIsProducerAcquired = false;
+  RefPtr<layers::TextureHost> mTextureHost;
 
   SharedSurface(const SharedSurfaceDesc&, UniquePtr<MozFramebuffer>);
 
@@ -98,6 +99,12 @@ class SharedSurface {
 
   // Unlocking is harmless if we're already unlocked.
   void UnlockProd();
+
+  RefPtr<layers::TextureHost> GetTextureHost();
+
+  void SetTextureHost(layers::TextureHost* aTextureHost);
+
+  void ClearTextureHost();
 
   // This surface has been moved to the front buffer and will not be locked
   // again until it is recycled. Do any finalization steps here.
@@ -148,10 +155,9 @@ class SharedSurface {
 
   // Returns true if the surface is still valid to use. If false, the underlying
   // resource has been released and we must allocate a new surface instead.
-  virtual bool IsValid() const { return true; };
+  virtual bool IsValid() const { return bool(mDesc.gl); };
 
   virtual Maybe<layers::SurfaceDescriptor> ToSurfaceDescriptor() = 0;
-  virtual RefPtr<layers::GpuFence> TakeGpuFence() { return nullptr; }
 
   void BeginWrite() {
     WaitForBufferOwnership();

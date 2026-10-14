@@ -180,12 +180,6 @@
   cursor: text;
 }
 
-@media -moz-pref("layout.css.always_underline_links") {
-  :any-link {
-    text-decoration: underline !important;
-  }
-}
-
 :focus-visible {
   outline: 1px auto;
 }
@@ -271,6 +265,9 @@
   align-items: inherit;
   justify-content: inherit;
   justify-items: inherit;
+  /* Text box */
+  text-box-trim: inherit;
+  text-box-edge: inherit;
 }
 
 *|*::-moz-viewport,

@@ -163,10 +163,8 @@ prefs = ["network.allow_raw_sockets_in_content_processes=true"]
 prefs = ["network.allow_raw_sockets_in_content_processes=true"]
 
 ["test_http3_prio_disabled_wrap.js"]
-run-sequentially = ["true"] # http3server
 skip-if = [
   "os == 'android' && os_version == '14' && arch == 'x86_64'", # Bug 1982955
-  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && msix", # Bug 1807925
   "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && msix", # Bug 1807925
 ]
 
@@ -261,6 +259,11 @@ prefs = ["network.allow_raw_sockets_in_content_processes=true"]
 
 ["test_simple_wrap.js"]
 prefs = ["network.allow_raw_sockets_in_content_processes=true"]
+
+["test_stale-while-revalidate_redirect.js"]
+support-files = [
+  "child_stale-while-revalidate_redirect.js",
+]
 
 ["test_trackingProtection_annotateChannels_wrap1.js"]
 prefs = ["network.allow_raw_sockets_in_content_processes=true"]

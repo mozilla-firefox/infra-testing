@@ -56,7 +56,7 @@ export function score(
 FfiConverterTypeInterestVector.checkType(interestVector);
 FfiConverterSequenceTypeInterest.checkType(contentCategories);
 const result = UniFFIScaffolding.callSync(
-    140, // uniffi_relevancy_fn_func_score
+    28, // uniffi_relevancy_fn_func_score
     FfiConverterTypeInterestVector.lower(interestVector),
     FfiConverterSequenceTypeInterest.lower(contentCategories),
 )
@@ -66,6 +66,7 @@ return handleRustResult(
     null,
 )
 }
+
 
 
 
@@ -1416,7 +1417,7 @@ export class RelevancyStore extends RelevancyStoreInterface {
         FfiConverterString.checkType(dbPath);
         FfiConverterTypeRemoteSettingsService.checkType(remoteSettings);
         const result = UniFFIScaffolding.callSync(
-            141, // uniffi_relevancy_fn_constructor_relevancystore_new
+            195, // uniffi_relevancy_fn_constructor_relevancystore_new
             FfiConverterString.lower(dbPath),
             FfiConverterTypeRemoteSettingsService.lower(remoteSettings),
         )
@@ -1444,7 +1445,7 @@ export class RelevancyStore extends RelevancyStoreInterface {
         FfiConverterString.checkType(bandit);
         FfiConverterSequenceString.checkType(arms);
         const result = await UniFFIScaffolding.callAsyncWrapper(
-            142, // uniffi_relevancy_fn_method_relevancystore_bandit_init
+            196, // uniffi_relevancy_fn_method_relevancystore_bandit_init
             FfiConverterTypeRelevancyStore.lowerReceiver(this),
             FfiConverterString.lower(bandit),
             FfiConverterSequenceString.lower(arms),
@@ -1475,7 +1476,7 @@ export class RelevancyStore extends RelevancyStoreInterface {
         FfiConverterString.checkType(bandit);
         FfiConverterSequenceString.checkType(arms);
         const result = await UniFFIScaffolding.callAsyncWrapper(
-            143, // uniffi_relevancy_fn_method_relevancystore_bandit_select
+            197, // uniffi_relevancy_fn_method_relevancystore_bandit_select
             FfiConverterTypeRelevancyStore.lowerReceiver(this),
             FfiConverterString.lower(bandit),
             FfiConverterSequenceString.lower(arms),
@@ -1508,7 +1509,7 @@ export class RelevancyStore extends RelevancyStoreInterface {
         FfiConverterString.checkType(arm);
         FfiConverterBoolean.checkType(selected);
         const result = await UniFFIScaffolding.callAsyncWrapper(
-            144, // uniffi_relevancy_fn_method_relevancystore_bandit_update
+            198, // uniffi_relevancy_fn_method_relevancystore_bandit_update
             FfiConverterTypeRelevancyStore.lowerReceiver(this),
             FfiConverterString.lower(bandit),
             FfiConverterString.lower(arm),
@@ -1529,7 +1530,7 @@ export class RelevancyStore extends RelevancyStoreInterface {
     close() {
        
         const result = UniFFIScaffolding.callSync(
-            145, // uniffi_relevancy_fn_method_relevancystore_close
+            199, // uniffi_relevancy_fn_method_relevancystore_close
             FfiConverterTypeRelevancyStore.lowerReceiver(this),
         )
         return handleRustResult(
@@ -1545,7 +1546,7 @@ export class RelevancyStore extends RelevancyStoreInterface {
     async ensureInterestDataPopulated() {
        
         const result = await UniFFIScaffolding.callAsyncWrapper(
-            146, // uniffi_relevancy_fn_method_relevancystore_ensure_interest_data_populated
+            200, // uniffi_relevancy_fn_method_relevancystore_ensure_interest_data_populated
             FfiConverterTypeRelevancyStore.lowerReceiver(this),
         )
         return handleRustResult(
@@ -1568,7 +1569,7 @@ export class RelevancyStore extends RelevancyStoreInterface {
         FfiConverterString.checkType(bandit);
         FfiConverterString.checkType(arm);
         const result = await UniFFIScaffolding.callAsyncWrapper(
-            147, // uniffi_relevancy_fn_method_relevancystore_get_bandit_data
+            201, // uniffi_relevancy_fn_method_relevancystore_get_bandit_data
             FfiConverterTypeRelevancyStore.lowerReceiver(this),
             FfiConverterString.lower(bandit),
             FfiConverterString.lower(arm),
@@ -1600,7 +1601,7 @@ export class RelevancyStore extends RelevancyStoreInterface {
        
         FfiConverterSequenceString.checkType(topUrlsByFrecency);
         const result = await UniFFIScaffolding.callAsyncWrapper(
-            148, // uniffi_relevancy_fn_method_relevancystore_ingest
+            202, // uniffi_relevancy_fn_method_relevancystore_ingest
             FfiConverterTypeRelevancyStore.lowerReceiver(this),
             FfiConverterSequenceString.lower(topUrlsByFrecency),
         )
@@ -1617,7 +1618,7 @@ export class RelevancyStore extends RelevancyStoreInterface {
     interrupt() {
        
         const result = UniFFIScaffolding.callSync(
-            149, // uniffi_relevancy_fn_method_relevancystore_interrupt
+            203, // uniffi_relevancy_fn_method_relevancystore_interrupt
             FfiConverterTypeRelevancyStore.lowerReceiver(this),
         )
         return handleRustResult(
@@ -1637,7 +1638,7 @@ export class RelevancyStore extends RelevancyStoreInterface {
     async userInterestVector() {
        
         const result = await UniFFIScaffolding.callAsyncWrapper(
-            150, // uniffi_relevancy_fn_method_relevancystore_user_interest_vector
+            204, // uniffi_relevancy_fn_method_relevancystore_user_interest_vector
             FfiConverterTypeRelevancyStore.lowerReceiver(this),
         )
         return handleRustResult(
@@ -1671,11 +1672,11 @@ export class FfiConverterTypeRelevancyStore extends FfiConverter {
     }
 
     static read(dataStream) {
-        return this.lift(dataStream.readPointer(17));
+        return this.lift(dataStream.readPointer(16));
     }
 
     static write(dataStream, value) {
-        dataStream.writePointer(17, this.lower(value));
+        dataStream.writePointer(16, this.lower(value));
     }
 
     static computeSize(value) {
@@ -1726,8 +1727,6 @@ export class FfiConverterSequenceTypeInterest extends FfiConverterArrayBuffer {
         })
     }
 }
-
-
 
 
 import {

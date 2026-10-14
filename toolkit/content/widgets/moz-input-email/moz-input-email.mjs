@@ -2,7 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import MozInputText from "chrome://global/content/elements/moz-input-text.mjs";
+/// <reference path="./moz-input-email.tagmap.d.ts" />
+
+import { MozInputText } from "chrome://global/content/elements/moz-input-text.mjs";
 
 /**
  * An email input custom element.
@@ -13,12 +15,14 @@ import MozInputText from "chrome://global/content/elements/moz-input-text.mjs";
  * @property {string} value - The value of the input control
  * @property {boolean} disabled - The disabled state of the input control
  * @property {boolean} readonly - The readonly state of the input control
+ * @property {boolean} required - The required state of the input control
  * @property {string} iconSrc - The src for an optional icon
  * @property {string} description - The text for the description element that helps describe the input control
  * @property {string} supportPage - Name of the SUMO support page to link to.
  * @property {string} placeholder - Text to display when the input has no value.
+ * @property {string} title - The title attribute, mapped onto the inner input.
  */
-export default class MozInputEmail extends MozInputText {
+export class MozInputEmail extends MozInputText {
   inputTemplate() {
     return super.inputTemplate({ type: "email" });
   }

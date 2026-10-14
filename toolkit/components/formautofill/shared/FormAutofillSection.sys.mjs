@@ -8,7 +8,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   AutofillTelemetry: "resource://gre/modules/shared/AutofillTelemetry.sys.mjs",
   FormAutofillUtils: "resource://gre/modules/shared/FormAutofillUtils.sys.mjs",
   FormAutofill: "resource://autofill/FormAutofill.sys.mjs",
-  OSKeyStore: "resource://gre/modules/OSKeyStore.sys.mjs",
+  formAutofillStorage: "resource://autofill/FormAutofillStorage.sys.mjs",
 });
 
 class FormSection {
@@ -344,8 +344,13 @@ export class FormAutofillSection {
     };
 
     for (const detail of this.fieldDetails) {
-      // Do not save security code.
-      if (detail.fieldName == "cc-csc") {
+      // The security code is historically never captured. The CVV prefs let it
+      // be saved along with the card, the same way shouldAutofillField() gates
+      // autofilling it.
+      if (
+        detail.fieldName == "cc-csc" &&
+        !lazy.FormAutofill.isAutofillCreditCardCVVEnabled
+      ) {
         continue;
       }
       const { filledValue } = formFilledData.get(detail.elementId) ?? {};
@@ -374,9 +379,12 @@ export class FormAutofillSection {
   }
 
   shouldAutofillField(fieldDetail) {
-    // We don't save security code, but if somehow the profile has securty code,
-    // make sure we don't autofill it.
-    if (fieldDetail.fieldName == "cc-csc") {
+    // The security code is historically never autofilled. The in-progress CVV
+    // pref lets it participate; otherwise keep the previous behavior.
+    if (
+      fieldDetail.fieldName == "cc-csc" &&
+      !lazy.FormAutofill.isAutofillCreditCardCVVEnabled
+    ) {
       return false;
     }
 
@@ -678,6 +686,12 @@ export class FormAutofillCreditCardSection extends FormAutofillSection {
       profile["cc-number"] = "****" + profile["cc-number"];
     }
 
+    // Never reveal the security code in the preview. The real value is still
+    // used when filling.
+    if (profile["cc-csc"]) {
+      profile["cc-csc"] = "*".repeat(profile["cc-csc"].toString().length);
+    }
+
     return true;
   }
 
@@ -690,44 +704,50 @@ export class FormAutofillCreditCardSection extends FormAutofillSection {
    * @override
    */
   async prepareFillingProfile(profile) {
-    // Prompt the OS login dialog to get the decrypted credit card number.
-    if (profile["cc-number-encrypted"]) {
-      const promptMessage = lazy.FormAutofillUtils.reauthOSPromptMessage(
-        "autofill-use-payment-method-os-prompt-macos",
-        "autofill-use-payment-method-os-prompt-windows",
-        "autofill-use-payment-method-os-prompt-other"
+    const promptMessage = lazy.FormAutofillUtils.reauthOSPromptMessage(
+      "autofill-use-payment-method-os-prompt-macos",
+      "autofill-use-payment-method-os-prompt-windows",
+      "autofill-use-payment-method-os-prompt-other"
+    );
+
+    let decrypted;
+    try {
+      decrypted = await this.getDecryptedString(
+        profile,
+        "cc-number",
+        promptMessage
       );
-      let decrypted;
-      let result;
-      try {
-        decrypted = await this.getDecryptedString(
-          profile["cc-number-encrypted"],
-          promptMessage
-        );
-        result = decrypted ? "success" : "fail_user_canceled";
-      } catch (ex) {
-        result = "fail_error";
-      } finally {
-        Glean.formautofill.promptShownOsReauth.record({
-          trigger: "autofill",
-          result,
-        });
-      }
-      if (!decrypted) {
-        // Early return if the decrypted is empty or undefined
-        return false;
-      }
-      profile["cc-number"] = decrypted;
+    } catch (ex) {
+      Glean.formautofill.promptShownOsReauth.record({
+        trigger: "autofill",
+        result:
+          ex.result == Cr.NS_ERROR_ABORT ? "fail_user_canceled" : "fail_error",
+      });
+      return false;
     }
+
+    if (decrypted === null) {
+      // The record holds no encrypted number, so the user was asked nothing
+      // and there is nothing to put in its place.
+      return true;
+    }
+
+    Glean.formautofill.promptShownOsReauth.record({
+      trigger: "autofill",
+      result: "success",
+    });
+    profile["cc-number"] = decrypted;
     return true;
   }
 
-  async getDecryptedString(cipherText, reauth) {
+  async getDecryptedString(record, field, reauth) {
     if (!lazy.FormAutofillUtils.getOSAuthEnabled()) {
       this.log.debug("Reauth is disabled");
       reauth = false;
     }
-    return await lazy.OSKeyStore.decrypt(cipherText, "formautofill_cc", reauth);
+    return lazy.formAutofillStorage.creditCards.decryptField(record, field, {
+      reauth,
+    });
   }
 }
 

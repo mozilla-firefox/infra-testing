@@ -189,6 +189,67 @@ add_task(async function test_fetch_error_falls_back() {
   sandbox.restore();
 });
 
+add_task(async function test_setWallpaper_keeps_the_picture_it_started_with() {
+  const sandbox = sinon.createSandbox();
+  const feed = makeFeed(sandbox, { prefs: ENABLED_PREFS });
+  feed.currentImageUrl = "https://img/yesterday.jpg";
+
+  let potd = {
+    description: "Yesterday's picture",
+    publishedDate: "2026-07-01",
+  };
+  feed.store.getState = () => ({
+    Prefs: { values: ENABLED_PREFS },
+    PictureOfTheDay: potd,
+  });
+
+  // The refresh lands while the image is still downloading. Read after the
+  // fetch, the name and date belong to a picture these bytes are not.
+  let finishFetch;
+  const fetching = new Promise(resolve => {
+    finishFetch = resolve;
+  });
+  sandbox.stub(feed, "fetchImage").callsFake(async () => {
+    await fetching;
+    return {
+      ok: true,
+      headers: { get: () => "image/jpeg" },
+      blob: async () => new Blob(["yesterday"], { type: "image/jpeg" }),
+    };
+  });
+
+  const setting = feed.setWallpaper();
+  potd = { description: "Today's picture", publishedDate: "2026-07-02" };
+  finishFetch();
+  await setting;
+
+  const calls = feed.store.dispatch.getCalls();
+  const upload = calls.find(
+    c => c.args[0]?.type === actionTypes.WALLPAPER_UPLOAD
+  );
+  Assert.equal(
+    upload.args[0].data.name,
+    "Yesterday's picture",
+    "The image is saved under the name of the picture it actually is"
+  );
+  Assert.equal(
+    upload.args[0].data.publishedDate,
+    "2026-07-01",
+    "And with that picture's date"
+  );
+
+  const select = calls.find(
+    c => c.args[0]?.type === actionTypes.SET_MULTIPLE_PREFS
+  );
+  Assert.equal(
+    select.args[0].data.values["widgets.pictureOfTheDay.wallpaperActive"],
+    "2026-07-01",
+    "The widget marks the day that is actually on the page"
+  );
+
+  sandbox.restore();
+});
+
 add_task(async function test_setWallpaper_uploads_and_selects() {
   const sandbox = sinon.createSandbox();
   const feed = makeFeed(sandbox, { prefs: ENABLED_PREFS });
@@ -219,21 +280,34 @@ add_task(async function test_setWallpaper_uploads_and_selects() {
     ["dark", "light"].includes(upload.args[0].data.theme),
     "uploads a valid theme"
   );
-  Assert.ok(
-    !calls.some(c => c.args[0]?.data?.name === "newtabWallpapers.enabled"),
-    "does not force-enable the wallpaper feature"
+  Assert.equal(
+    upload.args[0].data.type,
+    "potd",
+    "marks the upload as the Picture of the Day so it is kept in the library"
   );
   Assert.ok(
-    calls.some(c => c.args[0]?.data?.name === "newtabWallpapers.wallpaper"),
-    "selects the custom wallpaper"
+    !calls.some(c => c.args[0]?.type === actionTypes.SET_PREF),
+    "sets no pref on its own"
   );
-  Assert.ok(
-    calls.some(
-      c =>
-        c.args[0]?.data?.name === "widgets.pictureOfTheDay.wallpaperActive" &&
-        c.args[0]?.data?.value === "2026-07-01"
-    ),
-    "records the set picture's published date as the active wallpaper"
+  const prefCalls = calls.filter(
+    c => c.args[0]?.type === actionTypes.SET_MULTIPLE_PREFS
+  );
+  Assert.equal(
+    prefCalls.length,
+    1,
+    "selects the wallpaper in a single transaction, so content never renders " +
+      "the display on with the previous selection - bug 2067860"
+  );
+  Assert.deepEqual(
+    prefCalls[0].args[0].data.values,
+    {
+      "newtabWallpapers.wallpaper": "custom",
+      "newtabWallpapers.initialWallpaper": "",
+      "newtabWallpapers.user.enabled": true,
+      "widgets.pictureOfTheDay.wallpaperActive": "2026-07-01",
+    },
+    "selects the custom wallpaper, turns on the display and records the " +
+      "picture's date, without force-enabling the wallpaper feature"
   );
   sandbox.restore();
 });
@@ -368,5 +442,72 @@ add_task(async function test_wallpaperActive_kept_on_own_upload() {
     false,
     "consumes the self-upload guard flag"
   );
+  sandbox.restore();
+});
+
+add_task(async function test_a_picture_with_no_description_is_saved_unnamed() {
+  const sandbox = sinon.createSandbox();
+  const feed = makeFeed(sandbox, { prefs: ENABLED_PREFS });
+  feed.currentImageUrl = "https://img/today.jpg";
+
+  info("Merino leaves the description out sometimes, so it must degrade");
+
+  feed.store.getState = () => ({
+    Prefs: { values: ENABLED_PREFS },
+    PictureOfTheDay: { title: "Picture of the Day for August 31" },
+  });
+  sandbox.stub(feed, "fetchImage").resolves({
+    ok: true,
+    headers: { get: () => "image/jpeg" },
+    blob: async () => new Blob(["today"], { type: "image/jpeg" }),
+  });
+
+  await feed.setWallpaper();
+
+  const upload = feed.store.dispatch
+    .getCalls()
+    .find(c => c.args[0]?.type === actionTypes.WALLPAPER_UPLOAD);
+
+  Assert.equal(
+    upload.args[0].data.name,
+    "",
+    "No name is sent, so the picture is numbered like any other saved image"
+  );
+
+  sandbox.restore();
+});
+
+add_task(async function test_set_wallpaper_names_the_page_that_asked() {
+  const sandbox = sinon.createSandbox();
+  const feed = makeFeed(sandbox, { prefs: ENABLED_PREFS });
+  feed.currentImageUrl = "https://img/today.jpg";
+
+  info("Without the page, the parent has nobody to report the save to");
+
+  feed.store.getState = () => ({
+    Prefs: { values: ENABLED_PREFS },
+    PictureOfTheDay: { description: "A heron", publishedDate: "2026-08-31" },
+  });
+  sandbox.stub(feed, "fetchImage").resolves({
+    ok: true,
+    headers: { get: () => "image/jpeg" },
+    blob: async () => new Blob(["today"], { type: "image/jpeg" }),
+  });
+
+  await feed.onAction({
+    type: actionTypes.WIDGETS_PICTURE_SET_WALLPAPER,
+    meta: { fromTarget: "port-1" },
+  });
+
+  const upload = feed.store.dispatch
+    .getCalls()
+    .find(c => c.args[0]?.type === actionTypes.WALLPAPER_UPLOAD);
+
+  Assert.equal(
+    upload.args[0].meta?.fromTarget,
+    "port-1",
+    "The upload names the page that asked for it"
+  );
+
   sandbox.restore();
 });

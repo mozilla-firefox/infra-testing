@@ -11,9 +11,7 @@
 use servo_arc::{Arc, UniqueArc};
 use std::{ops, ptr, fmt, mem};
 
-#[cfg(feature = "servo")] use euclid::SideOffsets2D;
 #[cfg(feature = "gecko")] use crate::gecko_bindings::structs::{self, NonCustomCSSPropertyId};
-#[cfg(feature = "servo")] use crate::logical_geometry::LogicalMargin;
 #[cfg(feature = "servo")] use crate::dom::AttributeReferences;
 use crate::logical_geometry::WritingMode;
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
@@ -232,7 +230,9 @@ impl PropertyDeclaration {
     /// It's the caller's responsibility to guarantee that the longhand id has the right specified
     /// value representation.
     pub(crate) unsafe fn unchecked_value_as<T>(&self) -> &T {
-        &(*(self as *const _ as *const PropertyDeclarationVariantRepr<T>)).value
+        unsafe {
+            &(*(self as *const _ as *const PropertyDeclarationVariantRepr<T>)).value
+        }
     }
 
     /// Dumps the property declaration before crashing.
@@ -248,12 +248,10 @@ impl PropertyDeclaration {
     /// Returns whether this is a variant of the Longhand(Value) type, rather
     /// than one of the special variants in extra_variants.
     fn is_longhand_value(&self) -> bool {
-        match *self {
-            % for v in data.declaration_extra_variants:
-            PropertyDeclaration::${v["name"]}(..) => false,
-            % endfor
-            _ => true,
-        }
+        !matches!(
+            *self,
+            ${" | ".join("PropertyDeclaration::%s(..)" % v["name"] for v in data.declaration_extra_variants)}
+        )
     }
 
     /// Like the method on ToCss, but without the type parameter to avoid
@@ -324,9 +322,9 @@ pub mod property_counts {
     pub const LONGHANDS_AND_SHORTHANDS: usize = LONGHANDS + SHORTHANDS;
     /// The number of non-custom properties.
     pub const NON_CUSTOM: usize = LONGHANDS_AND_SHORTHANDS + ALIASES;
-    /// The number of prioritary properties that we have.
     <% longhand_property_names = set(list(map(lambda p: p.name, data.longhands))) %>
     <% enabled_prioritary_properties = PRIORITARY_PROPERTIES.intersection(longhand_property_names) %>
+    /// The number of prioritary properties that we have.
     pub const PRIORITARY: usize = ${len(enabled_prioritary_properties)};
     /// The max number of longhands that a shorthand other than "all" expands to.
     pub const MAX_SHORTHAND_EXPANDED: usize =
@@ -338,19 +336,18 @@ pub mod property_counts {
 }
 
 % if engine == "gecko":
-#[allow(dead_code)]
-unsafe fn static_assert_noncustomcsspropertyid() {
+const _: () = {
     % for i, property in enumerate(data.longhands + data.shorthands + data.all_aliases()):
-    std::mem::transmute::<[u8; ${i}], [u8; ${property.noncustomcsspropertyid()} as usize]>([0; ${i}]); // ${property.name}
+    assert!(${i} == ${property.noncustomcsspropertyid()} as usize, "${property.name}");
     % endfor
-}
+};
 % endif
 
 impl NonCustomPropertyId {
     /// Get the property name.
     #[inline]
     pub fn name(self) -> &'static str {
-        static MAP: [&'static str; property_counts::NON_CUSTOM] = [
+        static MAP: [&str; property_counts::NON_CUSTOM] = [
             % for property in data.longhands + data.shorthands + data.all_aliases():
             "${property.name}",
             % endfor
@@ -382,7 +379,7 @@ impl NonCustomPropertyId {
                 % for (index, property) in enumerate(data.longhands + data.shorthands + data.all_aliases()):
                     <% preference = getattr(property, "servo_pref") %>
                     % if preference:
-                        ${index} => static_prefs::pref!("${preference}"),
+                        ${index} => crate::pref!("${preference}"),
                     % endif %
                 % endfor
                     _ => true,
@@ -404,15 +401,9 @@ impl NonCustomPropertyId {
     /// Returns whether a given rule allows a given property.
     #[inline]
     pub fn allowed_in_rule(self, rule_types: CssRuleTypes) -> bool {
-        debug_assert!(
-            rule_types.contains(CssRuleType::Keyframe) ||
-            rule_types.contains(CssRuleType::Page) ||
-            rule_types.contains(CssRuleType::Style) ||
-            rule_types.contains(CssRuleType::Scope) ||
-            rule_types.contains(CssRuleType::PositionTry),
-            "Given rule type does not allow declarations."
-        );
+        debug_assert!(rule_types.allows_declarations());
 
+        #[allow(clippy::identity_op)]
         static MAP: [u32; property_counts::NON_CUSTOM] = [
             % for property in data.longhands + data.shorthands + data.all_aliases():
             % for name in RULE_VALUES:
@@ -537,6 +528,7 @@ ${id_set("PrioritaryPropertyIdSet", [p for p in data.longhands if p.is_prioritar
     MARKER_RESTRICTIONS = PropertyRestrictions.marker(data)
     PLACEHOLDER_RESTRICTIONS = PropertyRestrictions.placeholder(data)
     CUE_RESTRICTIONS = PropertyRestrictions.cue(data)
+    HIGHLIGHT_RESTRICTIONS = PropertyRestrictions.highlight(data)
 
     def restriction_flags(property):
         name = property.name
@@ -551,6 +543,8 @@ ${id_set("PrioritaryPropertyIdSet", [p for p in data.longhands if p.is_prioritar
             flags.append("APPLIES_TO_MARKER")
         if name in CUE_RESTRICTIONS:
             flags.append("APPLIES_TO_CUE")
+        if name in HIGHLIGHT_RESTRICTIONS:
+            flags.append("APPLIES_TO_HIGHLIGHT")
         return flags
 
 %>
@@ -857,7 +851,7 @@ impl LonghandId {
         %>
 
         // based on lookup results for each longhand, create result arrays
-        static MAP: [&'static [ShorthandId]; property_counts::LONGHANDS] = [
+        static MAP: [&[ShorthandId]; property_counts::LONGHANDS] = [
         % for property in data.longhands:
             &[
                 % for shorthand in longhand_to_shorthand_map.get(property.ident, []):
@@ -873,15 +867,15 @@ impl LonghandId {
         }
     }
 
-    pub(super) fn parse_value<'i, 't>(
+    pub(super) fn parse_value(
         self,
         context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<PropertyDeclaration, ParseError<'i>> {
-        type ParsePropertyFn = for<'i, 't> fn(
+        input: &mut Parser,
+    ) -> Result<PropertyDeclaration, ParseError> {
+        type ParsePropertyFn = fn(
             context: &ParserContext,
-            input: &mut Parser<'i, 't>,
-        ) -> Result<PropertyDeclaration, ParseError<'i>>;
+            input: &mut Parser,
+        ) -> Result<PropertyDeclaration, ParseError>;
         static PARSE_PROPERTY: [ParsePropertyFn; property_counts::LONGHANDS] = [
         % for property in data.longhands:
             longhands::${property.ident}::parse_declared,
@@ -958,7 +952,7 @@ pub enum ShorthandId {
 impl ShorthandId {
     /// Get the longhand ids that form this shorthand.
     pub fn longhands(self) -> NonCustomPropertyIterator<LonghandId> {
-        static MAP: [&'static [LonghandId]; property_counts::SHORTHANDS] = [
+        static MAP: [&[LonghandId]; property_counts::SHORTHANDS] = [
         % for property in data.shorthands:
             &[
                 % for sub in property.sub_properties:
@@ -1008,6 +1002,7 @@ impl ShorthandId {
     /// Returns PropertyFlags for the given shorthand property.
     #[inline]
     pub fn flags(self) -> PropertyFlags {
+        #[allow(clippy::identity_op)]
         const FLAGS: [u16; property_counts::SHORTHANDS] = [
             % for property in data.shorthands:
                 % for flag in property.flags:
@@ -1038,25 +1033,25 @@ impl ShorthandId {
         IDL_NAME_SORT_ORDER[self as usize]
     }
 
-    pub(super) fn parse_into<'i, 't>(
+    pub(super) fn parse_into(
         self,
         declarations: &mut SourcePropertyDeclaration,
         context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<(), ParseError<'i>> {
-        type ParseIntoFn = for<'i, 't> fn(
+        input: &mut Parser,
+    ) -> Result<(), ParseError> {
+        type ParseIntoFn = fn(
             declarations: &mut SourcePropertyDeclaration,
             context: &ParserContext,
-            input: &mut Parser<'i, 't>,
-        ) -> Result<(), ParseError<'i>>;
+            input: &mut Parser,
+        ) -> Result<(), ParseError>;
 
-        fn parse_all<'i, 't>(
+        fn parse_all(
             _: &mut SourcePropertyDeclaration,
             _: &ParserContext,
-            input: &mut Parser<'i, 't>
-        ) -> Result<(), ParseError<'i>> {
+            _input: &mut Parser
+        ) -> Result<(), ParseError> {
             // 'all' accepts no value other than CSS-wide keywords
-            Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
+            Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError))
         }
 
         static PARSE_INTO: [ParseIntoFn; property_counts::SHORTHANDS] = [
@@ -1242,13 +1237,11 @@ impl PropertyDeclaration {
     /// Returns whether or not the property is set by a system font
     pub fn get_system(&self) -> Option<SystemFont> {
         match *self {
-            % if engine == "gecko":
             % for prop in SYSTEM_FONT_LONGHANDS:
                 PropertyDeclaration::${to_camel_case(prop)}(ref prop) => {
                     prop.get_system()
                 }
             % endfor
-            % endif
             _ => None,
         }
     }
@@ -1350,7 +1343,7 @@ pub mod style_structs {
                         ///
                         /// Same as `set_display` above.
                         /// Thus, we need to special-case this.
-                        #[allow(non_snake_case)]
+                        #[allow(non_snake_case, clippy::clone_on_copy)]
                         #[inline]
                         pub fn copy_display_from(&mut self, other: &Self) {
                             self.display = other.display.clone();
@@ -1358,7 +1351,7 @@ pub mod style_structs {
                         }
                     % else:
                         /// Set ${longhand.name} from other struct.
-                        #[allow(non_snake_case)]
+                        #[allow(non_snake_case, clippy::clone_on_copy)]
                         #[inline]
                         pub fn copy_${longhand.ident}_from(&mut self, other: &Self) {
                             self.${longhand.ident} = other.${longhand.ident}.clone();
@@ -1371,10 +1364,20 @@ pub mod style_structs {
                         self.copy_${longhand.ident}_from(other)
                     }
 
-                    /// Get the computed value for ${longhand.name}.
+                    % if longhand.has_borrowed_getter():
+                    /// Get a reference to the computed value for ${longhand.name}.
                     #[allow(non_snake_case)]
                     #[inline]
-                    pub fn clone_${longhand.ident}(&self) -> longhands::${longhand.ident}::computed_value::T {
+                    pub fn get_${longhand.ident}(&self) -> &longhands::${longhand.ident}::computed_value::T {
+                        &self.${longhand.ident}
+                    }
+                    % endif
+
+                    /// Clone the computed value for ${longhand.name}. Prefer
+                    /// `get_${longhand.ident}` where a reference is enough.
+                    #[allow(non_snake_case, clippy::clone_on_copy)]
+                    #[inline]
+                    pub fn slow_clone_${longhand.ident}(&self) -> longhands::${longhand.ident}::computed_value::T {
                         self.${longhand.ident}.clone()
                     }
 
@@ -1479,7 +1482,7 @@ pub mod style_structs {
                 #[allow(non_snake_case)]
                 #[inline]
                 #[cfg(feature = "gecko")]
-                pub fn clone_${longhand.ident}(
+                pub fn slow_clone_${longhand.ident}(
                     &self,
                 ) -> longhands::${longhand.ident}::computed_value::T {
                     longhands::${longhand.ident}::computed_value::List(
@@ -1539,6 +1542,7 @@ pub mod style_structs {
             #[cfg(feature = "servo")]
             pub fn animations_equals(&self, other: &Self) -> bool {
                 self.animation_name_iter().eq(other.animation_name_iter()) &&
+                self.animation_composition_iter().eq(other.animation_composition_iter()) &&
                 self.animation_delay_iter().eq(other.animation_delay_iter()) &&
                 self.animation_direction_iter().eq(other.animation_direction_iter()) &&
                 self.animation_duration_iter().eq(other.animation_duration_iter()) &&
@@ -1655,7 +1659,7 @@ impl ComputedValues {
 
     /// Returns whether this style's display value is equal to contents.
     pub fn is_display_contents(&self) -> bool {
-        self.clone_display().is_contents()
+        self.get_box().get_display().is_contents()
     }
 
     /// Gets a reference to the rule node. Panic if no rule node exists.
@@ -1673,15 +1677,35 @@ impl ComputedValues {
         &self.custom_properties
     }
 
+<%
+    # `get_page` / `get_position` would clash with the style struct getters.
+    style_struct_getters = set(s.name_lower for s in data.style_structs)
+%>
 % for prop in data.longhands:
 % if not prop.logical:
-    /// Gets the computed value of a given property.
+% if prop.has_borrowed_getter() and prop.ident not in style_struct_getters:
+    /// Gets a reference to the computed value of a given property.
     #[inline(always)]
     #[allow(non_snake_case)]
-    pub fn clone_${prop.ident}(
+    pub fn get_${prop.ident}(
+        &self
+    % if prop.vector:
+    ) -> &[longhands::${prop.ident}::computed_value::single_value::T] {
+    % else:
+    ) -> &longhands::${prop.ident}::computed_value::T {
+    % endif
+        self.get_${prop.style_struct.name_lower}().get_${prop.ident}()
+    }
+% endif
+
+    /// Clones the computed value of a given property. Prefer `get_${prop.ident}`
+    /// where a reference is enough.
+    #[inline(always)]
+    #[allow(non_snake_case)]
+    pub fn slow_clone_${prop.ident}(
         &self,
     ) -> longhands::${prop.ident}::computed_value::T {
-        self.get_${prop.style_struct.name_lower}().clone_${prop.ident}()
+        self.get_${prop.style_struct.name_lower}().slow_clone_${prop.ident}()
     }
 
     /// Gets the computed value of a given property.
@@ -1712,7 +1736,7 @@ impl ComputedValues {
                 let value = match property_id {
                     % for prop in props:
                     % if not prop.logical:
-                    LonghandId::${prop.camel_case} => self.clone_${prop.ident}(),
+                    LonghandId::${prop.camel_case} => self.slow_clone_${prop.ident}(),
                     % endif
                     % endfor
                     _ => unsafe { debug_unreachable!() },
@@ -1742,7 +1766,7 @@ impl ComputedValues {
                 let value = match property_id {
                     % for prop in props:
                     % if not prop.logical:
-                    LonghandId::${prop.camel_case} => self.clone_${prop.ident}(),
+                    LonghandId::${prop.camel_case} => self.slow_clone_${prop.ident}(),
                     % endif
                     % endfor
                     _ => unsafe { debug_unreachable!() },
@@ -1767,7 +1791,7 @@ impl ComputedValues {
                 let mut computed_value = match physical_property_id {
                     % for prop in props:
                     % if not prop.logical:
-                    LonghandId::${prop.camel_case} => self.clone_${prop.ident}(),
+                    LonghandId::${prop.camel_case} => self.slow_clone_${prop.ident}(),
                     % endif
                     % endfor
                     _ => unsafe { debug_unreachable!() },
@@ -1808,11 +1832,10 @@ impl ComputedValues {
     ///
     /// Usage example:
     /// let top_color =
-    ///   style.resolve_color(&style.get_border().clone_border_top_color());
+    ///   style.resolve_color(style.get_border().get_border_top_color());
     #[inline]
     pub fn resolve_color(&self, color: &computed::Color) -> crate::color::AbsoluteColor {
-        let current_color = self.get_inherited_text().clone_color();
-        color.resolve_to_absolute(&current_color)
+        color.resolve_to_absolute(self.get_inherited_text().get_color())
     }
 
     /// Returns which longhand properties have different values in the two
@@ -1822,7 +1845,7 @@ impl ComputedValues {
         let mut set = LonghandIdSet::new();
         % for prop in data.longhands:
         % if not prop.logical:
-        if self.clone_${prop.ident}() != other.clone_${prop.ident}() {
+        if !self.${prop.ident}_equals(other) {
             set.insert(LonghandId::${prop.camel_case});
         }
         % endif
@@ -2024,11 +2047,6 @@ impl ComputedValuesInner {
         }
     % endfor
 
-    /// Gets a reference to the rule node. Panic if no rule node exists.
-    pub fn rules(&self) -> &StrongRuleNode {
-        self.rules.as_ref().unwrap()
-    }
-
     #[inline]
     /// Returns whether the "content" property for the given style is completely
     /// ineffective, and would yield an empty `::before` or `::after`
@@ -2041,94 +2059,6 @@ impl ComputedValuesInner {
         }
     }
 
-    /// Whether the current style is multicolumn.
-    #[inline]
-    pub fn is_multicol(&self) -> bool {
-        self.get_column().is_multicol()
-    }
-
-    /// Get the logical computed inline size.
-    #[inline]
-    pub fn content_inline_size(&self) -> &computed::Size {
-        let position_style = self.get_position();
-        if self.writing_mode.is_vertical() {
-            &position_style.height
-        } else {
-            &position_style.width
-        }
-    }
-
-    /// Get the logical computed block size.
-    #[inline]
-    pub fn content_block_size(&self) -> &computed::Size {
-        let position_style = self.get_position();
-        if self.writing_mode.is_vertical() { &position_style.width } else { &position_style.height }
-    }
-
-    /// Get the logical computed min inline size.
-    #[inline]
-    pub fn min_inline_size(&self) -> &computed::Size {
-        let position_style = self.get_position();
-        if self.writing_mode.is_vertical() { &position_style.min_height } else { &position_style.min_width }
-    }
-
-    /// Get the logical computed min block size.
-    #[inline]
-    pub fn min_block_size(&self) -> &computed::Size {
-        let position_style = self.get_position();
-        if self.writing_mode.is_vertical() { &position_style.min_width } else { &position_style.min_height }
-    }
-
-    /// Get the logical computed max inline size.
-    #[inline]
-    pub fn max_inline_size(&self) -> &computed::MaxSize {
-        let position_style = self.get_position();
-        if self.writing_mode.is_vertical() { &position_style.max_height } else { &position_style.max_width }
-    }
-
-    /// Get the logical computed max block size.
-    #[inline]
-    pub fn max_block_size(&self) -> &computed::MaxSize {
-        let position_style = self.get_position();
-        if self.writing_mode.is_vertical() { &position_style.max_width } else { &position_style.max_height }
-    }
-
-    /// Get the logical computed padding for this writing mode.
-    #[inline]
-    pub fn logical_padding(&self) -> LogicalMargin<&computed::LengthPercentage> {
-        let padding_style = self.get_padding();
-        LogicalMargin::from_physical(self.writing_mode, SideOffsets2D::new(
-            &padding_style.padding_top.0,
-            &padding_style.padding_right.0,
-            &padding_style.padding_bottom.0,
-            &padding_style.padding_left.0,
-        ))
-    }
-
-    /// Gets the logical computed margin from this style.
-    #[inline]
-    pub fn logical_margin(&self) -> LogicalMargin<&computed::Margin> {
-        let margin_style = self.get_margin();
-        LogicalMargin::from_physical(self.writing_mode, SideOffsets2D::new(
-            &margin_style.margin_top,
-            &margin_style.margin_right,
-            &margin_style.margin_bottom,
-            &margin_style.margin_left,
-        ))
-    }
-
-    /// Gets the logical position from this style.
-    #[inline]
-    pub fn logical_position(&self) -> LogicalMargin<&computed::Inset> {
-        // FIXME(SimonSapin): should be the writing mode of the containing block, maybe?
-        let position_style = self.get_position();
-        LogicalMargin::from_physical(self.writing_mode, SideOffsets2D::new(
-            &position_style.top,
-            &position_style.right,
-            &position_style.bottom,
-            &position_style.left,
-        ))
-    }
 }
 
 /// A reference to a style struct of the parent, or our own style struct.
@@ -2169,7 +2099,7 @@ where
         match *self {
             StyleStructRef::Owned(..) => false,
             StyleStructRef::Borrowed(s) => {
-                s as *const T == struct_to_copy_from as *const T
+                std::ptr::eq(s, struct_to_copy_from)
             }
             StyleStructRef::Vacated => panic!("Accessed vacated style struct")
         }
@@ -2224,7 +2154,7 @@ impl<'a, T: 'a> ops::Deref for StyleStructRef<'a, T> {
 
     fn deref(&self) -> &T {
         match *self {
-            StyleStructRef::Owned(ref v) => &**v,
+            StyleStructRef::Owned(ref v) => v,
             StyleStructRef::Borrowed(v) => v,
             StyleStructRef::Vacated => panic!("Accessed vacated style struct")
         }
@@ -2382,7 +2312,7 @@ impl<'a> StyleBuilder<'a> {
             invalid_non_custom_properties: LonghandIdSet::default(),
             writing_mode: style_to_derive_from.writing_mode,
             effective_zoom: style_to_derive_from.effective_zoom,
-            effective_zoom_for_inheritance: Self::zoom_for_inheritance(style_to_derive_from.get_box().clone_zoom(), inherited_style),
+            effective_zoom_for_inheritance: Self::zoom_for_inheritance(*style_to_derive_from.get_box().get_zoom(), inherited_style),
             color_scheme: style_to_derive_from.get_inherited_ui().color_scheme_bits(),
             flags: Cell::new(style_to_derive_from.flags),
             visited_style: None,
@@ -2511,7 +2441,7 @@ impl<'a> StyleBuilder<'a> {
 
     /// Returns whether we're a pseudo-elements style.
     pub fn is_pseudo_element(&self) -> bool {
-        self.pseudo.map_or(false, |p| !p.is_anon_box())
+        self.pseudo.is_some_and(|p| !p.is_anon_box())
     }
 
     /// Returns the style we're getting reset properties from.
@@ -2563,26 +2493,26 @@ impl<'a> StyleBuilder<'a> {
 
     /// Returns whether this computed style represents a floated object.
     pub fn is_floating(&self) -> bool {
-        self.get_box().clone_float().is_floating()
+        self.get_box().get_float().is_floating()
     }
 
     /// Returns whether this computed style represents an absolutely-positioned
     /// object.
     pub fn is_absolutely_positioned(&self) -> bool {
-        self.get_box().clone_position().is_absolutely_positioned()
+        self.get_box().get_position().is_absolutely_positioned()
     }
 
     /// Whether this style has a top-layer style.
     #[cfg(feature = "servo")]
     pub fn in_top_layer(&self) -> bool {
-        matches!(self.get_box().clone__servo_top_layer(),
-                 longhands::_servo_top_layer::computed_value::T::Top)
+        matches!(self.get_box().slow_clone__servo_top_layer(),
+                 longhands::_servo_top_layer::computed_value::T::Auto)
     }
 
     /// Whether this style has a top-layer style.
     #[cfg(feature = "gecko")]
     pub fn in_top_layer(&self) -> bool {
-        matches!(self.get_box().clone__moz_top_layer(),
+        matches!(self.get_box().get__moz_top_layer(),
                  longhands::_moz_top_layer::computed_value::T::Auto)
     }
 
@@ -2649,10 +2579,10 @@ impl<'a> StyleBuilder<'a> {
         &self.inherited_style.custom_properties
     }
 
-    /// Access to various information about our inherited styles.  We don't
-    /// expose an inherited ComputedValues directly, because in the
-    /// ::first-line case some of the inherited information needs to come from
-    /// one ComputedValues instance and some from a different one.
+    // Access to various information about our inherited styles.  We don't
+    // expose an inherited ComputedValues directly, because in the
+    // ::first-line case some of the inherited information needs to come from
+    // one ComputedValues instance and some from a different one.
 
     /// Inherited writing-mode.
     pub fn inherited_writing_mode(&self) -> &WritingMode {
@@ -2666,7 +2596,7 @@ impl<'a> StyleBuilder<'a> {
 
     /// The zoom specified on this element.
     pub fn specified_zoom(&self) -> computed::Zoom {
-        self.get_box().clone_zoom()
+        *self.get_box().get_zoom()
     }
 
     /// Computes effective_zoom and effective_zoom_for_inheritance based on the current style
@@ -2712,11 +2642,11 @@ impl<'a> StyleBuilder<'a> {
                 ComputedValueFlags::DEPENDS_ON_INHERITED_FONT_METRICS,
             ),
         };
-        let line_height = font.clone_line_height();
+        let line_height = font.get_line_height();
         if matches!(line_height, computed::LineHeight::Normal) {
             self.add_flags(flag);
         }
-        let lh = device.calc_line_height(&font, writing_mode, None);
+        let lh = device.calc_line_height(font, writing_mode, None);
         if line_height_base == LineHeightBase::InheritedStyle {
             // Apply our own zoom if our style source is the parent style.
             computed::NonNegativeLength::new(self.effective_zoom_for_inheritance.zoom(lh.px()))
@@ -2838,7 +2768,7 @@ macro_rules! longhand_properties_idents {
 #[cfg(feature = "gecko")]
 size_of_test!(ComputedValues, 248);
 #[cfg(feature = "servo")]
-size_of_test!(ComputedValues, 224);
+size_of_test!(ComputedValues, 232);
 
 // FFI relies on this.
 size_of_test!(Option<Arc<ComputedValues>>, 8);
@@ -2891,7 +2821,7 @@ pub(crate) fn restyle_damage_${effect_name} (old: &ComputedValues, new: &Compute
 % endfor
 % endif
 
-/// Descriptor types for @-rules like @font-face and @counter-style.
+## Descriptor types for @-rules like @font-face and @counter-style.
 <%def name="generate_descriptors(descriptors)">
 use super::*;
 #[allow(unused_imports)]
@@ -2916,7 +2846,7 @@ impl DescriptorId {
 
     /// The CSS name of this descriptor.
     pub fn name(&self) -> &'static str {
-        const NAMES: [&'static str; DescriptorId::COUNT] = [
+        const NAMES: [&str; DescriptorId::COUNT] = [
         % for descriptor in descriptors:
             "${descriptor.name}",
         % endfor
@@ -2949,7 +2879,7 @@ impl Descriptors {
     }
 
     /// Parses a given descriptor. Returns whether the descriptor changed.
-    pub fn set<'i, 't>(&mut self, id: DescriptorId, context: &ParserContext, input: &mut Parser<'i, 't>) -> Result<bool, ParseError<'i>> {
+    pub fn set(&mut self, id: DescriptorId, context: &ParserContext, input: &mut Parser) -> Result<bool, ParseError> {
         use crate::parser::Parse;
         // DeclarationParser also calls parse_entirely so we’d normally not need to, but in this
         // case we do because we set the value as a side effect rather than returning it.
@@ -3035,16 +2965,16 @@ pub struct DescriptorParser<'a, 'b: 'a> {
 impl<'a, 'b, 'i> cssparser::AtRuleParser<'i> for DescriptorParser<'a, 'b> {
     type Prelude = ();
     type AtRule = ();
-    type Error = StyleParseErrorKind<'i>;
+    type Error = StyleParseErrorKind;
 }
 
 impl<'a, 'b, 'i> cssparser::QualifiedRuleParser<'i> for DescriptorParser<'a, 'b> {
     type Prelude = ();
     type QualifiedRule = ();
-    type Error = StyleParseErrorKind<'i>;
+    type Error = StyleParseErrorKind;
 }
 
-impl<'a, 'b, 'i> cssparser::RuleBodyItemParser<'i, (), StyleParseErrorKind<'i>>
+impl<'a, 'b, 'i> cssparser::RuleBodyItemParser<'i, (), StyleParseErrorKind>
     for DescriptorParser<'a, 'b>
 {
     fn parse_qualified(&self) -> bool {
@@ -3057,18 +2987,18 @@ impl<'a, 'b, 'i> cssparser::RuleBodyItemParser<'i, (), StyleParseErrorKind<'i>>
 
 impl<'a, 'b, 'i> cssparser::DeclarationParser<'i> for DescriptorParser<'a, 'b> {
     type Declaration = ();
-    type Error = StyleParseErrorKind<'i>;
+    type Error = StyleParseErrorKind;
 
-    fn parse_value<'t>(
+    fn parse_value(
         &mut self,
         name: cssparser::CowRcStr<'i>,
-        input: &mut Parser<'i, 't>,
+        input: &mut Parser<'i>,
         _declaration_start: &cssparser::ParserState,
-    ) -> Result<(), ParseError<'i>> {
+    ) -> Result<(), ParseError> {
         let Ok(id) = DescriptorId::from_ident(name.as_ref()) else {
             return Err(
-                input.new_custom_error(
-                    selectors::parser::SelectorParseErrorKind::UnexpectedIdent(name.clone())
+                ParseError::custom(
+                    selectors::parser::SelectorParseErrorKind::UnexpectedIdent
                 )
             );
         };

@@ -80,12 +80,20 @@ SharedPlanarYCbCrImage::GetAsSourceSurface() {
 }
 
 nsresult SharedPlanarYCbCrImage::CopyData(const PlanarYCbCrData& aData) {
+  const Maybe<gfx::IntSize> checkedYSize = aData.GetCheckedYDataSize();
+  if (checkedYSize.isNothing()) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
   // If mTextureClient has not already been allocated by CreateEmptyBuffer,
   // allocate it. This code path is slower than the one used when
   // CreateEmptyBuffer has been called since it will trigger a full copy.
   if (!mTextureClient) {
-    nsresult r =
-        CreateEmptyBuffer(aData, aData.YDataSize(), aData.CbCrDataSize());
+    const gfx::IntSize ySize = checkedYSize.value();
+    const gfx::IntSize cbcrSize =
+        aData.mCbCrStride > 0 ? gfx::ChromaSize(ySize, aData.mChromaSubsampling)
+                              : gfx::IntSize(0, 0);
+    nsresult r = CreateEmptyBuffer(aData, ySize, cbcrSize);
     if (NS_FAILED(r)) {
       return r;
     }
@@ -156,6 +164,10 @@ nsresult SharedPlanarYCbCrImage::CreateEmptyBuffer(
   mData.mPictureRect = aData.mPictureRect;
   mData.mStereoMode = aData.mStereoMode;
   mData.mYUVColorSpace = aData.mYUVColorSpace;
+  mData.mColorPrimaries = aData.mColorPrimaries;
+  mData.mTransferFunction = aData.mTransferFunction;
+  mData.mHDRMetadata = aData.mHDRMetadata;
+  mData.mColorRange = aData.mColorRange;
   mData.mColorDepth = aData.mColorDepth;
   mData.mChromaSubsampling = aData.mChromaSubsampling;
   // those members are not always equal to aData's, due to potentially different

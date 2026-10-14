@@ -10,6 +10,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   Bookmarks: "resource://gre/modules/Bookmarks.sys.mjs",
+  BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   History: "resource://gre/modules/History.sys.mjs",
   PlacesSyncUtils: "resource://gre/modules/PlacesSyncUtils.sys.mjs",
   Sqlite: "resource://gre/modules/Sqlite.sys.mjs",
@@ -1108,16 +1109,8 @@ export var PlacesUtils = {
     }
 
     function gatherDataHtml(node, recursiveOpen = true) {
-      let htmlEscape = s =>
-        s
-          .replace(/&/g, "&amp;")
-          .replace(/>/g, "&gt;")
-          .replace(/</g, "&lt;")
-          .replace(/"/g, "&quot;")
-          .replace(/'/g, "&apos;");
-
       // escape out potential HTML in the title
-      let escapedTitle = node.title ? htmlEscape(node.title) : "";
+      let escapedTitle = lazy.BrowserUtils.escapeHtmlEntities(node.title);
 
       if (PlacesUtils.nodeIsContainer(node)) {
         asContainer(node);
@@ -1145,7 +1138,7 @@ export var PlacesUtils = {
         return childString + "</DL>" + NEWLINE;
       }
       if (PlacesUtils.nodeIsURI(node)) {
-        return `<A HREF="${node.uri}">${escapedTitle}</A>${NEWLINE}`;
+        return `<A HREF="${lazy.BrowserUtils.escapeHtmlEntities(node.uri)}">${escapedTitle}</A>${NEWLINE}`;
       }
       if (PlacesUtils.nodeIsSeparator(node)) {
         return "<HR>" + NEWLINE;

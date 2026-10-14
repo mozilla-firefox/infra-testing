@@ -90,6 +90,12 @@ class EngineObserverTest {
                     onException: (Throwable) -> Unit,
                 ) {}
 
+                override fun addSignatureToPdf(
+                    text: String,
+                    onResult: () -> Unit,
+                    onException: (Throwable) -> Unit,
+                ) {}
+
                 override fun getBrokenSiteReport(
                     onResult: (JSONObject) -> Unit,
                     onException: (Throwable) -> Unit,
@@ -223,6 +229,12 @@ class EngineObserverTest {
                     onException: (Throwable) -> Unit,
                 ) {}
 
+                override fun addSignatureToPdf(
+                    text: String,
+                    onResult: () -> Unit,
+                    onException: (Throwable) -> Unit,
+                ) {}
+
                 override fun getBrokenSiteReport(
                     onResult: (JSONObject) -> Unit,
                     onException: (Throwable) -> Unit,
@@ -352,6 +364,12 @@ class EngineObserverTest {
                     onException: (Throwable) -> Unit,
                 ) {}
 
+                override fun addSignatureToPdf(
+                    text: String,
+                    onResult: () -> Unit,
+                    onException: (Throwable) -> Unit,
+                ) {}
+
                 override fun getBrokenSiteReport(
                     onResult: (JSONObject) -> Unit,
                     onException: (Throwable) -> Unit,
@@ -477,6 +495,12 @@ class EngineObserverTest {
                     onException: (Throwable) -> Unit,
                 ) {}
 
+                override fun addSignatureToPdf(
+                    text: String,
+                    onResult: () -> Unit,
+                    onException: (Throwable) -> Unit,
+                ) {}
+
                 override fun getBrokenSiteReport(
                     onResult: (JSONObject) -> Unit,
                     onException: (Throwable) -> Unit,
@@ -597,6 +621,12 @@ class EngineObserverTest {
 
                 override fun checkForPdfViewer(
                     onResult: (Boolean) -> Unit,
+                    onException: (Throwable) -> Unit,
+                ) {}
+
+                override fun addSignatureToPdf(
+                    text: String,
+                    onResult: () -> Unit,
                     onException: (Throwable) -> Unit,
                 ) {}
 
@@ -2104,7 +2134,13 @@ class EngineObserverTest {
                 scope = this,
             )
         val intent: Intent = mock()
-        observer.onLaunchIntentRequest(url = url, appIntent = intent, fallbackUrl = null, appName = null)
+        observer.onLaunchIntentRequest(
+            url = url,
+            appIntent = intent,
+            fallbackUrl = null,
+            appName = null,
+            sourceUrl = "https://www.example.org",
+        )
         testScheduler.advanceUntilIdle()
 
         captureActionsMiddleware.assertFirstAction(ContentAction.UpdateAppIntentAction::class) { action ->
@@ -2113,6 +2149,7 @@ class EngineObserverTest {
             assertEquals(intent, action.appIntent.appIntent)
             assertNull(action.appIntent.appName)
             assertNull(action.appIntent.fallbackUrl)
+            assertEquals("https://www.example.org", action.appIntent.sourceUrl)
         }
     }
 

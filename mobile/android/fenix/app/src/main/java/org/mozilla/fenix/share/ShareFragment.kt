@@ -96,16 +96,6 @@ class ShareFragment : AppCompatDialogFragment() {
 
         val accountManager = requireComponents.backgroundServices.accountManager
 
-        // Determine if tabs being shared are from private browsing mode.
-        // When sessionId is provided, check that specific tab's private state.
-        // When sessionId is null it must be from tabs tray, and since selection mode
-        // is not currently supported for private tabs, we assume it's not a private tab.
-        val isPrivate =
-            args.sessionId
-                ?.let { sessionId -> requireComponents.core.store.state.findTabOrCustomTab(sessionId) }
-                ?.content
-                ?.private ?: false
-
         shareInteractor =
             ShareInteractor(
                 DefaultShareController(
@@ -113,7 +103,6 @@ class ShareFragment : AppCompatDialogFragment() {
                     appStore = requireComponents.appStore,
                     shareSubject = args.shareSubject,
                     shareData = shareData,
-                    isPrivate = isPrivate,
                     navController = findNavController(),
                     sendTabUseCases = SendTabUseCases(accountManager),
                     saveToPdfUseCase = requireComponents.useCases.sessionUseCases.saveToPdf,
@@ -121,16 +110,18 @@ class ShareFragment : AppCompatDialogFragment() {
                     sentFromFirefoxManager = requireComponents.core.sentFromFirefoxManager,
                     recentAppsStorage = RecentAppsStorage(requireContext()),
                     viewLifecycleScope = viewLifecycleOwner.lifecycleScope,
-                ) { result ->
-                    consumePrompt {
-                        when (result) {
-                            ShareController.Result.DISMISSED -> onDismiss()
-                            ShareController.Result.SHARE_ERROR -> onFailure()
-                            ShareController.Result.SUCCESS -> onSuccess()
+                    applicationScope = requireComponents.applicationScope,
+                    dismiss = { result ->
+                        consumePrompt {
+                            when (result) {
+                                ShareController.Result.DISMISSED -> onDismiss()
+                                ShareController.Result.SHARE_ERROR -> onFailure()
+                                ShareController.Result.SUCCESS -> onSuccess()
+                            }
                         }
-                    }
-                    super.dismiss()
-                }
+                        super.dismiss()
+                    },
+                )
             )
 
         binding.shareWrapper.setOnClickListener { shareInteractor.onShareClosed() }

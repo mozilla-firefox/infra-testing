@@ -30,7 +30,7 @@ std::ostream& operator<<(std::ostream& o, std::optional<T> const& s) {
   }
   return o << "std::nullopt";
 }
-std::ostream& operator<<(std::ostream& o, std::nullopt_t const& s) {
+std::ostream& operator<<(std::ostream& o, std::nullopt_t const& /*s*/) {
   return o << "std::nullopt";
 }
 }  // namespace std
@@ -78,9 +78,7 @@ struct MockSleep {
     sum += val;
   }
 
-  bool operator==(MockSleep const& that) const {
-    return calls == that.calls && sum == that.sum;
-  }
+  bool operator==(MockSleep const& that) const = default;
 };
 std::ostream& operator<<(std::ostream& o, MockSleep const& s) {
   return o << "MockSleep { count: " << s.calls << ", sum: " << s.sum << " }";

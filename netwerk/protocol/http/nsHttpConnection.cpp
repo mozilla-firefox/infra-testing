@@ -546,17 +546,12 @@ nsresult nsHttpConnection::Activate(nsAHttpTransaction* trans, uint32_t caps,
     if (mTlsHandshaker->NPNComplete()) {
       mExperienced = true;
     }
-    if (mBootstrappedTimingsSet) {
-      mBootstrappedTimingsSet = false;
-      nsHttpTransaction* hTrans = trans->QueryHttpTransaction();
-      if (hTrans) {
-        hTrans->BootstrapTimings(mBootstrappedTimings);
-        SetUrgentStartPreferred(hTrans->GetClassOfService().Flags() &
-                                nsIClassOfService::UrgentStart);
-      }
+    if (nsHttpTransaction* hTrans = trans->QueryHttpTransaction()) {
+      SetUrgentStartPreferred(hTrans->GetClassOfService().Flags() &
+                              nsIClassOfService::UrgentStart);
     }
-    mBootstrappedTimings = TimingStruct();
   }
+  HandOffConnectPhase(trans);
 
   if (caps & NS_HTTP_LARGE_KEEPALIVE) {
     mDefaultTimeoutFactor = StaticPrefs::network_http_largeKeepaliveFactor();
@@ -740,9 +735,11 @@ nsresult nsHttpConnection::AddTransaction(nsAHttpTransaction* httpTransaction,
   needTunnel = needTunnel && httpTransaction->QueryHttpTransaction();
 
   // Let the transaction know that the tunnel is already established and we
-  // don't need to setup the tunnel again.
-  if (transCI->UsingConnect()) {
-    MOZ_ASSERT(mProxyConnectResponseHead);
+  // don't need to setup the tunnel again. Note that we only have a response
+  // head if the CONNECT request was sent on this connection - for example a
+  // HTTP/2 proxy connection tunnels each transaction in its own stream, so
+  // there is nothing to report here.
+  if (transCI->UsingConnect() && mProxyConnectResponseHead) {
     httpTransaction->OnProxyConnectComplete(mProxyConnectResponseHead);
   }
 
@@ -1551,7 +1548,7 @@ void nsHttpConnection::ForceSendIO(nsITimer* aTimer, void* aClosure) {
   nsHttpConnection* self = static_cast<nsHttpConnection*>(aClosure);
   MOZ_ASSERT(aTimer == self->mForceSendTimer);
   self->mForceSendTimer = nullptr;
-  NS_DispatchToCurrentThread(new HttpConnectionForceIO(self, false));
+  DispatchToCurrent(new HttpConnectionForceIO(self, false));
 }
 
 nsresult nsHttpConnection::MaybeForceSendIO() {
@@ -1579,7 +1576,7 @@ nsresult nsHttpConnection::ForceRecv() {
   LOG(("nsHttpConnection::ForceRecv [this=%p]\n", this));
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
 
-  return NS_DispatchToCurrentThread(new HttpConnectionForceIO(this, true));
+  return DispatchToCurrent(new HttpConnectionForceIO(this, true));
 }
 
 // trigger an asynchronous write
@@ -2408,9 +2405,6 @@ void nsHttpConnection::CheckForTraffic(bool check) {
 void nsHttpConnection::SetEvent(nsresult aStatus) {
   LOG(("nsHttpConnection::SetEvent [this=%p status=%" PRIx32 "]\n", this,
        static_cast<uint32_t>(aStatus)));
-  if (!mBootstrappedTimingsSet) {
-    mBootstrappedTimingsSet = true;
-  }
   switch (aStatus) {
     case NS_NET_STATUS_RESOLVING_HOST:
       mBootstrappedTimings.domainLookupStart = TimeStamp::Now();
@@ -2645,9 +2639,11 @@ void nsHttpConnection::HandshakeDoneInternal() {
 
   int16_t tlsVersion;
   tlsSocketControl->GetSSLVersionUsed(&tlsVersion);
-  mConnInfo->SetLessThanTls13(
-      (tlsVersion < nsITLSSocketControl::TLS_VERSION_1_3) &&
-      (tlsVersion != nsITLSSocketControl::SSL_VERSION_UNKNOWN));
+  mConnInfo = mConnInfo->Mutate()
+                  .SetLessThanTls13(
+                      (tlsVersion < nsITLSSocketControl::TLS_VERSION_1_3) &&
+                      (tlsVersion != nsITLSSocketControl::SSL_VERSION_UNKNOWN))
+                  .Finalize();
 #ifndef ANDROID
   mTlsHandshaker->EarlyDataTelemetry(tlsVersion, earlyDataAccepted,
                                      mContentBytesWritten0RTT);

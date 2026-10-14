@@ -777,9 +777,8 @@ JS::ColumnNumberUnsignedOffset TokenStreamAnyChars::computeColumnOffsetForUTF8(
     // The vector always begins with the column of the line start, i.e. zero,
     // with chunk units pessimally assumed not single-unit.
     if (entriesLen == 0) {
-      lastChunkVectorForLine_->infallibleAppend(
-          ChunkInfo(JS::ColumnNumberUnsignedOffset::zero(),
-                    UnitsType::PossiblyMultiUnit));
+      lastChunkVectorForLine_->infallibleEmplaceBack(
+          JS::ColumnNumberUnsignedOffset::zero(), UnitsType::PossiblyMultiUnit);
       entriesLen++;
     }
 
@@ -3234,6 +3233,18 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::getStringOrTemplateToken(
   bool parsingTemplate = (untilChar == '`');
   bool templateHead = false;
 
+  uint32_t invalidEscapeOffset = 0;
+  InvalidEscapeType invalidEscapeType = InvalidEscapeType::None;
+  auto noteInvalidTemplateEscape = [&](uint32_t offset,
+                                       InvalidEscapeType type) {
+    MOZ_ASSERT(parsingTemplate);
+    MOZ_ASSERT(type != InvalidEscapeType::None);
+    if (invalidEscapeType == InvalidEscapeType::None) {
+      invalidEscapeOffset = offset;
+      invalidEscapeType = type;
+    }
+  };
+
   TokenStart start(this->sourceUnits, -1);
   this->charBuffer.clear();
 
@@ -3382,9 +3393,7 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::getStringOrTemplateToken(
               int32_t u3 = getCodeUnit();
               if (u3 == EOF) {
                 if (parsingTemplate) {
-                  TokenStreamAnyChars& anyChars = anyCharsAccess();
-                  anyChars.setInvalidTemplateEscape(start,
-                                                    InvalidEscapeType::Unicode);
+                  noteInvalidTemplateEscape(start, InvalidEscapeType::Unicode);
                   valid = false;
                   break;
                 }
@@ -3394,9 +3403,8 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::getStringOrTemplateToken(
               if (u3 == '}') {
                 if (first) {
                   if (parsingTemplate) {
-                    TokenStreamAnyChars& anyChars = anyCharsAccess();
-                    anyChars.setInvalidTemplateEscape(
-                        start, InvalidEscapeType::Unicode);
+                    noteInvalidTemplateEscape(start,
+                                              InvalidEscapeType::Unicode);
                     valid = false;
                     break;
                   }
@@ -3415,9 +3423,7 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::getStringOrTemplateToken(
                   // '`' or '\'.
                   ungetCodeUnit(u3);
 
-                  TokenStreamAnyChars& anyChars = anyCharsAccess();
-                  anyChars.setInvalidTemplateEscape(start,
-                                                    InvalidEscapeType::Unicode);
+                  noteInvalidTemplateEscape(start, InvalidEscapeType::Unicode);
                   valid = false;
                   break;
                 }
@@ -3428,9 +3434,8 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::getStringOrTemplateToken(
               code = (code << 4) | AsciiAlphanumericToNumber(u3);
               if (code > unicode::NonBMPMax) {
                 if (parsingTemplate) {
-                  TokenStreamAnyChars& anyChars = anyCharsAccess();
-                  anyChars.setInvalidTemplateEscape(
-                      start + 3, InvalidEscapeType::UnicodeOverflow);
+                  noteInvalidTemplateEscape(start + 3,
+                                            InvalidEscapeType::UnicodeOverflow);
                   valid = false;
                   break;
                 }
@@ -3466,9 +3471,7 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::getStringOrTemplateToken(
             ungetCodeUnit(c2);
             uint32_t start = this->sourceUnits.offset() - 2;
             if (parsingTemplate) {
-              TokenStreamAnyChars& anyChars = anyCharsAccess();
-              anyChars.setInvalidTemplateEscape(start,
-                                                InvalidEscapeType::Unicode);
+              noteInvalidTemplateEscape(start, InvalidEscapeType::Unicode);
               continue;
             }
             reportInvalidEscapeError(start, InvalidEscapeType::Unicode);
@@ -3485,9 +3488,7 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::getStringOrTemplateToken(
           } else {
             uint32_t start = this->sourceUnits.offset() - 2;
             if (parsingTemplate) {
-              TokenStreamAnyChars& anyChars = anyCharsAccess();
-              anyChars.setInvalidTemplateEscape(start,
-                                                InvalidEscapeType::Hexadecimal);
+              noteInvalidTemplateEscape(start, InvalidEscapeType::Hexadecimal);
               continue;
             }
             reportInvalidEscapeError(start, InvalidEscapeType::Hexadecimal);
@@ -3514,9 +3515,8 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::getStringOrTemplateToken(
             if (unit == '8' || unit == '9') {
               TokenStreamAnyChars& anyChars = anyCharsAccess();
               if (parsingTemplate) {
-                anyChars.setInvalidTemplateEscape(
-                    this->sourceUnits.offset() - 2,
-                    InvalidEscapeType::EightOrNine);
+                noteInvalidTemplateEscape(this->sourceUnits.offset() - 2,
+                                          InvalidEscapeType::EightOrNine);
                 continue;
               }
 
@@ -3546,8 +3546,8 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::getStringOrTemplateToken(
           if (val != 0 || IsAsciiDigit(unit)) {
             TokenStreamAnyChars& anyChars = anyCharsAccess();
             if (parsingTemplate) {
-              anyChars.setInvalidTemplateEscape(this->sourceUnits.offset() - 2,
-                                                InvalidEscapeType::Octal);
+              noteInvalidTemplateEscape(this->sourceUnits.offset() - 2,
+                                        InvalidEscapeType::Octal);
               continue;
             }
 
@@ -3631,10 +3631,15 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::getStringOrTemplateToken(
 
   MOZ_ASSERT_IF(!parsingTemplate, !templateHead);
 
-  TokenKind kind = !parsingTemplate ? TokenKind::String
-                   : templateHead   ? TokenKind::TemplateHead
-                                    : TokenKind::NoSubsTemplate;
-  newAtomToken(kind, atom, start, modifier, out);
+  if (!parsingTemplate) {
+    newAtomToken(TokenKind::String, atom, start, modifier, out);
+    return true;
+  }
+
+  TokenKind kind =
+      templateHead ? TokenKind::TemplateHead : TokenKind::NoSubsTemplate;
+  newTemplateToken(kind, atom, invalidEscapeOffset, invalidEscapeType, start,
+                   modifier, out);
   return true;
 }
 

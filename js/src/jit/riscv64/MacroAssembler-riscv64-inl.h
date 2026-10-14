@@ -1073,8 +1073,8 @@ void MacroAssembler::branchTestPrimitive(Condition cond,
 void MacroAssembler::branchTestPrimitive(Condition cond, Register tag,
                                          Label* label) {
   MOZ_ASSERT(cond == Equal || cond == NotEqual);
-  ma_b(tag, ImmTagSignExt(JS::detail::ValueUpperExclPrimitiveTag), label,
-       (cond == Equal) ? Below : AboveOrEqual, ShortJump);
+  ma_b(tag, ImmTagSignExt(JSVAL_TAG_OBJECT), label,
+       (cond == Equal) ? NotEqual : Equal, ShortJump);
 }
 void MacroAssembler::branchTestPtr(Condition cond, Register lhs, Register rhs,
                                    Label* label) {
@@ -1846,6 +1846,11 @@ void MacroAssembler::orPtr(Imm32 imm, Register src, Register dest) {
   ma_or(dest, src, imm);
 }
 
+void MacroAssembler::nor32(Imm32 imm, Register src, Register dest) {
+  or32(imm, src, dest);
+  not32(dest);
+}
+
 void MacroAssembler::popcnt32(Register input, Register output, Register tmp) {
   Popcnt32(output, input, tmp);
 }
@@ -1920,6 +1925,37 @@ void MacroAssembler::rotateRight(Imm32 count, Register input, Register dest) {
 void MacroAssembler::rotateRight(Register count, Register input,
                                  Register dest) {
   Ror(dest, input, count);
+}
+
+// ===============================================================
+// Shift or rotate, then combine with another register
+
+void MacroAssembler::lshift32ThenAdd(Imm32 shift, Register rhs,
+                                     Register srcDest) {
+  MOZ_ASSERT(rhs != srcDest);
+  lshift32(shift, srcDest);
+  add32(rhs, srcDest);
+}
+
+void MacroAssembler::lshift32ThenOr(Imm32 shift, Register rhs,
+                                    Register srcDest) {
+  MOZ_ASSERT(rhs != srcDest);
+  lshift32(shift, srcDest);
+  or32(rhs, srcDest);
+}
+
+void MacroAssembler::rshiftPtrThenXor(Imm32 shift, Register rhs,
+                                      Register srcDest) {
+  MOZ_ASSERT(rhs != srcDest);
+  rshiftPtr(shift, srcDest);
+  xorPtr(rhs, srcDest);
+}
+
+void MacroAssembler::rotateLeft64ThenXor(Imm32 count, Register64 rhs,
+                                         Register64 srcDest) {
+  MOZ_ASSERT(rhs != srcDest);
+  rotateLeft64(count, srcDest, srcDest, InvalidReg);
+  xor64(rhs, srcDest);
 }
 
 void MacroAssembler::rshift32Arithmetic(Register src, Register dest) {

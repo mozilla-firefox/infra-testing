@@ -393,12 +393,9 @@ DefaultJitOptions::DefaultJitOptions() {
 
   // ***** Irregexp shim flags *****
 
-  // Whether the stage 3 regexp modifiers proposal is enabled.
-  SET_DEFAULT(js_regexp_modifiers, true);
-  // Whether the stage 3 duplicate named capture groups proposal is enabled.
-  SET_DEFAULT(js_regexp_duplicate_named_groups, true);
   // Whether the regexp buffer boundaries proposal (\A, \z, \Z assertions) is
-  // enabled. See Bug 2047702.
+  // enabled. See Bug 2047702. Controlled by the
+  // javascript.options.experimental.regexp_buffer_boundaries pref.
   SET_DEFAULT(js_regexp_buffer_boundaries, false);
   // V8 uses this for differential fuzzing to handle stack overflows.
   // We address the same problem in StackLimitCheck::HasOverflowed.

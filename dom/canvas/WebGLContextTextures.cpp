@@ -6,7 +6,6 @@
 #include "GLContext.h"
 #include "WebGLBuffer.h"
 #include "WebGLContext.h"
-#include "WebGLContextUtils.h"
 #include "WebGLExtensions.h"
 #include "WebGLFramebuffer.h"
 #include "WebGLProgram.h"
@@ -56,8 +55,6 @@ void WebGLContext::BindTexture(GLenum rawTarget, WebGLTexture* newTex) {
   FuncScope funcScope(*this, "bindTexture");
   if (IsContextLost()) return;
   funcScope.mBindFailureGuard = true;
-
-  if (newTex && !ValidateObject("tex", *newTex)) return;
 
   // Need to check rawTarget first before comparing against newTex->Target() as
   // newTex->Target() returns a TexTarget, which will assert on invalid value.
@@ -198,7 +195,7 @@ void WebGLContext::TexImage(uint32_t level, GLenum respecFormat, uvec3 offset,
 void WebGLContext::CompressedTexImage(bool sub, GLenum imageTarget,
                                       uint32_t level, GLenum format,
                                       uvec3 offset, uvec3 size,
-                                      const Range<const uint8_t>& src,
+                                      const mozilla::Range<const uint8_t>& src,
                                       const uint32_t pboImageSize,
                                       const Maybe<uint64_t>& pboOffset) const {
   const WebGLContext::FuncScope funcScope(

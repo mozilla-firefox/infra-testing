@@ -10,8 +10,6 @@ set -e
 set -x
 
 # Required fetch artifact
-clang_bindir=${MOZ_FETCHES_DIR}/clang/bin
-clang_libdir=${MOZ_FETCHES_DIR}/clang/lib
 python_src=${MOZ_FETCHES_DIR}/cpython-source
 xz_prefix=${MOZ_FETCHES_DIR}/xz
 
@@ -22,26 +20,38 @@ env UPLOAD_DIR= $GECKO_PATH/taskcluster/scripts/misc/repack-clang.sh
 case `uname -s` in
     Darwin)
         # Use taskcluster clang instead of host compiler on OSX
-        export PATH=${clang_bindir}:${PATH}
+        . $GECKO_PATH/taskcluster/scripts/misc/macos-setup.sh
+        # python records CC/CXX for later extension builds; keep them PATH-relative.
         export CC=clang
         export CXX=clang++
-        export LDFLAGS=-fuse-ld=lld
-
-        case `uname -m` in
-            aarch64)
-                macosx_version_min=11.0
-                ;;
-            *)
-                macosx_version_min=10.15
-                ;;
-        esac
         # NOTE: both CFLAGS and CPPFLAGS need to be set here, otherwise
         # configure step fails.
-        sysroot_flags="-isysroot ${MOZ_FETCHES_DIR}/MacOSX26.5.sdk -mmacosx-version-min=${macosx_version_min}"
-        export CPPFLAGS="${sysroot_flags} -I${xz_prefix}/include"
-        export CFLAGS=${sysroot_flags}
-        export LDFLAGS="${LDFLAGS} ${sysroot_flags} -L${xz_prefix}/lib"
-        configure_flags_extra=--with-openssl=/usr/local/opt/openssl
+        export CPPFLAGS="${MACOS_CFLAGS} -I${xz_prefix}/include"
+        export CFLAGS=${MACOS_CFLAGS}
+        export LDFLAGS="${MACOS_CFLAGS} -L${xz_prefix}/lib"
+
+        if [ -d "${MOZ_FETCHES_DIR}/openssl" ]; then
+            # Self-contained build: use the fetched openssl/xz toolchains rather
+            # than relying on the worker shipping matching libraries (the arm64
+            # workers ship neither). Their shared libs bake absolute install names
+            # (/openssl, /xz) that don't exist at build time; the CI workers run
+            # with SIP disabled, so DYLD_FALLBACK_LIBRARY_PATH lets the build-time
+            # module import checks (and the pip bootstrap below) resolve them from
+            # the fetch dirs by leaf name. The post-build fixup then rewrites the
+            # references to @rpath so the shipped python stays relocatable.
+            openssl_prefix=${MOZ_FETCHES_DIR}/openssl
+            export DYLD_FALLBACK_LIBRARY_PATH=${openssl_prefix}/lib:${xz_prefix}/lib
+            openssl_ssl_id=/openssl/lib/libssl.1.1.dylib
+            openssl_crypto_id=/openssl/lib/libcrypto.1.1.dylib
+            openssl_libssl_crypto_id=/openssl/lib/libcrypto.1.1.dylib
+        else
+            openssl_prefix=/usr/local/opt/openssl
+            export DYLD_FALLBACK_LIBRARY_PATH=${xz_prefix}/lib:/usr/local/lib:/usr/lib
+            openssl_ssl_id=/usr/local/opt/openssl@1.1/lib/libssl.1.1.dylib
+            openssl_crypto_id=/usr/local/opt/openssl@1.1/lib/libcrypto.1.1.dylib
+            openssl_libssl_crypto_id=/usr/local/Cellar/openssl@1.1/1.1.1h/lib/libcrypto.1.1.dylib
+        fi
+        configure_flags_extra=--with-openssl=${openssl_prefix}
 
         # see https://bugs.python.org/issue44065
         sed -i -e 's,$CC --print-multiarch,:,' ${python_src}/configure
@@ -64,6 +74,12 @@ tardir=python
 
 cd `mktemp -d`
 ${python_src}/configure --prefix=/${tardir} --enable-optimizations --with-lto ${configure_flags_extra} || { exit_status=$? && cat config.log && exit $exit_status ; }
+# make re-adds these to the configure-recorded flags; Linux keeps them so setup.py gets a working $ORIGIN rpath.
+case `uname -s` in
+    Darwin)
+        unset CFLAGS CPPFLAGS LDFLAGS
+        ;;
+esac
 
 export MAKEFLAGS=-j`nproc`
 make
@@ -85,27 +101,32 @@ PYCODE
 fi
 
 ${work_dir}/python/bin/python3 -m pip install --upgrade pip==23.0
-${work_dir}/python/bin/python3 -m pip install -r ${GECKO_PATH}/build/psutil_requirements.txt -r ${GECKO_PATH}/build/zstandard_requirements.txt
+${work_dir}/python/bin/python3 -m pip install -r ${GECKO_PATH}/build/psutil_requirements.txt -r ${GECKO_PATH}/build/zstandard_requirements.txt -r ${GECKO_PATH}/build/pyyaml_requirements.txt
+${work_dir}/python/bin/python3 -c "import yaml; assert yaml.__with_libyaml__"
 
 case `uname -s` in
     Darwin)
 
-        cp /usr/local/opt/openssl/lib/libssl*.dylib ${work_dir}/python/lib/
-        cp /usr/local/opt/openssl/lib/libcrypto*.dylib ${work_dir}/python/lib/
+        cp ${openssl_prefix}/lib/libssl*.dylib ${work_dir}/python/lib/
+        cp ${openssl_prefix}/lib/libcrypto*.dylib ${work_dir}/python/lib/
         cp ${xz_prefix}/lib/liblzma.dylib ${work_dir}/python/lib/
         cp ${xz_prefix}/lib/liblzma.5.dylib ${work_dir}/python/lib/
 
         # Instruct the loader to search for the lib in rpath instead of the one used during linking
-        install_name_tool -change /usr/local/opt/openssl@1.1/lib/libssl.1.1.dylib @rpath/libssl.1.1.dylib ${work_dir}/python/lib/python3.*/lib-dynload/_ssl.cpython-3*-darwin.so
-        install_name_tool -change /usr/local/opt/openssl@1.1/lib/libcrypto.1.1.dylib @rpath/libcrypto.1.1.dylib ${work_dir}/python/lib/python3.*/lib-dynload/_ssl.cpython-3*-darwin.so
+        install_name_tool -change ${openssl_ssl_id} @rpath/libssl.1.1.dylib ${work_dir}/python/lib/python3.*/lib-dynload/_ssl.cpython-3*-darwin.so
+        install_name_tool -change ${openssl_crypto_id} @rpath/libcrypto.1.1.dylib ${work_dir}/python/lib/python3.*/lib-dynload/_ssl.cpython-3*-darwin.so
         otool -L ${work_dir}/python/lib/python3.*/lib-dynload/_ssl.cpython-3*-darwin.so | grep @rpath/libssl.1.1.dylib
+
+        # _hashlib links libcrypto too
+        install_name_tool -change ${openssl_crypto_id} @rpath/libcrypto.1.1.dylib ${work_dir}/python/lib/python3.*/lib-dynload/_hashlib.cpython-3*-darwin.so
+        otool -L ${work_dir}/python/lib/python3.*/lib-dynload/_hashlib.cpython-3*-darwin.so | grep @rpath/libcrypto.1.1.dylib
 
 
         install_name_tool -change /xz/lib/liblzma.5.dylib @rpath/liblzma.5.dylib ${work_dir}/python/lib/python3.*/lib-dynload/_lzma.cpython-3*-darwin.so
         otool -L ${work_dir}/python/lib/python3.*/lib-dynload/_lzma.cpython-3*-darwin.so | grep @rpath/liblzma.5.dylib
 
         # Also modify the shipped libssl to use the shipped libcrypto
-        install_name_tool -change /usr/local/Cellar/openssl@1.1/1.1.1h/lib/libcrypto.1.1.dylib @rpath/libcrypto.1.1.dylib ${work_dir}/python/lib/libssl.1.1.dylib
+        install_name_tool -change ${openssl_libssl_crypto_id} @rpath/libcrypto.1.1.dylib ${work_dir}/python/lib/libssl.1.1.dylib
         otool -L ${work_dir}/python/lib/libssl.1.1.dylib | grep @rpath/libcrypto.1.1.dylib
 
         # sanity check

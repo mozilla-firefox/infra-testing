@@ -10,9 +10,6 @@
 #include "mozilla/gmp/PGMPChild.h"
 
 namespace mozilla {
-#ifdef XP_WIN
-struct ModulePaths;
-#endif
 
 namespace ipc {
 class ByteBuf;
@@ -24,6 +21,18 @@ class GMPChild;
 
 void InitPlatformAPI(GMPPlatformAPI& aPlatformAPI, GMPChild* aChild);
 
+enum class PlatformShutdownResult {
+  ReadyToUnload,
+  PluginExecutionOutstanding,
+};
+
+PlatformShutdownResult ShutdownPlatformAPI();
+
+// Count of live plugin-implemented objects (e.g. codec instances) held by GMP
+// child actors.
+void AddPluginObject();
+void RemovePluginObject();
+
 GMPErr RunOnMainThread(GMPTask* aTask);
 
 GMPTask* NewGMPTask(std::function<void()>&& aFunction);
@@ -34,7 +43,7 @@ void SendFOGData(ipc::ByteBuf&& buf);
 
 #ifdef XP_WIN
 RefPtr<PGMPChild::GetModulesTrustPromise> SendGetModulesTrust(
-    ModulePaths&& aModules, bool aRunNormal);
+    ModuleIdentifiers&& aModules, bool aRunNormal);
 #endif
 
 }  // namespace gmp

@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/glean/GleanPings.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/HelperMacros.h"
@@ -13,6 +12,7 @@
 #include "mozilla/UniquePtr.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/WidgetUtils.h"
+#include "nsCRTGlue.h"
 #include "nsNetUtil.h"
 #include "nsProfileLock.h"
 #include "nsStringFwd.h"
@@ -99,7 +99,6 @@ using namespace mozilla;
 #define INSTALL_PREFIX "Install"
 #define INSTALL_PREFIX_LENGTH 7
 #define STORE_ID_PREF "toolkit.profiles.storeID"
-#define NEW_PROFILE_PREF "toolkit.profiles.newProfileSubmitted"
 
 struct KeyValue {
   KeyValue(const char* aKey, const char* aValue) : key(aKey), value(aValue) {}
@@ -677,8 +676,7 @@ nsToolkitProfileLock::~nsToolkitProfileLock() {
 
 nsToolkitProfileService* nsToolkitProfileService::gService = nullptr;
 
-NS_IMPL_ISUPPORTS(nsToolkitProfileService, nsIToolkitProfileService,
-                  nsIObserver)
+NS_IMPL_ISUPPORTS(nsToolkitProfileService, nsIToolkitProfileService)
 
 nsToolkitProfileService::nsToolkitProfileService()
     : mStartupProfileSelected(false),
@@ -695,6 +693,7 @@ nsToolkitProfileService::nsToolkitProfileService()
       mMaybeLockProfile(false),
       mUpdateChannel(MOZ_STRINGIFY(MOZ_UPDATE_CHANNEL)),
       mProfileDBExists(false),
+      mProfileDBReadFailed(false),
       mProfileDBFileSize(0),
       mProfileDBModifiedTime(0) {
 #ifdef MOZ_DEV_EDITION
@@ -739,23 +738,6 @@ void nsToolkitProfileService::CompleteStartup() {
     glean::startup::profiles_ini_status.Set(mIniStatus);
   }
 
-  nsCOMPtr<nsIPrefBranch> prefs = do_GetService(NS_PREFSERVICE_CONTRACTID);
-  nsCOMPtr<nsIObserverService> observerService =
-      mozilla::services::GetObserverService();
-
-  if (observerService && prefs) {
-    bool submitted = false;
-    if (NS_FAILED(prefs->GetBoolPref(NEW_PROFILE_PREF, &submitted))) {
-      submitted = false;
-    }
-
-    if (!submitted) {
-      observerService->AddObserver(this, "quit-application", false);
-      // To allow testing from xpcshell
-      observerService->AddObserver(this, "test-quit-application", false);
-    }
-  }
-
   if (mMaybeLockProfile) {
     nsCOMPtr<nsIToolkitShellService> shell =
         do_GetService(NS_TOOLKITSHELLSERVICE_CONTRACTID);
@@ -776,24 +758,8 @@ void nsToolkitProfileService::CompleteStartup() {
   }
 }
 
-NS_IMETHODIMP
-nsToolkitProfileService::Observe(nsISupports* aSubject, const char* aTopic,
-                                 const char16_t* aData) {
-  // Currently only called for "quit-application"
-  nsCOMPtr<nsIPrefBranch> prefs = do_GetService(NS_PREFSERVICE_CONTRACTID);
-  if (prefs) {
-    bool submitted = false;
-    if (NS_FAILED(prefs->GetBoolPref(NEW_PROFILE_PREF, &submitted))) {
-      submitted = false;
-    }
-
-    if (!submitted) {
-      glean_pings::NewProfile.Submit();
-      prefs->SetBoolPref(NEW_PROFILE_PREF, true);
-    }
-  }
-
-  return NS_OK;
+const nsACString& nsToolkitProfileService::ProfileSelectionReason() {
+  return mStartupReason;
 }
 
 // Tests whether the passed profile was last used by this install.
@@ -1062,14 +1028,21 @@ nsresult nsToolkitProfileService::Init() {
 
   rv = UpdateFileStats(mProfileDBFile, &mProfileDBExists,
                        &mProfileDBModifiedTime, &mProfileDBFileSize);
-  if (NS_SUCCEEDED(rv) && mProfileDBExists) {
+  if (NS_FAILED(rv)) {
+    mIniStatus = "ini-failed"_ns;
+    mProfileDBReadFailed = true;
+    return NS_OK;
+  }
+
+  if (mProfileDBExists) {
     bool iniContainedErrors = false;
     rv = mProfileDB.Init(mProfileDBFile, &iniContainedErrors);
     // Init does not fail on parsing errors, only on OOM/really unexpected
     // conditions.
     if (NS_FAILED(rv)) {
       mIniStatus = "ini-failed"_ns;
-      return rv;
+      mProfileDBReadFailed = true;
+      return NS_OK;
     }
 
     if (iniContainedErrors) {
@@ -1750,6 +1723,10 @@ nsresult nsToolkitProfileService::SelectStartupProfile(
     return NS_ERROR_FAILURE;
   }
   if (ar) {
+    if (mProfileDBReadFailed) {
+      return NS_ERROR_NOT_AVAILABLE;
+    }
+
     const char* delim = strchr(arg, ' ');
     nsCOMPtr<nsIToolkitProfile> profile;
     if (delim) {
@@ -1780,9 +1757,14 @@ nsresult nsToolkitProfileService::SelectStartupProfile(
   // uses that named profile or without a name it opens the profile manager.
   ar = CheckArg(*aArgc, aArgv, "p", &arg);
   if (ar == ARG_BAD) {
-    return NS_ERROR_SHOW_PROFILE_MANAGER;
+    return mProfileDBReadFailed ? NS_ERROR_NOT_AVAILABLE
+                                : NS_ERROR_SHOW_PROFILE_MANAGER;
   }
   if (ar) {
+    if (mProfileDBReadFailed) {
+      return NS_ERROR_NOT_AVAILABLE;
+    }
+
     mCurrent = GetProfileByName(nsDependentCString(arg));
     if (mCurrent) {
       mStartupReason = "argument-p"_ns;
@@ -1799,7 +1781,8 @@ nsresult nsToolkitProfileService::SelectStartupProfile(
 
   ar = CheckArg(*aArgc, aArgv, "profilemanager");
   if (ar == ARG_FOUND) {
-    return NS_ERROR_SHOW_PROFILE_MANAGER;
+    return mProfileDBReadFailed ? NS_ERROR_NOT_AVAILABLE
+                                : NS_ERROR_SHOW_PROFILE_MANAGER;
   }
 
 #ifdef MOZ_BACKGROUNDTASKS
@@ -1840,6 +1823,10 @@ nsresult nsToolkitProfileService::SelectStartupProfile(
       }
       *aDidCreate = true;
     } else {
+      if (mProfileDBReadFailed) {
+        return NS_ERROR_NOT_AVAILABLE;
+      }
+
       // Background task mode does not enable legacy telemetry, so this is for
       // completeness and testing only.
       mStartupReason = "backgroundtask-not-ephemeral"_ns;
@@ -1911,6 +1898,10 @@ nsresult nsToolkitProfileService::SelectStartupProfile(
     return NS_OK;
   }
 #endif
+
+  if (mProfileDBReadFailed) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
 
   if (mIsFirstRun && mUseDedicatedProfile &&
       !mInstallSection.Equals(mLegacyInstallSection)) {
@@ -2718,6 +2709,10 @@ nsToolkitProfileService::AsyncFlushCurrentProfile(JSContext* aCx,
 
 NS_IMETHODIMP
 nsToolkitProfileService::AsyncFlush(JSContext* aCx, dom::Promise** aPromise) {
+  if (mProfileDBReadFailed) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
 #ifndef MOZ_HAS_REMOTE
   return NS_ERROR_FAILURE;
 #else
@@ -2926,6 +2921,10 @@ nsToolkitProfileService::RemoveProfileFilesByPath(nsIFile* aRootDir,
 
 NS_IMETHODIMP
 nsToolkitProfileService::Flush() {
+  if (mProfileDBReadFailed) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
   nsCString profilesIniData;
   nsCString installsIniData;
 

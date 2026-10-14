@@ -30,6 +30,7 @@ class MozharnessSchema(Schema, forbid_unknown_fields=False, kw_only=True):
     comm_checkout: Optional[bool] = None
     run_as_root: Optional[bool] = None
     use_caches: Optional[Union[bool, list[str]]] = None
+    sparse_profile: Optional[str] = None
 
 
 class MsiSchema(Schema, kw_only=True):
@@ -559,10 +560,10 @@ def make_job_description(config, jobs):
 
             fetches = job.setdefault("fetches", {})
 
-            # The keys are unique, like `shippable-l10n-signing-linux64-shippable-1/opt`, so we
+            # The keys are unique, like `l10n-signing-linux64-shippable-1/opt`, so we
             # can't ask for the tasks directly, we must filter for them.
             for t in config.kind_dependencies_tasks.values():
-                if t.kind != "shippable-l10n-signing":
+                if t.kind != "l10n-signing":
                     continue
                 if t.attributes["build_platform"] != "linux64-shippable":
                     continue
@@ -610,14 +611,14 @@ def make_job_description(config, jobs):
                 continue
 
             fetches = job.setdefault("fetches", {})
-            # The keys are unique, like `shippable-l10n-signing-linux64-shippable-1/opt`, so we
+            # The keys are unique, like `l10n-signing-linux64-shippable-1/opt`, so we
             # can't ask for the tasks directly, we must filter for them.
             for t in config.kind_dependencies_tasks.values():
                 # Filter out tasks that are either not the wrong kind, not the
                 # right product or not the right platform to keep one langpack
                 # per locale
                 if attributes.get("shippable"):
-                    if t.kind != "shippable-l10n-signing":
+                    if t.kind != "l10n-signing":
                         continue
                     if t.attributes["shipping_product"] != job["shipping-product"]:
                         continue

@@ -111,7 +111,7 @@ static bool CollectJitStackScripts(JSContext* cx,
           // or IonScript don't need to be patched but they do need to be
           // invalidated and recompiled. See also CollectInterpreterStackScripts
           // for C++ interpreter frames.
-          if (!entries.append(DebugModeOSREntry(script))) {
+          if (!entries.emplaceBack(script)) {
             return false;
           }
         } else {
@@ -119,7 +119,7 @@ static bool CollectJitStackScripts(JSContext* cx,
           uint8_t* retAddr = frame.resumePCinCurrentFrame();
           const RetAddrEntry& retAddrEntry =
               script->baselineScript()->retAddrEntryFromReturnAddress(retAddr);
-          if (!entries.append(DebugModeOSREntry(script, retAddrEntry))) {
+          if (!entries.emplaceBack(script, retAddrEntry)) {
             return false;
           }
         }
@@ -134,7 +134,7 @@ static bool CollectJitStackScripts(JSContext* cx,
         InlineFrameIterator inlineIter(cx, &frame);
         while (true) {
           if (obs.shouldRecompileOrInvalidate(inlineIter.script())) {
-            if (!entries.append(DebugModeOSREntry(inlineIter.script()))) {
+            if (!entries.emplaceBack(inlineIter.script())) {
               return false;
             }
           }
@@ -163,7 +163,7 @@ static bool CollectInterpreterStackScripts(
   for (InterpreterFrameIterator iter(act); !iter.done(); ++iter) {
     JSScript* script = iter.frame()->script();
     if (obs.shouldRecompileOrInvalidate(script)) {
-      if (!entries.append(DebugModeOSREntry(iter.frame()->script()))) {
+      if (!entries.emplaceBack(iter.frame()->script())) {
         return false;
       }
     }

@@ -6,12 +6,13 @@
 //!
 //! TODO(emilio): Enhance docs.
 
+use super::CSSFloat;
 use super::computed::{Context, ToComputedValue};
 use super::generics::grid::ImplicitGridTracks as GenericImplicitGridTracks;
 use super::generics::grid::{GridLine as GenericGridLine, TrackBreadth as GenericTrackBreadth};
 use super::generics::grid::{TrackList as GenericTrackList, TrackSize as GenericTrackSize};
 use super::generics::{self, NonNegative};
-use super::CSSFloat;
+use crate::FxHashMap;
 use crate::context::QuirksMode;
 use crate::derives::*;
 use crate::parser::{Parse, ParserContext};
@@ -21,7 +22,6 @@ use crate::values::specified::calc::PercentageContext;
 use crate::values::specified::number::parse_number_with_clamping_mode;
 use crate::{Namespace, Prefix};
 use cssparser::{Parser, Token};
-use rustc_hash::FxHashMap;
 use style_traits::values::specified::AllowedNumericType;
 use style_traits::{ParseError, StyleParseErrorKind};
 
@@ -33,32 +33,40 @@ pub use self::animation::{
     AnimationRangeStart, AnimationTimeline, ScrollAxis, TimelineName, TransitionBehavior,
     TransitionProperty, ViewTimelineInset, ViewTransitionClass, ViewTransitionName,
 };
-pub use self::background::{BackgroundClip, BackgroundRepeat, BackgroundSize};
+pub use self::background::{
+    BackgroundClip, BackgroundOrigin, BackgroundRepeat, BackgroundSize, ImageLayerAttachment,
+};
 pub use self::basic_shape::FillRule;
 pub use self::border::{
     BorderCornerRadius, BorderImageRepeat, BorderImageSideWidth, BorderImageSlice,
     BorderImageWidth, BorderRadius, BorderSideOffset, BorderSideWidth, BorderSpacing, BorderStyle,
-    LineWidth,
+    BoxDecorationBreak, FloatEdge, LineWidth,
 };
 pub use self::box_::{
-    AlignmentBaseline, Appearance, BaselineShift, BaselineSource, BreakBetween, BreakWithin, Clear,
-    Contain, ContainIntrinsicSize, ContainerName, ContainerType, ContentVisibility, Display,
-    DominantBaseline, Float, LineClamp, MarginTrim, Overflow, OverflowAnchor, OverflowClipMargin,
-    OverscrollBehavior, Perspective, PositionProperty, Resize, ScrollSnapAlign, ScrollSnapAxis,
-    ScrollSnapStop, ScrollSnapStrictness, ScrollSnapType, ScrollbarGutter, TouchAction, WillChange,
-    WillChangeBits, WritingModeProperty, Zoom,
+    AlignmentBaseline, Appearance, BackfaceVisibility, BaselineShift, BaselineSource, BoxAlign,
+    BoxCollapse, BoxDirection, BoxOrient, BoxPack, BreakBetween, BreakWithin, Clear, Contain,
+    ContainIntrinsicSize, ContainerName, ContainerType, ContentVisibility, DirectionProperty,
+    Display, DominantBaseline, Float, ImageOrientation, Isolation, LineClamp, MarginTrim, Orient,
+    Overflow, OverflowAnchor, OverflowClipMargin, OverscrollBehavior, Perspective,
+    PositionProperty, Resize, ScrollBehavior, ScrollSnapAlign, ScrollSnapAxis, ScrollSnapStop,
+    ScrollSnapStrictness, ScrollSnapType, ScrollbarGutter, ScrollbarInset, TextOrientation,
+    TopLayer, TouchAction, Visibility, WillChange, WillChangeBits, WritingModeProperty, Zoom,
 };
 pub use self::calc::{CalcLengthPercentage, CalcNumeric};
 pub use self::color::{
     Color, ColorOrAuto, ColorPropertyValue, ColorScheme, ForcedColorAdjust, PrintColorAdjust,
 };
-pub use self::column::ColumnCount;
+pub use self::column::{ColumnCount, ColumnFill, ColumnSpan};
 pub use self::corner_shape::{CornerShape, CornerShapeRect, SuperellipseArg};
 pub use self::counters::{Content, ContentItem, CounterIncrement, CounterReset, CounterSet};
 pub use self::easing::TimingFunction;
-pub use self::effects::{BoxShadow, Filter, SimpleShadow};
+pub use self::effects::{Blend, BoxShadow, Filter, SimpleShadow};
 pub use self::flex::FlexBasis;
-pub use self::font::{FontFamily, FontLanguageOverride, FontPalette, FontStyle};
+pub use self::font::{
+    FontFamily, FontKerning, FontLanguageOverride, FontOpticalSizing, FontPalette, FontSmoothing,
+    FontStyle, FontVariantCaps, FontVariantEmoji, FontVariantPosition, MathShift, MathStyle,
+    MathVariant,
+};
 pub use self::font::{FontFeatureSettings, FontVariantLigatures, FontVariantNumeric};
 pub use self::font::{
     FontSize, FontSizeAdjust, FontSizeAdjustFactor, FontSizeKeyword, FontSynthesis,
@@ -77,8 +85,7 @@ pub use self::length::{NoCalcLength, ViewportVariant};
 pub use self::length::{
     NonNegativeLength, NonNegativeLengthPercentage, NonNegativeLengthPercentageOrAuto,
 };
-pub use self::list::ListStyleType;
-pub use self::list::Quotes;
+pub use self::list::{ListStylePosition, ListStyleType, Quotes};
 pub use self::motion::{OffsetPath, OffsetPosition, OffsetRotate};
 pub use self::number::{
     GreaterThanOrEqualToOneNumber, Integer, NoCalcNumber, NonNegativeInteger, NonNegativeNumber,
@@ -89,20 +96,28 @@ pub use self::page::{PageName, PageOrientation, PageSize, PageSizeOrientation, P
 pub use self::param::LinkParameters;
 pub use self::percentage::{NoCalcPercentage, NonNegativePercentage, Percentage};
 pub use self::position::{
-    AnchorFunction, AnchorName, AnchorNameIdent, AspectRatio, FlexWrap, GridAutoFlow,
-    GridTemplateAreas, Inset, MasonryAutoFlow, MasonryItemOrder, MasonryPlacement, Position,
-    PositionAnchor, PositionAnchorKeyword, PositionArea, PositionAreaKeyword, PositionComponent,
-    PositionOrAuto, PositionTryFallbacks, PositionTryOrder, PositionVisibility, ScopedName, ZIndex,
+    AnchorFunction, AnchorName, AnchorNameIdent, AspectRatio, BoxSizing, FlexDirection, FlexWrap,
+    GridAutoFlow, GridTemplateAreas, Inset, ObjectFit, Position, PositionAnchor,
+    PositionAnchorKeyword, PositionArea, PositionAreaKeyword, PositionComponent, PositionOrAuto,
+    PositionTryFallbacks, PositionTryOrder, PositionVisibility, ScopedName, ZIndex,
 };
+pub use self::random::{RandomCacheKey, RandomUaIdent};
 pub use self::ratio::Ratio;
 pub use self::rect::NonNegativeLengthOrNumberRect;
 pub use self::resolution::{NoCalcResolution, Resolution};
-pub use self::svg::{DProperty, MozContextProperties};
+pub use self::svg::{
+    ColorInterpolation, DProperty, MaskComposite, MaskMode, MaskType, MozContextProperties,
+    ShapeRendering, StrokeLinecap, StrokeLinejoin, TextAnchor,
+};
 pub use self::svg::{SVGLength, SVGOpacity, SVGPaint};
 pub use self::svg::{SVGPaintOrder, SVGStrokeDashArray, SVGWidth, VectorEffect};
 pub use self::svg_path::SVGPathData;
-pub use self::text::RubyPosition;
-pub use self::text::{HyphenateCharacter, HyphenateLimitChars};
+pub use self::table::{BorderCollapse, EmptyCells, TableLayout};
+pub use self::text::{
+    HyphenateCharacter, HyphenateLimitChars, Hyphens, RubyAlign, RubyPosition, TextCombineUpright,
+    TextDecorationStyle, TextRendering, TextSecurity, TextSizeAdjust, TextWrapMode, TextWrapStyle,
+    UnicodeBidi, WhiteSpaceCollapse,
+};
 pub use self::text::{InitialLetter, LetterSpacing, LineBreak, TextAlign, TextIndent};
 pub use self::text::{OverflowWrap, TextEmphasisPosition, TextEmphasisStyle, WordBreak};
 pub use self::text::{TextAlignKeyword, TextDecorationLine, TextOverflow, WordSpacing};
@@ -118,7 +133,8 @@ pub use self::tree_counting::TreeCountingFunction;
 #[cfg(feature = "gecko")]
 pub use self::ui::CursorImage;
 pub use self::ui::{
-    BoolInteger, Cursor, Inert, MozTheme, PointerEvents, ScrollbarColor, UserFocus, UserSelect,
+    BoolInteger, Cursor, FieldSizing, ImeMode, Inert, MozTheme, PointerEvents, ScrollbarColor,
+    ScrollbarWidth, UserFocus, UserSelect, WindowDragging, WindowShadow,
 };
 pub use super::generics::grid::GridTemplateComponent as GenericGridTemplateComponent;
 
@@ -152,6 +168,7 @@ pub mod page;
 pub mod param;
 pub mod percentage;
 pub mod position;
+pub mod random;
 pub mod ratio;
 pub mod rect;
 pub mod resolution;
@@ -176,11 +193,11 @@ pub enum AngleOrPercentage {
 }
 
 impl AngleOrPercentage {
-    fn parse_internal<'i, 't>(
+    fn parse_internal(
         context: &ParserContext,
-        input: &mut Parser<'i, 't>,
+        input: &mut Parser,
         allow_unitless_zero: AllowUnitlessZeroAngle,
-    ) -> Result<Self, ParseError<'i>> {
+    ) -> Result<Self, ParseError> {
         if let Ok(per) = input.try_parse(|i| Percentage::parse(context, i)) {
             return Ok(AngleOrPercentage::Percentage(per));
         }
@@ -190,19 +207,16 @@ impl AngleOrPercentage {
 
     /// Allow unitless angles, used for conic-gradients as specified by the spec.
     /// https://drafts.csswg.org/css-images-4/#valdef-conic-gradient-angle
-    pub fn parse_with_unitless<'i, 't>(
+    pub fn parse_with_unitless(
         context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+        input: &mut Parser,
+    ) -> Result<Self, ParseError> {
         AngleOrPercentage::parse_internal(context, input, AllowUnitlessZeroAngle::Yes)
     }
 }
 
 impl Parse for AngleOrPercentage {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         AngleOrPercentage::parse_internal(context, input, AllowUnitlessZeroAngle::No)
     }
 }
@@ -221,11 +235,11 @@ pub enum NumberOrPercentage {
 }
 
 impl NumberOrPercentage {
-    fn parse_with_clamping_mode<'i, 't>(
+    fn parse_with_clamping_mode(
         context: &ParserContext,
-        input: &mut Parser<'i, 't>,
+        input: &mut Parser,
         type_: AllowedNumericType,
-    ) -> Result<Self, ParseError<'i>> {
+    ) -> Result<Self, ParseError> {
         if let Ok(per) =
             input.try_parse(|i| Percentage::parse_with_clamping_mode(context, i, type_))
         {
@@ -242,10 +256,10 @@ impl NumberOrPercentage {
     }
 
     /// Parse a non-negative number or percentage.
-    pub fn parse_non_negative<'i, 't>(
+    pub fn parse_non_negative(
         context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+        input: &mut Parser,
+    ) -> Result<Self, ParseError> {
         Self::parse_with_clamping_mode(context, input, AllowedNumericType::NonNegative)
     }
 
@@ -296,10 +310,7 @@ impl NumberOrPercentage {
 }
 
 impl Parse for NumberOrPercentage {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         Self::parse_with_clamping_mode(context, input, AllowedNumericType::All)
     }
 }
@@ -322,10 +333,7 @@ impl NonNegativeNumberOrPercentage {
 }
 
 impl Parse for NonNegativeNumberOrPercentage {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         Ok(NonNegative(NumberOrPercentage::parse_non_negative(
             context, input,
         )?))
@@ -340,10 +348,7 @@ impl Parse for Opacity {
     /// Opacity accepts <number> | <percentage>, so we parse it as NumberOrPercentage,
     /// and then convert into an Number if it's a non-calc Percentage.
     /// https://drafts.csswg.org/css-color-4/#serializing-opacity-values
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         Ok(Opacity(
             NumberOrPercentage::parse(context, input)?.into_simplified_number(),
         ))
@@ -356,9 +361,9 @@ impl ToComputedValue for Opacity {
     #[inline]
     fn to_computed_value(&self, context: &Context) -> CSSFloat {
         let value = self.0.to_computed_value(context).value();
-        if context.for_animation {
-            // Type <number> and <percentage> should be able to interpolate
-            // out-of-range opacity values which benefits additive animation
+        if context.for_smil_animation {
+            // SMIL expects to be able to interpolate between out-of-range
+            // opacity values.
             value
         } else {
             value.min(1.0).max(0.0)
@@ -396,28 +401,25 @@ pub type GridTemplateComponent = GenericGridTemplateComponent<LengthPercentage, 
 pub type ClipRect = generics::GenericClipRect<LengthOrAuto>;
 
 impl Parse for ClipRect {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         Self::parse_quirky(context, input, AllowQuirks::No)
     }
 }
 
 impl ClipRect {
     /// Parses a rect(<top>, <left>, <bottom>, <right>), allowing quirks.
-    fn parse_quirky<'i, 't>(
+    fn parse_quirky(
         context: &ParserContext,
-        input: &mut Parser<'i, 't>,
+        input: &mut Parser,
         allow_quirks: AllowQuirks,
-    ) -> Result<Self, ParseError<'i>> {
+    ) -> Result<Self, ParseError> {
         input.expect_function_matching("rect")?;
 
-        fn parse_argument<'i, 't>(
+        fn parse_argument(
             context: &ParserContext,
-            input: &mut Parser<'i, 't>,
+            input: &mut Parser,
             allow_quirks: AllowQuirks,
-        ) -> Result<LengthOrAuto, ParseError<'i>> {
+        ) -> Result<LengthOrAuto, ParseError> {
             LengthOrAuto::parse_quirky(context, input, allow_quirks)
         }
 
@@ -454,11 +456,11 @@ pub type ClipRectOrAuto = generics::GenericClipRectOrAuto<ClipRect>;
 
 impl ClipRectOrAuto {
     /// Parses a ClipRect or Auto, allowing quirks.
-    pub fn parse_quirky<'i, 't>(
+    pub fn parse_quirky(
         context: &ParserContext,
-        input: &mut Parser<'i, 't>,
+        input: &mut Parser,
         allow_quirks: AllowQuirks,
-    ) -> Result<Self, ParseError<'i>> {
+    ) -> Result<Self, ParseError> {
         if let Ok(v) = input.try_parse(|i| ClipRect::parse_quirky(context, i, allow_quirks)) {
             return Ok(generics::GenericClipRectOrAuto::Rect(v));
         }
@@ -501,10 +503,10 @@ pub enum ParsedNamespace {
 impl ParsedNamespace {
     /// Parse a namespace prefix and resolve it to the correct
     /// namespace URI.
-    pub fn parse<'i, 't>(
+    pub fn parse(
         namespaces: &FxHashMap<Prefix, Namespace>,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
+        input: &mut Parser,
+    ) -> Result<Self, ParseError> {
         // We don't need to keep the prefix because different
         // prefixes can resolve to the same id. Additionally,
         // we also don't need it for serialization as substitution
@@ -520,18 +522,18 @@ impl Default for ParsedNamespace {
 }
 
 /// Try to parse a namespace and return it if parsed, or none if there was not one present
-pub fn parse_namespace<'i, 't>(
+pub fn parse_namespace(
     namespaces: &FxHashMap<Prefix, Namespace>,
-    input: &mut Parser<'i, 't>,
-) -> Result<(Prefix, ParsedNamespace), ParseError<'i>> {
+    input: &mut Parser,
+) -> Result<(Prefix, ParsedNamespace), ParseError> {
     let ns_prefix = match input.next()? {
-        Token::Ident(ref prefix) => Some(Prefix::from(prefix.as_ref())),
+        Token::Ident(prefix) => Some(Prefix::from(prefix.as_ref())),
         Token::Delim('|') => None,
-        _ => return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError)),
+        _ => return Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError)),
     };
 
     if ns_prefix.is_some() && !matches!(*input.next_including_whitespace()?, Token::Delim('|')) {
-        return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+        return Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError));
     }
 
     if let Some(prefix) = ns_prefix {

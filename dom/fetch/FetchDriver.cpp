@@ -4,6 +4,8 @@
 
 #include "mozilla/dom/FetchDriver.h"
 
+#include <memory>
+
 #include "Fetch.h"
 #include "FetchLog.h"
 #include "FetchUtil.h"
@@ -32,6 +34,7 @@
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/net/ChannelClassifierUtils.h"
 #include "mozilla/net/ContentRange.h"
+#include "mozilla/net/HttpBaseChannel.h"
 #include "mozilla/net/InterceptionInfo.h"
 #include "mozilla/net/NeckoChannelParams.h"
 #include "nsContentPolicyUtils.h"
@@ -256,8 +259,8 @@ AlternativeDataStreamListener::OnDataAvailable(nsIRequest* aRequest,
 }
 
 NS_IMETHODIMP
-AlternativeDataStreamListener::OnStopRequest(nsIRequest* aRequest,
-                                             nsresult aStatusCode) {
+AlternativeDataStreamListener::OnStopRequest(
+    nsIRequest* aRequest, nsresult aStatusCode) MOZ_CAN_RUN_SCRIPT_BOUNDARY {
   AssertIsOnMainThread();
 
   // Alternative data loading is going to finish, breaking the reference cycle
@@ -444,8 +447,8 @@ nsresult FetchDriver::Fetch(AbortSignalImpl* aSignalImpl,
   MOZ_RELEASE_ASSERT(!mRequest->IsSynchronous(),
                      "Synchronous fetch not supported");
 
-  UniquePtr<mozilla::ipc::PrincipalInfo> principalInfo(
-      new mozilla::ipc::PrincipalInfo());
+  UniquePtr<mozilla::ipc::PrincipalInfo> principalInfo =
+      std::make_unique<mozilla::ipc::PrincipalInfo>();
   nsresult rv = PrincipalToPrincipalInfo(mPrincipal, principalInfo.get());
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
@@ -714,14 +717,6 @@ nsresult FetchDriver::HttpFetch(
     }
   }
 
-  if (mDocument && mDocument->GetEmbedderElement() &&
-      mDocument->GetEmbedderElement()->IsAnyOfHTMLElements(nsGkAtoms::object,
-                                                           nsGkAtoms::embed)) {
-    nsCOMPtr<nsILoadInfo> loadInfo = chan->LoadInfo();
-    rv = loadInfo->SetIsFromObjectOrEmbed(true);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
   // Insert ourselves into the notification callbacks chain so we can set
   // headers on redirects.
 #ifdef DEBUG
@@ -839,6 +834,30 @@ nsresult FetchDriver::HttpFetch(
     if (bodyStream) {
       nsAutoCString method;
       mRequest->GetMethod(method);
+
+      // Streaming uploads (ReadableStream) require HTTP/2 or HTTP/3.
+      // Since browsers only use HTTP/2 over TLS, reject non-https URLs early.
+      if (mRequest->HasStreamBody()) {
+        bool isHttps = false;
+        rv = uri->SchemeIs("https", &isHttps);
+        if (NS_SUCCEEDED(rv) && !isHttps) {
+          // Reject streaming upload on non-https (which implies HTTP/1.1)
+          FailWithNetworkError(NS_ERROR_DOM_NETWORK_ERR);
+          return NS_ERROR_DOM_NETWORK_ERR;
+        }
+      }
+
+      // Mark the channel as streaming BEFORE calling ExplicitSetUploadStream
+      // so InternalSetUploadStream knows to skip normalization.
+      if (mRequest->HasStreamBody()) {
+        nsCOMPtr<nsIHttpChannel> httpChan = do_QueryInterface(chan);
+        RefPtr<mozilla::net::HttpBaseChannel> baseChan =
+            do_QueryObject(httpChan);
+        if (baseChan) {
+          baseChan->SetUploadStreamIsStreaming(true);
+        }
+      }
+
       rv = uploadChan->ExplicitSetUploadStream(bodyStream, contentType,
                                                bodyLength, method);
       NS_ENSURE_SUCCESS(rv, rv);
@@ -854,7 +873,9 @@ nsresult FetchDriver::HttpFetch(
     AutoTArray<nsCString, 5> unsafeHeaders;
     mRequest->Headers()->GetUnsafeHeaders(unsafeHeaders);
     nsCOMPtr<nsILoadInfo> loadInfo = chan->LoadInfo();
-    loadInfo->SetCorsPreflightInfo(unsafeHeaders, false);
+    // Request constructor step 39.3: a body with a null source sets the
+    // use-CORS-preflight flag, even with a safelisted method and headers.
+    loadInfo->SetCorsPreflightInfo(unsafeHeaders, mRequest->HasStreamBody());
   }
 
   if (mIsTrackingFetch && StaticPrefs::network_http_tailing_enabled() && cos) {
@@ -1054,7 +1075,7 @@ void FetchDriver::FailWithNetworkError(nsresult rv) {
 }
 
 NS_IMETHODIMP
-FetchDriver::OnStartRequest(nsIRequest* aRequest) {
+FetchDriver::OnStartRequest(nsIRequest* aRequest) MOZ_CAN_RUN_SCRIPT_BOUNDARY {
   FETCH_LOG(
       ("FetchDriver::OnStartRequest this=%p, request=%p", this, aRequest));
   AssertIsOnMainThread();
@@ -1109,6 +1130,25 @@ FetchDriver::OnStartRequest(nsIRequest* aRequest) {
                 contentLength == InternalResponse::UNKNOWN_BODY_SIZE);
 
   if (httpChannel) {
+    // Streaming uploads require HTTP/2 or HTTP/3 on the wire. A response
+    // synthesized by a service worker never touched the network, so its
+    // protocol version carries no information about the upload; only check
+    // responses that actually came from the network.
+    if (mRequest->HasStreamBody()) {
+      nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
+      bool synthesizedByServiceWorker =
+          loadInfo && loadInfo->GetServiceWorkerTaintingSynthesized();
+      if (!synthesizedByServiceWorker) {
+        nsAutoCString protocolVersion;
+        rv = httpChannel->GetProtocolVersion(protocolVersion);
+        if (NS_SUCCEEDED(rv) && !protocolVersion.EqualsLiteral("h2") &&
+            !protocolVersion.EqualsLiteral("h3")) {
+          FailWithNetworkError(NS_ERROR_DOM_NETWORK_ERR);
+          return NS_ERROR_DOM_NETWORK_ERR;
+        }
+      }
+    }
+
     channel->GetContentType(contentType);
 
     uint32_t responseStatus = 0;
@@ -1135,8 +1175,8 @@ FetchDriver::OnStartRequest(nsIRequest* aRequest) {
     response = MakeSafeRefPtr<InternalResponse>(responseStatus, statusText,
                                                 mRequest->GetCredentialsMode());
 
-    UniquePtr<mozilla::ipc::PrincipalInfo> principalInfo(
-        new mozilla::ipc::PrincipalInfo());
+    UniquePtr<mozilla::ipc::PrincipalInfo> principalInfo =
+        std::make_unique<mozilla::ipc::PrincipalInfo>();
     nsresult rv = PrincipalToPrincipalInfo(mPrincipal, principalInfo.get());
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
@@ -1533,7 +1573,8 @@ FetchDriver::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInputStream,
 }
 
 NS_IMETHODIMP
-FetchDriver::OnStopRequest(nsIRequest* aRequest, nsresult aStatusCode) {
+FetchDriver::OnStopRequest(nsIRequest* aRequest,
+                           nsresult aStatusCode) MOZ_CAN_RUN_SCRIPT_BOUNDARY {
   FETCH_LOG(("FetchDriver::OnStopRequest this=%p, request=%p", this, aRequest));
   AssertIsOnMainThread();
 
@@ -1697,13 +1738,30 @@ FetchDriver::AsyncOnChannelRedirect(nsIChannel* aOldChannel,
                                     nsIAsyncVerifyRedirectCallback* aCallback) {
   nsCOMPtr<nsIHttpChannel> oldHttpChannel = do_QueryInterface(aOldChannel);
   nsCOMPtr<nsIHttpChannel> newHttpChannel = do_QueryInterface(aNewChannel);
+
+  // Streaming uploads can only follow 303 redirects (which change method to
+  // GET) All other redirects fail because the stream is non-rewindable
+  if (mRequest->HasStreamBody() && oldHttpChannel) {
+    uint32_t responseStatus = 0;
+    nsresult rv = oldHttpChannel->GetResponseStatus(&responseStatus);
+    if (NS_SUCCEEDED(rv) && responseStatus != 303) {
+      // Non-303 redirect with streaming body: reject.
+      FailWithNetworkError(NS_ERROR_DOM_NETWORK_ERR);
+      aCallback->OnRedirectVerifyCallback(NS_ERROR_DOM_NETWORK_ERR);
+      return NS_OK;
+    }
+  }
+
   if (oldHttpChannel && newHttpChannel) {
     nsAutoCString method;
     mRequest->GetMethod(method);
 
-    // Fetch 4.4.11
+    // HTTP-redirect fetch, step 12: rewriting to GET drops the request body.
     bool rewriteToGET = false;
     (void)oldHttpChannel->ShouldStripRequestBodyHeader(method, &rewriteToGET);
+    if (rewriteToGET) {
+      mRequest->SetHasStreamBody(false);
+    }
 
     // we need to strip Authentication headers for cross-origin requests
     // Ref: https://fetch.spec.whatwg.org/#http-redirect-fetch

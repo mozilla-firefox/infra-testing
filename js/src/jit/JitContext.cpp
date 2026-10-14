@@ -18,6 +18,8 @@
 #include "jit/MacroAssembler.h"
 #include "jit/PerfSpewer.h"
 #include "js/HeapAPI.h"
+#include "js/Prefs.h"
+#include "util/Denormals.h"
 #include "vm/JSContext.h"
 
 #ifdef JS_CODEGEN_ARM64
@@ -49,6 +51,8 @@ static JitContext* CurrentJitContext() {
 
 void jit::SetJitContext(JitContext* ctx) {
   MOZ_ASSERT(!TlsJitContext.get());
+  // Compilers should always run with denormals enabled.
+  MOZ_ASSERT(!DenormalsDisabled());
   TlsJitContext.set(ctx);
 }
 
@@ -140,6 +144,11 @@ bool jit::InitializeJit() {
   JitOptions.supportsUnalignedAccesses = supportsUnaligned;
   JitOptions.enable_regexp_unaligned_accesses = supportsUnaligned;
 
+#ifdef NIGHTLY_BUILD
+  JitOptions.js_regexp_buffer_boundaries =
+      JS::Prefs::experimental_regexp_buffer_boundaries();
+#endif
+
   if (HasJitBackend()) {
     if (!InitProcessExecutableMemory()) {
       return false;
@@ -157,7 +166,7 @@ void jit::ShutdownJit() {
 }
 
 bool jit::JitSupportsWasmSimd() {
-#if defined(ENABLE_WASM_SIMD)
+#if defined(ENABLE_JIT_SIMD)
   return js::jit::MacroAssembler::SupportsWasmSimd();
 #else
   return false;

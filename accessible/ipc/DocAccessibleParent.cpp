@@ -7,9 +7,6 @@
 #include "ARIAMap.h"
 #include "CacheConstants.h"
 #include "CachedTableAccessible.h"
-#ifdef MOZ_ENABLE_SKIA_PDF
-#  include "mozilla/a11y/PdfStructTreeBuilder.h"
-#endif
 #include "Relation.h"
 #include "RootAccessible.h"
 #include "TextRange.h"
@@ -17,11 +14,14 @@
 #include "mozilla/PerfStats.h"
 #include "mozilla/ProfilerMarkers.h"
 #include "mozilla/StaticPrefs_accessibility.h"
+#include "mozilla/a11y/PdfStructTreeBuilder.h"
 #include "mozilla/a11y/Platform.h"
 #include "mozilla/dom/BrowserBridgeParent.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/WindowContext.h"
+#include "mozilla/dom/WindowGlobalParent.h"
 #include "nsAccUtils.h"
 #include "nsAccessibilityService.h"
 #include "nsIIOService.h"
@@ -126,13 +126,19 @@ already_AddRefed<DocAccessibleParent> DocAccessibleParent::New() {
   return dap.forget();
 }
 
-void DocAccessibleParent::SetBrowsingContext(
-    dom::CanonicalBrowsingContext* aBrowsingContext) {
-  mBrowsingContext = aBrowsingContext;
+dom::CanonicalBrowsingContext* DocAccessibleParent::GetBrowsingContext() const {
+  if (mShutdown) {
+    return nullptr;
+  }
+  return Manager()->GetBrowsingContext();
 }
 
-dom::BrowserParent* DocAccessibleParent::Manager() const {
-  return static_cast<dom::BrowserParent*>(PDocAccessibleParent::Manager());
+dom::WindowGlobalParent* DocAccessibleParent::Manager() const {
+  return static_cast<dom::WindowGlobalParent*>(PDocAccessibleParent::Manager());
+}
+
+dom::BrowserParent* DocAccessibleParent::GetBrowserParent() const {
+  return Manager()->GetBrowserParent();
 }
 
 mozilla::ipc::IPCResult DocAccessibleParent::ProcessShowEvent(
@@ -534,6 +540,9 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvEvent(
 
 void DocAccessibleParent::FireEvent(RemoteAccessible* aAcc,
                                     const uint32_t& aEventType) {
+#if defined(ANDROID)
+  nsAccessibilityService::GetAndroidMonitor().AssertCurrentThreadOwns();
+#endif
   if (aEventType == nsIAccessibleEvent::EVENT_REORDER ||
       aEventType == nsIAccessibleEvent::EVENT_INNER_REORDER) {
     uint32_t count = aAcc->ChildCount();
@@ -744,6 +753,7 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvMutationEvents(
 }
 
 mozilla::ipc::IPCResult DocAccessibleParent::RecvRequestAckMutationEvents() {
+  ACQUIRE_ANDROID_LOCK
   if (!mShutdown) {
     if (!mIsInitialTreeDone) {
       // This is the first request for an ACK, which means we now have the
@@ -981,7 +991,7 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvTextSelectionChangeEvent(
 }
 
 mozilla::ipc::IPCResult DocAccessibleParent::RecvRoleChangedEvent(
-    const a11y::role& aRole, const uint8_t& aRoleMapEntryIndex) {
+    const uint8_t& aRoleMapEntryIndex) {
   ACQUIRE_ANDROID_LOCK
   if (mShutdown) {
     return IPC_OK();
@@ -991,11 +1001,14 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvRoleChangedEvent(
     return IPC_FAIL(this, "Invalid role map entry index");
   }
 
-  mNativeRole = aRole;
+  const nsRoleMapEntry* entry = aria::GetRoleMapFromIndex(aRoleMapEntryIndex);
+  if (entry && !nsAccUtils::IsARIARoleAllowedOnContentDoc(entry->role)) {
+    return IPC_FAIL(this, "Invalid role on document");
+  }
   mRoleMapEntryIndex = aRoleMapEntryIndex;
 
 #ifdef MOZ_WIDGET_COCOA
-  PlatformRoleChangedEvent(this, aRole, aRoleMapEntryIndex);
+  PlatformRoleChangedEvent(this, Role(), aRoleMapEntryIndex);
 #endif
 
   return IPC_OK();
@@ -1019,9 +1032,10 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvBindChildDoc(
   if (childDoc->IsShutdown()) {
     return IPC_FAIL(this, "Attempt to bind a shutdown child doc");
   }
-  if (childDoc->Manager() != Manager()) {
-    return IPC_FAIL(this,
-                    "Attempt to bind child doc from a different PBrowser");
+  RefPtr<dom::WindowGlobalParent> embedderWgp =
+      childDoc->GetBrowsingContext()->GetEmbedderWindowGlobal();
+  if (!embedderWgp || embedderWgp != Manager()) {
+    return IPC_FAIL(this, "Attempt to bind child doc that isn't actually ours");
   }
 
   ipc::IPCResult result = AddChildDoc(childDoc, aID, false);
@@ -1129,8 +1143,8 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvShutdown() {
   ACQUIRE_ANDROID_LOCK
   Destroy();
 
-  auto mgr = Manager();
-  if (!mgr->IsDestroyed()) {
+  auto* mgr = Manager();
+  if (mgr->CanSend()) {
     if (!PDocAccessibleParent::Send__delete__(this)) {
       return IPC_FAIL_NO_REASON(mgr);
     }
@@ -1150,7 +1164,6 @@ void DocAccessibleParent::Destroy() {
   }
 
   mShutdown = true;
-  mBrowsingContext = nullptr;
 
 #ifdef ANDROID
   if (FocusMgr() && FocusMgr()->IsFocusedRemoteDoc(this)) {
@@ -1308,19 +1321,17 @@ void DocAccessibleParent::MaybeInitWindowEmulation() {
     rect.MoveToX(rootRect.X() - rect.X());
     rect.MoveToY(rect.Y() - rootRect.Y());
 
-    auto browserParent = Manager();
-    isActive = browserParent->GetDocShellIsActive();
+    isActive = GetBrowsingContext()->IsActive();
   }
 
-  // onCreate is guaranteed to be called synchronously by
-  // nsWinUtils::CreateNativeWindow, so this reference isn't really necessary.
-  // However, static analysis complains without it.
   RefPtr<DocAccessibleParent> thisRef = this;
-  nsWinUtils::NativeWindowCreateProc onCreate([thisRef](HWND aHwnd) -> void {
-    ::SetPropW(aHwnd, kPropNameDocAccParent,
-               reinterpret_cast<HANDLE>(thisRef.get()));
-    thisRef->SetEmulatedWindowHandle(aHwnd);
-  });
+  nsWinUtils::NativeWindowCreateProc onCreate(
+      [thisRef](HWND aHwnd) mutable -> void {
+        thisRef->SetEmulatedWindowHandle(aHwnd);
+        HANDLE val;
+        thisRef.forget(&val);  // Release in SetEmulatedWindowHandle.
+        ::SetPropW(aHwnd, kPropNameDocAccParent, val);
+      });
 
   HWND parentWnd = reinterpret_cast<HWND>(rootDocument->GetNativeWindow());
   DebugOnly<HWND> hWnd = nsWinUtils::CreateNativeWindow(
@@ -1332,6 +1343,7 @@ void DocAccessibleParent::MaybeInitWindowEmulation() {
 void DocAccessibleParent::SetEmulatedWindowHandle(HWND aWindowHandle) {
   if (!aWindowHandle && mEmulatedWindowHandle && IsTopLevel()) {
     ::DestroyWindow(mEmulatedWindowHandle);
+    Release();  // AddRef in MaybeInitWindowEmulation.
   }
   mEmulatedWindowHandle = aWindowHandle;
 }
@@ -1401,7 +1413,8 @@ void DocAccessibleParent::SelectionRanges(nsTArray<TextRange>* aRanges) const {
     auto* startAcc =
         const_cast<RemoteAccessible*>(GetAccessible(data.StartID()));
     auto* endAcc = const_cast<RemoteAccessible*>(GetAccessible(data.EndID()));
-    if (!startAcc || !endAcc) {
+    if (!startAcc || !endAcc || !startAcc->IsHyperText() ||
+        !endAcc->IsHyperText()) {
       continue;
     }
     // Offset 0 is always valid, even if the container is empty.
@@ -1434,10 +1447,11 @@ Accessible* DocAccessibleParent::FocusedChild() {
 }
 
 void DocAccessibleParent::URL(nsACString& aURL) const {
-  if (!mBrowsingContext) {
+  dom::CanonicalBrowsingContext* bc = GetBrowsingContext();
+  if (!bc) {
     return;
   }
-  nsCOMPtr<nsIURI> uri = mBrowsingContext->GetCurrentURI();
+  nsCOMPtr<nsIURI> uri = bc->GetCurrentURI();
   if (!uri) {
     return;
   }
@@ -1484,29 +1498,17 @@ Relation DocAccessibleParent::RelationByType(RelationType aType) const {
 }
 
 DocAccessibleParent* DocAccessibleParent::GetFrom(
-    dom::BrowsingContext* aBrowsingContext) {
-  if (!aBrowsingContext) {
+    dom::WindowContext* aWindowContext, bool aAllowShutdown) {
+  if (!aWindowContext) {
     return nullptr;
   }
-
-  dom::BrowserParent* bp = aBrowsingContext->Canonical()->GetBrowserParent();
-  if (!bp) {
+  dom::WindowGlobalParent* wgp = aWindowContext->Canonical();
+  auto* doc = static_cast<DocAccessibleParent*>(
+      LoneManagedOrNullAsserts(wgp->ManagedPDocAccessibleParent()));
+  if (!doc || (!aAllowShutdown && doc->IsShutdown())) {
     return nullptr;
   }
-
-  const ManagedContainer<PDocAccessibleParent>& docs =
-      bp->ManagedPDocAccessibleParent();
-  for (auto* key : docs) {
-    // Iterate over our docs until we find one with a browsing
-    // context that matches the one we passed in. Return that
-    // document.
-    auto* doc = static_cast<a11y::DocAccessibleParent*>(key);
-    if (doc->GetBrowsingContext() == aBrowsingContext) {
-      return doc;
-    }
-  }
-
-  return nullptr;
+  return doc;
 }
 
 size_t DocAccessibleParent::SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) {
@@ -1570,21 +1572,16 @@ NS_IMPL_QUERY_INTERFACE(DocAccessibleParent, nsIMemoryReporter)
 NS_IMPL_ADDREF_INHERITED(DocAccessibleParent, RemoteAccessible)
 NS_IMPL_RELEASE_INHERITED(DocAccessibleParent, RemoteAccessible)
 
-#ifdef MOZ_ENABLE_SKIA_PDF
 mozilla::ipc::IPCResult DocAccessibleParent::RecvPrinting() {
-  if (dom::CanonicalBrowsingContext* bc = GetBrowsingContext()) {
-    if (dom::WindowContext* wc = bc->GetCurrentWindowContext()) {
-      PdfStructTreeBuilder::Init(wc);
-    }
+  if (!mShutdown) {
+    PdfStructTreeBuilder::Init(Manager());
   }
   return IPC_OK();
 }
-#endif
 
 DocAccessibleParent::AllowConstruction
 DocAccessibleParent::ShouldAllowConstruction() const {
   if (IsPrintDoc()) {
-#ifdef MOZ_ENABLE_SKIA_PDF
     if (!StaticPrefs::accessibility_tagged_pdf_output_enabled()) {
       return AllowConstruction::Disallow;
     }
@@ -1592,7 +1589,7 @@ DocAccessibleParent::ShouldAllowConstruction() const {
     // even if the accessibility service isn't running in the parent process.
     // However, we can only be generating a PDF if there's a PRemotePrintJob
     // actor in the BrowserParent ancestry.
-    auto* bp = static_cast<dom::BrowserParent*>(Manager());
+    auto* bp = GetBrowserParent();
     while (bp) {
       if (!bp->Manager()->ManagedPRemotePrintJobParent().IsEmpty()) {
         return AllowConstruction::Allow;
@@ -1603,7 +1600,6 @@ DocAccessibleParent::ShouldAllowConstruction() const {
       }
       bp = bridge->Manager();
     }
-#endif  // MOZ_ENABLE_SKIA_PDF
     return AllowConstruction::Disallow;
   }
   // For non-print documents, only allow construction if the accessibility
@@ -1616,8 +1612,10 @@ DocAccessibleParent::ShouldAllowConstruction() const {
   // accessibility was ever activated in the associated content process. If it
   // was, we don't treat the construction as an error, but we mark the actor as
   // shut down and ignore it.
-  if (Manager()->Manager()->WasA11yEverActivated()) {
-    return AllowConstruction::AllowButIgnore;
+  if (dom::ContentParent* cp = Manager()->GetContentParent()) {
+    if (cp->WasA11yEverActivated()) {
+      return AllowConstruction::AllowButIgnore;
+    }
   }
   return AllowConstruction::Disallow;
 }

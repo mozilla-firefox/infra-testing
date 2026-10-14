@@ -4,28 +4,27 @@
 
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use crate::http_cache::{
+use crate::{
     clock::{CacheClock, Clock},
-    request_hash::RequestHash,
-    ByteSize,
+    http_cache::{request_hash::RequestHash, ByteSize},
 };
 use parking_lot::Mutex;
 use rusqlite::{params, Connection, OptionalExtension, Result as SqliteResult};
 use viaduct::{Header, Response};
 
 #[cfg(test)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FaultKind {
-    None,
+    Cleanup,
     Lookup,
+    None,
     Store,
     Trim,
-    Cleanup,
 }
 
 pub struct HttpCacheStore {
-    conn: Mutex<Connection>,
     clock: Arc<dyn Clock>,
+    conn: Mutex<Connection>,
     #[cfg(test)]
     fault: parking_lot::Mutex<FaultKind>,
 }
@@ -33,39 +32,34 @@ pub struct HttpCacheStore {
 impl HttpCacheStore {
     pub fn new(conn: Connection) -> Self {
         Self {
-            conn: Mutex::new(conn),
             clock: Arc::new(CacheClock),
+            conn: Mutex::new(conn),
             #[cfg(test)]
             fault: parking_lot::Mutex::new(FaultKind::None),
         }
-    }
-
-    pub fn close(self) -> Result<(), rusqlite::Error> {
-        let conn = self.conn.into_inner();
-        conn.close().map_err(|(_, err)| err)
     }
 
     #[cfg(test)]
     pub fn new_with_test_clock(conn: Connection) -> Self {
-        use crate::http_cache::clock::TestClock;
+        use crate::clock::TestClock;
 
         Self {
-            conn: Mutex::new(conn),
             clock: Arc::new(TestClock::new(chrono::Utc::now().timestamp())),
+            conn: Mutex::new(conn),
             #[cfg(test)]
             fault: parking_lot::Mutex::new(FaultKind::None),
         }
-    }
-
-    #[cfg(test)]
-    pub fn get_clock(&self) -> &dyn Clock {
-        &*self.clock
     }
 
     /// Removes all entries from cache.
     pub fn clear_all(&self) -> SqliteResult<usize> {
         let conn = self.conn.lock();
         conn.execute("DELETE FROM http_cache", [])
+    }
+
+    pub fn close(self) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.into_inner();
+        conn.close().map_err(|(_, err)| err)
     }
 
     /// Returns total size of the cache in bytes.
@@ -89,6 +83,19 @@ impl HttpCacheStore {
         conn.execute(
             "DELETE FROM http_cache WHERE expires_at <= ?1",
             params![self.clock.now_epoch_seconds()],
+        )
+    }
+
+    #[cfg(test)]
+    pub fn get_clock(&self) -> &dyn Clock {
+        &*self.clock
+    }
+
+    pub fn invalidate_by_hash(&self, request_hash: &RequestHash) -> SqliteResult<usize> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "DELETE FROM http_cache WHERE request_hash = ?1",
+            params![request_hash.to_string()],
         )
     }
 
@@ -147,6 +154,11 @@ impl HttpCacheStore {
             },
         )
         .optional()
+    }
+
+    #[cfg(test)]
+    pub fn set_fault(&self, kind: FaultKind) {
+        *self.fault.lock() = kind;
     }
 
     /// Upsert an object into the store with an expires_at defined by the given ttl_seconds.
@@ -210,14 +222,6 @@ impl HttpCacheStore {
         Ok(())
     }
 
-    pub fn invalidate_by_hash(&self, request_hash: &RequestHash) -> SqliteResult<usize> {
-        let conn = self.conn.lock();
-        conn.execute(
-            "DELETE FROM http_cache WHERE request_hash = ?1",
-            params![request_hash.to_string()],
-        )
-    }
-
     /// Trim cache to
     pub fn trim_to_max_size(&self, max_size: &ByteSize) -> SqliteResult<()> {
         #[cfg(test)]
@@ -238,11 +242,6 @@ impl HttpCacheStore {
             )?;
         }
         Ok(())
-    }
-
-    #[cfg(test)]
-    pub fn set_fault(&self, kind: FaultKind) {
-        *self.fault.lock() = kind;
     }
 
     #[cfg(test)]
@@ -290,10 +289,10 @@ mod tests {
 
     fn create_test_request(url: &str, body: &[u8]) -> Request {
         Request {
+            body: Some(body.to_vec()),
+            headers: Headers::new(),
             method: Method::Get,
             url: url.parse().unwrap(),
-            headers: Headers::new(),
-            body: Some(body.to_vec()),
         }
     }
 
@@ -304,11 +303,11 @@ mod tests {
             .unwrap();
 
         Response {
-            request_method: Method::Get,
-            url: "https://example.com/test".parse().unwrap(),
-            status,
-            headers,
             body: body.to_vec(),
+            headers,
+            request_method: Method::Get,
+            status,
+            url: "https://example.com/test".parse().unwrap(),
         }
     }
 

@@ -4,7 +4,7 @@
 "use strict";
 
 Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/browser/base/content/test/forms/head.js",
+  "chrome://mochitests/content/browser/browser/base/content/test/browser-forms/head.js",
   this
 );
 
@@ -61,10 +61,6 @@ async function test_clicking_select_window_open(aIsPopup) {
 
 // The select dropdown is created lazily, so initial it first.
 add_setup(async function init_select_popup() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["test.wait300msAfterTabSwitch", true]],
-  });
-
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,

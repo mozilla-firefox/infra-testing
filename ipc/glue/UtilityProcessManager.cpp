@@ -4,6 +4,8 @@
 #include "UtilityProcessManager.h"
 
 #include "JSOracleParent.h"
+#include "mozilla/AppShutdown.h"
+#include "mozilla/Components.h"
 #include "mozilla/ipc/UtilityProcessHost.h"
 #include "mozilla/MemoryReportingProcess.h"
 #include "mozilla/Preferences.h"
@@ -11,7 +13,7 @@
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/SyncRunnable.h"  // for LaunchUtilityProcess
 #ifndef ANDROID
-#  include "mozilla/hwinference/PHWInferenceChild.h"
+#  include "mozilla/hwinference/HWInferenceParent.h"
 #endif  // !ANDROID
 #include "mozilla/ipc/UtilityProcessParent.h"
 #include "mozilla/ipc/UtilityMediaServiceChild.h"
@@ -42,18 +44,22 @@ extern LazyLogModule gUtilityProcessLog;
 
 static StaticRefPtr<UtilityProcessManager> sSingleton;
 
-static bool sXPCOMShutdown = false;
+// We tear the Utility processes down at the beginning of XPCOMWillShutdown, so
+// from that point on there is no point in handing out or launching any.
+static bool IsPastLaunchDeadline() {
+  return AppShutdown::IsInOrBeyond(ShutdownPhase::XPCOMWillShutdown);
+}
 
 bool UtilityProcessManager::IsShutdown() const {
   MOZ_ASSERT(NS_IsMainThread());
-  return sXPCOMShutdown || !sSingleton;
+  return IsPastLaunchDeadline() || !sSingleton;
 }
 
 RefPtr<UtilityProcessManager> UtilityProcessManager::GetSingleton() {
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(NS_IsMainThread());
 
-  if (!sXPCOMShutdown && sSingleton == nullptr) {
+  if (!IsPastLaunchDeadline() && sSingleton == nullptr) {
     sSingleton = new UtilityProcessManager();
     sSingleton->Init();
   }
@@ -75,13 +81,79 @@ void UtilityProcessManager::Init() {
   mObserver = new Observer(this);
   nsContentUtils::RegisterShutdownObserver(mObserver);
   Preferences::AddStrongObserver(mObserver, "");
+
+  RegisterShutdownBlocker();
+}
+
+void UtilityProcessManager::RegisterShutdownBlocker() {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(!mShutdownBlocker);
+
+  nsCOMPtr<nsIAsyncShutdownService> svc = components::AsyncShutdown::Service();
+  if (!svc) {
+    return;
+  }
+
+  nsCOMPtr<nsIAsyncShutdownClient> client;
+  if (NS_FAILED(svc->GetXpcomWillShutdown(getter_AddRefs(client))) || !client) {
+    return;
+  }
+
+  RefPtr<ShutdownBlocker> blocker = new ShutdownBlocker(this);
+  if (NS_FAILED(client->AddBlocker(blocker,
+                                   NS_LITERAL_STRING_FROM_CSTRING(__FILE__),
+                                   __LINE__, u""_ns))) {
+    // The phase is already closed for new blockers, so there is nothing left
+    // for us to hold back. OnXPCOMShutdown will do the teardown instead.
+    return;
+  }
+
+  mShutdownBlocker = std::move(blocker);
+  mShutdownBlockerClient = std::move(client);
+}
+
+void UtilityProcessManager::RemoveShutdownBlocker() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  if (!mShutdownBlocker) {
+    return;
+  }
+
+  LOGD("[%p] UtilityProcessManager::RemoveShutdownBlocker", this);
+
+  mShutdownBlockerClient->RemoveBlocker(mShutdownBlocker);
+  mShutdownBlockerClient = nullptr;
+  mShutdownBlocker = nullptr;
+}
+
+NS_IMPL_ISUPPORTS(UtilityProcessManager::ShutdownBlocker,
+                  nsIAsyncShutdownBlocker)
+
+NS_IMETHODIMP UtilityProcessManager::ShutdownBlocker::GetName(
+    nsAString& aName) {
+  aName = u"UtilityProcessManager: shutting down the Utility processes"_ns;
+  return NS_OK;
+}
+
+NS_IMETHODIMP UtilityProcessManager::ShutdownBlocker::BlockShutdown(
+    nsIAsyncShutdownClient* aBarrierClient) {
+  if (mManager) {
+    mManager->OnXPCOMWillShutdown();
+  }
+  return NS_OK;
+}
+
+NS_IMETHODIMP UtilityProcessManager::ShutdownBlocker::GetState(
+    nsIPropertyBag** aState) {
+  *aState = nullptr;
+  return NS_OK;
 }
 
 UtilityProcessManager::~UtilityProcessManager() {
   LOGD("[%p] UtilityProcessManager::~UtilityProcessManager", this);
 
   // The Utility process should ALL have already been shut down.
-  MOZ_ASSERT(NoMoreProcesses());
+  MOZ_ASSERT(mProcesses.IsEmpty());
 }
 
 NS_IMPL_ISUPPORTS(UtilityProcessManager::Observer, nsIObserver);
@@ -101,18 +173,56 @@ UtilityProcessManager::Observer::Observe(nsISupports* aSubject,
   return NS_OK;
 }
 
+void UtilityProcessManager::OnXPCOMWillShutdown() {
+  LOGD("[%p] UtilityProcessManager::OnXPCOMWillShutdown", this);
+
+  MOZ_ASSERT(NS_IsMainThread());
+
+  mBlockingShutdownPhase = true;
+
+  CleanShutdownAllProcesses();
+
+  // Nothing to wait for; otherwise OnProcessShutdownComplete removes the
+  // blocker once every host is done.
+  if (mPendingShutdowns == 0) {
+    RemoveShutdownBlocker();
+  }
+}
+
 void UtilityProcessManager::OnXPCOMShutdown() {
   LOGD("[%p] UtilityProcessManager::OnXPCOMShutdown", this);
 
   MOZ_ASSERT(NS_IsMainThread());
-  sXPCOMShutdown = true;
-  nsContentUtils::UnregisterShutdownObserver(mObserver);
+  if (mObserver) {
+    nsContentUtils::UnregisterShutdownObserver(mObserver);
+  }
+
+  // Normally a no-op, since our blocker already did this during
+  // xpcom-will-shutdown. If we failed to register it, this is the last chance.
   CleanShutdownAllProcesses();
+}
+
+void UtilityProcessManager::OnProcessShutdownComplete() {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_DIAGNOSTIC_ASSERT(mPendingShutdowns > 0);
+
+  --mPendingShutdowns;
+  if (mPendingShutdowns > 0) {
+    return;
+  }
+
+  // If we're already within shutdown, ensure our async shutdown blocker is gone
+  // now that all processes have shut down.
+  if (mBlockingShutdownPhase) {
+    MOZ_ASSERT(mProcesses.IsEmpty(),
+               "How was a process launched during shutdown?");
+    RemoveShutdownBlocker();
+  }
 }
 
 void UtilityProcessManager::OnPreferenceChange(const char16_t* aData) {
   MOZ_ASSERT(NS_IsMainThread());
-  if (NoMoreProcesses()) {
+  if (mProcesses.IsEmpty()) {
     // Process hasn't been launched yet
     return;
   }
@@ -122,34 +232,21 @@ void UtilityProcessManager::OnPreferenceChange(const char16_t* aData) {
   mozilla::dom::Pref pref(strData, /* isLocked */ false,
                           /* isSanitized */ false, Nothing(), Nothing());
   Preferences::GetPreference(&pref, GeckoProcessType_Utility,
-                             /* remoteType */ ""_ns);
+                             /* remoteType */ {});
 
   for (auto& p : mProcesses) {
-    if (!p) {
-      continue;
-    }
-
     if (p->mProcessParent) {
       (void)p->mProcessParent->SendPreferenceUpdate(pref);
-    } else if (IsProcessLaunching(p->mSandbox)) {
+    } else {
       p->mQueuedPrefs.AppendElement(pref);
     }
   }
 }
 
-RefPtr<UtilityProcessManager::ProcessFields> UtilityProcessManager::GetProcess(
-    SandboxingKind aSandbox) {
-  if (!mProcesses[aSandbox]) {
-    return nullptr;
-  }
-
-  return mProcesses[aSandbox];
-}
-
 void UtilityProcessManager::RegisterActor(
     const RefPtr<UtilityProcessParent>& aParent, UtilityActorName aActorName) {
   for (auto& p : mProcesses) {
-    if (p && p->mProcessParent && p->mProcessParent == aParent) {
+    if (p->mProcessParent && p->mProcessParent == aParent) {
       MOZ_LOG(
           gChildProcessLifecycleLog, LogLevel::Info,
           ("UTILITYACTOR [childID = %" PRIi32 "] [actorName = %s]",
@@ -158,6 +255,12 @@ void UtilityProcessManager::RegisterActor(
       return;
     }
   }
+}
+
+RefPtr<UtilityProcessKeepAlive> UtilityProcessManager::GetSharedKeepAlive(
+    SandboxingKind aSandbox) {
+  MOZ_ASSERT(NS_IsMainThread());
+  return mSharedKeepAlives[aSandbox];
 }
 
 RefPtr<UtilityProcessManager::SharedLaunchPromise<Ok>>
@@ -174,22 +277,39 @@ UtilityProcessManager::LaunchProcess(SandboxingKind aSandbox) {
         LaunchError("UPM::LaunchProcess(): IsShutdown()"), __func__);
   }
 
-  RefPtr<ProcessFields> p = GetProcess(aSandbox);
-  if (p && p->mNumProcessAttempts) {
-    // We failed to start the Utility process earlier, abort now.
-    NS_WARNING("Reject LaunchProcess() for earlier mNumProcessAttempts");
-    return RetPromise::CreateAndReject(
-        LaunchError("UPM::LaunchProcess(): p->mNumProcessAttempts"), __func__);
+  RefPtr<UtilityProcessKeepAlive>& keepAlive = mSharedKeepAlives[aSandbox];
+  if (!keepAlive) {
+    keepAlive = LaunchIndependentProcess(aSandbox);
+    if (!keepAlive) {
+      NS_WARNING("Reject LaunchProcess() for launch failure");
+      return RetPromise::CreateAndReject(
+          LaunchError("UPM::LaunchProcess(): launch failure"), __func__);
+    }
   }
 
-  if (p && p->mLaunchPromise && p->mProcess) {
-    return p->mLaunchPromise;
+  // DestroyProcess drops the shared keep-alive along with its process.
+  MOZ_ASSERT(keepAlive->IsAlive());
+  return keepAlive->GetLaunchPromise();
+}
+
+already_AddRefed<UtilityProcessKeepAlive>
+UtilityProcessManager::LaunchIndependentProcess(SandboxingKind aSandbox) {
+  LOGD(
+      "[%p] UtilityProcessManager::LaunchIndependentProcess "
+      "SandboxingKind=%" PRIu64,
+      this, aSandbox);
+
+  MOZ_ASSERT(NS_IsMainThread());
+
+  if (IsShutdown()) {
+    NS_WARNING("Reject early LaunchIndependentProcess() for Shutdown");
+    return nullptr;
   }
 
-  if (!p) {
-    p = new ProcessFields(aSandbox);
-    mProcesses[aSandbox] = p;
-  }
+  using RetPromise = SharedLaunchPromise<Ok>;
+
+  RefPtr<ProcessFields> p = new ProcessFields(aSandbox);
+  RefPtr<UtilityProcessKeepAlive> keepAlive = new UtilityProcessKeepAlive(p);
 
   geckoargs::ChildProcessArgs extraArgs;
   ProcessChild::AddPlatformBuildID(extraArgs);
@@ -198,33 +318,31 @@ UtilityProcessManager::LaunchProcess(SandboxingKind aSandbox) {
   // The subprocess is launched asynchronously, so we
   // wait for the promise to be resolved to acquire the IPDL actor.
   p->mProcess = new UtilityProcessHost(aSandbox, this);
+  mProcesses.AppendElement(p);
   if (!p->mProcess->Launch(std::move(extraArgs))) {
-    p->mNumProcessAttempts++;
-    DestroyProcess(aSandbox);
-    NS_WARNING("Reject LaunchProcess() for mNumProcessAttempts++");
-    return RetPromise::CreateAndReject(
-        LaunchError("UPM::LaunchProcess(): mNumProcessAttempts++"), __func__);
+    NS_WARNING("Utility process failed to launch");
+    DestroyProcess(p);
+    return nullptr;
   }
 
   RefPtr<UtilityProcessManager> self = this;
   p->mLaunchPromise = p->mProcess->LaunchPromise()->Then(
       GetMainThreadSerialEventTarget(), __func__,
-      [self, p, aSandbox](Ok) -> RefPtr<RetPromise> {
+      [self, p](Ok) -> RefPtr<RetPromise> {
         if (self->IsShutdown()) {
-          NS_WARNING(
-              "Reject LaunchProcess() after LaunchPromise() for Shutdown");
+          NS_WARNING("Reject launch after LaunchPromise() for Shutdown");
           return RetPromise::CreateAndReject(
-              LaunchError("UPM::LaunchProcess(): post-await IsShutdown()"),
+              LaunchError(
+                  "UPM::LaunchIndependentProcess(): post-await IsShutdown()"),
               __func__);
         }
 
-        if (self->IsProcessDestroyed(aSandbox)) {
+        if (!p->mProcess) {
           NS_WARNING(
-              "Reject LaunchProcess() after LaunchPromise() for destroyed "
-              "process");
+              "Reject launch after LaunchPromise() for destroyed process");
           return RetPromise::CreateAndReject(
-              LaunchError(
-                  "UPM::LaunchProcess(): post-await IsProcessDestroyed()"),
+              LaunchError("UPM::LaunchIndependentProcess(): post-await "
+                          "destroyed process"),
               __func__);
         }
 
@@ -243,39 +361,28 @@ UtilityProcessManager::LaunchProcess(SandboxingKind aSandbox) {
 
         return RetPromise::CreateAndResolve(Ok{}, __func__);
       },
-      [self, p, aSandbox](LaunchError error) {
-        if (GetSingleton()) {
-          p->mNumProcessAttempts++;
-          self->DestroyProcess(aSandbox);
-        }
-        NS_WARNING("Reject LaunchProcess() for LaunchPromise() rejection");
+      [self, p](LaunchError error) {
+        self->DestroyProcess(p);
+        NS_WARNING("Reject launch for LaunchPromise() rejection");
         return RetPromise::CreateAndReject(std::move(error), __func__);
       });
 
-  return p->mLaunchPromise;
+  return keepAlive.forget();
 }
 
+#ifndef ANDROID
 already_AddRefed<UtilityProcessKeepAlive>
-UtilityProcessManager::LaunchProcessWithKeepAlive(SandboxingKind aSandbox) {
-  MOZ_ASSERT(NS_IsMainThread());
-
-  // Nothing here needs the launch promise: it is reachable from the keep-alive.
-  LaunchProcess(aSandbox);
-
-  RefPtr<ProcessFields> p = GetProcess(aSandbox);
-  if (!p) {
-    LOGD("[%p] LaunchProcessWithKeepAlive SandboxingKind=%" PRIu64
-         " - launch failed",
-         this, aSandbox);
-    return nullptr;
-  }
-
-  RefPtr<UtilityProcessKeepAlive> keepAlive = p->mKeepAlive;
-  if (!keepAlive) {
-    keepAlive = new UtilityProcessKeepAlive(p);
+UtilityProcessManager::LaunchIndependentHWInferenceProcess(
+    RefPtr<hwinference::HWInferenceParent> aActor) {
+  RefPtr<UtilityProcessKeepAlive> keepAlive =
+      LaunchIndependentProcess(SandboxingKind::HW_INFERENCE);
+  if (keepAlive) {
+    StartUtilityOnProcess(std::move(aActor), keepAlive->mProcess,
+                          keepAlive->mProcess->mLaunchPromise);
   }
   return keepAlive.forget();
 }
+#endif  // !ANDROID
 
 template <typename Actor>
 RefPtr<UtilityProcessManager::LaunchPromise<Ok>>
@@ -307,15 +414,16 @@ UtilityProcessManager::StartUtility(RefPtr<Actor> aActor,
   }
 
   RefPtr<SharedLaunchPromise<Ok>> launchPromise = LaunchProcess(aSandbox);
-  RefPtr<ProcessFields> process = GetProcess(aSandbox);
-  if (!process) {
+  RefPtr<UtilityProcessKeepAlive> keepAlive = GetSharedKeepAlive(aSandbox);
+  if (!keepAlive) {
     // LaunchProcess() failed outright and dropped the process.
     NS_WARNING("Reject StartUtility() for LaunchProcess() failure");
     return RetPromise::CreateAndReject(
         LaunchError("UPM::StartUtility: LaunchProcess()"), __func__);
   }
 
-  return StartUtilityOnProcess(std::move(aActor), process, launchPromise);
+  return StartUtilityOnProcess(std::move(aActor), keepAlive->mProcess,
+                               launchPromise);
 }
 
 template <typename Actor>
@@ -421,8 +529,10 @@ UtilityProcessManager::StartProcessForRemoteMediaDecoding(
           GetMainThreadSerialEventTarget(), __func__,
           [self, umsc, aOtherProcess, aChildId, aSandbox,
            remoteDecodingStart]() {
+            RefPtr<UtilityProcessKeepAlive> keepAlive =
+                self->GetSharedKeepAlive(aSandbox);
             RefPtr<UtilityProcessParent> parent =
-                self->GetProcessParent(aSandbox);
+                keepAlive ? keepAlive->GetProcessParent() : nullptr;
             if (!parent) {
               NS_WARNING("UtilityMediaServiceParent lost in the middle");
               return RetPromise::CreateAndReject(
@@ -611,70 +721,13 @@ UtilityProcessManager::StartPKCS11Module() {
 }
 #endif  // NIGHTLY_BUILD && !MOZ_NO_SMART_CARDS
 
-#ifndef ANDROID
-RefPtr<UtilityProcessManager::HWInferencePromise>
-UtilityProcessManager::StartHWInference() {
-  LOGD("[%p] StartHWInference called", this);
-  RefPtr<UtilityProcessManager> self = this;
-  using RetPromise = HWInferencePromise;
-  RefPtr<hwinference::HWInferenceParent> hwip =
-      hwinference::HWInferenceParent::GetSingleton();
-  MOZ_ASSERT(hwip, "Unable to get a singleton for HWInference");
-  LOGD("[%p] Starting HWInference utility process with HW_INFERENCE sandboxing",
-       this);
-  return StartUtility(hwip, SandboxingKind::HW_INFERENCE)
-      ->Then(
-          GetMainThreadSerialEventTarget(), __func__,
-          [self, hwip]() {
-            LOGD("StartHWInference: Utility process started successfully");
-            if (!hwip->CanSend()) {
-              MOZ_ASSERT(false, "HWInferenceParent lost in the middle");
-              LOGD("StartHWInference: HWInferenceParent cannot send!");
-              return RetPromise::CreateAndReject(
-                  LaunchError("StartHWInference: !hwip->CanSend()"),
-                  __PRETTY_FUNCTION__);
-            }
-            LOGD("StartHWInference: HWInferenceParent ready, CanSend=true");
-            return RetPromise::CreateAndResolve(std::move(hwip), __func__);
-          },
-          [](LaunchError&& aError) {
-            LOGD("StartHWInference: Failed to start utility process: %s",
-                 aError.FunctionName().get());
-            MOZ_ASSERT_UNREACHABLE("PHWInference: failure when starting actor");
-            return RetPromise::CreateAndReject(std::move(aError), __func__);
-          });
-}
-#endif  // !ANDROID
-
-bool UtilityProcessManager::IsProcessLaunching(SandboxingKind aSandbox) {
-  MOZ_ASSERT(NS_IsMainThread());
-
-  RefPtr<ProcessFields> p = GetProcess(aSandbox);
-  if (!p) {
-    MOZ_CRASH("Cannot check process launching with no process");
-    return false;
-  }
-
-  return p->mProcess && !(p->mProcessParent);
-}
-
-bool UtilityProcessManager::IsProcessDestroyed(SandboxingKind aSandbox) {
-  MOZ_ASSERT(NS_IsMainThread());
-  RefPtr<ProcessFields> p = GetProcess(aSandbox);
-  if (!p) {
-    return true;
-  }
-  return !p->mProcess && !p->mProcessParent;
-}
-
 void UtilityProcessManager::OnProcessUnexpectedShutdown(
     UtilityProcessHost* aHost) {
   MOZ_ASSERT(NS_IsMainThread());
 
   for (auto& it : mProcesses) {
-    if (it && it->mProcess && it->mProcess == aHost) {
-      it->mNumUnexpectedCrashes++;
-      DestroyProcess(it->mSandbox);
+    if (it->mProcess == aHost) {
+      DestroyProcess(it);
       return;
     }
   }
@@ -687,10 +740,8 @@ void UtilityProcessManager::OnProcessUnexpectedShutdown(
 void UtilityProcessManager::CleanShutdownAllProcesses() {
   LOGD("[%p] UtilityProcessManager::CleanShutdownAllProcesses", this);
 
-  for (auto& it : mProcesses) {
-    if (it) {
-      DestroyProcess(it->mSandbox);
-    }
+  while (!mProcesses.IsEmpty()) {
+    DestroyProcess(mProcesses.LastElement());
   }
 }
 
@@ -698,54 +749,54 @@ void UtilityProcessManager::CleanShutdown(SandboxingKind aSandbox) {
   LOGD("[%p] UtilityProcessManager::CleanShutdown SandboxingKind=%" PRIu64,
        this, aSandbox);
 
-  DestroyProcess(aSandbox);
+  MOZ_ASSERT(NS_IsMainThread());
+
+  // Dropping our keep-alive is what shuts the process down, unless someone
+  // else promoted a WeakPtr to it, in which case it lives on until they let go
+  // too.
+  mSharedKeepAlives[aSandbox] = nullptr;
 }
 
-uint16_t UtilityProcessManager::AliveProcesses() {
-  uint16_t alive = 0;
-  for (auto& p : mProcesses) {
-    if (p != nullptr) {
-      alive++;
-    }
-  }
-  return alive;
-}
+size_t UtilityProcessManager::AliveProcesses() { return mProcesses.Length(); }
 
-bool UtilityProcessManager::NoMoreProcesses() { return AliveProcesses() == 0; }
-
-void UtilityProcessManager::DestroyProcess(SandboxingKind aSandbox) {
+void UtilityProcessManager::DestroyProcess(ProcessFields* aProcess) {
   LOGD("[%p] UtilityProcessManager::DestroyProcess SandboxingKind=%" PRIu64,
-       this, aSandbox);
+       this, aProcess->mSandbox);
 
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
 
-  if (AliveProcesses() <= 1) {
-    if (mObserver) {
-      Preferences::RemoveObserver(mObserver, "");
-    }
-
-    mObserver = nullptr;
+  RefPtr<ProcessFields> p = aProcess;
+  if (!mProcesses.RemoveElement(p)) {
+    return;
   }
 
-  RefPtr<ProcessFields> p = GetProcess(aSandbox);
-  if (!p) {
-    return;
+  UtilityProcessHost* process = p->mProcess;
+  p->mProcess = nullptr;
+
+  if (mSharedKeepAlives[p->mSandbox] &&
+      mSharedKeepAlives[p->mSandbox]->mProcess == p) {
+    mSharedKeepAlives[p->mSandbox] = nullptr;
+  }
+
+  if (mProcesses.IsEmpty() && mObserver) {
+    Preferences::RemoveObserver(mObserver, "");
+    mObserver = nullptr;
   }
 
   p->mQueuedPrefs.Clear();
   p->mProcessParent = nullptr;
 
-  if (p->mProcess) {
-    p->mProcess->Shutdown();
-    p->mProcess = nullptr;
-  }
-
-  mProcesses[aSandbox] = nullptr;
-
+  ++mPendingShutdowns;
+  process->Shutdown()->Then(
+      GetMainThreadSerialEventTarget(), __func__,
+      [self = RefPtr{this}](const UtilityProcessHost::ShutdownPromiseType::
+                                ResolveOrRejectValue&) {
+        self->OnProcessShutdownComplete();
+      });
   CrashReporter::RecordAnnotationCString(
       CrashReporter::Annotation::UtilityProcessStatus, "Destroyed");
 
-  if (NoMoreProcesses()) {
+  if (mProcesses.IsEmpty()) {
     sSingleton = nullptr;
   }
 }
@@ -753,12 +804,11 @@ void UtilityProcessManager::DestroyProcess(SandboxingKind aSandbox) {
 Maybe<base::ProcessId> UtilityProcessManager::ProcessPid(
     SandboxingKind aSandbox) {
   MOZ_ASSERT(NS_IsMainThread());
-  RefPtr<ProcessFields> p = GetProcess(aSandbox);
-  if (!p) {
-    return Nothing();
-  }
-  if (p->mProcessParent) {
-    return Some(p->mProcessParent->OtherPid());
+  RefPtr<UtilityProcessKeepAlive> keepAlive = GetSharedKeepAlive(aSandbox);
+  if (keepAlive) {
+    if (RefPtr actor = keepAlive->GetProcessParent()) {
+      return Some(actor->OtherPid());
+    }
   }
   return Nothing();
 }
@@ -807,69 +857,24 @@ RefPtr<MemoryReportingProcess> UtilityProcessManager::GetProcessMemoryReporter(
   return new UtilityMemoryReporter(parent);
 }
 
-#ifndef ANDROID
-already_AddRefed<UtilityProcessKeepAlive>
-UtilityProcessManager::StartContentHWInferenceManager(
-    Endpoint<hwinference::PHWInferenceManagerParent>&& aEndpoint,
-    dom::ContentParentId aChildId) {
-  LOGD(
-      "[%p] UtilityProcessManager::StartContentHWInferenceManager for content "
-      "%d",
-      this, static_cast<int>(aChildId));
-
-  // Before launching, so that an actor cached from a process that is already
-  // gone gets evicted rather than rebound: see GetSingleton().
-  RefPtr<hwinference::HWInferenceParent> hwip =
-      hwinference::HWInferenceParent::GetSingleton();
-  MOZ_ASSERT(hwip, "Unable to get a singleton for HWInference");
-
-  RefPtr<UtilityProcessKeepAlive> keepAlive =
-      LaunchProcessWithKeepAlive(SandboxingKind::HW_INFERENCE);
-  if (!keepAlive) {
-    return nullptr;
-  }
-
-  keepAlive->StartUtility(hwip)->Then(
-      GetMainThreadSerialEventTarget(), __func__,
-      [hwip, endpoint = std::move(aEndpoint), aChildId]() mutable {
-        // Send parent endpoint to utility process
-        if (!hwip->SendNewContentHWInferenceManager(std::move(endpoint),
-                                                    aChildId)) {
-          LOGD("Failed to send endpoint to utility process");
-        }
-      },
-      [](LaunchError&& aError) {
-        LOGD("Failed to start HWInference: %s", aError.FunctionName().get());
-      });
-
-  return keepAlive.forget();
-}
-#endif  // !ANDROID
-
 UtilityProcessKeepAlive::UtilityProcessKeepAlive(
     UtilityProcessManager::ProcessFields* aProcess)
     : mProcess(aProcess) {
   MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(!mProcess->mKeepAlive);
-  mProcess->mKeepAlive = this;
 }
 
 UtilityProcessKeepAlive::~UtilityProcessKeepAlive() {
   MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(mProcess->mKeepAlive == this);
-  mProcess->mKeepAlive = nullptr;
 
-  // Only shut down if this process is still the live one: it may have crashed
-  // and been relaunched, and that replacement is not ours to kill.
   RefPtr<UtilityProcessManager> upm = UtilityProcessManager::GetIfExists();
-  if (!upm || upm->GetProcess(mProcess->mSandbox) != mProcess) {
+  if (!upm || !mProcess->mProcess) {
     LOGD("[%p] ~UtilityProcessKeepAlive - process already gone", this);
     return;
   }
 
   LOGD("[%p] ~UtilityProcessKeepAlive - last consumer gone, shutting down",
        this);
-  upm->CleanShutdown(mProcess->mSandbox);
+  upm->DestroyProcess(mProcess);
 }
 
 RefPtr<UtilityProcessManager::SharedLaunchPromise<Ok>>
@@ -878,20 +883,9 @@ UtilityProcessKeepAlive::GetLaunchPromise() const {
   return mProcess->mLaunchPromise;
 }
 
-template <typename Actor>
-RefPtr<UtilityProcessManager::LaunchPromise<Ok>>
-UtilityProcessKeepAlive::StartUtility(RefPtr<Actor> aActor) {
+RefPtr<UtilityProcessParent> UtilityProcessKeepAlive::GetProcessParent() const {
   MOZ_ASSERT(NS_IsMainThread());
-
-  RefPtr<UtilityProcessManager> upm = UtilityProcessManager::GetIfExists();
-  if (!upm) {
-    return UtilityProcessManager::LaunchPromise<Ok>::CreateAndReject(
-        LaunchError("UPKA::StartUtility(): no UtilityProcessManager"),
-        __func__);
-  }
-
-  return upm->StartUtilityOnProcess(std::move(aActor), mProcess,
-                                    mProcess->mLaunchPromise);
+  return mProcess->mProcessParent;
 }
 
 }  // namespace mozilla::ipc

@@ -68,13 +68,13 @@ class nsIConstraintValidation : public nsISupports {
    *                       see EventTarget::DispatchEvent.
    * @return whether it's valid.
    */
-  bool CheckValidity(nsIContent& aEventTarget,
-                     bool* aEventDefaultAction = nullptr) const;
+  MOZ_CAN_RUN_SCRIPT bool CheckValidity(
+      nsIContent& aEventTarget, bool* aEventDefaultAction = nullptr) const;
 
   // Web IDL binding methods
   bool WillValidate() const { return IsCandidateForConstraintValidation(); }
   mozilla::dom::ValidityState* Validity();
-  bool ReportValidity();
+  MOZ_CAN_RUN_SCRIPT bool ReportValidity();
 
  protected:
   // You can't instantiate an object from that class.

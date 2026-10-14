@@ -12,12 +12,14 @@
 #include "NSSCertDBTrustDomain.h"
 #include "NSSErrorsService.h"
 #include "NSSSocketControl.h"
+#include "PKCS11ModuleDB.h"
 #include "SSLServerCertVerification.h"
 #include "ScopedNSSTypes.h"
 #include "TLSClientAuthCertSelection.h"
 #include "brotli/decode.h"
 #include "keyhi.h"
 #include "mozilla/Base64.h"
+#include "mozilla/BaseProfiler.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/RandomNum.h"
@@ -1002,6 +1004,14 @@ static int32_t PlaintextRecv(PRFileDesc* fd, void* buf, int32_t amount,
   return bytesRead;
 }
 
+static int16_t PlaintextPoll(PRFileDesc* fd, int16_t in_flags,
+                             int16_t* out_flags) {
+  // This thread may sleep as a result of this poll call - let the profiler
+  // know about it.
+  AutoProfilerThreadSleep _;
+  return fd->lower->methods->poll(fd->lower, in_flags, out_flags);
+}
+
 nsSSLIOLayerHelpers::~nsSSLIOLayerHelpers() {
   // Pref observers must have been removed before destruction, since the
   // destructor may run off the main thread.
@@ -1079,6 +1089,7 @@ nsresult nsSSLIOLayerHelpers::Init() {
     nsSSLPlaintextLayerIdentity = PR_GetUniqueIdentity("Plaintxext PSM layer");
     nsSSLPlaintextLayerMethods = *PR_GetDefaultIOMethods();
     nsSSLPlaintextLayerMethods.recv = PlaintextRecv;
+    nsSSLPlaintextLayerMethods.poll = PlaintextPoll;
   }
 
   loadVersionFallbackLimit();
@@ -1578,8 +1589,7 @@ static nsresult nsSSLIOLayerSetOptions(PRFileDesc* fd, bool forSTARTTLS,
   // Include a modest set of named groups in supported_groups and determine how
   // many key shares to send. Please change getKeaGroupName in
   // nsNSSCallbacks.cpp when changing the lists here.
-  unsigned int additional_shares =
-      StaticPrefs::security_tls_client_hello_send_p256_keyshare();
+  unsigned int additional_shares = 1;
   bool tls13 = range.max >= SSL_LIBRARY_VERSION_TLS_1_3;
 
   AutoTArray<SSLNamedGroup, 8> namedGroups;
@@ -1591,8 +1601,14 @@ static nsresult nsSSLIOLayerSetOptions(PRFileDesc* fd, bool forSTARTTLS,
   namedGroups.AppendElement(ssl_grp_ec_secp256r1);
   namedGroups.AppendElement(ssl_grp_ec_secp384r1);
   namedGroups.AppendElement(ssl_grp_ec_secp521r1);
-  namedGroups.AppendElement(ssl_grp_ffdhe_2048);
-  namedGroups.AppendElement(ssl_grp_ffdhe_3072);
+
+  // Only include named FFDHE shares if ciphersuites that can use FFDHE are
+  // enabled.
+  if (StaticPrefs::security_ssl3_dhe_rsa_aes_128_sha() ||
+      StaticPrefs::security_ssl3_dhe_rsa_aes_256_sha()) {
+    namedGroups.AppendElement(ssl_grp_ffdhe_2048);
+    namedGroups.AppendElement(ssl_grp_ffdhe_3072);
+  }
 
   if (StaticPrefs::security_tls_enable_mlkem1024() && tls13) {
     namedGroups.AppendElement(ssl_grp_kem_mlkem1024);
@@ -1604,8 +1620,7 @@ static nsresult nsSSLIOLayerSetOptions(PRFileDesc* fd, bool forSTARTTLS,
   }
 
   // If additional_shares == 2, send mlkem768x25519, x25519, and p256.
-  // If additional_shares == 1, send {mlkem768x25519, x25519} or {x25519, p256}.
-  // If additional_shares == 0, send x25519.
+  // If additional_shares == 1, send x25519 and p256.
   if (SECSuccess != SSL_SendAdditionalKeyShares(fd, additional_shares)) {
     return NS_ERROR_FAILURE;
   }
@@ -1882,6 +1897,11 @@ const uint8_t kIPCClientCertsObjectTypeCert = 1;
 const uint8_t kIPCClientCertsObjectTypeRSAKey = 2;
 const uint8_t kIPCClientCertsObjectTypeECKey = 3;
 
+using FindObjectsCallback = void (*)(uint8_t type, size_t id_len,
+                                     const uint8_t* id, size_t data_len,
+                                     const uint8_t* data, void* ctx);
+using SignCallback = void (*)(size_t data_len, const uint8_t* data, void* ctx);
+
 // This function is provided to the IPC client certs module so it can cause the
 // parent process to find certificates and keys and send identifying
 // information about them over IPC.
@@ -2025,4 +2045,134 @@ void AndroidDoSign(size_t certLen, const uint8_t* cert, size_t dataLen,
   }
 }
 #endif  // MOZ_WIDGET_ANDROID
+
+// Similar to `DoFindObjects`, this function implements searching for
+// certificates stored on remote PKCS#11 tokens.
+void RemoteCertsDoFindObjects(SearchingFor searchingFor, FindObjectsCallback cb,
+                              void* ctx) {
+#if defined(NIGHTLY_BUILD) && !defined(MOZ_NO_SMART_CARDS)
+  MOZ_ASSERT(!NS_IsMainThread());
+  if (NS_IsMainThread()) {
+    return;
+  }
+
+  Monitor monitor{__func__};
+  bool done = false;
+  nsTArray<IPCClientCertObject> objects;
+  nsresult rv = NS_DispatchToMainThread(NS_NewRunnableFunction(
+      __func__, [searchingFor, &monitor, &done, &objects] {
+        RefPtr<PKCS11ModuleDB> pkcs11ModuleDB(PKCS11ModuleDB::GetSingleton());
+        if (!pkcs11ModuleDB) {
+          MonitorAutoLock lock(monitor);
+          done = true;
+          lock.Notify();
+          return;
+        }
+        pkcs11ModuleDB->FindObjects(searchingFor)
+            ->Then(GetCurrentSerialEventTarget(), __func__,
+                   [&monitor, &done,
+                    &objects](const PKCS11ModuleDB::FindObjectsPromise::
+                                  ResolveOrRejectValue& value) {
+                     MonitorAutoLock lock(monitor);
+                     if (value.IsResolve()) {
+                       objects.Assign(value.ResolveValue());
+                     }
+                     done = true;
+                     lock.Notify();
+                   });
+      }));
+  if (NS_FAILED(rv)) {
+    return;
+  }
+
+  MonitorAutoLock lock(monitor);
+  while (!done) {
+    lock.Wait();
+  }
+  for (const auto& object : objects) {
+    switch (object.type()) {
+      case IPCClientCertObject::TECKey:
+        cb(kIPCClientCertsObjectTypeECKey, object.get_ECKey().params().Length(),
+           object.get_ECKey().params().Elements(),
+           object.get_ECKey().cert().Length(),
+           object.get_ECKey().cert().Elements(), ctx);
+        break;
+      case IPCClientCertObject::TRSAKey:
+        cb(kIPCClientCertsObjectTypeRSAKey,
+           object.get_RSAKey().modulus().Length(),
+           object.get_RSAKey().modulus().Elements(),
+           object.get_RSAKey().cert().Length(),
+           object.get_RSAKey().cert().Elements(), ctx);
+        break;
+      case IPCClientCertObject::TCertificate: {
+        uint8_t serverAuthTrustAnchor =
+            object.get_Certificate().serverAuthTrustAnchor() ? 1 : 0;
+        cb(kIPCClientCertsObjectTypeCert,
+           object.get_Certificate().der().Length(),
+           object.get_Certificate().der().Elements(), 1, &serverAuthTrustAnchor,
+           ctx);
+        break;
+      }
+      default:
+        MOZ_ASSERT_UNREACHABLE("unhandled IPCClientCertObject type");
+        break;
+    }
+  }
+#endif  // NIGHTLY_BUILD && !MOZ_NO_SMART_CARDS
+}
+
+// Similar to `DoSign`, this function implements signing using private keys
+// stored on remote PKCS#11 tokens.
+void RemoteCertsDoSign(size_t certLen, const uint8_t* cert, size_t dataLen,
+                       const uint8_t* data, size_t paramsLen,
+                       const uint8_t* params, SignCallback cb, void* ctx) {
+#if defined(NIGHTLY_BUILD) && !defined(MOZ_NO_SMART_CARDS)
+  MOZ_ASSERT(!NS_IsMainThread());
+  if (NS_IsMainThread()) {
+    return;
+  }
+
+  nsTArray<uint8_t> certificate(cert, certLen);
+  nsTArray<uint8_t> dataArray(data, dataLen);
+  nsTArray<uint8_t> paramsArray(params, paramsLen);
+
+  Monitor monitor{__func__};
+  bool done = false;
+  nsTArray<uint8_t> signature;
+  nsresult rv = NS_DispatchToMainThread(NS_NewRunnableFunction(
+      __func__,
+      [certificate(std::move(certificate)), data(std::move(dataArray)),
+       params(std::move(paramsArray)), &monitor, &done, &signature]() mutable {
+        RefPtr<PKCS11ModuleDB> pkcs11ModuleDB(PKCS11ModuleDB::GetSingleton());
+        if (!pkcs11ModuleDB) {
+          MonitorAutoLock lock(monitor);
+          done = true;
+          lock.Notify();
+          return;
+        }
+        pkcs11ModuleDB
+            ->Sign(std::move(certificate), std::move(data), std::move(params))
+            ->Then(GetCurrentSerialEventTarget(), __func__,
+                   [&monitor, &done, &signature](
+                       const PKCS11ModuleDB::SignPromise::ResolveOrRejectValue&
+                           value) {
+                     MonitorAutoLock lock(monitor);
+                     if (value.IsResolve()) {
+                       signature.Assign(value.ResolveValue());
+                     }
+                     done = true;
+                     lock.Notify();
+                   });
+      }));
+  if (NS_FAILED(rv)) {
+    return;
+  }
+
+  MonitorAutoLock lock(monitor);
+  while (!done) {
+    lock.Wait();
+  }
+  cb(signature.Length(), signature.Elements(), ctx);
+#endif  // NIGHTLY_BUILD && !MOZ_NO_SMART_CARDS
+}
 }  // extern "C"

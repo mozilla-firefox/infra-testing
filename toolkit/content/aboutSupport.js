@@ -1483,6 +1483,16 @@ var snapshotFormatters = {
     $("startup-cache-wrote-to-disk-cache").textContent = data.WroteToDiskCache;
   },
 
+  pdfjs(data) {
+    $("pdfjs-version-box").textContent = data.version;
+    $("pdfjs-enabled-box").textContent = data.enabled;
+    $("pdfjs-enabled-annotation-editor-box").textContent =
+      data.annotationEditorEnabled;
+    $("pdfjs-enabled-xfa-box").textContent = data.enableXfa;
+    $("pdfjs-open-attachments-inline-box").textContent =
+      data.openPdfAttachmentsInline;
+  },
+
   libraryVersions(data) {
     let trs = [
       $.new("tr", [
@@ -1644,22 +1654,7 @@ var snapshotFormatters = {
       return;
     }
 
-    const {
-      prefStudies,
-      addonStudies,
-      prefRollouts,
-      nimbusExperiments,
-      nimbusRollouts,
-    } = data;
-    $.append(
-      $("remote-features-tbody"),
-      prefRollouts.map(({ slug, state }) =>
-        $.new("tr", [
-          $.new("td", [document.createTextNode(slug)]),
-          $.new("td", [document.createTextNode(state)]),
-        ])
-      )
-    );
+    const { nimbusExperiments, nimbusRollouts } = data;
 
     $.append(
       $("remote-features-tbody"),
@@ -1672,14 +1667,12 @@ var snapshotFormatters = {
     );
     $.append(
       $("remote-experiments-tbody"),
-      [addonStudies, prefStudies, nimbusExperiments]
-        .flat()
-        .map(({ userFacingName, branch }) =>
-          $.new("tr", [
-            $.new("td", [document.createTextNode(userFacingName)]),
-            $.new("td", [document.createTextNode(branch?.slug || branch)]),
-          ])
-        )
+      nimbusExperiments.map(({ userFacingName, branch }) =>
+        $.new("tr", [
+          $.new("td", [document.createTextNode(userFacingName)]),
+          $.new("td", [document.createTextNode(branch?.slug || branch)]),
+        ])
+      )
     );
   },
 };

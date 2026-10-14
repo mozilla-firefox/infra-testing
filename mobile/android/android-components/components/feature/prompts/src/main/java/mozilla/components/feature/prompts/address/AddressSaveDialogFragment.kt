@@ -23,6 +23,9 @@ import mozilla.components.feature.prompts.dialog.KEY_PROMPT_UID
 import mozilla.components.feature.prompts.dialog.KEY_SESSION_ID
 import mozilla.components.feature.prompts.dialog.KEY_SHOULD_DISMISS_ON_LOAD
 import mozilla.components.feature.prompts.dialog.PromptDialogFragment
+import mozilla.components.feature.prompts.facts.emitAddressAutofillCreatedFact
+import mozilla.components.feature.prompts.facts.emitAddressAutofillUpdatedFact
+import mozilla.components.feature.prompts.facts.emitAddressSaveDismissedFact
 import mozilla.components.support.utils.ext.getParcelableCompat
 
 internal const val KEY_ADDRESS = "KEY_ADDRESS"
@@ -78,6 +81,7 @@ internal class AddressSaveDialogFragment : PromptDialogFragment() {
 
     override fun onCancel(dialog: DialogInterface) {
         super.onCancel(dialog)
+        emitAddressSaveDismissedFact()
         feature?.onCancel(
             sessionId = sessionId,
             promptRequestUID = promptRequestUID,
@@ -99,14 +103,29 @@ internal class AddressSaveDialogFragment : PromptDialogFragment() {
             value = address,
         )
         dismiss()
+        emitSaveUpdateFact()
     }
 
     private fun onCancelClicked() {
+        emitAddressSaveDismissedFact()
         feature?.onCancel(
             sessionId = sessionId,
             promptRequestUID = promptRequestUID,
         )
         dismiss()
+    }
+
+    /**
+     * Emit the created or updated fact. A blank guid means the record is not yet in storage, which is the same
+     * condition the storage delegate uses to choose between adding and updating.
+     */
+    @VisibleForTesting
+    internal fun emitSaveUpdateFact() {
+        if (address.guid.isBlank()) {
+            emitAddressAutofillCreatedFact()
+        } else {
+            emitAddressAutofillUpdatedFact()
+        }
     }
 
     companion object {

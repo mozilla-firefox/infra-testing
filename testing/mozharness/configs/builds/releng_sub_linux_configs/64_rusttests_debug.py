@@ -5,7 +5,6 @@
 import os
 
 config = {
-    "stage_platform": "linux64-rusttests-debug",
     "debug_build": True,
     "env": {
         "MOZBUILD_STATE_PATH": os.path.join(os.getcwd(), ".mozbuild"),
@@ -16,11 +15,8 @@ config = {
         "LC_ALL": "C",
         "XPCOM_DEBUG_BREAK": "stack-and-abort",
         # 64 bit specific
-        "PATH": "/usr/local/bin:/bin:\
-/usr/bin:/usr/local/sbin:/usr/sbin:/sbin",
-        "LD_LIBRARY_PATH": "%(abs_obj_dir)s/dist/bin",
+        "PATH": "/usr/local/bin:/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/sbin",
         "TINDERBOX_OUTPUT": "1",
     },
-    "app_name": "tools/rusttests",
     "disable_package_metrics": True,
 }

@@ -4,6 +4,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include <algorithm>
+#include <atomic>
+#include <vector>
+
 #include "gtest/gtest.h"
 
 #include "cert.h"
@@ -11,11 +15,16 @@
 #include "certt.h"
 #include "nss_scoped_ptrs.h"
 #include "prerror.h"
+#include "prthread.h"
 #include "secerr.h"
 
 extern "C" SECStatus __CERT_AddTempCertToPerm(CERTCertificate* cert,
                                               char* nickname,
                                               CERTCertTrust* trust);
+
+extern "C" CERTCertificate* __CERT_DecodeDERCertificate(SECItem* derSignedCert,
+                                                        PRBool copyDER,
+                                                        char* nickname);
 
 class DecodeCertsTest : public ::testing::Test {};
 
@@ -155,4 +164,99 @@ TEST_F(DecodeCertsTest, ImportCert) {
   rv = PK11_ImportCert(slot.get(), cert2.get(), CK_INVALID_HANDLE, nickname2,
                        PR_TRUE);
   EXPECT_EQ(rv, SECSuccess);
+}
+
+// id-ecPublicKey
+const uint8_t kIdEcPublicKeyOID[] = {0x06, 0x07, 0x2a, 0x86, 0x48,
+                                     0xce, 0x3d, 0x02, 0x01};
+
+// Rejecting a certificate must also release its decoding. Run under LSan.
+TEST_F(DecodeCertsTest, NewTempCertificateWithUnsupportedKeyAlgorithm) {
+  // Make the algorithm OID unallocated: this still decodes, but no public key
+  // can be extracted from it.
+  std::vector<uint8_t> der(kTestImportCertDER,
+                           kTestImportCertDER + sizeof(kTestImportCertDER));
+  auto spki = std::search(der.begin(), der.end(), std::begin(kIdEcPublicKeyOID),
+                          std::end(kIdEcPublicKeyOID));
+  ASSERT_TRUE(spki != der.end());
+  spki[sizeof(kIdEcPublicKeyOID) - 1] = 0x7f;
+
+  SECItem certDER = {siBuffer, der.data(),
+                     static_cast<unsigned int>(der.size())};
+  ScopedCERTCertificate cert(CERT_NewTempCertificate(
+      CERT_GetDefaultCertDB(), &certDER, nullptr, PR_TRUE, PR_TRUE));
+  EXPECT_EQ(nullptr, cert.get());
+}
+
+// A certificate produced by CERT_DecodeDERCertificate() has no NSSCertificate
+// attached; one is built on demand the first time the certificate is
+// duplicated. Concurrent first duplications must yield a single NSSCertificate,
+// because the one reference it is minted with stands for the CERTCertificate
+// itself -- minting it twice makes the surviving reference count fall below
+// zero as the duplicates are released.
+//
+// The failure is a lost update rather than a data race, so ThreadSanitizer does
+// not see it. Run this under LSan (the orphaned NSSCertificate leaks) or ASan
+// (the reference count underflows into a use-after-free).
+
+namespace {
+
+const unsigned int kDupThreads = 8;
+const unsigned int kDupRounds = 100;
+
+struct DupRace {
+  CERTCertificate* cert;
+  std::atomic<bool> go;
+  std::atomic<unsigned int> mismatches;
+};
+
+void DupOnce(void* arg) {
+  DupRace* race = static_cast<DupRace*>(arg);
+  while (!race->go) {
+    PR_Sleep(PR_INTERVAL_NO_WAIT);
+  }
+  CERTCertificate* dup = CERT_DupCertificate(race->cert);
+  if (dup != race->cert) {
+    race->mismatches++;
+  }
+  CERT_DestroyCertificate(dup);
+}
+
+}  // namespace
+
+TEST_F(DecodeCertsTest, ConcurrentFirstDuplication) {
+  for (unsigned int round = 0; round < kDupRounds; ++round) {
+    SECItem certDER = {siBuffer, kTestTempToPermCertDER,
+                       sizeof(kTestTempToPermCertDER)};
+    // Not CERT_NewTempCertificate: that returns a certificate which already
+    // has an NSSCertificate, which is the case this test is not about.
+    CERTCertificate* cert =
+        __CERT_DecodeDERCertificate(&certDER, PR_TRUE, nullptr);
+    ASSERT_NE(nullptr, cert);
+    ASSERT_EQ(nullptr, cert->nssCertificate);
+    cert->dbhandle = CERT_GetDefaultCertDB();
+
+    DupRace race;
+    race.cert = cert;
+    race.go = false;
+    race.mismatches = 0;
+
+    PRThread* threads[kDupThreads];
+    for (unsigned int i = 0; i < kDupThreads; ++i) {
+      threads[i] =
+          PR_CreateThread(PR_USER_THREAD, DupOnce, &race, PR_PRIORITY_NORMAL,
+                          PR_GLOBAL_THREAD, PR_JOINABLE_THREAD, 0);
+      ASSERT_NE(nullptr, threads[i]);
+    }
+    race.go = true;
+    for (unsigned int i = 0; i < kDupThreads; ++i) {
+      ASSERT_EQ(PR_SUCCESS, PR_JoinThread(threads[i]));
+    }
+    ASSERT_EQ(0u, race.mismatches);
+
+    // Exactly one NSSCertificate, holding exactly the reference that stands for
+    // the CERTCertificate, so this last release frees both.
+    ASSERT_NE(nullptr, cert->nssCertificate);
+    CERT_DestroyCertificate(cert);
+  }
 }

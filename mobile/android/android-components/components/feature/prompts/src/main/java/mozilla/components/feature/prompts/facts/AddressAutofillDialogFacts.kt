@@ -19,6 +19,9 @@ class AddressAutofillDialogFacts {
         const val AUTOFILL_ADDRESS_PROMPT_EXPANDED = "autofill_address_prompt_expanded"
         const val AUTOFILL_ADDRESS_PROMPT_DISMISSED = "autofill_address_prompt_dismissed"
         const val AUTOFILL_ADDRESS_SAVE_PROMPT_SHOWN = "autofill_address_save_prompt_shown"
+        const val AUTOFILL_ADDRESS_SAVE_PROMPT_DISMISSED = "autofill_address_save_prompt_dismissed"
+        const val AUTOFILL_ADDRESS_CREATED = "autofill_address_created"
+        const val AUTOFILL_ADDRESS_UPDATED = "autofill_address_updated"
     }
 }
 
@@ -77,5 +80,26 @@ internal fun emitAddressSaveShownFact() {
     emitAddressAutofillDialogFact(
         Action.INTERACTION,
         AddressAutofillDialogFacts.Items.AUTOFILL_ADDRESS_SAVE_PROMPT_SHOWN,
+    )
+}
+
+internal fun emitAddressSaveDismissedFact() {
+    emitAddressAutofillDialogFact(
+        Action.INTERACTION,
+        AddressAutofillDialogFacts.Items.AUTOFILL_ADDRESS_SAVE_PROMPT_DISMISSED,
+    )
+}
+
+internal fun emitAddressAutofillCreatedFact() {
+    emitAddressAutofillDialogFact(
+        Action.CONFIRM,
+        AddressAutofillDialogFacts.Items.AUTOFILL_ADDRESS_CREATED,
+    )
+}
+
+internal fun emitAddressAutofillUpdatedFact() {
+    emitAddressAutofillDialogFact(
+        Action.CONFIRM,
+        AddressAutofillDialogFacts.Items.AUTOFILL_ADDRESS_UPDATED,
     )
 }

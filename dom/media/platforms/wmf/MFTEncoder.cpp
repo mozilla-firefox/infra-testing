@@ -6,6 +6,7 @@
 
 #include <comdef.h>
 
+#include "WMFDataEncoderUtils.h"
 #include "WMFUtils.h"
 #include "mozilla/AppShutdown.h"
 #include "mozilla/ClearOnShutdown.h"
@@ -16,6 +17,7 @@
 #include "mozilla/mscom/COMWrappers.h"
 #include "mozilla/mscom/Utils.h"
 #include "nsThreadUtils.h"
+#include "nsXULAppAPI.h"
 
 using Microsoft::WRL::ComPtr;
 
@@ -272,6 +274,8 @@ MFTEncoder::Factory::Factory(Provider aProvider,
 MFTEncoder::Factory::~Factory() { Shutdown(); }
 
 HRESULT MFTEncoder::Factory::Shutdown() {
+  MOZ_ASSERT(mscom::IsCurrentThreadMTA());
+
   HRESULT hr = S_OK;
   if (mActivate) {
     MFT_ENC_LOGE("Shutdown {} encoder {}",
@@ -379,8 +383,16 @@ static nsTArray<MFTEncoder::Factory> EnumEncoders(
 
 static void PopulateEncoderInfo(const GUID& aSubtype,
                                 nsTArray<MFTEncoder::Info>& aInfos) {
-  nsTArray<MFTEncoder::Factory> factories =
-      EnumEncoders(aSubtype, MFTEncoder::HWPreference::PreferHardware);
+  MFTEncoder::HWPreference hwPref;
+  if (!XRE_IsGPUProcess()) {
+    hwPref = MFTEncoder::HWPreference::SoftwareOnly;
+  } else if (CanUseWMFHwEncoder(aSubtype)) {
+    hwPref = MFTEncoder::HWPreference::HardwareOnly;
+  } else {
+    MFT_ENC_SLOGD("<ENC> none allowed\n");
+    return;
+  }
+  nsTArray<MFTEncoder::Factory> factories = EnumEncoders(aSubtype, hwPref);
   for (const auto& factory : factories) {
     MFTEncoder::Info info = {.mSubtype = aSubtype, .mName = factory.mName};
     aInfos.AppendElement(info);
@@ -420,6 +432,11 @@ nsTArray<MFTEncoder::Info> MFTEncoder::Enumerate() {
   PopulateEncoderInfo(MFVideoFormat_VP80, infos);
 
   return infos;
+}
+
+void MFTEncoder::ClearCache() {
+  StaticMutexAutoLock lock(sInfoMutex);
+  sInfos = nullptr;
 }
 
 nsTArray<MFTEncoder::Info>* MFTEncoder::Infos() {
@@ -545,7 +562,7 @@ MFTEncoder::Destroy() {
   mAsyncEventSource = nullptr;
   mEncoder = nullptr;
   mConfig = nullptr;
-  HRESULT hr = mFactory ? S_OK : mFactory->Shutdown();
+  HRESULT hr = mFactory ? mFactory->Shutdown() : S_OK;
   mFactory.reset();
   // TODO: If Factory::Shutdown() fails and the encoder is not reusable, set the
   // state to error.
@@ -846,6 +863,12 @@ RefPtr<MFTEncoder::EncodePromise> MFTEncoder::Encode(
   MOZ_ASSERT(mscom::IsCurrentThreadMTA());
   MOZ_ASSERT(mEncoder);
 
+  if (mState != State::Inited && mState != State::Encoding) {
+    return EncodePromise::CreateAndReject(
+        MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                    "Cannot encode in current state"_ns),
+        __func__);
+  }
   if (!IsAsync()) {
     return ResultToPromise(EncodeSync(std::move(aInputs)));
   }
@@ -859,6 +882,12 @@ RefPtr<MFTEncoder::EncodePromise> MFTEncoder::Drain() {
   MOZ_ASSERT(mscom::IsCurrentThreadMTA());
   MOZ_ASSERT(mEncoder);
 
+  if (mState != State::Inited && mState != State::Encoding) {
+    return EncodePromise::CreateAndReject(
+        MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                    "Cannot drain in current state"_ns),
+        __func__);
+  }
   if (!IsAsync()) {
     return ResultToPromise(DrainSync());
   }
@@ -1100,11 +1129,18 @@ RefPtr<MFTEncoder::EncodePromise> MFTEncoder::EncodeWithAsyncCallback(
     nsTArray<InputSample>&& aInputs) {
   MOZ_ASSERT(mscom::IsCurrentThreadMTA());
   MOZ_ASSERT(mEncoder);
-  MOZ_ASSERT(mEncodePromise.IsEmpty());
-  MOZ_ASSERT(mState == State::Inited);
+  MOZ_ASSERT(mState == State::Inited || mState == State::Encoding);
 
-  auto exitWithError = MakeScopeExit([&] { SetState(State::Error); });
+  auto errorHandler = [&](MediaResult&& aError) {
+    MFT_ENC_LOGE("{}", aError.Message().get());
+    mPendingError = std::move(aError);
+    MaybeResolveOrRejectEncodePromise();
+  };
+
   SetState(State::Encoding);
+
+  auto p = MakeRefPtr<MFTEncoder::EncodePromise::Private>(__func__);
+  mEncodePromises.push_back(p);
 
   size_t inputCounts = aInputs.Length();
   for (auto& input : aInputs) {
@@ -1113,19 +1149,27 @@ RefPtr<MFTEncoder::EncodePromise> MFTEncoder::EncodeWithAsyncCallback(
 
   auto inputsProcessed = ProcessPendingInputs();
   if (inputsProcessed.isErr()) {
-    return EncodePromise::CreateAndReject(
-        MediaResult(
-            NS_ERROR_DOM_MEDIA_FATAL_ERR,
-            RESULT_DETAIL("ProcessPendingInputs error: %s",
-                          ErrorMessage(inputsProcessed.unwrapErr()).get())),
-        __func__);
+    errorHandler(MediaResult(
+        NS_ERROR_DOM_MEDIA_FATAL_ERR,
+        RESULT_DETAIL("ProcessPendingInputs error: %s",
+                      ErrorMessage(inputsProcessed.unwrapErr()).get())));
+    return p;
   }
   MFT_ENC_LOGV("{} inputs processed, {} inputs remain, inputs needed: {}",
                inputCounts - mPendingInputs.size(), mPendingInputs.size(),
                mNumNeedInput);
 
-  RefPtr<MFTEncoder::EncodePromise> p = mEncodePromise.Ensure(__func__);
-  exitWithError.release();
+  if (!mTimer && !MaybeArmTimer()) {
+    MFT_ENC_LOGE(
+        "Failed to set an encoding progress checker. Resolve encode promise "
+        "directly");
+    MaybeResolveOrRejectEncodePromise();
+  }
+  return p;
+}
+
+bool MFTEncoder::MaybeArmTimer() {
+  MOZ_ASSERT(!mTimer);
 
   // TODO: Calculate time duration based on frame rate instead of a fixed value.
   auto timerResult = NS_NewTimerWithCallback(
@@ -1142,15 +1186,11 @@ RefPtr<MFTEncoder::EncodePromise> MFTEncoder::EncodeWithAsyncCallback(
       TimeDuration::FromMilliseconds(20), nsITimer::TYPE_ONE_SHOT,
       "EncodingProgressChecker"_ns, GetCurrentSerialEventTarget());
   if (timerResult.isErr()) {
-    MFT_ENC_LOGE(
-        "Failed to set an encoding progress checker. Resolve encode promise "
-        "directly");
-    MaybeResolveOrRejectEncodePromise();
-    return p;
+    return false;
   }
 
   mTimer = timerResult.unwrap();
-  return p;
+  return true;
 }
 
 RefPtr<MFTEncoder::EncodePromise> MFTEncoder::DrainWithAsyncCallback() {
@@ -1173,8 +1213,30 @@ RefPtr<MFTEncoder::EncodePromise> MFTEncoder::DrainWithAsyncCallback() {
 RefPtr<MFTEncoder::EncodePromise> MFTEncoder::PrepareForDrain() {
   MOZ_ASSERT(mscom::IsCurrentThreadMTA());
   MOZ_ASSERT(mEncoder);
-  MOZ_ASSERT(mPreDrainPromise.IsEmpty());
-  MOZ_ASSERT(mState == State::Inited);
+  MOZ_ASSERT(mState == State::Inited || mState == State::Encoding);
+
+  if (!mPreDrainPromise.IsEmpty() || !mDrainPromise.IsEmpty()) {
+    MOZ_ASSERT_UNREACHABLE("Drain already in progress");
+    return EncodePromise::CreateAndReject(
+        MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR, "Drain already in progress"),
+        __func__);
+  }
+
+  // If there is a pending error, we should fail all of the encode and drain
+  // promises together.
+  if (NS_FAILED(mPendingError.Code())) {
+    MFT_ENC_LOGE("Cannot drain, pending error: {}",
+                 mPendingError.Description().get());
+    auto p = EncodePromise::CreateAndReject(mPendingError, __func__);
+    MaybeResolveOrRejectEncodePromise(/* aResolveAll */ true);
+    SetState(State::Error);
+    mPendingError = NS_OK;
+    return p;
+  }
+
+  // No pending error, so we can early resolve all of the encode promises and
+  // let the drain promise accept any outputs.
+  MaybeResolveOrRejectEncodePromise(/* aResolveAll */ true);
 
   SetState(State::PreDraining);
   MFT_ENC_LOGV("Pending inputs: {}, inputs needed: {}", mPendingInputs.size(),
@@ -1332,11 +1394,17 @@ void MFTEncoder::EventHandler(MediaEventType aEventType, HRESULT aStatus) {
   mAsyncEventSource->BeginEventListening();
 }
 
-void MFTEncoder::MaybeResolveOrRejectEncodePromise() {
+void MFTEncoder::MaybeResolveOrRejectEncodePromise(
+    bool aResolveAll /* = false */) {
   MOZ_ASSERT(mscom::IsCurrentThreadMTA());
   MOZ_ASSERT(mEncoder);
 
-  if (mEncodePromise.IsEmpty()) {
+  if (mTimer) {
+    mTimer->Cancel();
+    mTimer = nullptr;
+  }
+
+  if (mEncodePromises.empty()) {
     MFT_ENC_LOGV("[{}] No encode promise to resolve or reject",
                  EnumValueToString(mState));
     return;
@@ -1350,21 +1418,41 @@ void MFTEncoder::MaybeResolveOrRejectEncodePromise() {
                    ? mPendingError.Description().get()
                    : "no error");
 
-  if (mTimer) {
-    mTimer->Cancel();
-    mTimer = nullptr;
-    MFT_ENC_LOGV("Encode timer cancelled");
-  }
-
   if (NS_FAILED(mPendingError.Code())) {
     SetState(State::Error);
-    mEncodePromise.Reject(mPendingError, __func__);
+    auto encodePromises = std::move(mEncodePromises);
+    mEncodePromises.clear();
+
+    for (auto& p : encodePromises) {
+      p->Reject(mPendingError, __func__);
+    }
     mPendingError = NS_OK;
     return;
   }
 
-  mEncodePromise.Resolve(std::move(mOutputs), __func__);
-  SetState(State::Inited);
+  if (!aResolveAll) {
+    auto p = std::move(mEncodePromises.front());
+    mEncodePromises.pop_front();
+    p->Resolve(std::move(mOutputs), __func__);
+
+    if (!mEncodePromises.empty() && !MaybeArmTimer()) {
+      aResolveAll = true;
+    }
+  }
+
+  if (aResolveAll) {
+    auto encodePromises = std::move(mEncodePromises);
+    mEncodePromises.clear();
+
+    // Only the first promise gets the pending outputs, if any.
+    for (auto& p : encodePromises) {
+      p->Resolve(std::move(mOutputs), __func__);
+    }
+  }
+
+  if (mEncodePromises.empty()) {
+    SetState(State::Inited);
+  }
 }
 
 void MFTEncoder::MaybeResolveOrRejectDrainPromise() {
@@ -1439,7 +1527,7 @@ void MFTEncoder::MaybeResolveOrRejectAnyPendingPromise(
     mPendingError = aResult;
   }
 
-  MaybeResolveOrRejectEncodePromise();
+  MaybeResolveOrRejectEncodePromise(/* aResolveAll */ true);
   MaybeResolveOrRejectPreDrainPromise();
   MaybeResolveOrRejectDrainPromise();
 }

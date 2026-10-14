@@ -773,13 +773,13 @@ bool LMoveGroup::add(LAllocation from, LAllocation to, LDefinition::Type type) {
 
   // Check that SIMD moves are aligned according to ABI requirements.
   // clang-format off
-# ifdef ENABLE_WASM_SIMD
+# ifdef ENABLE_JIT_SIMD
     // Alignment is not currently required for SIMD on x86/x64/arm64.  See also
     // CodeGeneratorShared::CodeGeneratorShared and in general everywhere
     // SimdMemoryAignment is used.  Likely, alignment requirements will return.
 #   if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64) || \
-       defined(JS_CODEGEN_ARM64)
-      // No need for any check on x86/x64/arm64.
+       defined(JS_CODEGEN_ARM64) || defined(JS_CODEGEN_LOONG64)
+      // No need for any check on x86/x64/arm64/loong64.
 #   else
 #     error "Need to consider SIMD alignment on this target."
       // The following code may be of use if we need alignment checks on
@@ -807,7 +807,7 @@ bool LMoveGroup::add(LAllocation from, LAllocation to, LDefinition::Type type) {
   // clang-format on
 
 #endif
-  return moves_.append(LMove(from, to, type));
+  return moves_.emplaceBack(from, to, type);
 }
 
 bool LMoveGroup::addAfter(LAllocation from, LAllocation to,

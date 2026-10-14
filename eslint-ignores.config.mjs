@@ -51,8 +51,7 @@ export default [
   "browser/app/",
   "browser/branding/**/firefox-branding.js",
   // Gzipped test file.
-  "browser/base/content/test/general/gZipOfflineChild.html",
-  "browser/base/content/test/urlbar/file_blank_but_not_blank.html",
+  "browser/base/content/test/browser-general/gZipOfflineChild.html",
   // Pre-processed template file
   "browser/components/backup/content/archive.template.html",
   // Test files that are really json not js, and don't need to be linted.
@@ -143,6 +142,10 @@ export default [
   // Service workers fixtures which require specific resource caching.
   "dom/base/test/file_js_cache.js",
   "dom/serviceworkers/test/file_js_cache.js",
+
+  // ESLint parse does not support import source yet (Bug 2063547)
+  "dom/base/test/test_wasm_offthread_compile.html",
+  "dom/base/test/jsmodules/scriptDisabled_frame.html",
 
   // Intentional broken files
   "dom/base/test/file_js_cache_syntax_error.js",

@@ -58,15 +58,27 @@ if (AppConstants.platform == "macosx") {
   contextMenuItems["context-navigation"] = "hidden";
 }
 
+add_setup(async function () {
+  // Right-clicking text selects the word under the cursor on macOS, which adds
+  // a selection to the context menu this test checks.
+  await SpecialPowers.pushPrefEnv({
+    set: [["ui.mouse.right_click.select_under_cursor", false]],
+  });
+});
+
 add_task(async function pageaction_popup_contextmenu() {
   let extension = ExtensionTestUtils.loadExtension(extData);
   await extension.startup();
   await extension.awaitMessage("menus-created");
   await extension.awaitMessage("action-shown");
 
-  await clickPageAction(extension, window);
+  // Deliberately not awaited: awaitExtensionPanel, called from
+  // openContextMenuInPopup, has to start listening for WebExtPopupLoaded before
+  // the popup is shown.
+  let clicked = clickPageAction(extension, window);
 
   let contentAreaContextMenu = await openContextMenuInPopup(extension);
+  await clicked;
   let item = contentAreaContextMenu.getElementsByAttribute(
     "label",
     "Click me!"
@@ -83,9 +95,13 @@ add_task(async function pageaction_popup_contextmenu_hidden_items() {
   await extension.awaitMessage("menus-created");
   await extension.awaitMessage("action-shown");
 
-  await clickPageAction(extension, window);
+  // Deliberately not awaited: awaitExtensionPanel, called from
+  // openContextMenuInPopup, has to start listening for WebExtPopupLoaded before
+  // the popup is shown.
+  let clicked = clickPageAction(extension, window);
 
   let contentAreaContextMenu = await openContextMenuInPopup(extension, "#text");
+  await clicked;
 
   let item, state;
   for (const itemID in contextMenuItems) {
@@ -115,12 +131,16 @@ add_task(async function pageaction_popup_image_contextmenu() {
   await extension.awaitMessage("menus-created");
   await extension.awaitMessage("action-shown");
 
-  await clickPageAction(extension, window);
+  // Deliberately not awaited: awaitExtensionPanel, called from
+  // openContextMenuInPopup, has to start listening for WebExtPopupLoaded before
+  // the popup is shown.
+  let clicked = clickPageAction(extension, window);
 
   let contentAreaContextMenu = await openContextMenuInPopup(
     extension,
     "#testimg"
   );
+  await clicked;
 
   let item = contentAreaContextMenu.querySelector("#context-copyimage");
   ok(!item.hidden);

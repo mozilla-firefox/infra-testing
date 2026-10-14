@@ -1270,7 +1270,9 @@ starttagloop:
               if (nsHtml5TreeBuilder::NOT_FOUND_ON_STACK !=
                   findLastInScope(nsGkAtoms::nobr)) {
                 errFooSeenWhenFooOpen(name);
-                adoptionAgencyEndTag(nsGkAtoms::nobr);
+                if (!adoptionAgencyEndTag(nsGkAtoms::nobr)) {
+                  anyOtherEndTagInBody(nsGkAtoms::nobr);
+                }
                 reconstructTheActiveFormattingElements();
               }
               appendToCurrentNodeAndPushFormattingElementMayFoster(elementName,
@@ -2826,28 +2828,8 @@ void nsHtml5TreeBuilder::endTag(nsHtml5ElementName* elementName) {
             [[fallthrough]];
           }
           default: {
-            if (isCurrent(name)) {
-              pop();
-              NS_HTML5_BREAK(endtagloop);
-            }
-            eltPos = currentPtr;
-            for (;;) {
-              nsHtml5StackNode* node = stack[eltPos];
-              if (node->ns == kNameSpaceID_XHTML && node->name == name) {
-                generateImpliedEndTags();
-                if (!!MOZ_UNLIKELY(mViewSource) && !isCurrent(name)) {
-                  errUnclosedElements(eltPos, name);
-                }
-                while (currentPtr >= eltPos) {
-                  pop();
-                }
-                NS_HTML5_BREAK(endtagloop);
-              } else if (!eltPos || node->isSpecial()) {
-                errStrayEndTag(name);
-                NS_HTML5_BREAK(endtagloop);
-              }
-              eltPos--;
-            }
+            anyOtherEndTagInBody(name);
+            NS_HTML5_BREAK(endtagloop);
           }
         }
         [[fallthrough]];
@@ -3559,6 +3541,31 @@ void nsHtml5TreeBuilder::removeFromListOfActiveFormattingElements(int32_t pos) {
   listPtr--;
 }
 
+void nsHtml5TreeBuilder::anyOtherEndTagInBody(nsAtom* name) {
+  if (isCurrent(name)) {
+    pop();
+    return;
+  }
+  int32_t eltPos = currentPtr;
+  for (;;) {
+    nsHtml5StackNode* node = stack[eltPos];
+    if (node->ns == kNameSpaceID_XHTML && node->name == name) {
+      generateImpliedEndTags();
+      if (!!MOZ_UNLIKELY(mViewSource) && !isCurrent(name)) {
+        errUnclosedElements(eltPos, name);
+      }
+      while (currentPtr >= eltPos) {
+        pop();
+      }
+      return;
+    } else if (!eltPos || node->isSpecial()) {
+      errStrayEndTag(name);
+      return;
+    }
+    eltPos--;
+  }
+}
+
 bool nsHtml5TreeBuilder::adoptionAgencyEndTag(nsAtom* name) {
   if (stack[currentPtr]->ns == kNameSpaceID_XHTML &&
       stack[currentPtr]->name == name &&
@@ -3631,6 +3638,7 @@ bool nsHtml5TreeBuilder::adoptionAgencyEndTag(nsAtom* name) {
     int32_t bookmark = formattingEltListPos;
     int32_t nodePos = furthestBlockPos;
     nsHtml5StackNode* lastNode = furthestBlock;
+    sanitizerDeferRedirect(furthestBlock->node);
     int32_t j = 0;
     for (;;) {
       ++j;
@@ -3676,14 +3684,18 @@ bool nsHtml5TreeBuilder::adoptionAgencyEndTag(nsAtom* name) {
       node->release(this);
       node->release(this);
       node = newNode;
-      detachFromParent(lastNode->node);
-      appendElement(lastNode->node, nodeFromStackWithBlinkCompat(nodePos));
-      lastNode = node;
+      if (!sanitizerRedirectsClone(node->node)) {
+        sanitizerRedirectPending(node->node);
+        detachFromParent(lastNode->node);
+        appendElement(lastNode->node, nodeFromStackWithBlinkCompat(nodePos));
+        lastNode = node;
+      }
     }
     if (commonAncestor->isFosterParenting()) {
       detachFromParent(lastNode->node);
       insertIntoFosterParent(lastNode->node);
     } else {
+      sanitizerRedirectPending(insertionCommonAncestor);
       detachFromParent(lastNode->node);
       appendElement(lastNode->node, insertionCommonAncestor);
     }
@@ -3703,6 +3715,7 @@ bool nsHtml5TreeBuilder::adoptionAgencyEndTag(nsAtom* name) {
     MOZ_ASSERT(formattingEltStackPos < furthestBlockPos);
     removeFromStack(formattingEltStackPos);
     insertIntoStack(formattingClone, furthestBlockPos);
+    sanitizerRedirectBelowFormattingClone(furthestBlockPos);
   }
   return true;
 }
@@ -3943,10 +3956,12 @@ void nsHtml5TreeBuilder::insertIntoFosterParent(nsIContentHandle* child) {
   int32_t tablePos = findLastOrRoot(nsHtml5TreeBuilder::TABLE);
   int32_t templatePos = findLastOrRoot(nsHtml5TreeBuilder::TEMPLATE);
   if (templatePos >= tablePos) {
+    sanitizerRedirectPending(stack[templatePos]->node);
     appendElement(child, stack[templatePos]->node);
     return;
   }
   nsHtml5StackNode* node = stack[tablePos];
+  sanitizerRedirectPendingToFosterParent(node->node, stack[tablePos - 1]->node);
   insertFosterParentedChild(child, node->node, stack[tablePos - 1]->node);
 }
 
@@ -4119,6 +4134,8 @@ void nsHtml5TreeBuilder::appendToCurrentNodeAndPushElement(
 void nsHtml5TreeBuilder::appendToCurrentNodeAndPushTemplateElement(
     nsHtml5HtmlAttributes* attributes) {
   nsIContentHandle* currentNode = nodeFromStackWithBlinkCompat(currentPtr);
+  bool sanitizerDropsTemplate = false;
+  sanitizerDropsTemplate = sanitizerDropsTemplateToken(attributes);
   nsHtml5String shadowRootMode = nullptr;
   bool shadowRootIsClonable = false;
   bool shadowRootIsSerializable = false;
@@ -4126,7 +4143,7 @@ void nsHtml5TreeBuilder::appendToCurrentNodeAndPushTemplateElement(
   bool shadowRootCustomElementRegistry = false;
   nsHtml5String shadowRootReferenceTarget = nullptr;
   nsHtml5String shadowRootSlotAssignment = nullptr;
-  if (isAllowDeclarativeShadowRoots()) {
+  if (isAllowDeclarativeShadowRoots() && !sanitizerDropsTemplate) {
     shadowRootMode = nsHtml5Portability::newStringFromString(
         attributes->getValue(nsHtml5AttributeName::ATTR_SHADOWROOTMODE));
     if (shadowRootMode) {

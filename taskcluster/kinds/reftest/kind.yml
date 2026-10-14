@@ -19,9 +19,24 @@ transforms:
 
 task-defaults:
     run-on-repo-type: [hg]
+    priority:
+        by-project:
+            autoland: high
+            mozilla-central: medium
+            default: null
     attributes:
         retrigger: true
-    use-python: system
+    use-python:
+        by-test-platform:
+            # android-hw tasks are driven by the host's script.py wrapper,
+            # which imports mozdevice from the host environment; a fetched CI
+            # Python would shadow the host Python on PATH and break that import.
+            android-hw.*: system
+            # Fetched CI python is x86_64; under Rosetta it forces the universal
+            # mac Firefox onto its x86_64 slice and hits a Rosetta hang.  Keep mac
+            # on the native system python until there's an arm64 fetched python.
+            macosx.*: system
+            default: default
     use-uv: true
     require-signed-extensions:
         by-release-type:
@@ -138,22 +153,15 @@ tasks:
                         default: []
                 no-fission:
                     by-test-platform:
-                        android-em.*/debug-isolated-process: []
                         linux2404-64/.*: ['mozilla-central']
                         linux2404-64-shippable/opt: ['mozilla-central']
                         linux2404-64-asan/opt: ['mozilla-central']
-                        android.*: built-projects
+                        android.*: ['mozilla-central']
                         default: []
                 inc-origin-init: []
                 default:
                     by-test-platform:
-                        android.*: []
                         .*-wayland/debug.*: []
-                        # Compositor shutdown assertion in DisconnectApzcTreeManager
-                        # on headless macOS aarch64 VM workers (Bug 2039987 family);
-                        # same pattern excludes jsreftest, marionette-unittest, and
-                        # mochitest-remote on this platform.
-                        macosx1500-aarch64-vms/debug: []
                         default: built-projects
         max-run-time: 3600
         mozharness:
@@ -166,16 +174,17 @@ tasks:
             by-variant:
                 no-fission:
                     by-test-platform:
+                        android.*: 2
                         linux.*: 2
                         default: default
                 webrender-sw+no-fission:
                     by-test-platform:
                         linux.*: 2
                         default: default
+                geckoview-isolated-process: 3
                 default:
                     by-test-platform:
                         android-hw-.*(-qr)?/.*: 2
-                        android-em.*/debug-isolated-process: 3
                         default: default
 
     crashtest-qr:
@@ -318,11 +327,18 @@ tasks:
                         default: []
                 no-fission:
                     by-test-platform:
-                        android-em.*/debug-isolated-process: ['trunk']
                         linux2404-64/debug: ['mozilla-central']
                         linux2404-64(-shippable)?/opt: ['mozilla-central']
                         linux2404-64-asan/opt: ['mozilla-central']
-                        android.*: built-projects
+                        android.*: ['mozilla-central']
+                        default: []
+                geckoview-isolated-process:
+                    by-test-platform:
+                        android-em.*/debug: ['trunk']
+                        default: []
+                geckoview-isolated-process+no-fission:
+                    by-test-platform:
+                        android-em.*/debug: ['trunk']
                         default: []
                 no-gpu-process:
                     by-test-platform:
@@ -333,7 +349,6 @@ tasks:
                         default: built-projects
                 default:
                     by-test-platform:
-                        android.*: []
                         .*-wayland.*: []
                         linux.*-asan.*/opt: []
                         default: built-projects
@@ -356,16 +371,16 @@ tasks:
             by-variant:
                 no-fission:
                     by-test-platform:
+                        android.*: 2
                         linux.*: 2
                         default: default
                 webrender-sw+no-fission:
                     by-test-platform:
                         linux.*: 2
                         default: default
-                default:
-                    by-test-platform:
-                        android-em.*/debug-isolated-process: 2
-                        default: default
+                geckoview-isolated-process: 2
+                geckoview-isolated-process+no-fission: 2
+                default: default
 
     reftest-qr:
         description: "Reftest webrender run"

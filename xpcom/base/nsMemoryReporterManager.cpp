@@ -122,7 +122,35 @@ using namespace dom;
 #  define HAVE_RESIDENT_UNIQUE_REPORTER 1
 [[nodiscard]] static nsresult ResidentUniqueDistinguishedAmount(
     int64_t* aN, pid_t aPid = 0) {
-  return GetProcSelfSmapsPrivate(aN, aPid);
+  FILE* f =
+      aPid == 0
+          ? fopen("/proc/self/smaps_rollup", "r")
+          : fopen(nsPrintfCString("/proc/%d/smaps_rollup", aPid).get(), "r");
+  if (!f) {
+    // smaps_rollup is only available since Linux 4.14.
+    return GetProcSelfSmapsPrivate(aN, aPid);
+  }
+
+  size_t privateClean = 0;
+  size_t privateDirty = 0;
+  bool havePrivateClean = false;
+  bool havePrivateDirty = false;
+  char line[256];
+  while (fgets(line, sizeof(line), f)) {
+    if (sscanf(line, "Private_Clean: %zu kB", &privateClean) == 1) {
+      havePrivateClean = true;
+    } else if (sscanf(line, "Private_Dirty: %zu kB", &privateDirty) == 1) {
+      havePrivateDirty = true;
+    }
+  }
+  bool readFailed = ferror(f);
+  fclose(f);
+
+  if (readFailed || !havePrivateClean || !havePrivateDirty) {
+    return NS_ERROR_FAILURE;
+  }
+  *aN = int64_t(privateClean + privateDirty) * 1024;
+  return NS_OK;
 }
 
 #  ifdef HAVE_MALLINFO
@@ -744,10 +772,7 @@ struct SegmentKind {
     return mozilla::HashGeneric(mState, mType, mProtect, mIsStack);
   }
 
-  bool operator==(const SegmentKind& aOther) const {
-    return mState == aOther.mState && mType == aOther.mType &&
-           mProtect == aOther.mProtect && mIsStack == aOther.mIsStack;
-  }
+  bool operator==(const SegmentKind& aOther) const = default;
 };
 
 struct SegmentStats {
@@ -1091,6 +1116,8 @@ NS_IMPL_ISUPPORTS(SystemHeapReporter, nsIMemoryReporter)
 #ifdef XP_UNIX
 
 #  include <sys/resource.h>
+
+#  include <memory>
 
 #  define HAVE_RESIDENT_PEAK_REPORTER 1
 
@@ -2441,9 +2468,9 @@ nsMemoryReporterManager::BlockRegistrationAndHideExistingReporters() {
   mSavedStrongEternalReporters.swap(mStrongEternalReporters);
   mSavedStrongReporters.swap(mStrongReporters);
   mSavedWeakReporters.swap(mWeakReporters);
-  mStrongEternalReporters.reset(new StrongReportersArray());
-  mStrongReporters.reset(new StrongReportersTable());
-  mWeakReporters.reset(new WeakReportersTable());
+  mStrongEternalReporters = std::make_unique<StrongReportersArray>();
+  mStrongReporters = std::make_unique<StrongReportersTable>();
+  mWeakReporters = std::make_unique<WeakReportersTable>();
 
   return NS_OK;
 }

@@ -67,6 +67,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
 #include <memory>
 
 #include "absl/base/casts.h"
@@ -712,7 +713,7 @@ static bool ShouldPickFirstSymbol(const ElfW(Sym) & symbol1,
   // If one of the symbols is weak and the other is not, pick the one
   // this is not a weak symbol.
   char bind1 = ELF_ST_BIND(symbol1.st_info);
-  char bind2 = ELF_ST_BIND(symbol1.st_info);
+  char bind2 = ELF_ST_BIND(symbol2.st_info);
   if (bind1 == STB_WEAK && bind2 != STB_WEAK) return false;
   if (bind2 == STB_WEAK && bind1 != STB_WEAK) return true;
 
@@ -728,7 +729,7 @@ static bool ShouldPickFirstSymbol(const ElfW(Sym) & symbol1,
   // If one of the symbols has no type and the other is not, pick the
   // one that has a type.
   char type1 = ELF_ST_TYPE(symbol1.st_info);
-  char type2 = ELF_ST_TYPE(symbol1.st_info);
+  char type2 = ELF_ST_TYPE(symbol2.st_info);
   if (type1 != STT_NOTYPE && type2 == STT_NOTYPE) {
     return true;
   }
@@ -773,6 +774,25 @@ static ABSL_ATTRIBUTE_NOINLINE FindSymbolResult FindSymbol(
     return SYMBOL_NOT_FOUND;
   }
 
+  // In the ELF specification, sh_entsize is a generic section header field that
+  // holds the entry size in bytes for sections containing fixed-size entries.
+  // For symbol tables (SHT_SYMTAB and SHT_DYNSYM), the ELF specification
+  // mandates that each entry is an ElfW(Sym), so sh_entsize should always equal
+  // sizeof(ElfW(Sym)).
+  //
+  // However, because sh_entsize is read directly from the untrusted object
+  // file, a crafted or corrupt file can specify an unexpected value:
+  // 1. Setting sh_entsize to 0 would cause a division-by-zero (SIGFPE) in the
+  //    num_symbols calculation below.
+  // 2. Setting sh_entsize to a value other than sizeof(ElfW(Sym)) would
+  //    desynchronize our fixed-size ElfW(Sym) buffer reads from the per-entry
+  //    stride in the file.
+  // Reject such malformed tables, mirroring the e_shentsize check we apply to
+  // section headers.
+  if (symtab->sh_entsize != sizeof(ElfW(Sym))) {
+    return SYMBOL_NOT_FOUND;
+  }
+
   // Read multiple symbols at once to save read() calls.
   ElfW(Sym) *buf = reinterpret_cast<ElfW(Sym) *>(tmp_buf);
   const size_t buf_entries = tmp_buf_size / sizeof(buf[0]);
@@ -800,7 +820,7 @@ static ABSL_ATTRIBUTE_NOINLINE FindSymbolResult FindSymbol(
         std::min(num_remaining_symbols, buf_entries);
     const size_t bytes_in_chunk = entries_in_chunk * sizeof(buf[0]);
     const ssize_t len = file->ReadFromOffset(buf, bytes_in_chunk, offset);
-    SAFE_ASSERT(len >= 0);
+    SAFE_ASSERT(len > 0);
     SAFE_ASSERT(static_cast<size_t>(len) % sizeof(buf[0]) == 0);
     const size_t num_symbols_in_buf = static_cast<size_t>(len) / sizeof(buf[0]);
     SAFE_ASSERT(num_symbols_in_buf <= entries_in_chunk);
@@ -1103,8 +1123,8 @@ static ABSL_ATTRIBUTE_NOINLINE bool ReadAddrMap(
   LineReader reader(wrapped_maps_fd.get(), static_cast<char *>(tmp_buf),
                     tmp_buf_size);
   while (true) {
-    const char *cursor;
-    const char *eol;
+    const char *cursor = nullptr;
+    const char *eol = nullptr;
     if (!reader.ReadLine(&cursor, &eol)) {  // EOF or malformed line.
       break;
     }
@@ -1212,7 +1232,8 @@ ObjFile *Symbolizer::FindObjFile(const void *const addr, size_t len) {
       ObjFile *obj = addr_map_.At(lo);
       SAFE_ASSERT(obj->end_addr > addr);
       if (addr >= obj->start_addr &&
-          reinterpret_cast<const char *>(addr) + len <= obj->end_addr)
+          len <= static_cast<size_t>(static_cast<const char*>(obj->end_addr) -
+                                     static_cast<const char*>(addr)))
         return obj;
     }
 
@@ -1319,7 +1340,7 @@ const char *Symbolizer::FindSymbolInCache(const void *const pc) {
   if (pc == nullptr) return nullptr;
 
   SymbolCacheLine *line = GetCacheLine(pc);
-  for (size_t i = 0; i < ABSL_ARRAYSIZE(line->pc); ++i) {
+  for (size_t i = 0; i < std::size(line->pc); ++i) {
     if (line->pc[i] == pc) {
       AgeSymbols(line);
       line->age[i] = 0;
@@ -1337,7 +1358,7 @@ const char *Symbolizer::InsertSymbolInCache(const void *const pc,
   uint32_t max_age = 0;
   size_t oldest_index = 0;
   bool found_oldest_index = false;
-  for (size_t i = 0; i < ABSL_ARRAYSIZE(line->pc); ++i) {
+  for (size_t i = 0; i < std::size(line->pc); ++i) {
     if (line->pc[i] == nullptr) {
       AgeSymbols(line);
       line->pc[i] = pc;
@@ -1697,10 +1718,9 @@ bool Symbolize(const void *pc, char *out, int out_size) {
 ABSL_NAMESPACE_END
 }  // namespace absl
 
-extern "C" bool AbslInternalGetFileMappingHint(const void **start,
-                                               const void **end,
-                                               uint64_t *offset,
-                                               const char **filename) {
+extern "C" bool ABSL_INTERNAL_C_SYMBOL(AbslInternalGetFileMappingHint)(
+    const void** start, const void** end, uint64_t* offset,
+    const char** filename) {
   return absl::debugging_internal::GetFileMappingHint(start, end, offset,
                                                       filename);
 }

@@ -33,9 +33,9 @@ smartwindow-document-title = New Tab
 
 ## Smart Window Toggle Button
 
-toolbar-switcher-customizable-label =
+toolbar-switcher-customizable-label-v2 =
     .label = { -smart-window-brand-name } switcher
-    .tooltiptext = Switch between Smart and Classic windows.
+    .tooltiptext = Switch between Smart and Classic Windows
 
 ai-window-toggleview-switch-classic =
     .label = Classic Window
@@ -98,6 +98,7 @@ smartbar-placeholder-hint-4 = Search the web…
 
 smartbar-mention-typing-placeholder = Tag a tab or site
 smartbar-mentions-list-no-results-label = No results found
+smartbar-mentions-list-tab-groups-label = Recent groups
 smartbar-mentions-list-recent-tabs-label = Recent tabs
 
 ## Context mentions menu toggle button
@@ -407,3 +408,20 @@ aiwindow-starter-planning-plan = Help make a plan
 aiwindow-starter-browsing-history = Find tabs in history
 aiwindow-starter-browsing-summarize = Summarize tabs
 aiwindow-starter-browsing-compare = Compare tabs
+
+## Conversation Starter Scroll Buttons
+## Scrolls the conversation-starter pill row toward its start/end.
+
+aiwindow-starter-scroll-start =
+    .tooltiptext = Scroll back
+    .aria-label = Scroll back
+aiwindow-starter-scroll-end =
+    .tooltiptext = Scroll forward
+    .aria-label = Scroll forward
+
+# Dismisses a "pick up where you left off" resume-activity suggestion pill.
+# Variables:
+#   $text (String) - The suggestion headline being dismissed
+aiwindow-starter-dismiss =
+    .title = Dismiss { $text }
+    .aria-label = Dismiss { $text }

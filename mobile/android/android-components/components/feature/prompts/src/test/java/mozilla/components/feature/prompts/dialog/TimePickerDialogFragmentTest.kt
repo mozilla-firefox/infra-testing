@@ -177,12 +177,59 @@ class TimePickerDialogFragmentTest {
     }
 
     @Test
+    fun `GIVEN a min and a max date WHEN building the calendar constraints THEN both bounds are enforced`() {
+        withTimeZone("UTC") {
+            val validator =
+                dateValidatorOf(
+                    minDate = "2018-01-01".toDate("yyyy-MM-dd"),
+                    maxDate = "2018-12-31".toDate("yyyy-MM-dd"),
+                )
+
+            assertTrue(validator.isValid(epochMillisAt(2018, 1, 1)))
+            assertTrue(validator.isValid(epochMillisAt(2018, 6, 8)))
+            assertTrue(validator.isValid(epochMillisAt(2018, 12, 31)))
+            assertFalse(validator.isValid(epochMillisAt(2017, 12, 31)))
+            assertFalse(validator.isValid(epochMillisAt(2019, 1, 1)))
+        }
+    }
+
+    @Test
+    fun `GIVEN a min date after the max date WHEN building the calendar constraints THEN no day is valid`() {
+        withTimeZone("UTC") {
+            val validator =
+                dateValidatorOf(
+                    minDate = "2018-12-31".toDate("yyyy-MM-dd"),
+                    maxDate = "2018-01-01".toDate("yyyy-MM-dd"),
+                )
+
+            assertFalse(validator.isValid(epochMillisAt(2018, 1, 1)))
+            assertFalse(validator.isValid(epochMillisAt(2018, 6, 8)))
+            assertFalse(validator.isValid(epochMillisAt(2018, 12, 31)))
+        }
+    }
+
+    @Test
     fun `GIVEN no min or max date WHEN building the calendar constraints THEN every day is valid`() {
         withTimeZone("UTC") {
             val validator = dateValidatorOf()
 
             assertTrue(validator.isValid(epochMillisAt(1970, 1, 1)))
             assertTrue(validator.isValid(epochMillisAt(2100, 12, 31)))
+        }
+    }
+
+    @Test
+    fun `GIVEN a min date equal to the max date WHEN building the calendar constraints THEN only that day is valid`() {
+        withTimeZone("UTC") {
+            val validator =
+                dateValidatorOf(
+                    minDate = "2018-05-07".toDate("yyyy-MM-dd"),
+                    maxDate = "2018-05-07".toDate("yyyy-MM-dd"),
+                )
+
+            assertTrue(validator.isValid(epochMillisAt(2018, 5, 7)))
+            assertFalse(validator.isValid(epochMillisAt(2018, 5, 6)))
+            assertFalse(validator.isValid(epochMillisAt(2018, 5, 8)))
         }
     }
 

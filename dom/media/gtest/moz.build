@@ -32,6 +32,7 @@ UNIFIED_SOURCES += [
     "TestAudioClock.cpp",
     "TestAudioCompactor.cpp",
     "TestAudioConfig.cpp",
+    "TestAudioConverter.cpp",
     "TestAudioData.cpp",
     "TestAudioDecoderInputTrack.cpp",
     "TestAudioInputSource.cpp",
@@ -41,8 +42,10 @@ UNIFIED_SOURCES += [
     "TestAudioSampleFormat.cpp",
     "TestAudioSegment.cpp",
     "TestAudioSinkWrapper.cpp",
+    "TestAudioStream.cpp",
     "TestAudioTrackEncoder.cpp",
     "TestAudioTrackGraph.cpp",
+    "TestAVSync.cpp",
     "TestBitWriter.cpp",
     "TestBlankVideoDataCreator.cpp",
     "TestBufferMediaResource.cpp",
@@ -106,6 +109,7 @@ if CONFIG["MOZ_WEBRTC"]:
 
     UNIFIED_SOURCES += [
         "TestAudioInputProcessing.cpp",
+        "TestAV1FmtpParser.cpp",
         "TestCamerasParent.cpp",
         "TestH264FmtpParser.cpp",
         "TestRTCStatsTimestampMaker.cpp",
@@ -119,6 +123,19 @@ if CONFIG["OS_TARGET"] != "Android":
         "TestGMPCrossOrigin.cpp",
         "TestGMPPluginScan.cpp",
         "TestGMPRemoveAndDelete.cpp",
+        "TestSpeechModelMapping.cpp",
+    ]
+
+if CONFIG["MOZ_APPLEMEDIA"]:
+    LOCAL_INCLUDES += [
+        "/dom/media/platforms/apple",
+    ]
+    # Not in UNIFIED_SOURCES: CoreVideo pulls in CoreServices, whose
+    # AERegistry.h declares a global TextRange that is ambiguous against
+    # mozilla::TextRange once a preceding unit's `using namespace mozilla`
+    # is in scope.
+    SOURCES += [
+        "TestAppleVTColorSpace.cpp",
     ]
 
 if CONFIG["OS_TARGET"] == "WINNT":
@@ -141,11 +158,19 @@ if CONFIG["MOZ_WEBRTC"] and CONFIG["OS_TARGET"] != "Android":
     ]
 
 TEST_HARNESS_FILES.gtest += [
+    "../mediasource/test/bug1341228_init.webm",
+    "../mediasource/test/bug2065262_init.webm",
     "../test/adts.aac",
     "../test/av1.mp4",
     "../test/gizmo-frag.mp4",
     "../test/gizmo.mp4",
+    "../test/output_aac.mkv",
+    "../test/output_avc.mkv",
+    "../test/output_hevc.mkv",
+    "../test/output_hevc_aac.mkv",
+    "../test/reftest/color_quads/720p.png.bt2020.pq.tv.yuv420p10.hevc.mp4",
     "../test/vp9cake.webm",
+    "av1-color-metadata.mp4",
     "dash_dashinit.mp4",
     "id3v2header.mp3",
     "negative_duration.mp4",
@@ -157,9 +182,11 @@ TEST_HARNESS_FILES.gtest += [
     "small-shot-partial-xing.mp3",
     "small-shot.mp3",
     "test.webm",
+    "test_av1.mp4",
     "test_case_1224361.vp8.ivf",
     "test_case_1224363.vp8.ivf",
     "test_case_1224369.vp8.ivf",
+    "test_hevc_open_gop.mkv",
     "test_hevc_open_gop.mp4",
     "test_InvalidElementId.webm",
     "test_InvalidElementSize.webm",
@@ -201,3 +228,14 @@ if CONFIG["CC_TYPE"] in ("clang", "clang-cl"):
     CXXFLAGS += [
         "-Wno-inconsistent-missing-override",
     ]
+
+SOURCE_HEADERS += [
+    "GMPTestMonitor.h",
+    "MediaSinkTestUtils.h",
+    "MockDecoderModule.h",
+    "MockGraphInterface.h",
+    "MockMediaDataDemuxer.h",
+    "MockMediaDecoderOwner.h",
+    "MockMediaResource.h",
+    "YUVBufferGenerator.h",
+]

@@ -87,7 +87,7 @@ class JsepSession {
  public:
   explicit JsepSession(const std::string& name)
       : mName(name), mState(kJsepStateStable), mNegotiations(0) {}
-  virtual ~JsepSession() {}
+  virtual ~JsepSession() = default;
 
   virtual UniquePtr<JsepSession> Clone() const = 0;
 
@@ -104,6 +104,13 @@ class JsepSession {
   virtual JsepRtcpMuxPolicy GetRtcpMuxPolicy() const = 0;
   virtual bool RemoteIsIceLite() const = 0;
   virtual std::vector<std::string> GetIceOptions() const = 0;
+
+  // Whether aMid's own recv-relevant local SDP content (its format list and
+  // direction) differs between the pending local offer and the current
+  // (already negotiated) local description. True if there is no current
+  // local description yet, or aMid is not present in it (a brand new mid).
+  // False if there is no pending local offer.
+  virtual bool LocalOfferedRecvParamsChanged(const std::string& aMid) = 0;
 
   virtual nsresult AddDtlsFingerprint(const nsACString& algorithm,
                                       const std::vector<uint8_t>& value) = 0;

@@ -8,6 +8,7 @@
 #include "Units.h"
 #include "mozilla/a11y/AccTypes.h"
 #include "mozilla/a11y/Role.h"
+#include "nsISupportsImpl.h"
 #include "nsRect.h"
 #include "nsStringFwd.h"
 
@@ -171,6 +172,12 @@ class Accessible {
              uint8_t aRoleMapEntryIndex);
 
  public:
+  // AddRef/Release are pure virtual so that RefPtr<Accessible> can be used
+  // generically, while leaving the concrete refcounting implementation
+  // to subclasses (cycle-collected for LocalAccessible, plain virtual for
+  // RemoteAccessible).
+  NS_INLINE_DECL_PURE_VIRTUAL_REFCOUNTING
+
   /**
    * Return an id for this Accessible which is unique within the document.
    * Use nsAccUtils::GetAccessibleByID to retrieve an Accessible given an id
@@ -605,6 +612,12 @@ class Accessible {
 
   bool IsTable() const { return HasGenericType(eTable); }
 
+  /**
+   * Return true for XUL trees and listboxes, which create their own cells
+   * rather than using CachedTableAccessible.
+   */
+  bool IsCustomTable() const { return IsXULTree() || IsXULListbox(); }
+
   bool IsHyperText() const { return HasGenericType(eHyperText); }
 
   bool IsSelect() const { return HasGenericType(eSelect); }
@@ -650,6 +663,8 @@ class Accessible {
 
   bool IsHTMLSpinner() const { return mType == eHTMLSpinnerType; }
 
+  bool IsHTMLRange() const { return mType == eHTMLRangeType; }
+
   bool IsHTMLTable() const { return mType == eHTMLTableType; }
   bool IsHTMLTableCell() const { return mType == eHTMLTableCellType; }
   bool IsHTMLTableRow() const { return mType == eHTMLTableRowType; }
@@ -678,6 +693,8 @@ class Accessible {
 
   bool IsXULLabel() const { return mType == eXULLabelType; }
 
+  bool IsXULListbox() const { return mType == eXULListboxType; }
+
   bool IsXULListItem() const { return mType == eXULListItemType; }
 
   bool IsXULTabpanels() const { return mType == eXULTabpanelsType; }
@@ -691,7 +708,8 @@ class Accessible {
   }
 
   bool IsTextField() const {
-    return mType == eHTMLTextFieldType || mType == eHTMLTextPasswordFieldType;
+    return mType == eHTMLTextFieldType || mType == eHTMLTextPasswordFieldType ||
+           mType == eHTMLSpinnerType;
   }
 
   bool IsDateTimeField() const { return mType == eHTMLDateTimeFieldType; }

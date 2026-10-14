@@ -29,7 +29,8 @@
 #include "prenv.h"
 #ifdef MOZ_ENABLE_DBUS
 #  include <gio/gio.h>
-
+#endif
+#if defined(MOZ_ENABLE_DBUS) || defined(MOZ_WAYLAND)
 #  include "WidgetUtilsGtk.h"
 #endif
 #include "HeadlessScreenHelper.h"
@@ -624,6 +625,12 @@ bool nsAppShell::IsSessionRestoreSupported() {
     }
     if (!StaticPrefs::widget_wayland_session_management_enabled_AtStartup()) {
       LOGW("nsAppShell::IsSessionRestoreSupported(): disabled by pref.");
+      return false;
+    }
+    if (IsGnomeDesktopEnvironment()) {
+      LOGW(
+          "nsAppShell::IsSessionRestoreSupported(): disabled due to Bug "
+          "2064100.");
       return false;
     }
 

@@ -4,6 +4,17 @@
 // scope of the callback. Eslint doesn't know about that.
 /* global ContentTaskUtils */
 
+add_setup(async function () {
+  // test_render_search_handoff below drives the handoff search bar, which the
+  // newtab <moz-urlbar> supersedes when its feature gate is on.
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.newtab.featureGate", false]],
+  });
+  // A preloaded about:newtab is already mounting <moz-urlbar> by the time of
+  // this push, and does not swap it for the handoff bar.
+  NewTabPagePreloading.removePreloadedBrowser(window);
+});
+
 test_newtab({
   test: async function test_render_search_handoff() {
     const selector = "content-search-handoff-ui";

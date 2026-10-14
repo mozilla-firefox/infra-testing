@@ -139,7 +139,9 @@ panel-list:not(:defined) {
   display: none;
 }
 
-panel-item::part(button) {
+// Opt-in for menus that are icon-free. A panel-list embedded by another
+// component may have icons; the default padding leaves room for them.
+.panel-list-no-icons panel-item::part(button) {
   padding-inline-start: var(--space-medium);
 }
 
@@ -186,17 +188,13 @@ panel-item::part(button) {
 @import '../components/Widgets/WidgetCelebration';
 @import '../components/Widgets/Lists/Lists';
 @import '../components/Widgets/FocusTimer/FocusTimer';
-@import '../components/Widgets/SportsWidget/SportsWidget';
-@import '../components/Widgets/SportsWidget/SportsMatchRow';
-@import '../components/Widgets/SportsWidget/SportsResultCelebration';
-@import '../components/Widgets/SportsWidget/WatchLiveModal';
-@import '../components/Widgets/SportsWidget/LivePagination';
 @import '../components/Widgets/Weather/Weather';
 @import '../components/Widgets/Clocks/Clocks';
 @import '../components/Widgets/Privacy/Privacy';
 @import '../components/Widgets/Crossword/Crossword';
 @import '../components/Widgets/Stocks/Stocks';
 @import '../components/Widgets/PictureOfTheDay/PictureOfTheDay';
+@import '../components/Widgets/Horoscopes/Horoscopes';
 @import '../components/Widgets/RecentSearches/RecentSearches';
 @import '../components/Widgets/WeatherForecast/WeatherForecast';
 
@@ -230,6 +228,7 @@ panel-item::part(button) {
 @import '../components/DiscoveryStreamComponents/PromoCard/PromoCard';
 @import '../components/DiscoveryStreamComponents/SectionContextMenu/SectionContextMenu';
 @import '../components/DiscoveryStreamComponents/InterestPicker/InterestPicker';
+@import '../components/DiscoveryStreamComponents/TopicNavigation/TopicNavigation';
 @import '../components/DiscoveryStreamComponents/ReportContent/ReportContent';
 @import '../components/DiscoveryStreamComponents/PersonalizedCard/PersonalizedCard';
 @import '../components/MessageWrapper/MessageWrapper';
@@ -243,5 +242,10 @@ panel-item::part(button) {
 @import './nova/TopSites';
 @import './nova/CardSections';
 @import './nova/DSCard';
+
+// @experiment(remove) { bug 2069496 }
+// After nova/CardSections: reuses its nova-section-card-medium mixin, and the
+// cell overrides have to win over the story card rules.
+@import '../components/Widgets/WidgetsRowAd';
 
 // stylelint-enable no-invalid-position-at-import-rule

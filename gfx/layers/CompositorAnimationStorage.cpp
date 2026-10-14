@@ -23,26 +23,34 @@ namespace geckoprofiler::markers {
 
 using namespace mozilla;
 
-struct CompositorAnimationMarker {
-  static constexpr Span<const char> MarkerTypeName() {
-    return MakeStringSpan("CompositorAnimation");
+struct CompositorAnimationMarker
+    : public BaseMarkerType<CompositorAnimationMarker> {
+  static constexpr const char* Name = "CompositorAnimation";
+  // ClearAnimation, SetAnimation and SampleAnimation all use this type.
+  static constexpr bool ETWStoreName = true;
+  using MS = MarkerSchema;
+  static constexpr MS::Location Locations[] = {
+      MS::Location::MarkerChart,
+      MS::Location::MarkerTable,
+  };
+  static constexpr MS::PayloadField PayloadFields[] = {
+      {"pid", MS::InputType::Int64, "Process Id", MS::Format::String},
+      {"id", MS::InputType::Int64, "Animation Id", MS::Format::String},
+      {"property", MS::InputType::CString, "Animated Property"},
+  };
+  static constexpr const char* TableLabel = "{marker.data.property}";
+  static void TranslateMarkerInputToSchema(void* aContext, uint64_t aId,
+                                           NonCustomCSSPropertyId aProperty) {
+    ETW::OutputMarkerSchema(aContext, CompositorAnimationMarker{},
+                            int64_t(aId >> 32), int64_t(aId & 0xffffffff),
+                            nsCSSProps::GetStringValue(aProperty));
   }
   static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
                                    uint64_t aId,
                                    NonCustomCSSPropertyId aProperty) {
-    aWriter.IntProperty("pid", int64_t(aId >> 32));
-    aWriter.IntProperty("id", int64_t(aId & 0xffffffff));
-    aWriter.StringProperty("property", nsCSSProps::GetStringValue(aProperty));
-  }
-  static MarkerSchema MarkerTypeDisplay() {
-    using MS = MarkerSchema;
-    MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
-    schema.AddKeyLabelFormat("pid", "Process Id", MS::Format::Integer);
-    schema.AddKeyLabelFormat("id", "Animation Id", MS::Format::Integer);
-    schema.AddKeyLabelFormat("property", "Animated Property",
-                             MS::Format::String);
-    schema.SetTableLabel("{marker.data.property}");
-    return schema;
+    StreamJSONMarkerDataImpl(aWriter, int64_t(aId >> 32),
+                             int64_t(aId & 0xffffffff),
+                             nsCSSProps::GetStringValue(aProperty));
   }
 };
 
@@ -238,9 +246,10 @@ void CompositorAnimationStorage::StoreAnimatedValue(
     JankedAnimationMap& aJankedAnimationMap) {
   switch (aProperty) {
     case eCSSProperty_background_color: {
-      SetAnimatedValue(aId, aAnimatedValueEntry,
-                       Servo_AnimationValue_GetColor(aAnimationValues[0],
-                                                     NS_RGBA(0, 0, 0, 0)));
+      StyleAbsoluteColor color;
+      Servo_AnimationValue_GetColor(
+          aAnimationValues[0], &StyleAbsoluteColor::TRANSPARENT_BLACK, &color);
+      SetAnimatedValue(aId, aAnimatedValueEntry, color.ToColor());
       break;
     }
     case eCSSProperty_opacity: {

@@ -18,42 +18,65 @@
  *   User-selected color name for the tab group's label/icons.
  * @property {boolean} collapsed
  *   Whether the tab group is collapsed or expanded in the tab strip.
+ * @property {boolean} [saveOnWindowClose]
+ *   Whether the tab group is to be saved when its window closes. Left out of
+ *   the abbreviated state handed to external callers.
  */
 
 /**
- * @typedef {TabGroupStateData} ClosedTabGroupStateData
- *   State of a tab group that was explicitly closed by the user.
+ * @typedef {object} AdditionalClosedTabGroupState
  * @property {number} closedAt
  *   Timestamp from `Date.now()`.
- * @property {string} sourceWindowId
+ * @property {WindowID} sourceWindowId
  *   Window that the tab group was in before it was closed.
  * @property {ClosedTabStateData[]} tabs
  *   Copy of all tab data for the tabs that were in this tab group
  *   at the time it was closed.
+ * @property {TabSplitViewStateData[]} splitViews
+ *   Copy of all splitview data for the splitviews that were in this tab group
+ *   at the time it was closed.
  */
 
 /**
- * @typedef {TabGroupStateData} SavedTabGroupStateData
- *   State of a tab group that was explicitly saved and closed by the user
- *   or implicitly saved on behalf of the user when the user explicitly closed
- *   a window.
+ * @typedef {TabGroupStateData & AdditionalClosedTabGroupState} ClosedTabGroupStateData
+ *   State of a tab group that was explicitly closed by the user.
+ */
+
+/**
+ * @typedef {object} AdditionalSavedTabGroupState
  * @property {true} saved
  *   Indicates that the tab group was saved explicitly by the user or
  *   automatically by the browser.
  * @property {number} closedAt
  *   Timestamp from `Date.now()`.
- * @property {string} [sourceWindowId]
+ * @property {WindowID} [sourceWindowId]
  *   Window that the tab group was in before a user explicitly saved it. Not set
  *   when the tab group is saved automatically due to a window closing.
  * @property {number} [windowClosedId]
  *   `closedId` of the closed window if this tab group was saved automatically
  *   due to a window closing. Not set when a user explicitly saves a tab group.
- * @property {ClosedTabStateData[]} tabs
+ * @property {SavedGroupTabStateData[]} tabs
  *   Copy of all tab data for the tabs that were in this tab group
  *   at the time it was saved.
  * @property {TabSplitViewStateData[]} splitViews
  *   Copy of all splitview data for the splitviews that were in this tab group
  *   at the time it was saved.
+ * @property {boolean} [removeAfterRestore]
+ *   Whether the tab group is to be forgotten once it has been restored.
+ */
+
+/**
+ * @typedef {Omit<ClosedTabStateData, "pos" | "sourceWindowId"> & Partial<Pick<ClosedTabStateData, "pos" | "sourceWindowId">>} SavedGroupTabStateData
+ *   State of a tab in a saved tab group. Tabs saved automatically, when their
+ *   window closes or when the last session's open groups are saved, have no
+ *   `pos` or `sourceWindowId`, since a saved group reopens its tabs in order.
+ */
+
+/**
+ * @typedef {TabGroupStateData & AdditionalSavedTabGroupState} SavedTabGroupStateData
+ *   State of a tab group that was explicitly saved and closed by the user
+ *   or implicitly saved on behalf of the user when the user explicitly closed
+ *   a window.
  */
 
 /**
@@ -87,16 +110,17 @@ class _TabGroupState {
    *
    * @param {MozTabbrowserTabGroup} tabGroup
    * @param {string} sourceWindowId
-   *   `window.__SSi` window ID of the open window where the tab group is closing.
+   *   SessionStore ID of the open window where the tab group is closing.
    * @returns {ClosedTabGroupStateData}
    */
   closed(tabGroup, sourceWindowId) {
-    let closedData = this.collect(tabGroup);
-    closedData.closedAt = Date.now();
-    closedData.sourceWindowId = sourceWindowId;
-    closedData.tabs = [];
-    closedData.splitViews = [];
-    return closedData;
+    return {
+      ...this.collect(tabGroup),
+      closedAt: Date.now(),
+      sourceWindowId,
+      tabs: [],
+      splitViews: [],
+    };
   }
 
   /**
@@ -108,14 +132,12 @@ class _TabGroupState {
    *
    * @param {MozTabbrowserTabGroup} tabGroup
    * @param {string} sourceWindowId
-   *   `window.__SSi` window ID of the open window where the tab group
+   *   SessionStore ID of the open window where the tab group
    *   is being saved.
    * @returns {SavedTabGroupStateData}
    */
   savedInOpenWindow(tabGroup, sourceWindowId) {
-    let savedData = this.closed(tabGroup, sourceWindowId);
-    savedData.saved = true;
-    return savedData;
+    return { ...this.closed(tabGroup, sourceWindowId), saved: true };
   }
 
   /**
@@ -129,18 +151,21 @@ class _TabGroupState {
    * using the `TabState` class.
    *
    * @param {TabGroupStateData} tabGroupState
-   * @param {number} windowClosedId
+   * @param {number} [windowClosedId]
    *   `WindowStateData.closedId` of the closed window from which this tab group
-   *   should be automatically saved.
+   *   should be automatically saved. Left out when the group is saved out of a
+   *   state that has no closed window to point at, as in session migration.
+   * @returns {SavedTabGroupStateData}
    */
   savedInClosedWindow(tabGroupState, windowClosedId) {
-    let savedData = tabGroupState;
-    savedData.saved = true;
-    savedData.closedAt = Date.now();
-    savedData.windowClosedId = windowClosedId;
-    savedData.tabs = [];
-    savedData.splitViews = [];
-    return savedData;
+    return {
+      ...tabGroupState,
+      saved: true,
+      closedAt: Date.now(),
+      windowClosedId,
+      tabs: [],
+      splitViews: [],
+    };
   }
 
   /**

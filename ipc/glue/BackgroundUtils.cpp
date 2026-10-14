@@ -439,7 +439,7 @@ nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
     SerializeURI(resultPrincipalURI, optionalResultPrincipalURI);
   }
 
-  nsCString triggeringRemoteType;
+  RemoteType triggeringRemoteType;
   rv = aLoadInfo->GetTriggeringRemoteType(triggeringRemoteType);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -562,7 +562,6 @@ nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
       aLoadInfo->GetSandboxedNullPrincipalID(), aLoadInfo->GetSecurityFlags(),
       aLoadInfo->GetSandboxFlags(), aLoadInfo->GetTriggeringSandboxFlags(),
       aLoadInfo->GetTriggeringWindowId(),
-      aLoadInfo->GetTriggeringStorageAccess(),
       aLoadInfo->GetTriggeringFirstPartyClassificationFlags(),
       aLoadInfo->GetTriggeringThirdPartyClassificationFlags(),
       aLoadInfo->InternalContentPolicyType(),
@@ -602,29 +601,29 @@ nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
       aLoadInfo->GetAllowDeprecatedSystemRequests(),
       aLoadInfo->GetIsInDevToolsContext(), aLoadInfo->GetParserCreatedScript(),
       requestMode, aLoadInfo->GetIsFromProcessingFrameAttributes(),
-      aLoadInfo->GetIsMediaRequest(), aLoadInfo->GetIsFromObjectOrEmbed(),
-      cookieJarSettingsArgs, aLoadInfo->GetRequestBlockingReason(),
-      maybePolicyContainerToInherit, aLoadInfo->GetStoragePermission(),
-      aLoadInfo->GetParentIpAddressSpace(), aLoadInfo->GetIpAddressSpace(),
-      overriddenFingerprintingSettingsArg, aLoadInfo->GetIsMetaRefresh(),
+      aLoadInfo->GetIsMediaRequest(), cookieJarSettingsArgs,
+      aLoadInfo->GetRequestBlockingReason(), maybePolicyContainerToInherit,
+      aLoadInfo->GetStoragePermission(), aLoadInfo->GetParentIpAddressSpace(),
+      aLoadInfo->GetIpAddressSpace(), overriddenFingerprintingSettingsArg,
+      aLoadInfo->GetIsMetaRefresh(),
       aLoadInfo->GetActivatedFromNavigationalPrefetch(),
       aLoadInfo->GetLoadingEmbedderPolicy(),
       aLoadInfo->GetIsOriginTrialCoepCredentiallessEnabledForTopLevel(),
       unstrippedURI, interceptionInfoArg, aLoadInfo->GetIsNewWindowTarget(),
       aLoadInfo->GetUserNavigationInvolvement(),
-      aLoadInfo->GetContainerFeaturePolicyInfo(), {});
+      aLoadInfo->GetContainerPermissionsPolicyInfo(), {});
 
   return NS_OK;
 }
 
 nsresult LoadInfoArgsToLoadInfo(const LoadInfoArgs& aLoadInfoArgs,
-                                const nsACString& aOriginRemoteType,
+                                const RemoteType& aOriginRemoteType,
                                 nsILoadInfo** outLoadInfo) {
   return LoadInfoArgsToLoadInfo(aLoadInfoArgs, aOriginRemoteType, nullptr,
                                 outLoadInfo);
 }
 nsresult LoadInfoArgsToLoadInfo(const LoadInfoArgs& aLoadInfoArgs,
-                                const nsACString& aOriginRemoteType,
+                                const RemoteType& aOriginRemoteType,
                                 nsINode* aCspToInheritLoadingContext,
                                 nsILoadInfo** outLoadInfo) {
   RefPtr<LoadInfo> loadInfo;
@@ -638,13 +637,13 @@ nsresult LoadInfoArgsToLoadInfo(const LoadInfoArgs& aLoadInfoArgs,
 }
 
 nsresult LoadInfoArgsToLoadInfo(const LoadInfoArgs& aLoadInfoArgs,
-                                const nsACString& aOriginRemoteType,
+                                const RemoteType& aOriginRemoteType,
                                 LoadInfo** outLoadInfo) {
   return LoadInfoArgsToLoadInfo(aLoadInfoArgs, aOriginRemoteType, nullptr,
                                 outLoadInfo);
 }
 nsresult LoadInfoArgsToLoadInfo(const LoadInfoArgs& loadInfoArgs,
-                                const nsACString& aOriginRemoteType,
+                                const RemoteType& aOriginRemoteType,
                                 nsINode* aCspToInheritLoadingContext,
                                 LoadInfo** outLoadInfo) {
   nsCOMPtr<nsIPrincipal> loadingPrincipal;
@@ -725,8 +724,8 @@ nsresult LoadInfoArgsToLoadInfo(const LoadInfoArgs& loadInfoArgs,
   // This means that the triggering remote type will be reset if a LoadInfo is
   // bounced through a content process, as the LoadInfo can no longer be
   // validated to be coming from the originally specified remote type.
-  nsCString triggeringRemoteType = loadInfoArgs.triggeringRemoteType();
-  if (aOriginRemoteType != NOT_REMOTE_TYPE &&
+  RemoteType triggeringRemoteType = loadInfoArgs.triggeringRemoteType();
+  if (!aOriginRemoteType.IsNotRemote() &&
       aOriginRemoteType != triggeringRemoteType) {
     triggeringRemoteType = aOriginRemoteType;
   }
@@ -873,7 +872,7 @@ nsresult LoadInfoArgsToLoadInfo(const LoadInfoArgs& loadInfoArgs,
   RefPtr<mozilla::net::LoadInfo> loadInfo = new mozilla::net::LoadInfo(
       loadingPrincipal, triggeringPrincipal, principalToInherit,
       topLevelPrincipal, resultPrincipalURI, cookieJarSettings,
-      policyContainerToInherit, loadInfoArgs.containerFeaturePolicyInfo(),
+      policyContainerToInherit, loadInfoArgs.containerPermissionsPolicyInfo(),
       triggeringRemoteType, loadInfoArgs.sandboxedNullPrincipalID(), clientInfo,
       reservedClientInfo, initialClientInfo, controller,
       loadInfoArgs.securityFlags(), loadInfoArgs.sandboxFlags(),
@@ -959,11 +958,10 @@ void LoadInfoToParentLoadInfoForwarder(
       aLoadInfo->GetIsInDevToolsContext(), aLoadInfo->GetParserCreatedScript(),
       requestMode, aLoadInfo->GetTriggeringSandboxFlags(),
       aLoadInfo->GetTriggeringWindowId(),
-      aLoadInfo->GetTriggeringStorageAccess(),
       aLoadInfo->GetServiceWorkerTaintingSynthesized(),
       aLoadInfo->GetDocumentHasUserInteracted(),
       aLoadInfo->GetAllowListFutureDocumentsCreatedFromThisRedirectChain(),
-      cookieJarSettingsArgs, aLoadInfo->GetContainerFeaturePolicyInfo(),
+      cookieJarSettingsArgs, aLoadInfo->GetContainerPermissionsPolicyInfo(),
       aLoadInfo->GetRequestBlockingReason(), aLoadInfo->GetStoragePermission(),
       overriddenFingerprintingSettingsArg, aLoadInfo->GetIsMetaRefresh(),
       isThirdPartyContextToTopWindow, aLoadInfo->GetIsInThirdPartyContext(),
@@ -1016,10 +1014,6 @@ nsresult MergeParentLoadInfoForwarder(
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = aLoadInfo->SetTriggeringWindowId(aForwarderArgs.triggeringWindowId());
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  rv = aLoadInfo->SetTriggeringStorageAccess(
-      aForwarderArgs.triggeringStorageAccess());
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = aLoadInfo->SetHasValidUserGestureActivation(
@@ -1094,9 +1088,9 @@ nsresult MergeParentLoadInfoForwarder(
   rv = aLoadInfo->SetUnstrippedURI(aForwarderArgs.unstrippedURI());
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (aForwarderArgs.containerFeaturePolicyInfo()) {
-    aLoadInfo->SetContainerFeaturePolicyInfo(
-        *aForwarderArgs.containerFeaturePolicyInfo());
+  if (aForwarderArgs.containerPermissionsPolicyInfo()) {
+    aLoadInfo->SetContainerPermissionsPolicyInfo(
+        *aForwarderArgs.containerPermissionsPolicyInfo());
   }
 
   aLoadInfo->SetUserNavigationInvolvement(

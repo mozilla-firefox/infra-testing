@@ -14,7 +14,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   AboutReaderParent: "resource:///actors/AboutReaderParent.sys.mjs",
 });
 
-import MozInputText from "chrome://global/content/elements/moz-input-text.mjs";
+import { MozInputText } from "chrome://global/content/elements/moz-input-text.mjs";
 
 /**
  * A custom element for managing the page assistant input.
@@ -40,6 +40,7 @@ export class PageAssistInput extends MozInputText {
         placeholder=${ifDefined(this.placeholder)}
         aria-label=${ifDefined(this.ariaLabel ?? undefined)}
         aria-describedby="description"
+        title=${ifDefined(this.title)}
         @input=${this.handleInput}
         @change=${this.redispatchEvent}
       />

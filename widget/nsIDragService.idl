@@ -160,6 +160,8 @@ interface nsIDragService : nsISupports
    *                       with one of specified value.  So, the value can be
    *                       DRAGDROP_ACTION_NONE, or one or more values of
    *                       DRAGDROP_ACTION_(MOVE|COPY|LINK).
+   *
+   * @throws NS_ERROR_NOT_AVAILABLE if dragging is suppressed.
    */
   void startDragSessionForTests(in nsISupports aWidgetProvider,
                                 in unsigned long aAllowedEffect);
@@ -171,6 +173,11 @@ interface nsIDragService : nsISupports
   [can_run_script]
   void suppress();
   void unsuppress();
+
+  /**
+   * True if the dragging is disabled.
+   */
+  [notxpcom, nostdcall] readonly attribute boolean isSuppressed;
 
   [notxpcom, nostdcall] boolean maybeAddBrowser(in BrowserParentPtr aBP);
   [notxpcom, nostdcall] boolean removeAllBrowsers();

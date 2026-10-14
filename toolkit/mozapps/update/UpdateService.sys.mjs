@@ -1229,11 +1229,11 @@ function shouldUseService() {
   // This function will return true if the mantenance service should be used if
   // all of the following conditions are met:
   // 1) This build was done with the maintenance service enabled
-  // 2) The maintenance service is installed
+  // 2) The maintenance service is installed (this is skipped in automation)
   // 3) The pref for using the service is enabled
   if (
     !AppConstants.MOZ_MAINTENANCE_SERVICE ||
-    !isServiceInstalled() ||
+    (!Cu.isInAutomation && !isServiceInstalled()) ||
     !Services.prefs.getBoolPref(PREF_APP_UPDATE_SERVICE_ENABLED, true)
   ) {
     LOG("shouldUseService - returning false");
@@ -1935,12 +1935,14 @@ function pingStateAndStatusCodes(aUpdate, aStartup, aStatus) {
         stateCode = 1;
     }
 
-    if (parts.length > 1) {
-      let statusErrorCode = INVALID_UPDATER_STATE_CODE;
-      if (parts[0] == STATE_FAILED) {
-        statusErrorCode = parseInt(parts[1]) || INVALID_UPDATER_STATUS_CODE;
-      }
-      AUSTLMY.pingStatusErrorCode(suffix, statusErrorCode);
+    if (parts[0] == STATE_FAILED) {
+      // Record a missing or non-numeric error code rather than nothing.
+      AUSTLMY.pingStatusErrorCode(
+        suffix,
+        parseInt(parts[1]) || INVALID_UPDATER_STATUS_CODE
+      );
+    } else if (parts.length > 1) {
+      AUSTLMY.pingStatusErrorCode(suffix, INVALID_UPDATER_STATE_CODE);
     }
   }
   AUSTLMY.pingStateCode(suffix, stateCode);
@@ -2094,6 +2096,25 @@ function pollForStagingEnd() {
   };
 
   lazy.setTimeout(pollingFn, pollingIntervalMs);
+}
+
+function submitUpdateReadyPing(aUpdate) {
+  const ALLOWED_STATES = [
+    STATE_APPLIED,
+    STATE_APPLIED_SERVICE,
+    STATE_PENDING,
+    STATE_PENDING_SERVICE,
+    STATE_PENDING_ELEVATE,
+  ];
+  if (!ALLOWED_STATES.includes(aUpdate.state)) {
+    return;
+  }
+
+  Glean.update.targetChannel.set(aUpdate.channel);
+  Glean.update.targetVersion.set(aUpdate.appVersion);
+  Glean.update.targetBuildId.set(aUpdate.buildID);
+  Glean.update.targetDisplayVersion.set(aUpdate.displayVersion);
+  GleanPings.update.submit("ready");
 }
 
 class UpdatePatch {
@@ -2850,9 +2871,11 @@ export class UpdateService {
       return;
     }
     const readyUpdateDir = getReadyUpdateDir();
-    let status = readStatusFile(readyUpdateDir);
-    let statusParts = status.split(":");
-    status = statusParts[0];
+    // pingStateAndStatusCodes() needs the error code after the colon
+    // (ex. "failed: 7"), so keep the untruncated status too.
+    const fullStatus = readStatusFile(readyUpdateDir);
+    const statusParts = fullStatus.split(":");
+    const status = statusParts[0];
     LOG(`UpdateService:#asyncInit - status = "${status}"`);
     if (!this.canUsuallyApplyUpdates) {
       LOG(
@@ -3098,7 +3121,7 @@ export class UpdateService {
         ? lazy.UM.internal.downloadingUpdate
         : lazy.UM.internal.readyUpdate,
       true,
-      status
+      fullStatus
     );
     if (lazy.UM.internal.downloadingUpdate || status == STATE_DOWNLOADING) {
       if (status == STATE_SUCCEEDED) {
@@ -3563,7 +3586,7 @@ export class UpdateService {
     await this.init();
 
     if (!this.disabled && AppConstants.NIGHTLY_BUILD) {
-      // Scalar ID: update.suppress_prompts
+      // Metric ID: update.suppress_prompts
       AUSTLMY.pingSuppressPrompts();
     }
     if (this.disabled || this.manualUpdateOnly) {
@@ -4686,7 +4709,7 @@ export class UpdateManager {
       let activeUpdates = this._loadXMLFileIntoArray(FILE_ACTIVE_UPDATE_XML);
       if (activeUpdates.length) {
         const status = readStatusFile(getReadyUpdateDir());
-
+        console.error(`CPD: got update status: ${status}`);
         // If there are two updates, the first one is the ready update.
         // If there is only 1 update, we don't know which is which. We use the
         // state to figure it out.
@@ -4746,7 +4769,9 @@ export class UpdateManager {
           this._downloadingUpdate.state
       );
     }
-    LOG("UpdateManager:#reload - Reloaded readyUpdate as " + this._readyUpdate);
+    LOG(
+      `UpdateManager:#reload - Reloaded readyUpdate as ${JSON.stringify(this._readyUpdate)}`
+    );
     if (this._readyUpdate) {
       LOG(
         "UpdateManager:#reload - Reloaded readyUpdate state as " +
@@ -5191,6 +5216,7 @@ export class UpdateManager {
           update.state
       );
       Services.obs.notifyObservers(update, "update-staged", update.state);
+      submitUpdateReadyPing(update);
     } finally {
       // This function being called is the one thing that tells us that staging
       // is done so be very sure that we don't exit it leaving the current
@@ -5483,7 +5509,7 @@ export class CheckerService {
         if ("AppUpdatePin" in policies) {
           updatePin = policies.AppUpdatePin;
 
-          // Scalar ID: update.version_pin
+          // Metric ID: update.version_pin
           AUSTLMY.pingPinPolicy(updatePin);
         }
       }
@@ -7328,6 +7354,7 @@ class Downloader {
         );
         transitionState(Ci.nsIApplicationUpdateService.STATE_PENDING);
         Services.obs.notifyObservers(update, "update-downloaded", update.state);
+        submitUpdateReadyPing(update);
       });
     }
 

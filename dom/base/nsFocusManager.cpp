@@ -38,6 +38,7 @@
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/dom/HTMLSlotElement.h"
 #include "mozilla/dom/Navigation.h"
+#include "mozilla/dom/Range.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/Text.h"
 #include "mozilla/dom/WindowGlobalChild.h"
@@ -71,7 +72,6 @@
 #include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
 #include "nsQueryObject.h"
-#include "nsRange.h"
 #include "nsTextControlFrame.h"
 #include "nsThreadUtils.h"
 #include "nsXULPopupManager.h"
@@ -546,7 +546,8 @@ nsFocusManager::MoveFocus(mozIDOMWindowProxy* aWindow, Element* aStartElement,
   NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
 
   // Flush to ensure that focusability of descendants is computed correctly.
-  if (RefPtr<Document> doc = window->GetExtantDoc()) {
+  RefPtr<Document> doc = window->GetExtantDoc();
+  if (doc) {
     doc->FlushPendingNotifications(FlushType::EnsurePresShellInitAndFrames);
   }
 
@@ -574,6 +575,12 @@ nsFocusManager::MoveFocus(mozIDOMWindowProxy* aWindow, Element* aStartElement,
   } else if (aType == MOVEFOCUS_ROOT || aType == MOVEFOCUS_CARET) {
     // no content was found, so clear the focus for these two types.
     ClearFocus(window);
+    if (aType == MOVEFOCUS_CARET && doc) {
+      // If moving the caret causes the focus to be cleared, don't start focus
+      // navigation from the location of the previously-focused content.
+      // Instead, use the new caret position.
+      doc->SetPreviouslyFocusedContent(nullptr);
+    }
   }
 
   LOGFOCUS(("<<MoveFocus end>>"));
@@ -1644,10 +1651,10 @@ void nsFocusManager::ActivateOrDeactivate(nsPIDOMWindowOuter* aWindow,
   }
 
   if (aWindow->GetExtantDoc()) {
+    const RefPtr<nsGlobalWindowInner> win =
+        nsGlobalWindowInner::Cast(aWindow->GetCurrentInnerWindow());
     nsContentUtils::DispatchEventOnlyToChrome(
-        aWindow->GetExtantDoc(),
-        nsGlobalWindowInner::Cast(aWindow->GetCurrentInnerWindow()),
-        aActive ? u"activate"_ns : u"deactivate"_ns, CanBubble::eYes,
+        win, win, aActive ? u"activate"_ns : u"deactivate"_ns, CanBubble::eYes,
         Cancelable::eYes, nullptr);
   }
 }
@@ -3404,7 +3411,7 @@ void nsFocusManager::MoveCaretToFocus(PresShell* aPresShell,
   }
 
   ErrorResult rv;
-  RefPtr<nsRange> newRange = doc->CreateRange(rv);
+  RefPtr<dom::Range> newRange = doc->CreateRange(rv);
   if (NS_WARN_IF(rv.Failed())) {
     rv.SuppressException();
     domSelection->RemoveAllRanges(IgnoreErrors());
@@ -3495,7 +3502,7 @@ void nsFocusManager::GetSelectionLocation(Document* aDocument,
       &aPresShell->ConstFrameSelection()->NormalSelection();
   MOZ_ASSERT(domSelection);
 
-  const nsRange* domRange = domSelection->GetRangeAt(0);
+  const dom::Range* domRange = domSelection->GetRangeAt(0);
   if (!domRange || !domRange->IsPositioned()) {
     return;
   }
@@ -4168,14 +4175,16 @@ void ScopedContentTraversal::Next() {
 
   // If start with the scope owner, get its first "child" in the scope.
   if (mCurrent == mOwner) {
-    if (IsHostOrSlot(mCurrent)) {
-      StyleChildrenIterator iter(mCurrent);
-      SetCurrent(GetNextNonPopover(iter));
+    // For popover invokers, start with the popover, then later go to
+    // its children or shadow root.
+    // https://github.com/whatwg/html/issues/12871
+    if (Element* popover = GetAssociatedPopoverFromInvoker(mCurrent)) {
+      SetCurrent(popover);
       return;
     }
-
-    SetCurrent(GetAssociatedPopoverFromInvoker(mCurrent));
-    MOZ_ASSERT(mCurrent);
+    MOZ_ASSERT(IsHostOrSlot(mCurrent));
+    StyleChildrenIterator iter(mCurrent);
+    SetCurrent(GetNextNonPopover(iter));
     return;
   }
 
@@ -4191,9 +4200,13 @@ void ScopedContentTraversal::Next() {
   nsIContent* current = mCurrent;
   while (true) {
     // Special case for popover, if current is an open popover and its invoker
-    // is mOwner, there is no next node can be traversed, END traversal.
+    // is mOwner, then continue to the invoker's children/shadow root.
+    // https://github.com/whatwg/html/issues/12871
     if (GetOpenPopoverInvoker(current) == mOwner) {
-      SetCurrent(nullptr);
+      // XXX: This needs special handling for the case where an
+      //      invoker is a descendant of its popover. See bug 2068180.
+      StyleChildrenIterator iter(mOwner);
+      SetCurrent(GetNextNonPopover(iter));
       return;
     }
 
@@ -4228,40 +4241,11 @@ static nsIContent* GetPreviousNonPopover(StyleChildrenIterator& aIter) {
   return nullptr;
 }
 
-void ScopedContentTraversal::Prev() {
-  MOZ_ASSERT(mCurrent);
-
-  nsIContent* parent;
-  nsIContent* last;
-  if (mCurrent == mOwner) {
-    // Get last child of mOwner
-    if (IsHostOrSlot(mCurrent)) {
-      StyleChildrenIterator ownerIter(mCurrent, false /* aStartAtBeginning */);
-      last = GetPreviousNonPopover(ownerIter);
-    } else {
-      last = GetAssociatedPopoverFromInvoker(mCurrent);
-      MOZ_ASSERT(last);
-    }
-
-    parent = last;
-  } else {
-    parent = GetOpenPopoverInvoker(mCurrent);
-    if (parent) {
-      MOZ_ASSERT(parent == mOwner);
-      // If current is an open popover, there is no previous node can be
-      // traversed.
-      last = nullptr;
-    } else {
-      // Create parent's iterator and move to mCurrent
-      parent = mCurrent->GetFlattenedTreeParent();
-      StyleChildrenIterator parentIter(parent);
-      parentIter.Seek(mCurrent);
-
-      // Get previous sibling which is not an open popover with invoker.
-      last = GetPreviousNonPopover(parentIter);
-    }
-  }
-
+// Get last descendant of aContent in flat tree order, not including
+// things in other scopes.
+static nsIContent* GetLastDescendantInSameScope(nsIContent& aContent) {
+  nsIContent* parent = nullptr;
+  nsIContent* last = &aContent;
   while (last) {
     parent = last;
     if (IsScopeOwner(parent)) {
@@ -4273,9 +4257,60 @@ void ScopedContentTraversal::Prev() {
     StyleChildrenIterator iter(parent, false /* aStartAtBeginning */);
     last = GetPreviousNonPopover(iter);
   }
+  MOZ_ASSERT(FindScopeOwner(parent) == FindScopeOwner(&aContent));
+  return parent;
+}
 
-  // If parent is mOwner and no previous sibling remains, END traversal
-  SetCurrent(parent == mOwner ? nullptr : parent);
+void ScopedContentTraversal::Prev() {
+  MOZ_ASSERT(mCurrent);
+
+  nsIContent* parent;
+  nsIContent* last;
+  if (mCurrent == mOwner) {
+    // Get last child of mOwner
+    StyleChildrenIterator ownerIter(mCurrent, false /* aStartAtBeginning */);
+    last = GetPreviousNonPopover(ownerIter);
+    parent = mOwner;
+  } else {
+    parent = GetOpenPopoverInvoker(mCurrent);
+    if (parent) {
+      MOZ_ASSERT(parent == mOwner);
+      // If current is an open popover, there is no previous node can be
+      // traversed.
+      SetCurrent(nullptr);
+      return;
+    } else {
+      // Create parent's iterator and move to mCurrent
+      parent = mCurrent->GetFlattenedTreeParent();
+      StyleChildrenIterator parentIter(parent);
+      parentIter.Seek(mCurrent);
+
+      // Get previous sibling which is not an open popover with invoker.
+      last = GetPreviousNonPopover(parentIter);
+    }
+  }
+
+  if (last) {
+    // Current content has a previous sibling, so go to the
+    // sibling's last descendant.
+    last = GetLastDescendantInSameScope(*last);
+  } else {
+    // Current content has no previous sibling, so go to its parent.
+    last = parent;
+  }
+
+  if (last == mOwner) {
+    // Finished visiting all of mOwner's shadow-including children.
+    // If mOwner is a popover invoker, we still have to go through
+    // its associated popover.
+    // https://github.com/whatwg/html/issues/12871
+    if (Element* popover = GetAssociatedPopoverFromInvoker(mOwner)) {
+      // XXX: This needs special handling for the case where an
+      //      invoker is a descendant of its popover. See bug 2068180.
+      last = GetLastDescendantInSameScope(*popover);
+    }
+  }
+  SetCurrent(last == mOwner ? nullptr : last);
 }
 
 static nsGenericHTMLElement* GetAssociatedPopoverFromInvoker(
@@ -4305,6 +4340,9 @@ static bool IsScopeOwner(const nsIContent* aContent) {
  * Returns scope owner of aContent.
  * A scope owner is either a shadow host, or slot, or a popover invoker.
  * See https://html.spec.whatwg.org/#associated-focus-navigation-owner.
+ * This differs slightly from the spec in that children of popover invokers
+ * are considered to be owned by the invoker. This makes the focus navigation
+ * handling simpler, and shouldn't change the order of focus navigation.
  */
 static nsIContent* FindScopeOwner(nsIContent* aContent) {
   nsIContent* currentContent = aContent;

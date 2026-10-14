@@ -21,7 +21,9 @@ exclude = [
   "CrashGenerationServer_init",
   "CrashGenerationServer_shutdown",
   "CrashGenerationServer_set_path",
+  "WriteMinidumpForProcess",
 ]
+include = ["BreakpadChar"]
 
 [parse]
 parse_deps = true

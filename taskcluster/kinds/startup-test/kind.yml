@@ -23,14 +23,12 @@ transforms:
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
-    run-on-repo-type: [hg]
     name: startup-test
     description: Check whether or not a product crashes on startup
     run-on-projects: ['mozilla-central']
     worker:
         max-run-time: 3600
     run:
-        clone-with: hg
         sparse-profile: startup-test
     attributes:
         build_type: opt
@@ -45,7 +43,6 @@ tasks:
         dependencies:
             build-signing: build-signing-linux64-shippable/opt
         run:
-            clone-with: hg
             using: run-task
             cwd: "{checkout}"
         extra-config:
@@ -65,7 +62,6 @@ tasks:
         dependencies:
             build-signing: build-signing-linux64-aarch64-shippable/opt
         run:
-            clone-with: hg
             using: run-task
             cwd: "{checkout}"
         extra-config:
@@ -85,7 +81,6 @@ tasks:
         dependencies:
             repackage: repackage-macosx64-shippable/opt
         run:
-            clone-with: hg
             using: mach
         extra-config:
             upstream_kind: repackage
@@ -106,7 +101,6 @@ tasks:
         dependencies:
             repackage-signing: repackage-signing-win32-shippable/opt
         run:
-            clone-with: hg
             using: mach
         extra-config:
             upstream_kind: repackage-signing
@@ -123,7 +117,6 @@ tasks:
         dependencies:
             repackage-signing: repackage-signing-win64-shippable/opt
         run:
-            clone-with: hg
             using: mach
         extra-config:
             upstream_kind: repackage-signing
@@ -140,7 +133,6 @@ tasks:
         dependencies:
             repackage-signing: repackage-signing-win64-aarch64-shippable/opt
         run:
-            clone-with: hg
             using: mach
         extra-config:
             upstream_kind: repackage-signing

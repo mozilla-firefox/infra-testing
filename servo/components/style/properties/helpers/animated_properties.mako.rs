@@ -25,7 +25,7 @@ use crate::properties::{
 };
 use std::ptr;
 use std::mem;
-use rustc_hash::FxHashMap;
+use crate::FxHashMap;
 use super::ComputedValues;
 #[cfg(feature = "servo")] use crate::context::SharedStyleContext;
 use crate::derives::*;
@@ -224,8 +224,10 @@ impl AnimationValue {
             ${" |\n".join("{}(ref value)".format(prop.camel_case) for prop in props)} => {
                 % if to_animated:
                 let value = ToAnimatedValue::from_animated_value(value.clone());
-                % endif
                 let value = ${ty}::from_computed_value(&value);
+                % else:
+                let value = ${ty}::from_computed_value(value);
+                % endif
                 % if boxed:
                 let value = Box::new(value);
                 % endif
@@ -348,9 +350,9 @@ impl AnimationValue {
                         };
                         let computed = style_struct
                         % if prop.logical:
-                            .clone_${prop.ident}(context.builder.writing_mode);
+                            .slow_clone_${prop.ident}(context.builder.writing_mode);
                         % else:
-                            .clone_${prop.ident}();
+                            .slow_clone_${prop.ident}();
                         % endif
 
                         % if prop.animation_type != "discrete":
@@ -417,14 +419,14 @@ impl AnimationValue {
     ) -> bool {
         let longhand = match property {
             PropertyDeclarationId::Longhand(id) => id,
-            PropertyDeclarationId::Custom(ref name) => {
+            PropertyDeclarationId::Custom(name) => {
                 // FIXME(bug 1869476): This should use a stylist to determine whether the name
                 // corresponds to an inherited custom property and then choose the
                 // inherited/non_inherited map accordingly.
                 let before = before.custom_properties();
-                let before_value = before.inherited.get(*name).or_else(|| before.non_inherited.get(*name));
+                let before_value = before.inherited.get(name).or_else(|| before.non_inherited.get(name));
                 let after = after.custom_properties();
-                let after_value = after.inherited.get(*name).or_else(|| after.non_inherited.get(*name));
+                let after_value = after.inherited.get(name).or_else(|| after.non_inherited.get(name));
                 return before_value != after_value
             }
         };
@@ -446,12 +448,12 @@ impl AnimationValue {
     ) -> Option<Self> {
         let property = match property {
             PropertyDeclarationId::Longhand(id) => id,
-            PropertyDeclarationId::Custom(ref name) => {
+            PropertyDeclarationId::Custom(name) => {
                 // FIXME(bug 1869476): This should use a stylist to determine whether the name
                 // corresponds to an inherited custom property and then choose the
                 // inherited/non_inherited map accordingly.
                 let p = &style.custom_properties();
-                let value = p.inherited.get(*name).or_else(|| p.non_inherited.get(*name));
+                let value = p.inherited.get(name).or_else(|| p.non_inherited.get(name));
                 return Some(AnimationValue::Custom(CustomAnimatedValue::from_computed(name, value)))
             }
         };
@@ -460,7 +462,7 @@ impl AnimationValue {
             % for prop in data.longhands:
             % if prop.animatable and not prop.logical:
             LonghandId::${prop.camel_case} => {
-                let computed = style.clone_${prop.ident}();
+                let computed = style.slow_clone_${prop.ident}();
                 AnimationValue::${prop.camel_case}(
                 % if prop.animation_type == "discrete":
                     computed
@@ -484,7 +486,7 @@ impl AnimationValue {
         match self {
             % for prop in data.longhands:
             % if prop.animatable and not prop.logical:
-            AnimationValue::${prop.camel_case}(ref value) => {
+            AnimationValue::${prop.camel_case}(value) => {
                 let value: longhands::${prop.ident}::computed_value::T =
                 % if prop.animation_type != "discrete":
                     ToAnimatedValue::from_animated_value(value.clone());
@@ -657,10 +659,9 @@ impl Animate for Display {
     fn animate(&self, other: &Self, procedure: Procedure) -> Result<Self, ()> {
         match procedure {
             Procedure::Interpolate { progress } => {
-                debug_assert!(
-                    static_prefs::pref!("layout.css.display-animations.enabled"),
-                    "animating display with the pref disabled",
-                );
+                if !crate::pref!("layout.css.display-animations.enabled") {
+                    return animate_discrete(self, other, procedure)
+                };
                 let (this_weight, other_weight) = procedure.weights();
                 match (*self, *other) {
                     (_, Display::None) => Ok(if this_weight > 0.0 { *self } else { *other }),
@@ -769,7 +770,7 @@ impl Animate for AnimatedFilter {
         use crate::values::animated::animate_multiplicative_factor;
         match (self, other) {
             % for func in ['Blur', 'DropShadow', 'Grayscale', 'HueRotate', 'Invert', 'Sepia']:
-            (&Filter::${func}(ref this), &Filter::${func}(ref other)) => {
+            (Filter::${func}(this), Filter::${func}(other)) => {
                 Ok(Filter::${func}(this.animate(other, procedure)?))
             },
             % endfor

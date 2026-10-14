@@ -16,13 +16,17 @@
 #include "MockCubeb.h"
 #include "WavDumper.h"
 #include "mozilla/Components.h"
+#include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/GenericFactory.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/StateMirroring.h"
 #include "mozilla/gtest/MozHelpers.h"
 #include "mozilla/gtest/WaitFor.h"
+#include "mozilla/ipc/IOThread.h"
 #include "nsComponentManager.h"
+#include "nsITargetShutdownTask.h"
+#include "nsIThreadInternal.h"
 #include "nsXPCOMPrivate.h"
 
 using namespace mozilla;
@@ -336,6 +340,47 @@ TEST_WithTailDispatch(TestAudioTrackGraph, StreamName) {
   });
   nsCString name = WaitFor(stream->NameSetEvent());
   EXPECT_EQ(name, name2);
+
+  // Test has finished. Destroy the track to shutdown the MTG.
+  DispatchMethod(dummySource, &SourceMediaTrack::Destroy);
+  WaitFor(cubeb->StreamDestroyEvent());
+}
+
+TEST_WithTailDispatch(TestAudioTrackGraph,
+                      AudioDriverImmediateStreamNameChange) {
+  MockCubeb* cubeb = new MockCubeb();
+  CubebUtils::ForceSetCubebContext(cubeb->AsCubebContext());
+
+  // Initialize a graph with an audio thread driver,
+  // which will immediately start a fallback system clock driver.
+  MediaTrackGraphImpl* graph = MediaTrackGraphImpl::GetInstance(
+      MediaTrackGraph::AUDIO_THREAD_DRIVER, /*Window ID*/ 1,
+      CubebUtils::PreferredSampleRate(/* aShouldResistFingerprinting */ false),
+      /*OutputDeviceID*/ reinterpret_cast<cubeb_devid>(1),
+      AbstractThread::MainThread());
+  nsLiteralCString name0("name0");
+  graph->CurrentDriver()->SetStreamName(name0);
+
+  // Dummy track to start the graph rolling.
+  RefPtr<SourceMediaTrack> dummySource;
+  // Test a name change immediately after the fallback driver starts.
+  nsLiteralCString name1("name1");
+  DispatchFunction([&] {
+    dummySource = graph->CreateSourceTrack(MediaSegment::AUDIO);
+    graph->QueueControlMessageWithNoShutdown(
+        [&] { graph->CurrentDriver()->SetStreamName(name1); });
+  });
+
+  RefPtr<SmartMockCubebStream> stream = WaitFor(cubeb->StreamInitEvent());
+  // Connect a listener to ensure that this (main) thread gets events if the
+  // name has not yet changed.
+  MediaEventListener nameSetListener = stream->NameSetEvent().Connect(
+      NS_GetCurrentThread(), [](const nsCString&) {});
+  // Wait for a name change, if it has not yet changed.
+  SpinEventLoopUntil("TestAudioTrackGraph, OfflineDestruction"_ns,
+                     [&] { return stream->StreamName() != name0; });
+  nameSetListener.Disconnect();
+  EXPECT_EQ(stream->StreamName(), name1);
 
   // Test has finished. Destroy the track to shutdown the MTG.
   DispatchMethod(dummySource, &SourceMediaTrack::Destroy);
@@ -3866,11 +3911,12 @@ class TestRunnable : public Runnable, public nsIDiscardableRunnable {
     mCheckpoint.Call(nsPrintfCString("%s::%s", mName, __func__).get());
   }
 
- private:
+ protected:
   ~TestRunnable() override {
     mCheckpoint.Call(nsPrintfCString("~%s", mName).get());
   }
 
+ private:
   const char* mName;
   const bool mDiscardable;
   MockFunction<void(const char*)>& mCheckpoint;
@@ -4096,6 +4142,388 @@ TEST(TestAudioTrackGraph, ShutdownMessages)
   // reference, and before the next test might ForceSetCubebContext() to
   // destroy our cubeb.
   (void)WaitFor(destroyPromise).unwrap()[0];
+  ProcessEventQueue();
+}
+
+namespace {
+// Dispatches to the graph from a microtask. The microtask checkpoint runs
+// after XPCOMThreadWrapper::AfterProcessNextEvent has fired the tail
+// dispatcher for this turn of the event loop, so the runnable lands in a fresh
+// tail dispatcher, and will not drain before the graph processes main thread
+// updates in stable state.
+class MicroTaskDispatcher final : public MicroTaskRunnable {
+ public:
+  MicroTaskDispatcher(MediaTrackGraphImpl* aGraph, const char* aName,
+                      MockFunction<void(const char*)>& aCheckpoint)
+      : mGraph(aGraph), mName(aName), mCheckpoint(aCheckpoint) {}
+
+  MOZ_CAN_RUN_SCRIPT void Run(AutoSlowOperation&) override {
+    MOZ_ALWAYS_SUCCEEDS(mGraph->Dispatch(MakeAndAddRef<TestRunnable>(
+        mName, /*aDiscardable=*/true, mCheckpoint)));
+  }
+
+ private:
+  MediaTrackGraphImpl* const mGraph;
+  const char* const mName;
+  MockFunction<void(const char*)>& mCheckpoint;
+};
+}  // namespace
+
+// A control message queued from a microtask during the graph's forced-shutdown
+// handover stays in the tail dispatcher, since XPCOMThreadWrapper cannot fire
+// the tail dispatcher between the microtask checkpoint and stable state.
+// This test checks that the graph's stable state task drains such messages.
+TEST(TestAudioTrackGraph, TailDispatchFromMicroTaskDuringShutdown)
+{
+  MockCubeb* cubeb = new MockCubeb(MockCubeb::RunningMode::Manual);
+  CubebUtils::ForceSetCubebContext(cubeb->AsCubebContext());
+
+  MediaTrackGraphImpl* graph = MediaTrackGraphImpl::GetInstance(
+      MediaTrackGraph::SYSTEM_THREAD_DRIVER, /*Window ID*/ 1,
+      CubebUtils::PreferredSampleRate(/* aShouldResistFingerprinting */ false),
+      nullptr, AbstractThread::MainThread());
+
+  RefPtr processedTrack = new MockProcessedMediaTrack(graph->GraphRate());
+
+  MockFunction<void(const char* name)> checkpoint;
+  EXPECT_CALL(*processedTrack, AddListenerImpl);
+  EXPECT_CALL(*processedTrack, ProcessInput).Times(AtLeast(1));
+  EXPECT_CALL(*processedTrack, RemoveListenerImpl);
+  {
+    InSequence s;
+    EXPECT_CALL(checkpoint, Call(StrEq("Now manual")));
+    EXPECT_CALL(checkpoint, Call(StrEq("Forced shutdown")));
+    EXPECT_CALL(checkpoint, Call(StrEq("Before main thread cleanup")));
+    EXPECT_CALL(checkpoint, Call(StrEq("After main thread cleanup")));
+
+    // Both of these TestRunnables were queued from a microtask, i.e. after the
+    // tail dispatcher had fired for that turn. Neither may be left in its tail
+    // dispatcher.
+    EXPECT_CALL(checkpoint, Call(StrEq("MicroTask_OnShutdown::OnDiscard")));
+    EXPECT_CALL(checkpoint, Call(StrEq("~MicroTask_OnShutdown")));
+    EXPECT_CALL(checkpoint, Call(StrEq("MicroTask_AfterShutdown::OnDiscard")));
+    EXPECT_CALL(checkpoint, Call(StrEq("~MicroTask_AfterShutdown")));
+
+    EXPECT_CALL(checkpoint, Call(StrEq("Final call")));
+  }
+
+  const auto QueueMicroTaskDispatch([&](const char* aName) {
+    CycleCollectedJSContext* ccjs = CycleCollectedJSContext::Get();
+    MOZ_RELEASE_ASSERT(ccjs);
+    ccjs->DispatchToMicroTask(
+        MakeAndAddRef<MicroTaskDispatcher>(graph, aName, checkpoint));
+  });
+
+  RefPtr<OnFallbackListener> fallbackListener;
+  DispatchFunction([&] {
+    graph->AddTrack(processedTrack);
+    processedTrack->AddAudioOutput(reinterpret_cast<void*>(1), nullptr);
+    fallbackListener = new OnFallbackListener(processedTrack);
+    processedTrack->AddListener(fallbackListener);
+  });
+
+  RefPtr<SmartMockCubebStream> stream = WaitFor(cubeb->StreamInitEvent());
+  while (stream->State().isNothing()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  EXPECT_EQ(*stream->State(), CUBEB_STATE_STARTED);
+  DispatchFunction([&] {
+    while (fallbackListener->OnFallback()) {
+      EXPECT_EQ(stream->ManualDataCallback(WEBAUDIO_BLOCK_SIZE),
+                MockCubebStream::KeepProcessing::Yes);
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    checkpoint.Call("Now manual");
+  });
+
+  auto destroyPromise = TakeN(cubeb->StreamDestroyEvent(), 1);
+  DispatchFunction([&] { graph->ForceShutDown(); });
+
+  DispatchFunction([&] {
+    // Process the ForceShutdown message.
+    EXPECT_EQ(stream->ManualDataCallback(0),
+              MockCubebStream::KeepProcessing::No);
+    checkpoint.Call("Forced shutdown");
+  });
+
+  // The control message dispatched from this microtask will be handled in the
+  // main-thread-cleanup stable state runnable.
+  DispatchFunction([&] {
+    QueueMicroTaskDispatch("MicroTask_OnShutdown");
+    checkpoint.Call("Before main thread cleanup");
+    // As this function exits, the event loop runs the microtask checkpoint,
+    // which dispatches the MicroTask_OnShutdown runnable to the graph. It only
+    // reaches the tail dispatcher, which fires in the event loop's next
+    // OnProcessNextEvent event, i.e. after "After main thread cleanup". The
+    // tail dispatcher firing posts the stable state runnable, which runs after
+    // the second microtask. This is why MicroTask_OnShutdown is expected to be
+    // processed after the "After main thread cleanup" event.
+
+    // Note that the graph processing the forced shutdown queued a regular
+    // runnable to the main thread, to queue the stable state runnable. It gets
+    // queued after all the other tasks already queued in the test and is
+    // therefore irrelevant.
+  });
+
+  DispatchFunction([&] {
+    checkpoint.Call("After main thread cleanup");
+    QueueMicroTaskDispatch("MicroTask_AfterShutdown");
+  });
+
+  DispatchFunction([&] {
+    processedTrack->RemoveListener(fallbackListener);
+    processedTrack->Destroy();
+  });
+
+  DispatchFunction([&] { checkpoint.Call("Final call"); });
+
+  (void)WaitFor(destroyPromise).unwrap()[0];
+  ProcessEventQueue();
+}
+
+namespace {
+class TestShutdownTask final : public nsITargetShutdownTask {
+ public:
+  NS_DECL_THREADSAFE_ISUPPORTS
+
+  TestShutdownTask(MediaTrackGraphImpl* aGraph,
+                   MockFunction<void(const char*)>& aCheckpoint)
+      : mGraph(aGraph), mCheckpoint(aCheckpoint) {}
+
+  void TargetShutdown() override {
+    EXPECT_TRUE(NS_IsMainThread());
+    // Consumers of the graph as an event target, e.g. ipc::MessageChannel,
+    // release-assert on this.
+    EXPECT_TRUE(mGraph->IsOnCurrentThread());
+    mCheckpoint.Call("TargetShutdown");
+  }
+
+ private:
+  ~TestShutdownTask() = default;
+
+  const RefPtr<MediaTrackGraphImpl> mGraph;
+  MockFunction<void(const char*)>& mCheckpoint;
+};
+}  // namespace
+
+NS_IMPL_ISUPPORTS(TestShutdownTask, nsITargetShutdownTask)
+
+TEST(TestAudioTrackGraph, TargetShutdownTaskOnMainThread)
+{
+  MockCubeb* cubeb = new MockCubeb(MockCubeb::RunningMode::Manual);
+  CubebUtils::ForceSetCubebContext(cubeb->AsCubebContext());
+
+  RefPtr<MediaTrackGraphImpl> graph = MediaTrackGraphImpl::GetInstance(
+      MediaTrackGraph::SYSTEM_THREAD_DRIVER, /*Window ID*/ 1,
+      CubebUtils::PreferredSampleRate(/* aShouldResistFingerprinting */ false),
+      nullptr, AbstractThread::MainThread());
+
+  // Mocks and expectations.
+  RefPtr processedTrack = new MockProcessedMediaTrack(graph->GraphRate());
+
+  MockFunction<void(const char* name)> checkpoint;
+  EXPECT_CALL(*processedTrack, AddListenerImpl);
+  EXPECT_CALL(*processedTrack, ProcessInput).Times(AtLeast(1));
+  EXPECT_CALL(*processedTrack, RemoveListenerImpl);
+  // Run from MediaTrackGraphShutDownRunnable, on the main thread, once the
+  // graph has stopped and no longer has a driver to identify its thread with.
+  // See bug 2065072.
+  EXPECT_CALL(checkpoint, Call(StrEq("TargetShutdown")));
+  {
+    InSequence s;
+    EXPECT_CALL(checkpoint, Call(StrEq("Now manual")));
+    EXPECT_CALL(checkpoint, Call(StrEq("Forced shutdown")));
+    EXPECT_CALL(checkpoint, Call(StrEq("Final call")));
+  }
+
+  RefPtr<OnFallbackListener> fallbackListener;
+  DispatchFunction([&] {
+    // Add a track to maintain an output-only audio driver.
+    graph->AddTrack(processedTrack);
+    processedTrack->AddAudioOutput(reinterpret_cast<void*>(1), nullptr);
+    fallbackListener = new OnFallbackListener(processedTrack);
+    processedTrack->AddListener(fallbackListener);
+  });
+
+  RefPtr<SmartMockCubebStream> stream = WaitFor(cubeb->StreamInitEvent());
+  while (stream->State().isNothing()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  EXPECT_EQ(*stream->State(), CUBEB_STATE_STARTED);
+  // Wait for the AudioCallbackDriver to come into effect.
+  DispatchFunction([&] {
+    while (fallbackListener->OnFallback()) {
+      EXPECT_EQ(stream->ManualDataCallback(WEBAUDIO_BLOCK_SIZE),
+                MockCubebStream::KeepProcessing::Yes);
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    // The graph is now run by ManualDataCallback().
+    checkpoint.Call("Now manual");
+  });
+
+  RefPtr shutdownTask = new TestShutdownTask(graph, checkpoint);
+  DispatchFunction([&] {
+    MOZ_ALWAYS_SUCCEEDS(graph->Dispatch(NS_NewRunnableFunction(__func__, [&] {
+      // Register from the graph thread, as ipc::MessageChannel::Open() does.
+      EXPECT_TRUE(graph->IsOnCurrentThread());
+      MOZ_ALWAYS_SUCCEEDS(graph->RegisterShutdownTask(shutdownTask));
+    })));
+  });
+
+  auto destroyPromise = TakeN(cubeb->StreamDestroyEvent(), 1);
+  DispatchFunction([&] {
+    // Run the message that registers the shutdown task.
+    EXPECT_EQ(stream->ManualDataCallback(WEBAUDIO_BLOCK_SIZE),
+              MockCubebStream::KeepProcessing::Yes);
+  });
+
+  DispatchFunction([&] { graph->ForceShutDown(); });
+
+  DispatchFunction([&] {
+    // Process the ForceShutdown message, the graph's final iteration.
+    EXPECT_EQ(stream->ManualDataCallback(0),
+              MockCubebStream::KeepProcessing::No);
+
+    checkpoint.Call("Forced shutdown");
+  });
+
+  DispatchFunction([&] {
+    processedTrack->RemoveListener(fallbackListener);
+    processedTrack->Destroy();
+  });
+
+  DispatchFunction([&] { checkpoint.Call("Final call"); });
+
+  // Ensure the stream is no longer used by its MockCubeb before releasing our
+  // reference, and before the next test might ForceSetCubebContext() to
+  // destroy our cubeb.
+  (void)WaitFor(destroyPromise).unwrap()[0];
+  ProcessEventQueue();
+}
+
+namespace {
+// Stands in for ipc::MessageChannel::MessageTask. When a dispatched IPC
+// message is discarded, MessageTask::Cancel() calls
+// ipc::MessageChannel::AssertWorkerThread(), which release-asserts
+// IsOnCurrentThread() on the channel's worker thread -- the graph, for a
+// channel opened on the graph thread.
+class IPCTestRunnable final : public TestRunnable {
+ public:
+  IPCTestRunnable(MediaTrackGraphImpl* aGraph,
+                  MockFunction<void(const char*)>& aCheckpoint)
+      : TestRunnable("IPCDispatch", /*aDiscardable=*/true, aCheckpoint),
+        mGraph(aGraph) {}
+
+  void OnDiscard() override {
+    EXPECT_TRUE(mGraph->IsOnCurrentThread());
+    TestRunnable::OnDiscard();
+  }
+
+ private:
+  ~IPCTestRunnable() = default;
+
+  const RefPtr<MediaTrackGraphImpl> mGraph;
+};
+}  // namespace
+
+TEST(TestAudioTrackGraph, IOThreadDispatchDuringShutdown)
+{
+  ASSERT_TRUE(ipc::IOThread::Get());
+
+  MockCubeb* cubeb = new MockCubeb(MockCubeb::RunningMode::Manual);
+  CubebUtils::ForceSetCubebContext(cubeb->AsCubebContext());
+
+  RefPtr<MediaTrackGraphImpl> graph = MediaTrackGraphImpl::GetInstance(
+      MediaTrackGraph::SYSTEM_THREAD_DRIVER, /*Window ID*/ 1,
+      CubebUtils::PreferredSampleRate(/* aShouldResistFingerprinting */ false),
+      nullptr, AbstractThread::MainThread());
+
+  // Mocks and expectations.
+  RefPtr processedTrack = new MockProcessedMediaTrack(graph->GraphRate());
+
+  MockFunction<void(const char* name)> checkpoint;
+  EXPECT_CALL(*processedTrack, AddListenerImpl);
+  EXPECT_CALL(*processedTrack, ProcessInput).Times(AtLeast(1));
+  EXPECT_CALL(*processedTrack, RemoveListenerImpl);
+  {
+    InSequence s;
+    EXPECT_CALL(checkpoint, Call(StrEq("Now manual")));
+    EXPECT_CALL(checkpoint, Call(StrEq("Final track removed")));
+    // The graph is no longer processing messages, so the dispatch is discarded
+    // on the main thread rather than run. For an ipc::MessageChannel this is
+    // MessageTask::Cancel(), which asserts that the main thread is now the
+    // graph's thread, as IPCTestRunnable::OnDiscard() does here.
+    EXPECT_CALL(checkpoint, Call(StrEq("IPCDispatch::OnDiscard")));
+    EXPECT_CALL(checkpoint, Call(StrEq("~IPCDispatch")));
+  }
+
+  RefPtr<OnFallbackListener> fallbackListener;
+  DispatchFunction([&] {
+    // Add a track to maintain an output-only audio driver.
+    graph->AddTrack(processedTrack);
+    processedTrack->AddAudioOutput(reinterpret_cast<void*>(1), nullptr);
+    fallbackListener = new OnFallbackListener(processedTrack);
+    processedTrack->AddListener(fallbackListener);
+  });
+
+  RefPtr<SmartMockCubebStream> stream = WaitFor(cubeb->StreamInitEvent());
+  while (stream->State().isNothing()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  EXPECT_EQ(*stream->State(), CUBEB_STATE_STARTED);
+  // Wait for the AudioCallbackDriver to come into effect.
+  DispatchFunction([&] {
+    while (fallbackListener->OnFallback()) {
+      EXPECT_EQ(stream->ManualDataCallback(WEBAUDIO_BLOCK_SIZE),
+                MockCubebStream::KeepProcessing::Yes);
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    // The graph is now run by ManualDataCallback().
+    checkpoint.Call("Now manual");
+  });
+
+  auto destroyPromise = TakeN(cubeb->StreamDestroyEvent(), 1);
+  DispatchFunction([&] { graph->ForceShutDown(); });
+
+  DispatchFunction([&] {
+    // Process the ForceShutdown message.
+    EXPECT_EQ(stream->ManualDataCallback(0),
+              MockCubebStream::KeepProcessing::No);
+  });
+
+  // Let the main-thread-cleanup stable state runnable run.
+  DispatchFunction([&] {
+    processedTrack->RemoveListener(fallbackListener);
+    processedTrack->Destroy();
+  });
+
+  DispatchFunction([&] { checkpoint.Call("Final track removed"); });
+
+  DispatchFunction([&] {
+    // An AudioWorklet's PBackground ipc::MessageChannel is opened on the graph
+    // thread, so IPC dispatches to the graph from the IPC I/O thread. Those
+    // dispatches are not outlived by a main-thread controlled track or port,
+    // since the channel is only closed when the graph shuts down. See bug
+    // 2065075.
+    MOZ_ALWAYS_SUCCEEDS(ipc::IOThread::Get()->GetEventTarget()->Dispatch(
+        NS_NewRunnableFunction(__func__, [graph, &checkpoint] {
+          MOZ_ALWAYS_SUCCEEDS(graph->Dispatch(
+              MakeAndAddRef<IPCTestRunnable>(graph, checkpoint)));
+        })));
+  });
+
+  // Ensure the stream is no longer used by its MockCubeb before releasing our
+  // reference, and before the next test might ForceSetCubebContext() to
+  // destroy our cubeb.
+  (void)WaitFor(destroyPromise).unwrap()[0];
+  // Flush the I/O thread's graph dispatch, then process what it queued on the
+  // main thread.
+  MOZ_ALWAYS_SUCCEEDS(NS_DispatchAndSpinEventLoopUntilComplete(
+      "TestAudioTrackGraph, IOThreadDispatchDuringShutdown"_ns,
+      ipc::IOThread::Get()->GetEventTarget(),
+      NS_NewRunnableFunction(__func__, [] {})));
   ProcessEventQueue();
 }
 

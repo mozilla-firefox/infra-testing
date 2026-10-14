@@ -5,20 +5,21 @@
 // except according to those terms.
 
 use std::{
-    convert::TryFrom as _,
     ffi::CString,
     os::raw::{c_char, c_uint},
     ptr::{addr_of_mut, null_mut},
 };
 
 use log::trace;
-use pkcs11_bindings::{CKF_DERIVE, CKM_EC_KEY_PAIR_GEN};
 
 use crate::{
-    SECItem, SECItemBorrowed, SECItemMut,
+    SECItem, SECItemBorrowed, SECItemMut, der,
     err::{Error, Res, ssl::SSL_ERROR_ECH_RETRY_WITH_ECH},
     experimental_api, null_safe_slice,
-    p11::{self, PrivateKey, PublicKey, SECKEYPrivateKey, SECKEYPublicKey, Slot},
+    p11::{
+        self, CKF_DERIVE, CKM_EC_KEY_PAIR_GEN, PrivateKey, PublicKey, SECKEYPrivateKey,
+        SECKEYPublicKey, Slot,
+    },
     prio::PRFileDesc,
     ssl::PRBool,
 };
@@ -27,42 +28,40 @@ pub use crate::{
     ssl::HpkeSymmetricSuite as SymmetricSuite,
 };
 
-experimental_api!(SSL_EnableTls13GreaseEch(
-    fd: *mut PRFileDesc,
-    enabled: PRBool,
-));
-
-experimental_api!(SSL_GetEchRetryConfigs(
-    fd: *mut PRFileDesc,
-    config: *mut SECItem,
-));
-
-experimental_api!(SSL_SetClientEchConfigs(
-    fd: *mut PRFileDesc,
-    config_list: *const u8,
-    config_list_len: c_uint,
-));
-
-experimental_api!(SSL_SetServerEchConfigs(
-    fd: *mut PRFileDesc,
-    pk: *const SECKEYPublicKey,
-    sk: *const SECKEYPrivateKey,
-    record: *const u8,
-    record_len: c_uint,
-));
-
-experimental_api!(SSL_EncodeEchConfigId(
-    config_id: u8,
-    public_name: *const c_char,
-    max_name_len: c_uint,
-    kem_id: KemId::Type,
-    pk: *const SECKEYPublicKey,
-    hpke_suites: *const SymmetricSuite,
-    hpke_suite_count: c_uint,
-    out: *mut u8,
-    out_len: *mut c_uint,
-    max_len: c_uint,
-));
+experimental_api! {
+    SSL_EnableTls13GreaseEch(
+        fd: *mut PRFileDesc,
+        enabled: PRBool,
+    );
+    SSL_GetEchRetryConfigs(
+        fd: *mut PRFileDesc,
+        config: *mut SECItem,
+    );
+    SSL_SetClientEchConfigs(
+        fd: *mut PRFileDesc,
+        config_list: *const u8,
+        config_list_len: c_uint,
+    );
+    SSL_SetServerEchConfigs(
+        fd: *mut PRFileDesc,
+        pk: *const SECKEYPublicKey,
+        sk: *const SECKEYPrivateKey,
+        record: *const u8,
+        record_len: c_uint,
+    );
+    SSL_EncodeEchConfigId(
+        config_id: u8,
+        public_name: *const c_char,
+        max_name_len: c_uint,
+        kem_id: KemId::Type,
+        pk: *const SECKEYPublicKey,
+        hpke_suites: *const SymmetricSuite,
+        hpke_suite_count: c_uint,
+        out: *mut u8,
+        out_len: *mut c_uint,
+        max_len: c_uint,
+    );
+}
 
 /// Convert any result that contains an ECH error into a result with an `EchRetry`.
 pub fn convert_ech_error(fd: *mut PRFileDesc, err: Error) -> Error {
@@ -100,10 +99,7 @@ pub fn generate_keys() -> Res<(PrivateKey, PublicKey)> {
     let oid_data = unsafe { p11::SECOID_FindOIDByTag(p11::SECOidTag::SEC_OID_CURVE25519) };
     let oid = unsafe { oid_data.as_ref() }.ok_or(Error::Internal)?;
     let oid_slc = unsafe { null_safe_slice(oid.oid.data, oid.oid.len) };
-    let mut params: Vec<u8> = Vec::with_capacity(oid_slc.len() + 2);
-    params.push(u8::try_from(p11::SEC_ASN1_OBJECT_ID)?);
-    params.push(u8::try_from(oid.oid.len)?);
-    params.extend_from_slice(oid_slc);
+    let params = der::object_id(oid_slc)?;
 
     let mut public_ptr: *mut SECKEYPublicKey = null_mut();
     let mut param_item = SECItemBorrowed::wrap(&params)?;
@@ -113,12 +109,12 @@ pub fn generate_keys() -> Res<(PrivateKey, PublicKey)> {
         unsafe {
             p11::PK11_GenerateKeyPairWithOpFlags(
                 *slot,
-                p11::CK_MECHANISM_TYPE::from(CKM_EC_KEY_PAIR_GEN),
+                CKM_EC_KEY_PAIR_GEN,
                 addr_of_mut!(param_item).cast(),
                 &raw mut public_ptr,
                 p11::PK11_ATTR_SESSION | p11::PK11_ATTR_INSENSITIVE | p11::PK11_ATTR_PUBLIC,
-                p11::CK_FLAGS::from(CKF_DERIVE),
-                p11::CK_FLAGS::from(CKF_DERIVE),
+                CKF_DERIVE,
+                CKF_DERIVE,
                 null_mut(),
             )
         }
@@ -130,12 +126,12 @@ pub fn generate_keys() -> Res<(PrivateKey, PublicKey)> {
         unsafe {
             p11::PK11_GenerateKeyPairWithOpFlags(
                 *slot,
-                p11::CK_MECHANISM_TYPE::from(CKM_EC_KEY_PAIR_GEN),
+                CKM_EC_KEY_PAIR_GEN,
                 addr_of_mut!(param_item).cast(),
                 &raw mut public_ptr,
                 p11::PK11_ATTR_SESSION | p11::PK11_ATTR_SENSITIVE | p11::PK11_ATTR_PRIVATE,
-                p11::CK_FLAGS::from(CKF_DERIVE),
-                p11::CK_FLAGS::from(CKF_DERIVE),
+                CKF_DERIVE,
+                CKF_DERIVE,
                 null_mut(),
             )
         }

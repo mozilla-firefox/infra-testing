@@ -4,6 +4,8 @@
 
 #include "WebTransportDatagramDuplexStream.h"
 
+#include <memory>
+
 #include "mozilla/dom/AutoEntryScript.h"
 #include "mozilla/dom/Promise-inl.h"
 #include "mozilla/dom/Promise.h"
@@ -177,8 +179,8 @@ WebTransportDatagramDuplexStream::CreateWritable(
 void WebTransportDatagramDuplexStream::NewDatagramReceived(
     nsTArray<uint8_t>&& aData, const mozilla::TimeStamp& aTimeStamp) {
   LOG(("received Datagram, size = %zu", aData.Length()));
-  mIncomingDatagramsQueue.Push(UniquePtr<DatagramEntry>(
-      new DatagramEntry(std::move(aData), aTimeStamp)));
+  mIncomingDatagramsQueue.Push(
+      std::make_unique<DatagramEntry>(std::move(aData), aTimeStamp));
   mIncomingAlgorithms->NotifyDatagramAvailable();
 }
 
@@ -371,7 +373,7 @@ already_AddRefed<Promise> OutgoingDatagramStreamAlgorithms::WriteCallbackImpl(
     // We should be guaranteed that we don't get called again until the
     // promise is resolved.
     MOZ_ASSERT(mWaitConnect == nullptr);
-    mWaitConnect.reset(new DatagramEntry(std::move(data), now));
+    mWaitConnect = std::make_unique<DatagramEntry>(std::move(data), now);
     mWaitConnectPromise = promise;
   }
 

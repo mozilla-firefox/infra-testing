@@ -35,6 +35,7 @@
 #include "mozilla/ipc/UtilityProcessParent.h"
 #include "mozilla/ipc/UtilityProcessSandboxing.h"
 #include "mozilla/StaticPrefs_telemetry.h"
+#include "ETWTools.h"
 #include "GMPPlatform.h"
 #include "GMPServiceParent.h"
 #include "nsIClassifiedChannel.h"
@@ -59,52 +60,61 @@ namespace geckoprofiler::markers {
 
 using namespace mozilla;
 
-struct ProcessingTimeMarker {
-  static constexpr Span<const char> MarkerTypeName() {
-    return MakeStringSpan("ProcessingTime");
-  }
+struct ProcessingTimeMarker : public BaseMarkerType<ProcessingTimeMarker> {
+  static constexpr const char* Name = "ProcessingTime";
+  // "Process CPU Time" and "Process GPU Time" only differ by their name.
+  static constexpr bool ETWStoreName = true;
+  using MS = MarkerSchema;
+  static constexpr MS::Location Locations[] = {
+      MS::Location::MarkerChart,
+      MS::Location::MarkerTable,
+  };
+  static constexpr MS::PayloadField PayloadFields[] = {
+      {"time", MS::InputType::Int64, "Recorded Time", MS::Format::Milliseconds},
+      {"label", MS::InputType::CString, nullptr, MS::Format::String,
+       MS::PayloadFlags::Hidden},
+      {"tracker", MS::InputType::CString, "Tracker Type", MS::Format::String},
+  };
+  static constexpr const char* TooltipLabel =
+      "{marker.name} - {marker.data.label}";
+  static constexpr const char* TableLabel =
+      "{marker.data.label}: {marker.data.time}";
   static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
                                    int64_t aDiffMs,
                                    const ProfilerString8View& aType,
                                    const ProfilerString8View& aTrackerType) {
-    aWriter.IntProperty("time", aDiffMs);
-    aWriter.StringProperty("label", aType);
+    StreamJSONMarkerDataImpl(aWriter, aDiffMs, aType);
     if (aTrackerType.Length() > 0) {
       aWriter.StringProperty("tracker", aTrackerType);
     }
   }
-  static MarkerSchema MarkerTypeDisplay() {
-    using MS = MarkerSchema;
-    MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
-    schema.AddKeyLabelFormat("time", "Recorded Time", MS::Format::Milliseconds);
-    schema.AddKeyLabelFormat("tracker", "Tracker Type", MS::Format::String);
-    schema.AddKeyFormat("label", MS::Format::String, MS::PayloadFlags::Hidden);
-    schema.SetTooltipLabel("{marker.name} - {marker.data.label}");
-    schema.SetTableLabel("{marker.data.label}: {marker.data.time}");
-    return schema;
+
+  // TODO: Remove once bug 2071910 is fixed.
+  static void TranslateMarkerInputToSchema(
+      void* aContext, int64_t aDiffMs, const ProfilerString8View& aType,
+      const ProfilerString8View& aTrackerType) {
+    ETW::OutputMarkerSchema(aContext, ProcessingTimeMarker{}, aDiffMs, aType,
+                            aTrackerType);
   }
 };
 
 #ifdef HAS_PROCESS_ENERGY
-struct ProcessEnergyMarker {
-  static constexpr Span<const char> MarkerTypeName() {
-    return MakeStringSpan("ProcessEnergy");
-  }
-  static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
-                                   int64_t aUWh,
-                                   const ProfilerString8View& aType) {
-    aWriter.IntProperty("energy", aUWh);
-    aWriter.StringProperty("label", aType);
-  }
-  static MarkerSchema MarkerTypeDisplay() {
-    using MS = MarkerSchema;
-    MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
-    schema.AddKeyLabelFormat("energy", "Energy (µWh)", MS::Format::Integer);
-    schema.AddKeyFormat("label", MS::Format::String, MS::PayloadFlags::Hidden);
-    schema.SetTooltipLabel("{marker.name} - {marker.data.label}");
-    schema.SetTableLabel("{marker.data.label}: {marker.data.energy}µWh");
-    return schema;
-  }
+struct ProcessEnergyMarker : public BaseMarkerType<ProcessEnergyMarker> {
+  static constexpr const char* Name = "ProcessEnergy";
+  using MS = MarkerSchema;
+  static constexpr MS::Location Locations[] = {
+      MS::Location::MarkerChart,
+      MS::Location::MarkerTable,
+  };
+  static constexpr MS::PayloadField PayloadFields[] = {
+      {"energy", MS::InputType::Int64, "Energy (µWh)", MS::Format::Integer},
+      {"label", MS::InputType::CString, nullptr, MS::Format::String,
+       MS::PayloadFlags::Hidden},
+  };
+  static constexpr const char* TooltipLabel =
+      "{marker.name} - {marker.data.label}";
+  static constexpr const char* TableLabel =
+      "{marker.data.label}: {marker.data.energy}µWh";
 };
 #endif
 
@@ -139,6 +149,14 @@ static Atomic<ProcessType> gThisProcessType(eUnknown);
 void RecordThreadCpuUse(const nsACString& aThreadName, uint64_t aCpuTimeMs,
                         uint64_t aWakeCount) {
   ProcessType processType = gThisProcessType;
+
+  // Glean now (de)registers its threads, which results in trying to record CPU
+  // usage. We can't do that from the dispatcher or when Glean itself is
+  // shutting down.
+  if (aThreadName.EqualsLiteral("glean.dispatcher") ||
+      aThreadName.EqualsLiteral("glean.shutdown")) {
+    return;
+  }
 
   if (processType == ProcessType::eUnknown) {
     if (XRE_IsParentProcess()) {
@@ -340,8 +358,7 @@ void RecordPowerMetrics() {
   if (XRE_IsContentProcess()) {
     auto* cc = mozilla::dom::ContentChild::GetSingleton();
     if (cc) {
-      type.Assign(mozilla::dom::RemoteTypePrefix(cc->GetRemoteType()));
-      if (StringBeginsWith(type, WEB_REMOTE_TYPE)) {
+      if (cc->GetRemoteType().IsWeb()) {
         type.AssignLiteral("web");
         switch (cc->GetProcessPriority()) {
           case hal::PROCESS_PRIORITY_BACKGROUND:
@@ -364,9 +381,11 @@ void RecordPowerMetrics() {
             MOZ_ASSERT_UNREACHABLE("Unsuppored process type for cpu time");
             break;
         }
-      } else if (type == INFERENCE_REMOTE_TYPE) {
+      } else if (cc->GetRemoteType().IsInference()) {
         type.AssignLiteral("inference");
         gThisProcessType = ProcessType::eInferenceProcess;
+      } else {
+        type = cc->GetRemoteType().StringifyKind();
       }
       GetTrackerType(trackerType);
     } else {
@@ -678,7 +697,8 @@ void TestTriggerMetrics(uint32_t aProcessType,
     } break;
     case nsIXULRuntime::PROCESS_TYPE_UTILITY:
       (void)ipc::UtilityProcessManager::GetSingleton()
-          ->GetProcessParent(ipc::SandboxingKind::GENERIC_UTILITY)
+          ->GetSharedKeepAlive(ipc::SandboxingKind::GENERIC_UTILITY)
+          ->GetProcessParent()
           ->SendTestTriggerMetrics()
           ->Then(
               GetCurrentSerialEventTarget(), __func__,

@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_SpeechGrammarList_h
-#define mozilla_dom_SpeechGrammarList_h
+#ifndef DOM_MEDIA_WEBSPEECH_RECOGNITION_SPEECHGRAMMARLIST_H_
+#define DOM_MEDIA_WEBSPEECH_RECOGNITION_SPEECHGRAMMARLIST_H_
 
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
@@ -45,16 +45,14 @@ class SpeechGrammarList final : public nsISupports, public nsWrapperCache {
 
   uint32_t Length() const;
 
-  already_AddRefed<SpeechGrammar> Item(uint32_t aIndex, ErrorResult& aRv);
+  already_AddRefed<SpeechGrammar> Item(uint32_t aIndex);
 
-  void AddFromURI(const nsAString& aSrc, const Optional<float>& aWeight,
-                  ErrorResult& aRv);
+  void AddFromUri(const nsAString& aSrc, const Optional<float>& aWeight);
 
-  void AddFromString(const nsAString& aString, const Optional<float>& aWeight,
-                     ErrorResult& aRv);
+  void AddFromString(const nsAString& aString, const Optional<float>& aWeight);
 
-  already_AddRefed<SpeechGrammar> IndexedGetter(uint32_t aIndex, bool& aPresent,
-                                                ErrorResult& aRv);
+  already_AddRefed<SpeechGrammar> IndexedGetter(uint32_t aIndex,
+                                                bool& aPresent);
 
  private:
   ~SpeechGrammarList();
@@ -67,4 +65,4 @@ class SpeechGrammarList final : public nsISupports, public nsWrapperCache {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif
+#endif  // DOM_MEDIA_WEBSPEECH_RECOGNITION_SPEECHGRAMMARLIST_H_

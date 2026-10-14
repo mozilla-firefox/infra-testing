@@ -40,9 +40,10 @@ SVGEllipseElement::SVGEllipseElement(
     already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : SVGEllipseElementBase(std::move(aNodeInfo)) {}
 
-bool SVGEllipseElement::IsAttributeMapped(const nsAtom* aAttribute) const {
+bool SVGEllipseElement::IsNoNamespaceAttrMapped(
+    const nsAtom* aAttribute) const {
   return IsInLengthInfo(aAttribute, sLengthInfo) ||
-         SVGEllipseElementBase::IsAttributeMapped(aAttribute);
+         SVGEllipseElementBase::IsNoNamespaceAttrMapped(aAttribute);
 }
 
 namespace SVGT = SVGGeometryProperty::Tags;
@@ -137,6 +138,20 @@ Maybe<Rect> SVGEllipseElement::GetGeometryBounds(
   }
   Rect rect(x - rx, y - ry, 2 * rx, 2 * ry);
   return Some(aToBoundsSpace.TransformBounds(rect));
+}
+
+void SVGEllipseElement::GetAsSimpleShape(SimpleShape* aShape) {
+  float x = 0.0f, y = 0.0f, rx = 0.0f, ry = 0.0f;
+  DebugOnly<bool> ok =
+      SVGGeometryProperty::ResolveAll<SVGT::Cx, SVGT::Cy, SVGT::Rx, SVGT::Ry>(
+          this, &x, &y, &rx, &ry);
+  MOZ_ASSERT(ok, "SVGGeometryProperty::ResolveAll failed");
+
+  if (rx <= 0.0f || ry <= 0.0f) {
+    aShape->Reset();
+    return;
+  }
+  aShape->SetEllipse(CSSPoint(x, y), CSSSize(rx, ry));
 }
 
 already_AddRefed<Path> SVGEllipseElement::BuildPath(PathBuilder* aBuilder) {

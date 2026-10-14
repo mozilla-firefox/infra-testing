@@ -25,7 +25,12 @@ const { toolFns } = ChromeUtils.importESModule(
 );
 
 /**
- * Test suite for manage_tabs tool functionality in AI Window
+ * Test suite for manage_tabs tool functionality in AI Window.
+ *
+ * The telemetry funnel tests for this tool live in
+ * browser_smartwindow_manage_tabs_tool_telemetry.js; the file was split in
+ * bug 2070425 to keep each browser-chrome file's peak memory down and avoid an
+ * intermittent OOM.
  */
 add_setup(async function () {
   await Services.fog.testFlushAllChildren();
@@ -647,5 +652,103 @@ add_task(async function test_close_last_tab_keeps_window_open() {
   } finally {
     await BrowserTestUtils.closeWindow(otherWindow);
     await BrowserTestUtils.closeWindow(interactingWindow);
+  }
+});
+
+// These two tests go through ai-window instead of calling ToolUI.handleUpdate
+// directly. ai-window is what works out which tab the chat is in, so a test
+// that passes the tab in itself would not check that part at all.
+
+add_task(async function test_open_tabs_groups_the_fullpage_chat_tab() {
+  const win = await openAIWindow();
+  const urls = ["https://example.com/origin-a", "https://example.com/origin-b"];
+
+  try {
+    const chatTab = win.gBrowser.selectedTab;
+    const aiWindow =
+      win.gBrowser.selectedBrowser.contentDocument.querySelector("ai-window");
+    const toolCallId = "origin-tab-fullpage";
+    const message = aiWindow.conversation.addAssistantMessage(
+      "text",
+      "Confirm?"
+    );
+    message.toolUIData = {
+      toolCallId,
+      uiType: UI_TYPES.TAB_GROUP_CONFIRMATION,
+      properties: { actionType: "open_tabs" },
+    };
+
+    await aiWindow.handleToolUIUpdate({
+      messageId: message.id,
+      toolCallId,
+      updateType: "confirm-open-and-group-tabs-selection",
+      updateData: {
+        selectedTabs: urls.map((url, index) => ({ token: String(index), url })),
+        tabGroupLabel: "Origin",
+      },
+    });
+
+    await TestUtils.waitForCondition(
+      () => chatTab.group,
+      "The fullpage chat tab should join the group it created"
+    );
+    Assert.ok(
+      chatTab.group.tabs.includes(chatTab),
+      "The created group holds the chat tab"
+    );
+    Assert.equal(
+      chatTab.group.label,
+      "Origin",
+      "The group carries the requested label"
+    );
+  } finally {
+    await BrowserTestUtils.closeWindow(win);
+  }
+});
+
+add_task(async function test_open_tabs_from_sidebar_leaves_active_tab_out() {
+  const { win, sidebarBrowser } = await openAIWindowWithSidebar(
+    "https://example.com/sidebar-origin"
+  );
+  const urls = [
+    "https://example.com/sidebar-a",
+    "https://example.com/sidebar-b",
+  ];
+
+  try {
+    const activeTab = win.gBrowser.selectedTab;
+    const aiWindow = sidebarBrowser.contentDocument.querySelector("ai-window");
+    const toolCallId = "origin-tab-sidebar";
+    const message = aiWindow.conversation.addAssistantMessage(
+      "text",
+      "Confirm?"
+    );
+    message.toolUIData = {
+      toolCallId,
+      uiType: UI_TYPES.TAB_GROUP_CONFIRMATION,
+      properties: { actionType: "open_tabs" },
+    };
+
+    await aiWindow.handleToolUIUpdate({
+      messageId: message.id,
+      toolCallId,
+      updateType: "confirm-open-and-group-tabs-selection",
+      updateData: {
+        selectedTabs: urls.map((url, index) => ({ token: String(index), url })),
+        tabGroupLabel: "Origin",
+      },
+    });
+
+    // Wait for the group so the assertion below is not racing its creation.
+    await TestUtils.waitForCondition(
+      () => win.gBrowser.tabGroups.length,
+      "A group should be created for the opened tabs"
+    );
+    Assert.ok(
+      !activeTab.group,
+      "A sidebar conversation must not pull the active web page into the group"
+    );
+  } finally {
+    await BrowserTestUtils.closeWindow(win);
   }
 });

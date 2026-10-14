@@ -489,6 +489,7 @@ add_task(async function test_open_tabs_hover_preview_setting() {
       [POSITION_SETTING_PREF, true],
     ],
   });
+  await SidebarController.waitUntilStable();
 
   const panel = await showCustomizePanel(window);
   const { contentWindow } = SidebarController.browser;

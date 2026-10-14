@@ -11,7 +11,8 @@ let lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
-  TaskbarTabsUtils: "resource:///modules/taskbartabs/TaskbarTabsUtils.sys.mjs",
+  TaskbarTabsUtils:
+    "moz-src:///browser/components/taskbartabs/TaskbarTabsUtils.sys.mjs",
   URILoadingHelper: "resource:///modules/URILoadingHelper.sys.mjs",
 });
 
@@ -81,6 +82,7 @@ export class BrowserDOMWindow {
    * @param {nsIPolicyContainer} [aPolicyContainer=null]
    * @param {boolean} [skipLoad=false]
    * @param {i16} [aWhere=undefined]
+   * @param {boolean} [aForceAllowDataURI=false]
    * @returns {nsIBrowser|null}
    */
   #openURIInNewTab(
@@ -96,15 +98,17 @@ export class BrowserDOMWindow {
     aName = "",
     aPolicyContainer = null,
     aSkipLoad = false,
-    aWhere = undefined
+    aWhere = undefined,
+    aForceAllowDataURI = false
   ) {
     let win, needToFocusWin;
 
-    // try the current window. if we're in a popup or a taskbar tab, fall
-    // back on the most recent browser window
+    // try the current window. if we're in a popup, a taskbar tab or a mini
+    // window, fall back on the most recent browser window
     if (
       this.win.toolbar.visible &&
-      !lazy.TaskbarTabsUtils.isTaskbarTabWindow(this.win)
+      !lazy.TaskbarTabsUtils.isTaskbarTabWindow(this.win) &&
+      !this.win.document.documentElement.hasAttribute("mini-window")
     ) {
       win = this.win;
     } else {
@@ -150,6 +154,7 @@ export class BrowserDOMWindow {
       name: aName,
       policyContainer: aPolicyContainer,
       skipLoad: aSkipLoad,
+      forceAllowDataURI: aForceAllowDataURI,
     };
 
     let tab;
@@ -241,6 +246,9 @@ export class BrowserDOMWindow {
   ) {
     var browsingContext = null;
     var isExternal = !!(aFlags & Ci.nsIBrowserDOMWindow.OPEN_EXTERNAL);
+    var forceAllowDataURI = !!(
+      aFlags & Ci.nsIBrowserDOMWindow.OPEN_FORCE_ALLOW_DATA_URI
+    );
     var guessUserContextIdEnabled =
       isExternal &&
       !Services.prefs.getBoolPref(
@@ -327,6 +335,9 @@ export class BrowserDOMWindow {
             "@mozilla.org/hash-property-bag;1"
           ].createInstance(Ci.nsIWritablePropertyBag2);
           extraOptions.setPropertyAsBool("fromExternal", isExternal);
+          if (forceAllowDataURI) {
+            extraOptions.setPropertyAsBool("forceAllowDataURI", true);
+          }
 
           this.win.openDialog(
             AppConstants.BROWSER_CHROME_URL,
@@ -384,7 +395,8 @@ export class BrowserDOMWindow {
           "",
           aPolicyContainer,
           aSkipLoad,
-          aWhere
+          aWhere,
+          forceAllowDataURI
         );
         if (browser) {
           browsingContext = browser.browsingContext;
@@ -410,6 +422,9 @@ export class BrowserDOMWindow {
             // XXX this code must be reviewed and changed when bug 1616353
             // lands.
             loadFlags |= Ci.nsIWebNavigation.LOAD_FLAGS_FIRST_LOAD;
+          }
+          if (forceAllowDataURI) {
+            loadFlags |= Ci.nsIWebNavigation.LOAD_FLAGS_FORCE_ALLOW_DATA_URI;
           }
           // This should ideally be able to call loadURI with the actual URI.
           // However, that would bypass some styles of fixup (notably Windows
@@ -493,6 +508,9 @@ export class BrowserDOMWindow {
     }
 
     var isExternal = !!(aFlags & Ci.nsIBrowserDOMWindow.OPEN_EXTERNAL);
+    var forceAllowDataURI = !!(
+      aFlags & Ci.nsIBrowserDOMWindow.OPEN_FORCE_ALLOW_DATA_URI
+    );
 
     var userContextId =
       aParams.openerOriginAttributes &&
@@ -513,7 +531,8 @@ export class BrowserDOMWindow {
       aName,
       aParams.policyContainer,
       aSkipLoad,
-      aWhere
+      aWhere,
+      forceAllowDataURI
     );
   }
 

@@ -146,8 +146,6 @@ CO01:
         - addressbar-firefox-suggest-online
         # browser/customkeys.ftl
         - customkeys-dev-network
-        # browser/migrationWizard.ftl
-        - migration-wizard-migrator-display-name-firefox
         # browser/newtab/onboarding.ftl
         - mr1-onboarding-welcome-image-caption
         - mr2022-onboarding-gratitude-subtitle
@@ -157,6 +155,8 @@ CO01:
         # browser/preferences/preferences.ftl
         - sync-engine-addons
         - sync-mobile-promo
+        # browser/sidebar.ftl
+        - menu-view-resource-monitor
         # browser/unifiedExtensions.ftl
         - unified-extensions-mb-blocklist-error-multiple
         - unified-extensions-mb-blocklist-error-single

@@ -487,13 +487,32 @@ let config = [
     files: ["**/*.mjs", "**/*.js", "**/*.sys.mjs"],
     ignores: [
       "tools/@types/generated/**",
-      "browser/base/content/test/static/browser_all_files_referenced.js",
+      "browser/base/content/test/browser-static/browser_all_files_referenced.js",
       "tools/lint/eslint/eslint-plugin-mozilla/lib/rules/no-newtab-refs-outside-newtab.mjs",
       "tools/lint/eslint/eslint-plugin-mozilla/tests/no-newtab-refs-outside-newtab.mjs",
     ],
     plugins: { mozilla },
     rules: {
       "mozilla/no-newtab-refs-outside-newtab": "error",
+    },
+  },
+  {
+    name: "preferences-heading-level-via-config",
+    // Remove once typechecking is enabled and violations fail patches
+    files: [
+      "browser/components/preferences/config/**/*.mjs",
+      "browser/extensions/newtab/lib/AboutPreferences.sys.mjs",
+    ],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            ":matches(Property[key.name='controlAttrs'], Property[key.value='controlAttrs']) > ObjectExpression > :matches(Property[key.name=/^(?:headinglevel|headingLevel)$/], Property[key.value=/^\\.?(?:headinglevel|headingLevel)$/])",
+          message:
+            "Set heading levels via the top-level `headingLevel` property on the setting config, not through `controlAttrs`.",
+        },
+      ],
     },
   },
 

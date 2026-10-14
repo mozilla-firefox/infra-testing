@@ -3,9 +3,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-include protocol PHWInferenceManager;
+include protocol PSpeechRecognition;
+include protocol PTextGeneration;
+include protocol PUtilityProcess;
+
+include TextGenerationTypes;
 
 using mozilla::dom::ContentParentId from "mozilla/dom/ipc/IdType.h";
+using mozilla::hwinference::ModelInstallResult from "mozilla/hwinference/HWInferenceTypes.h";
 
 namespace mozilla {
 
@@ -30,6 +35,8 @@ union GetModelFileResult
 [ChildProc=Utility]
 protocol PHWInference
 {
+  manager PUtilityProcess;
+
   parent:
     // id is an abstract, task-defined model id. HWInference looks up the
     // resolver registered for task (contract id
@@ -53,11 +60,13 @@ protocol PHWInference
     // content document, both are 0 (no content to validate; trusted origin).
     // Whether the download actually happens is decided by the resolver
     // registered for task (nsIMLModelResolver::authorizeDownload), which also
-    // gets the progress token the parent created for this install.
+    // gets the progress token the parent created for this install. A resolver
+    // that refuses is reported as Denied rather than Failed, so a caller can
+    // tell a refusal from a download that did not work.
     async InstallModel(nsCString task,
                        nsCString id,
                        uint64_t innerWindowId,
-                       ContentParentId contentId) returns (bool success);
+                       ContentParentId contentId) returns (ModelInstallResult result);
 
     // Get the model as a file descriptor. This provides direct access to the
     // model file from the HWInference process for use with libraries that
@@ -66,9 +75,16 @@ protocol PHWInference
                        nsCString id) returns (GetModelFileResult result);
 
   child:
-    // Allow content processes to create direct connections to utility
-    async NewContentHWInferenceManager(Endpoint<PHWInferenceManagerParent> endpoint,
-                                       ContentParentId contentId);
+    async NewContentSpeechRecognition(Endpoint<PSpeechRecognitionParent> endpoint,
+                                      ContentParentId contentId);
+
+    // The model file is resolved and opened by the parent, the utility never
+    // learns its path.
+    async NewTextGeneration(Endpoint<PTextGenerationChild> endpoint,
+                            FileDescriptor model,
+                            TextGenerationOptions options);
+
+    async __delete__();
 };
 
 } // namespace hwinference

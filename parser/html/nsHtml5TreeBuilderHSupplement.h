@@ -9,6 +9,14 @@ template <typename T>
 using NotNull = mozilla::NotNull<T>;
 
 nsHtml5OplessBuilder* mBuilder;
+
+// The spec's "parser sanitizer configuration" and the bookkeeping the
+// insertion hooks need for it. Null unless sanitizing while parsing, which
+// only ever happens with a non-null mBuilder. Defined in
+// nsHtml5TreeBuilderCppSupplement.h.
+class SanitizerState;
+mozilla::UniquePtr<SanitizerState> mSanitizerState;
+
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 // If mBuilder is not null, the tree op machinery is not in use and
 // the fields below aren't in use, either.
@@ -200,7 +208,114 @@ void SetCustomElementRegistry(
   mCustomElementRegistry = std::move(aRegistry);
 }
 
+/**
+ * Sets the spec's "parser sanitizer configuration" (null not to sanitize
+ * while parsing) and "remove javascript navigation URLs" for the next parse.
+ * The caller has to keep aSanitizer alive until the parse ends; the parse end
+ * drops it.
+ */
+void SetSanitizer(mozilla::dom::Sanitizer* aSanitizer, bool aSafe);
+
+/**
+ * Whether the sanitizer replaced an adoption agency algorithm clone with its
+ * children, in which case the clone is not in the tree and the algorithm
+ * leaves lastNode where it is. sanitizerRedirectPending() then decides where
+ * the clone's content goes.
+ */
+bool sanitizerRedirectsClone(nsIContentHandle* aClone) {
+  return MOZ_UNLIKELY(mSanitizerState) &&
+         SanitizerRedirectsCloneImpl(static_cast<nsIContent*>(aClone));
+}
+
+/**
+ * Queues a furthest block that the sanitizer replaced with its children for
+ * sanitizerRedirectPending(), which re-points its content at wherever the
+ * adoption agency algorithm moves the content the block already has.
+ */
+void sanitizerDeferRedirect(nsIContentHandle* aFurthestBlock) {
+  if (MOZ_UNLIKELY(mSanitizerState)) {
+    SanitizerDeferRedirectImpl(static_cast<nsIContent*>(aFurthestBlock));
+  }
+}
+
+/**
+ * Re-points the content of every queued element at aParent, where the
+ * adoption agency algorithm inserts lastNode. The two overloads take the two
+ * shapes of insertion target the algorithm has at that point: a plain parent,
+ * and a foster parenting location.
+ */
+void sanitizerRedirectPending(nsIContentHandle* aParent) {
+  if (MOZ_UNLIKELY(mSanitizerState)) {
+    SanitizerRedirectPendingImpl(static_cast<nsIContent*>(aParent));
+  }
+}
+
+void sanitizerRedirectPendingToFosterParent(nsIContentHandle* aTable,
+                                            nsIContentHandle* aStackParent) {
+  if (MOZ_UNLIKELY(mSanitizerState)) {
+    SanitizerRedirectPendingToFosterParentImpl(
+        static_cast<nsIContent*>(aTable),
+        static_cast<nsIContent*>(aStackParent));
+  }
+}
+
+/**
+ * Re-points the content of the run of elements the sanitizer replaced with
+ * their children immediately below the adoption agency algorithm's new
+ * formatting clone, at stack position aClonePos, into the clone. The clone
+ * now sits between them and the furthest block whose content they followed.
+ */
+void sanitizerRedirectBelowFormattingClone(int32_t aClonePos) {
+  if (MOZ_UNLIKELY(mSanitizerState)) {
+    SanitizerRedirectBelowFormattingCloneImpl(aClonePos);
+  }
+}
+
+/**
+ * Sanitizes a template start tag token before the declarative shadow DOM
+ * steps read its attributes, and reports whether the sanitizer drops the
+ * template element the token creates. The spec sanitizes the template element
+ * before it applies declarative shadow DOM, so that a configuration that
+ * removes shadowrootmode (or the template itself) suppresses the shadow root.
+ */
+bool sanitizerDropsTemplateToken(nsHtml5HtmlAttributes* aAttributes) {
+  return MOZ_UNLIKELY(mSanitizerState) &&
+         SanitizerDropsTemplateTokenImpl(aAttributes);
+}
+
+// The sanitizing-while-parsing side of the insertion hooks. Kept out of line
+// so that a parse without a sanitizer pays only the mSanitizerState null
+// check, which is what the hooks above and below guard these with.
+MOZ_NEVER_INLINE bool SanitizerRedirectsCloneImpl(nsIContent* aClone);
+MOZ_NEVER_INLINE void SanitizerDeferRedirectImpl(nsIContent* aFurthestBlock);
+MOZ_NEVER_INLINE void SanitizerRedirectPendingImpl(nsIContent* aParent);
+MOZ_NEVER_INLINE void SanitizerRedirectPendingToFosterParentImpl(
+    nsIContent* aTable, nsIContent* aStackParent);
+MOZ_NEVER_INLINE void SanitizerRedirectBelowFormattingCloneImpl(
+    int32_t aClonePos);
+MOZ_NEVER_INLINE bool SanitizerDropsTemplateTokenImpl(
+    nsHtml5HtmlAttributes* aAttributes);
+MOZ_NEVER_INLINE void SanitizedAppendElement(nsIContent* aChild,
+                                             nsIContent* aParent);
+MOZ_NEVER_INLINE void SanitizedAppendCharacters(nsIContent* aParent,
+                                                char16_t* aBuffer,
+                                                int32_t aLength);
+MOZ_NEVER_INLINE void SanitizedAppendComment(nsIContent* aParent,
+                                             char16_t* aBuffer,
+                                             int32_t aLength);
+MOZ_NEVER_INLINE void SanitizedFosterParentCharacters(char16_t* aBuffer,
+                                                      int32_t aLength,
+                                                      nsIContent* aTable,
+                                                      nsIContent* aStackParent);
+MOZ_NEVER_INLINE void SanitizedFosterParentChild(nsIContent* aChild,
+                                                 nsIContent* aTable,
+                                                 nsIContent* aStackParent);
+
 bool HasBuilder() { return mBuilder; }
+
+// Whether the parse still has the spec's "parser sanitizer configuration",
+// which the parse end drops.
+bool HasSanitizer() { return !!mSanitizerState; }
 
 /**
  * Makes sure the buffers are large enough to be able to tokenize aLength

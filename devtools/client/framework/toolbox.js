@@ -1053,7 +1053,6 @@ class Toolbox extends EventEmitter {
       this.#buildInitialPanelDefinitions();
       this.#setDebugTargetData();
 
-      this.#addWindowListeners();
       this.#addChromeEventHandlerEvents();
 
       // Get the tab bar of the ToolboxController to attach the "keypress" event listener to.
@@ -1158,6 +1157,10 @@ class Toolbox extends EventEmitter {
       if (this.#descriptorFront.isLocalTab) {
         await lazy.LocalModeMappings.setup(this);
       }
+
+      // The requestIdleCallback in this method may not have run yet, and
+      // consumers expect a usable toolbar once the toolbox is open.
+      this.component?.setCanRender();
 
       this.emit("ready");
       this.#resolveIsOpen();
@@ -1291,12 +1294,11 @@ class Toolbox extends EventEmitter {
   #addShortcuts() {
     // Create shortcuts instance for the toolbox
     if (!this.shortcuts) {
-      this.shortcuts = new KeyShortcuts({
-        window: this.doc.defaultView,
+      this.shortcuts = new KeyShortcuts(
         // The toolbox key shortcuts should be triggered from any frame in DevTools.
         // Use the chromeEventHandler as the target to catch events from all frames.
-        target: this.getChromeEventHandler(),
-      });
+        this.getChromeEventHandler()
+      );
     }
 
     // Listen for the shortcut key to show the frame list
@@ -1413,12 +1415,11 @@ class Toolbox extends EventEmitter {
     }
 
     if (!this.#windowHostShortcuts) {
-      this.#windowHostShortcuts = new KeyShortcuts({
-        window: this.win,
+      this.#windowHostShortcuts = new KeyShortcuts(
         // The window host key shortcuts should be triggered from any frame in DevTools.
         // Use the chromeEventHandler as the target to catch events from all frames.
-        target: this.getChromeEventHandler(),
-      });
+        this.getChromeEventHandler()
+      );
     }
 
     const shortcuts = this.#windowHostShortcuts;
@@ -2000,12 +2001,14 @@ class Toolbox extends EventEmitter {
   postMessage(msg) {
     // We sometime try to send messages in middle of destroy(), where the
     // toolbox iframe may already be detached.
-    if (!this.#destroyer) {
-      // Toolbox document is still chrome and disallow identifying message
-      // origin via event.source as it is null. So use a custom id.
-      msg.frameId = this.frameId;
-      this.topWindow.postMessage(msg, "*");
+    if (this.#destroyer) {
+      return;
     }
+
+    // Toolbox document is still chrome and disallow identifying message
+    // origin via event.source as it is null. So use a custom id.
+    msg.frameId = this.frameId;
+    this.topWindow.postMessage(msg, "*");
   }
 
   /**
@@ -2077,6 +2080,10 @@ class Toolbox extends EventEmitter {
         this.#URL
       );
     });
+
+    // We have to wait for the document to be loaded, otherwise we may receive
+    // unexpected "unload" events.
+    this.#addWindowListeners();
 
     // Setup the Toolbox Browser Loader, used to load React component modules
     // which expect to be loaded with toolbox.xhtml document as global scope.
@@ -4741,7 +4748,7 @@ class Toolbox extends EventEmitter {
       Glean.devtoolsDebuggerStylesheets.linksOpenedInDebuggerCount.add(1);
       return viewSource.viewSourceInDebugger(this, url, line, column, null);
     }
-
+    Glean.devtoolsStyleeditorStylesheets.linksOpenedInStyleEditorCount.add(1);
     return viewSource.viewSourceInStyleEditor(this, url, line, column);
   }
 
@@ -4777,7 +4784,7 @@ class Toolbox extends EventEmitter {
         stylesheetResource.resourceId
       );
     }
-
+    Glean.devtoolsStyleeditorStylesheets.linksOpenedInStyleEditorCount.add(1);
     return viewSource.viewSourceInStyleEditor(
       this,
       stylesheetResource,

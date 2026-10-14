@@ -1756,6 +1756,10 @@ SummarizeResult SummarizeTrapInstruction(const InstructionBytes& insn) {
   }
 
   switch (INSN(31, 15) << 15) {
+    case op_amcas_db_b:
+    case op_amcas_db_h:
+    case op_amcas_db_w:
+    case op_amcas_db_d:
     case op_amswap_db_b:
     case op_amswap_db_h:
     case op_amswap_db_w:
@@ -1771,6 +1775,24 @@ SummarizeResult SummarizeTrapInstruction(const InstructionBytes& insn) {
     case op_amxor_db_w:
     case op_amxor_db_d:
       return SummarizeResult(TrapMachineInsn::Atomic, 4);
+    default:
+      break;
+  }
+
+  switch (INSN(31, 22) << 22) {
+    case op_vld:
+      return SummarizeResult(TrapMachineInsn::Load128, 4);
+    case op_vst:
+      return SummarizeResult(TrapMachineInsn::Store128, 4);
+    default:
+      break;
+  }
+
+  switch (INSN(31, 15) << 15) {
+    case op_vldx:
+      return SummarizeResult(TrapMachineInsn::Load128, 4);
+    case op_vstx:
+      return SummarizeResult(TrapMachineInsn::Store128, 4);
     default:
       break;
   }

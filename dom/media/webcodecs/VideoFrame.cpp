@@ -7,6 +7,7 @@
 #include <math.h>
 
 #include <limits>
+#include <memory>
 #include <utility>
 
 #include "ImageContainer.h"
@@ -316,11 +317,11 @@ static Result<RefPtr<layers::Image>, MediaResult> CreateYUVImageFromBuffer(
       aFormat.PixelFormat() == VideoPixelFormat::I420A) {
     UniquePtr<I420BufferReader> reader;
     if (aFormat.PixelFormat() == VideoPixelFormat::I420) {
-      reader.reset(
-          new I420BufferReader(aBuffer, aSize.Width(), aSize.Height()));
+      reader = std::make_unique<I420BufferReader>(aBuffer, aSize.Width(),
+                                                  aSize.Height());
     } else {
-      reader.reset(
-          new I420ABufferReader(aBuffer, aSize.Width(), aSize.Height()));
+      reader = std::make_unique<I420ABufferReader>(aBuffer, aSize.Width(),
+                                                   aSize.Height());
     }
 
     layers::PlanarYCbCrData data;
@@ -2108,7 +2109,7 @@ nsCString VideoFrame::ToString() const {
   Maybe<VideoPixelFormat> format = mResource->TryPixelFormat();
   rv.AppendPrintf(
       "VideoFrame ts: %" PRId64
-      ", %s, coded[%dx%d] visible[%dx%d], display[%dx%d] color: %s",
+      ", %s, coded[%dx%d] visible[%dx%d], display[%dx%d], %s",
       mTimestamp,
       format ? dom::GetEnumString(*format).get() : "unknown pixel format",
       mCodedSize.width, mCodedSize.height, mVisibleRect.width,

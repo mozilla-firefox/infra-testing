@@ -210,20 +210,32 @@ static AbstractGeneratorObject* GetGeneratorObjectForCall(JSContext* cx,
              : nullptr;
 }
 
+AbstractGeneratorObject* js::GetGeneratorObjectForModule(ModuleObject* module) {
+  ModuleEnvironmentObject* moduleEnv = module->environment();
+  if (!moduleEnv) {
+    return nullptr;
+  }
+
+  PropertyName* name =
+      module->runtimeFromMainThread()->commonNames->dot_generator_;
+  mozilla::Maybe<PropertyInfo> prop = moduleEnv->lookupPure(name);
+  if (prop.isNothing()) {
+    return nullptr;
+  }
+
+  Value genValue = moduleEnv->getSlot(prop->slot());
+  return genValue.isObject()
+             ? &genValue.toObject().as<AbstractGeneratorObject>()
+             : nullptr;
+}
+
 AbstractGeneratorObject* js::GetGeneratorObjectForFrame(
     JSContext* cx, AbstractFramePtr frame) {
   cx->check(frame);
   MOZ_ASSERT(frame.isGeneratorFrame());
 
   if (frame.isModuleFrame()) {
-    ModuleEnvironmentObject* moduleEnv =
-        frame.script()->module()->environment();
-    mozilla::Maybe<PropertyInfo> prop =
-        moduleEnv->lookup(cx, cx->names().dot_generator_);
-    Value genValue = moduleEnv->getSlot(prop->slot());
-    return genValue.isObject()
-               ? &genValue.toObject().as<AbstractGeneratorObject>()
-               : nullptr;
+    return GetGeneratorObjectForModule(frame.script()->module());
   }
   if (!frame.hasInitialEnvironment()) {
     return nullptr;
@@ -293,11 +305,16 @@ bool js::ResumeGenerator(JSContext* cx, Handle<AbstractGeneratorObject*> genObj,
 GeneratorObject* GeneratorObject::create(JSContext* cx, HandleFunction fun) {
   MOZ_ASSERT(fun->isGenerator() && !fun->isAsync());
 
-  // FIXME: This would be faster if we could avoid doing a lookup to get
-  // the prototype for the instance.  Bug 906600.
+  // In general, we have to look up the prototype for the instance here
+  // (although it would be nice if we could avoid it somehow; see bug 906600.)
+  // Self-hosted generators are only used to implement iterator helpers, which
+  // are specified as abstract closures. They always use the default prototype
+  // instead of reading it from the constructor.
+  // See https://tc39.es/ecma262/#sec-createiteratorfromclosure.
   RootedTuple<Value, JSObject*> roots(cx);
   RootedField<Value, 0> pval(roots);
-  if (!GetProperty(cx, fun, fun, cx->names().prototype, &pval)) {
+  if (!fun->isSelfHostedBuiltin() &&
+      !GetProperty(cx, fun, fun, cx->names().prototype, &pval)) {
     return nullptr;
   }
   RootedField<JSObject*, 1> proto(roots,
@@ -428,6 +445,13 @@ void AbstractGeneratorObject::setUnaliasedLocal(uint32_t slot,
 }
 
 void AbstractGeneratorObject::setClosed(JSContext* cx) {
+  // If the top-level await generator is suspended in
+  // ModuleObject::onTopLevelEvaluationFinished, clear the SCRIPT_SLOT since
+  // the generator is closed.
+  if (isModuleGenerator() && module().status() == ModuleStatus::Evaluated) {
+    module().setReservedSlotTyped(ModuleObject::SCRIPT_SLOT, UndefinedValue());
+  }
+
   setFixedSlotTyped(CALLEE_OR_MODULE_SLOT, NullValue());
   setFixedSlotTyped(ENV_CHAIN_SLOT, NullValue());
   setFixedSlotTyped(ARGS_OBJ_SLOT, NullValue());

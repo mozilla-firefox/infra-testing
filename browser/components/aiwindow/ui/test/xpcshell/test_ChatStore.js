@@ -4,6 +4,7 @@
 // TODO Bug 2050717 - break up this test file it's gotten too long
 
 do_get_profile();
+Services.fog.initializeFOG();
 
 const lazy = {};
 
@@ -152,6 +153,28 @@ add_atomic_task(async function test_ChatStorage_updateConversation() {
   }
 
   Assert.ok(success, errorMessage);
+});
+
+add_atomic_task(async function test_ChatStorage_coalescesDatabaseSizeRecords() {
+  const measure = gSandbox.spy(gChatStore, "getDatabaseSize");
+
+  for (let i = 0; i < 5; i++) {
+    await addBasicConvoTestData("1/1/2025", `conversation ${i}`);
+  }
+
+  Assert.equal(
+    measure.callCount,
+    0,
+    "writes should queue a measurement rather than taking one inline"
+  );
+
+  await gChatStore.recordDatabaseSizeNow();
+
+  Assert.equal(
+    measure.callCount,
+    1,
+    "five queued writes should collapse into a single measurement"
+  );
 });
 
 add_atomic_task(async function test_ChatStorage_findRecentConversations() {
@@ -639,6 +662,14 @@ add_atomic_task(async function test_ChatStorage_pruneDatabase() {
     reduction,
     0.55,
     "pruneDatabase() should not over-free past ~50%"
+  );
+
+  // Pruning is the only path that shrinks the file, so it has to record the
+  // size itself rather than leaving the metric stale-high until the next write.
+  Assert.equal(
+    Glean.smartWindow.chatStorage.testGetValue(),
+    await gChatStore.getDatabaseSize(),
+    "pruneDatabase() should record the post-vacuum file size"
   );
 });
 

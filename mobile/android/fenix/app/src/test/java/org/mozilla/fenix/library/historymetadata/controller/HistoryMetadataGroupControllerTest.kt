@@ -182,7 +182,14 @@ class HistoryMetadataGroupControllerTest {
 
     @Test
     fun `WHEN handleShare is invoked on a single tab THEN share use case is called with the selected items and send to devices and QR code chooser actions`() {
-        val expected = listOf(ShareData(url = mozillaHistoryMetadataItem.url, title = mozillaHistoryMetadataItem.title))
+        val expected =
+            listOf(
+                ShareData(
+                    url = mozillaHistoryMetadataItem.url,
+                    title = mozillaHistoryMetadataItem.title,
+                    private = appStore.state.mode.isPrivate,
+                )
+            )
 
         controller.handleShare(setOf(mozillaHistoryMetadataItem))
 
@@ -200,8 +207,16 @@ class HistoryMetadataGroupControllerTest {
     fun `WHEN handleShare is invoked on multiple tabs THEN share use case is called with the selected items and only send to devices chooser action`() {
         val expected =
             listOf(
-                ShareData(url = mozillaHistoryMetadataItem.url, title = mozillaHistoryMetadataItem.title),
-                ShareData(url = firefoxHistoryMetadataItem.url, title = firefoxHistoryMetadataItem.title),
+                ShareData(
+                    url = mozillaHistoryMetadataItem.url,
+                    title = mozillaHistoryMetadataItem.title,
+                    private = appStore.state.mode.isPrivate,
+                ),
+                ShareData(
+                    url = firefoxHistoryMetadataItem.url,
+                    title = firefoxHistoryMetadataItem.title,
+                    private = appStore.state.mode.isPrivate,
+                ),
             )
 
         controller.handleShare(setOf(mozillaHistoryMetadataItem, firefoxHistoryMetadataItem))

@@ -128,9 +128,11 @@ static CSSPoint ScrollFrameTo(ScrollContainerFrame* aFrame,
   bool scrollInProgress = APZCCallbackHelper::IsScrollInProgress(aFrame);
   if (!scrollInProgress) {
     ScrollSnapTargetIds snapTargetIds = aRequest.GetLastSnapTargetIds();
-    aFrame->ScrollToCSSPixelsForApz(targetScrollPosition,
-                                    std::move(snapTargetIds),
-                                    aRequest.GetScrollGenerationOnApz());
+    if (!aFrame->ScrollToCSSPixelsForApz(targetScrollPosition,
+                                         std::move(snapTargetIds),
+                                         aRequest.GetScrollGenerationOnApz())) {
+      return targetScrollPosition;
+    }
     geckoScrollPosition = CSSPoint::FromAppUnits(aFrame->GetScrollPosition());
     aSuccessOut = true;
   }
@@ -181,6 +183,8 @@ static DisplayPortMargins ScrollFrame(nsIContent* aContent,
       sf, aRequest.GetDisplayPortMargins());
   CSSPoint apzScrollOffset = aRequest.GetVisualScrollOffset();
   CSSPoint actualScrollOffset = ScrollFrameTo(sf, aRequest, scrollUpdated);
+  // sf might have been destroyed by the call to ScrollFrameTo, so re-get it.
+  sf = nsLayoutUtils::FindScrollContainerFrameFor(aRequest.GetScrollId());
   CSSPoint scrollDelta = apzScrollOffset - actualScrollOffset;
 
   if (scrollUpdated) {
@@ -290,7 +294,7 @@ void APZCCallbackHelper::NotifyLayerTransforms(
     const nsTArray<MatrixMessage>& aTransforms) {
   MOZ_ASSERT(NS_IsMainThread());
   for (const MatrixMessage& msg : aTransforms) {
-    BrowserParent* parent =
+    RefPtr<BrowserParent> parent =
         BrowserParent::GetBrowserParentFromLayersId(msg.GetLayersId());
     if (parent) {
       parent->SetChildToParentConversionMatrix(
@@ -387,8 +391,10 @@ void APZCCallbackHelper::UpdateRootFrame(const RepaintRequest& aRequest) {
     CSSPoint currentScrollPosition =
         CSSPoint::FromAppUnits(sf->GetScrollPosition());
     ScrollSnapTargetIds snapTargetIds = aRequest.GetLastSnapTargetIds();
-    sf->ScrollToCSSPixelsForApz(currentScrollPosition, std::move(snapTargetIds),
-                                sf->ScrollGenerationOnApz());
+    // Ignoring the result is safe only because sf isn't used after this call.
+    (void)sf->ScrollToCSSPixelsForApz(currentScrollPosition,
+                                      std::move(snapTargetIds),
+                                      sf->ScrollGenerationOnApz());
   }
 
   // Do this as late as possible since scrolling can flush layout. It also
@@ -500,6 +506,37 @@ void APZCCallbackHelper::InitializeRootDisplayport(nsIFrame* aFrame) {
     // Unlike normal root displayport, we don't need to walk up the frame tree
     // to set zero margin displayport for ancestor frames since this popup frame
     // is the root frame of the popuped window.
+  }
+}
+
+void APZCCallbackHelper::EnsureDisplayportSizeOnPopupRoot(nsIFrame* aFrame) {
+  MOZ_ASSERT(XRE_IsParentProcess(),
+             "The root displayport should be only used in the parent process");
+  MOZ_ASSERT(aFrame && aFrame->IsMenuPopupFrame(),
+             "This function is only available for popup frames.");
+
+  nsIContent* content = aFrame->GetContent();
+  if (!content) {
+    return;
+  }
+
+  uint32_t unused;
+  ScrollableLayerGuid::ViewID viewId;
+  if (APZCCallbackHelper::GetOrCreateScrollIdentifiers(content, &unused,
+                                                       &viewId)) {
+    MOZ_LOG(sDisplayportLog, LogLevel::Debug,
+            ("Refreshing root displayport on popup scrollId=%" PRIu64, viewId));
+
+    nsRect newBaseRect = DisplayPortUtils::GetDisplayportBase(aFrame);
+    nsRect currentBaseRect;
+    if (!DisplayPortUtils::GetDisplayPort(aFrame->GetContent(),
+                                          &currentBaseRect) ||
+        !newBaseRect.IsEqualEdges(currentBaseRect)) {
+      DisplayPortUtils::SetDisplayPortBase(content, newBaseRect);
+      DisplayPortUtils::SetDisplayPortMargins(
+          content, aFrame->PresShell(), DisplayPortMargins::Empty(content),
+          DisplayPortUtils::ClearMinimalDisplayPortProperty::Yes, 0);
+    }
   }
 }
 
@@ -881,12 +918,7 @@ void APZCCallbackHelper::NotifyMozMouseScrollEvent(
   if (!targetContent) {
     return;
   }
-  RefPtr<dom::Document> ownerDoc = targetContent->OwnerDoc();
-  if (!ownerDoc) {
-    return;
-  }
-
-  nsContentUtils::DispatchEventOnlyToChrome(ownerDoc, targetContent, aEvent,
+  nsContentUtils::DispatchEventOnlyToChrome(targetContent, aEvent,
                                             CanBubble::eYes, Cancelable::eYes);
 }
 

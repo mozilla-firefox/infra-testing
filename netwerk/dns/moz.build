@@ -56,6 +56,8 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
 elif CONFIG["OS_TARGET"] == "Linux":
     SOURCES += ["PlatformDNSUnix.cpp"]
     OS_LIBS += ["resolv"]
+elif CONFIG["OS_TARGET"] == "FreeBSD":
+    SOURCES += ["PlatformDNSUnix.cpp"]
 elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
     SOURCES += ["PlatformDNSMac.cpp"]
 elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "android":
@@ -113,3 +115,28 @@ LOCAL_INCLUDES += [
 ]
 
 USE_LIBS += ["icu"]
+
+LICENSES += ["jpnic"]
+LICENSES["jpnic"].title = "Japan Network Information Center License"
+LICENSES["jpnic"].text = "LICENSE-NOTICE.txt"
+LICENSES["jpnic"].notice = """
+<p>This license applies to certain files in the directory <code>netwerk/dns/</code>.</p>
+"""
+
+LICENSED_UNDER += [
+    "jpnic",
+]
+
+SOURCE_HEADERS += [
+    "DNSAdditionalInfo.h",
+    "DNSLogging.h",
+    "DNSUtils.h",
+    "GetAddrInfo.h",
+    "HostRecordQueue.h",
+    "nsDNSService2.h",
+    "nsHostRecord.h",
+    "nsHostResolver.h",
+    "nsIDNService.h",
+    "TRR.h",
+    "TRRQuery.h",
+]

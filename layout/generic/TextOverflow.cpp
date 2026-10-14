@@ -151,7 +151,8 @@ class nsDisplayTextOverflowMarker final : public nsPaintedDisplayItem {
       // On OS X, web authors can turn off subpixel text rendering using the
       // CSS property -moz-osx-font-smoothing. If they do that, we don't need
       // to use component alpha layers for the affected text.
-      if (mFrame->StyleFont()->mFont.smoothing == NS_FONT_SMOOTHING_GRAYSCALE) {
+      if (mFrame->StyleFont()->mFont.smoothing ==
+          mozilla::StyleFontSmoothing::Grayscale) {
         return nsRect();
       }
     }
@@ -164,7 +165,7 @@ class nsDisplayTextOverflowMarker final : public nsPaintedDisplayItem {
   void PaintTextToContext(gfxContext* aCtx, imgDrawingParams& aImgParams,
                           const nsPoint& aOffsetFromRect);
 
-  bool CreateWebRenderCommands(
+  WebRenderCommandsResult CreateWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
       const StackingContextHelper& aSc,
@@ -238,7 +239,7 @@ void nsDisplayTextOverflowMarker::PaintTextToContext(
   nsLayoutUtils::DrawString(mFrame, *fm, aCtx, str16.get(), str16.Length(), pt);
 }
 
-bool nsDisplayTextOverflowMarker::CreateWebRenderCommands(
+WebRenderCommandsResult nsDisplayTextOverflowMarker::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
     const StackingContextHelper& aSc, layers::RenderRootStateManager* aManager,
@@ -246,7 +247,7 @@ bool nsDisplayTextOverflowMarker::CreateWebRenderCommands(
   bool snap;
   nsRect bounds = GetBounds(aDisplayListBuilder, &snap);
   if (bounds.IsEmpty()) {
-    return true;
+    return Ok();
   }
 
   // Run the rendering algorithm to capture the glyphs and shadows
@@ -254,13 +255,17 @@ bool nsDisplayTextOverflowMarker::CreateWebRenderCommands(
                                                aManager, this, bounds);
   MOZ_ASSERT(textDrawer->IsValid());
   if (!textDrawer->IsValid()) {
-    return false;
+    return Err("text draw target is invalid");
   }
   gfxContext captureCtx(textDrawer);
   Paint(aDisplayListBuilder, &captureCtx);
   textDrawer->TerminateShadows();
 
-  return textDrawer->Finish();
+  if (!textDrawer->Finish()) {
+    return Err("text drawer could not emit all glyph commands");
+  }
+
+  return Ok();
 }
 
 TextOverflow::TextOverflow(nsDisplayListBuilder* aBuilder,
@@ -276,7 +281,6 @@ TextOverflow::TextOverflow(nsDisplayListBuilder* aBuilder,
       mBlockSize(aBlockFrame->GetSize()),
       mBlockWM(aBlockFrame->GetWritingMode()),
       mCanHaveInlineAxisScrollbar(false),
-      mInLineClampContext(aBlockFrame->IsInLineClampContext()),
       mAdjustForPixelSnapping(false) {
   if (mScrollContainerFrame) {
     auto scrollbarStyle =
@@ -478,9 +482,9 @@ void TextOverflow::AnalyzeMarkerEdges(nsIFrame* aFrame,
 LogicalRect TextOverflow::ExamineLineFrames(nsLineBox* aLine,
                                             FrameHashtable* aFramesToHide,
                                             AlignmentEdges* aAlignmentEdges) {
-  // No ellipsing for 'clip' style.
-  bool suppressIStart = mIStart.IsSuppressed(mInLineClampContext);
-  bool suppressIEnd = mIEnd.IsSuppressed(mInLineClampContext);
+  // No ellipsing for 'clip' style except for line-clamp containers.
+  bool suppressIStart = mIStart.IsIStartSuppressed();
+  bool suppressIEnd = mIEnd.IsIEndSuppressed();
   if (mCanHaveInlineAxisScrollbar) {
     LogicalPoint pos(mBlockWM, mScrollContainerFrame->GetScrollPosition(),
                      mBlockSize);
@@ -683,10 +687,15 @@ void TextOverflow::ProcessLine(const nsDisplayListSet& aLists, nsLineBox* aLine,
   mIStart.Reset();
   mIStart.mActive = !mIStart.mTextOverflowStyle->IsClip();
   mIEnd.Reset();
+  Maybe<Marker> prevIEnd;
   if (aLine->HasLineClampEllipsis()) {
+    prevIEnd = Some(mIEnd);
     mIEnd.mBlockEllipsis = mBlock->GetLineClampBlockEllipsis();
+    // Force mIEnd to be recomputed for this line, since we now have a block
+    // ellipsis.
+    mIEnd.mInitialized = false;
   }
-  mIEnd.mActive = !mIEnd.IsSuppressed(mInLineClampContext);
+  mIEnd.mActive = !mIEnd.IsIEndSuppressed();
 
   FrameHashtable framesToHide(64);
   AlignmentEdges alignmentEdges;
@@ -697,9 +706,9 @@ void TextOverflow::ProcessLine(const nsDisplayListSet& aLists, nsLineBox* aLine,
   if (!needIStart && !needIEnd) {
     return;
   }
-  NS_ASSERTION(!mIStart.IsSuppressed(mInLineClampContext) || !needIStart,
+  NS_ASSERTION(!mIStart.IsIStartSuppressed() || !needIStart,
                "left marker when not needed");
-  NS_ASSERTION(!mIEnd.IsSuppressed(mInLineClampContext) || !needIEnd,
+  NS_ASSERTION(!mIEnd.IsIEndSuppressed() || !needIEnd,
                "right marker when not needed");
 
   // If there is insufficient space for both markers then keep the one on the
@@ -748,6 +757,11 @@ void TextOverflow::ProcessLine(const nsDisplayListSet& aLists, nsLineBox* aLine,
   }
   CreateMarkers(aLine, needIStart, needIEnd, insideMarkersArea, contentArea,
                 aLineNumber);
+  if (prevIEnd) {
+    // Restore previous mIEnd since we've painted the block ellipsis and may
+    // need the text-overflow marker for subsequent lines.
+    mIEnd = prevIEnd.extract();
+  }
 }
 
 void TextOverflow::PruneDisplayListContents(
@@ -846,10 +860,10 @@ bool TextOverflow::CanHaveOverflowMarkers(nsBlockFrame* aBlockFrame,
 
   // Make text-overflow: ellipsis work on the <input> editor.
   if (aBlockFrame->Style()->GetPseudoType() ==
-      PseudoStyleType::MozTextControlEditingRoot) {
+          PseudoStyleType::MozTextControlEditingRoot &&
+      MOZ_LIKELY(IsTextInputScrolledContent(aBlockFrame->GetParent()))) {
     MOZ_ASSERT(IsInlineAxisOverflowVisible(*aBlockFrame),
                "The control editing root must create overflow");
-    MOZ_DIAGNOSTIC_ASSERT(IsTextInputScrolledContent(aBlockFrame->GetParent()));
     auto* scc = static_cast<ScrollContainerFrame*>(
         aBlockFrame->GetParent()->GetParent());
     if (scc->GetScrollPosition() != nsPoint()) {

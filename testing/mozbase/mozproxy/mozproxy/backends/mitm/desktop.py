@@ -27,6 +27,18 @@ POLICIES_CONTENT_ON = """{
   }
 }"""
 
+POLICIES_CONTENT_DIRECT = """{
+  "policies": {
+    "Certificates": {
+      "Install": ["%(cert)s"]
+    },
+    "Proxy": {
+      "Mode": "none",
+      "Locked": true
+    }
+  }
+}"""
+
 
 POLICIES_CONTENT_OFF = """{
   "policies": {
@@ -77,6 +89,7 @@ class MitmproxyDesktop(Mitmproxy):
            location, and turns on the the browser proxy settings
         """
         LOG.info("Installing mitmproxy CA certificate into Firefox")
+        self.wait_for_ca_cert(DEFAULT_CERT_PATH)
 
         # browser_path is the exe, we want the folder
         self.policies_dir = os.path.dirname(browser_path)
@@ -111,6 +124,8 @@ class MitmproxyDesktop(Mitmproxy):
             sys.exit()
 
     def _policies_content(self):
+        if self.playback_mode == "direct":
+            return POLICIES_CONTENT_DIRECT % {"cert": self.cert_path}
         return POLICIES_CONTENT_ON % {
             "cert": self.cert_path,
             "host": self.host,

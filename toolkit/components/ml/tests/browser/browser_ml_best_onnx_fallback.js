@@ -29,6 +29,8 @@ const BEST_ONNX_OPTIONS = {
   modelHubUrlTemplate: "{model}/resolve/{revision}",
 };
 
+add_setup(setupNativeOnnxRuntimeAvailabilityTest);
+
 /**
  * Stubs getWorkerConfig to a worker whose availability probe reports the native
  * runtime as present but whose onnx-native engine creation rejects with the
@@ -64,9 +66,10 @@ function stubProbeUnavailable() {
 }
 
 /**
- * Stubs getWorkerConfig to a worker whose availability probe throws. best-onnx
- * is expected to swallow the failure and fall back to optimistically trying
- * onnx-native (which succeeds in this stub). Returns a cleanup function.
+ * Stubs getWorkerConfig to a worker whose availability probe throws. The parent
+ * EngineProcess cache reports the indeterminate result as `false`, which
+ * best-onnx takes at face value and resolves to wasm onnx. Returns a cleanup
+ * function.
  */
 function stubProbeError() {
   const workerConfigStub = sinon
@@ -112,6 +115,7 @@ add_task(async function test_best_onnx_falls_back_to_wasm() {
   } finally {
     restoreStub();
     await EngineProcess.destroyMLEngine();
+    EngineProcess.resetNativeOnnxRuntimeAvailabilityForTests();
     await cleanup();
   }
 });
@@ -141,6 +145,7 @@ add_task(async function test_best_onnx_engine_is_reused_after_fallback() {
   } finally {
     restoreStub();
     await EngineProcess.destroyMLEngine();
+    EngineProcess.resetNativeOnnxRuntimeAvailabilityForTests();
     await cleanup();
   }
 });
@@ -169,47 +174,49 @@ add_task(async function test_best_onnx_probe_skips_native_when_unavailable() {
   } finally {
     restoreStub();
     await EngineProcess.destroyMLEngine();
+    EngineProcess.resetNativeOnnxRuntimeAvailabilityForTests();
     await cleanup();
   }
 });
 
 /**
- * When the availability probe itself throws, best-onnx must not reject: it
- * falls back to optimistically trying onnx-native and lets the engine-creation
- * path resolve the outcome. onnx-native succeeds in this stub, so the engine
- * resolves to "onnx-native" — a value the probe-false path can never produce,
- * which confirms the probe-failure branch of chooseBestBackend ran.
+ * When the availability probe itself throws, the parent-side cache reports the
+ * indeterminate result as `false` and best-onnx takes that at face value,
+ * resolving to wasm onnx. The stub's onnx-native path succeeds, so a regression
+ * that optimistically attempted native anyway would resolve the engine to
+ * "onnx-native" and fail this assertion.
  */
-add_task(async function test_best_onnx_probe_error_falls_back_to_native() {
-  const { cleanup } = await setup();
+add_task(async function test_best_onnx_probe_error_falls_back_to_wasm() {
+  const { cleanup, remoteClients } = await setup();
   const restoreStub = stubProbeError();
 
   try {
-    // The optimistic onnx-native attempt succeeds in the stub without fetching
-    // wasm or a model, so there are no pending downloads to resolve.
-    const engine = await createEngine(BEST_ONNX_OPTIONS);
+    const enginePromise = createEngine(BEST_ONNX_OPTIONS);
+    await remoteClients["ml-onnx-runtime"].resolvePendingDownloads(1);
+    const engine = await enginePromise;
 
     Assert.equal(
       engine.pipelineOptions.backend,
-      "onnx-native",
-      "A failed probe falls back to optimistically trying onnx-native."
+      "onnx",
+      "A failed probe resolves to wasm onnx rather than attempting native."
     );
   } finally {
     restoreStub();
     await EngineProcess.destroyMLEngine();
+    EngineProcess.resetNativeOnnxRuntimeAvailabilityForTests();
     await cleanup();
   }
 });
 
 /**
  * Concurrent cold-cache best-onnx requests must share a single availability
- * probe. chooseBestBackend checks and sets the in-flight promise in one
- * synchronous section, so a second concurrent caller can never launch its own
- * probe. The two requests need distinct engineIds, otherwise MLEngineParent
- * guards creation by engineId and the second waits for the first instead of
- * racing it. Each engine build calls getWorkerConfig once; the shared probe
- * adds exactly one more, so the stub is hit three times (a missing dedup would
- * probe twice, for four hits).
+ * probe. The parent-side EngineProcess cache checks and sets the in-flight
+ * promise in one synchronous section, so a second concurrent caller can never
+ * launch its own probe. The two requests need distinct engineIds, otherwise
+ * MLEngineParent guards creation by engineId and the second waits for the first
+ * instead of racing it. Each engine build calls getWorkerConfig once; the shared
+ * probe adds exactly one more, so the stub is hit three times (a missing dedup
+ * would probe twice, for four hits).
  */
 add_task(
   async function test_best_onnx_probe_runs_once_for_concurrent_requests() {
@@ -257,6 +264,7 @@ add_task(
     } finally {
       workerConfigStub.restore();
       await EngineProcess.destroyMLEngine();
+      EngineProcess.resetNativeOnnxRuntimeAvailabilityForTests();
       await cleanup();
     }
   }

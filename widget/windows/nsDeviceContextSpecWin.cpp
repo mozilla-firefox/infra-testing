@@ -12,7 +12,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/gfx/PrintPromise.h"
-#include "mozilla/gfx/PrintTargetPDF.h"
+#include "mozilla/gfx/PrintTargetSkPDF.h"
 #include "mozilla/gfx/PrintTargetWindows.h"
 #include "mozilla/glean/PrintingMetrics.h"
 #include "nsAnonymousTemporaryFile.h"
@@ -258,7 +258,7 @@ already_AddRefed<PrintTarget> nsDeviceContextSpecWin::MakePrintTarget() {
       return stream;
     }();
 
-    return PrintTargetPDF::CreateOrNull(stream, IntSize::Ceil(width, height));
+    return PrintTargetSkPDF::CreateOrNull(stream, IntSize::Ceil(width, height));
   }
 
   if (mDevMode) {

@@ -4,7 +4,7 @@
 
 use std::collections::HashSet;
 use std::fmt::Debug;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use chrono::{DateTime, NaiveDateTime, Utc};
@@ -52,7 +52,8 @@ use crate::stateful::targeting::{RecordedContext, execute_event_queries, validat
 use crate::stateful::updating::{read_and_remove_pending_experiments, write_pending_experiments};
 use crate::strings::fmt_with_map;
 use crate::{
-    AvailableExperiment, AvailableRandomizationUnits, EnrolledExperiment, EnrollmentStatus,
+    AvailableExperiment, AvailableRandomizationUnits, EnrolledExperiment, EnrollmentSlugs,
+    EnrollmentStatus,
 };
 use crate::{Experiment, ExperimentBranch, NimbusError, NimbusTargetingHelper, Result};
 
@@ -1056,6 +1057,30 @@ impl NimbusClient {
     }
 }
 
+pub fn get_active_enrollments<P: AsRef<Path>>(db_path: &P) -> Result<Vec<EnrollmentSlugs>> {
+    let db = Database::open_single(db_path.as_ref(), StoreId::Enrollments)?;
+    let reader = db.read()?;
+    let enrollments: Vec<ExperimentEnrollment> = db.store.collect_all(&reader)?;
+
+    Ok(enrollments
+        .into_iter()
+        .filter_map(|enrollment| {
+            if let EnrollmentStatus::Enrolled {
+                branch: branch_slug,
+                ..
+            } = enrollment.status
+            {
+                Some(EnrollmentSlugs {
+                    slug: enrollment.slug,
+                    branch_slug,
+                })
+            } else {
+                None
+            }
+        })
+        .collect())
+}
+
 pub struct NimbusStringHelper {
     context: JsonObject,
 }
@@ -1085,45 +1110,6 @@ impl NimbusStringHelper {
         }
     }
 }
-
-#[cfg(feature = "stateful-uniffi-bindings")]
-uniffi::custom_type!(JsonObject, String, {
-    remote,
-    try_lift: |val| {
-        let json: Value = serde_json::from_str(&val)?;
-
-        match json.as_object() {
-            Some(obj) => Ok(obj.clone()),
-            _ => Err(uniffi::deps::anyhow::anyhow!(
-                "Unexpected JSON-non-object in the bagging area"
-            )),
-        }
-    },
-    lower: |obj| serde_json::Value::Object(obj).to_string(),
-});
-
-#[cfg(feature = "stateful-uniffi-bindings")]
-uniffi::custom_type!(PrefValue, String, {
-    remote,
-    try_lift: |val| {
-        // Raw strings that are not valid JSON (e.g. pref values read directly from Gecko)
-        // should be treated as JSON string values.
-        let json: Value = match serde_json::from_str(&val) {
-            Ok(json) => json,
-            Err(_) => Value::String(val),
-        };
-        let is_valid_pref_type = json.is_string() || json.is_boolean()
-            || (json.is_number() && !json.is_f64()) || json.is_null();
-        if is_valid_pref_type {
-            Ok(json)
-        } else {
-            Err(anyhow::anyhow!(format!("Value {} is not a string, boolean, number, or null, or is a float", json)))
-        }
-    },
-    lower: |val| {
-        val.to_string()
-    }
-});
 
 #[cfg(feature = "stateful-uniffi-bindings")]
 uniffi::include_scaffolding!("nimbus");

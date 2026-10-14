@@ -88,6 +88,8 @@ export const presets = {
       // On-device machine learning threads:
       "onnx_worker",
       "llama.cpp",
+      "Parakeet",
+      "TextGenerator",
     ],
     duration: 0,
     l10nIds: {
@@ -116,6 +118,10 @@ export const presets = {
       "WrWorker",
       "CanvasWorkers",
       "TextureUpdate",
+      // Image decoding threads: most formats decode on the TaskController
+      // thread pool, JPEG XL additionally uses its own pool.
+      "TaskController",
+      "JxlDecode",
     ],
     duration: 0,
     l10nIds: {
@@ -189,6 +195,8 @@ export const presets = {
       "IPDL Background",
       "onnx_worker",
       "llama.cpp",
+      "Parakeet",
+      "TextGenerator",
     ],
     duration: 0,
     l10nIds: {

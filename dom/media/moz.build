@@ -354,6 +354,10 @@ else:
 if CONFIG["ENABLE_TESTS"] or CONFIG["FUZZING"]:
     UNIFIED_SOURCES += ["MockCubeb.cpp"]
 
+    SOURCE_HEADERS += [
+        "MockCubeb.h",
+    ]
+
 # MediaData.cpp : ambiguous compilation error caused by Mac OS X headers.
 SOURCES += [
     "MediaData.cpp",
@@ -440,3 +444,24 @@ COMPILE_FLAGS["WARNINGS_CXXFLAGS"] += ["-Werror=switch"]
 FINAL_LIBRARY = "xul"
 
 SPHINX_TREES["/media"] = "docs"
+
+SOURCE_HEADERS += [
+    "AudioCaptureTrack.h",
+    "AudioGenerator.h",
+    "AudioInputSource.h",
+    "AudioVerifier.h",
+    "BaseMediaResource.h",
+    "ChannelMediaResource.h",
+    "CloneableWithRangeMediaResource.h",
+    "CubebInputStream.h",
+    "DeviceInputTrack.h",
+    "FileMediaResource.h",
+    "GraphDriver.h",
+    "GraphRunner.h",
+    "MediaBlockCacheBase.h",
+    "MediaChannelStatistics.h",
+    "MediaTrackGraphImpl.h",
+    "Pacer.h",
+    "VideoFrameConverter.h",
+    "VideoOutput.h",
+]

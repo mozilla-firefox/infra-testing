@@ -14,6 +14,8 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   AutoTabGrouping:
     "moz-src:///browser/components/aiwindow/ui/modules/AutoTabGrouping.sys.mjs",
+  MonitorPanel:
+    "moz-src:///browser/components/aiwindow/ui/modules/MonitorPanel.sys.mjs",
   URILoadingHelper: "resource:///modules/URILoadingHelper.sys.mjs",
 });
 
@@ -496,6 +498,24 @@ export const AIWindowUI = {
    */
   toggleGroupTabsPanel(win, options) {
     lazy.AutoTabGrouping.toggleGroupTabsPanel(win, options);
+  },
+
+  /**
+   * Toggle the monitor creation panel anchored to its toolbar button.
+   *
+   * @param {Window} win
+   */
+  toggleMonitorPanel(win) {
+    lazy.MonitorPanel.toggleMonitorPanel(win);
+  },
+
+  /**
+   * Open the monitor panel straight to the create form.
+   *
+   * @param {Window} win
+   */
+  showMonitorCreateForm(win) {
+    lazy.MonitorPanel.showCreateForm(win);
   },
 
   /**

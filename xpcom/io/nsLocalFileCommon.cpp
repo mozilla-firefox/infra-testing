@@ -42,6 +42,7 @@ const char* const sExecutableExts[] = {
   ".afploc",      // Apple Filing Protocol Location
   ".air",         // Adobe AIR installer
   ".app",         // executable application
+  ".appcontent-ms",
   ".application", // from bug 348763
   ".appref-ms",   // ClickOnce link
   ".appx",
@@ -117,7 +118,8 @@ const char* const sExecutableExts[] = {
   ".scf",         // Windows explorer command
   ".scr",
   ".sct",
-  ".search-ms",  // Windows Saved Search
+  ".search-ms",           // Windows Saved Search
+  ".searchConnector-ms",  // Windows Search Connector
   ".settingcontent-ms",
   ".shb",
   ".shs",

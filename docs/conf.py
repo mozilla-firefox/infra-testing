@@ -37,7 +37,6 @@ sys.path.insert(0, str(OUR_DIR))
 extensions = [
     "myst_parser",
     "sphinx.ext.autodoc",
-    "sphinx.ext.autosectionlabel",
     "sphinx.ext.doctest",
     "sphinx.ext.graphviz",
     "sphinx.ext.napoleon",
@@ -50,6 +49,9 @@ extensions = [
     "sphinx_design",
     "bzlink",
     "etp_matrix",
+    "staging_paths",
+    "dark_mode",
+    "mermaid_wrapped_option",
 ]
 
 myst_enable_extensions = [
@@ -59,6 +61,36 @@ myst_enable_extensions = [
     "html_admonition",
     "fieldlist",
 ]
+
+# A diagram renders at the size mermaid laid it out at, which needs both
+# halves: useMaxWidth below gives the SVG an intrinsic size, without which a
+# content-sized box collapses to the CSS default object size of 300px, and
+# custom_theme.css overrides the extension's own stylesheet, which stretches
+# the SVG to the width of its container. A diagram wider than the column
+# scrolls there.
+mermaid_width = "fit-content"
+mermaid_height = "auto"
+
+# startOnLoad must stay off: the extension renders via mermaid.run() itself.
+# Only theme-neutral values belong here, as this config is shared by the light
+# and dark themes.
+mermaid_init_config = {
+    "startOnLoad": False,
+    "themeVariables": {
+        "fontSize": "18px",
+    },
+    # useMaxWidth is configured per diagram type; these are the types the tree
+    # uses.
+    "flowchart": {"useMaxWidth": False},
+    "sequence": {"useMaxWidth": False},
+    "class": {"useMaxWidth": False},
+    "state": {"useMaxWidth": False},
+    "gantt": {"useMaxWidth": False},
+    "er": {"useMaxWidth": False},
+}
+
+# ZenUML sequence diagrams. The plugin is fetched only on a page that has one.
+mermaid_include_zenuml = True
 
 # The paths are loaded from config.yml so they can be shared with a CI
 # optimization strategy that ensures the doc task runs when these files change.
@@ -70,7 +102,7 @@ root_for_relative_js_paths = ".."
 jsdoc_config_path = "jsdoc.json"
 
 templates_path = ["_templates"]
-source_suffix = [".rst", ".md"]
+source_suffix = [".md"]
 master_doc = "index"
 project = "Firefox Source Docs"
 
@@ -131,13 +163,6 @@ html_context = {
     "github_version": "main",
 }
 
-# Only run autosection for the page title.
-# Otherwise, we have a huge number of duplicate links.
-# For example, the page https://firefox-source-docs.mozilla.org/code-quality/lint/
-# is called "Linting"
-# just like https://firefox-source-docs.mozilla.org/remote/CodeStyle.html
-autosectionlabel_maxdepth = 1
-
 
 def install_sphinx_design(app, pagename, templatename, context, doctree):
     if "perfdocs" in pagename:
@@ -163,11 +188,11 @@ def add_github_source_link(app, pagename, templatename, context, doctree):
     # manager.trees maps staging prefixes to source prefixes,
     # e.g. {"gfx": "gfx/docs", "js": "js/src/doc"}.
     # Replace the staging prefix with the original source prefix to recover
-    # the real repo path, e.g. "gfx/Silk.rst" -> "gfx/docs/Silk.rst".
+    # the real repo path, e.g. "gfx/Silk.md" -> "gfx/docs/Silk.md".
     for staging_prefix, original_prefix in manager.trees.items():
         if staging_relpath.startswith(staging_prefix + "/"):
             # Strip the staging prefix and re-attach the original source prefix.
-            # e.g. "gfx/Silk.rst" -> strip "gfx" -> "Silk.rst" -> "gfx/docs/Silk.rst"
+            # e.g. "gfx/Silk.md" -> strip "gfx" -> "Silk.md" -> "gfx/docs/Silk.md"
             rel = staging_relpath[len(staging_prefix) + 1 :]
             context["github_source_path"] = original_prefix + "/" + rel
             return
@@ -215,5 +240,6 @@ make_sphinx_js_skip_missing_objects()
 
 def setup(app):
     app.add_css_file("custom_theme.css")
+    app.add_js_file("scrollable_regions.js")
     app.connect("html-page-context", install_sphinx_design)
     app.connect("html-page-context", add_github_source_link)

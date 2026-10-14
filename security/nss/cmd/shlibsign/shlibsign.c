@@ -102,10 +102,10 @@ typedef struct HashTableStruct {
 #define CKM_SHA1 CKM_SHA_1
 #define CKM_SHA1_HMAC CKM_SHA_1_HMAC
 #define CKK_SHA1_HMAC CKK_SHA_1_HMAC
-#define MKHASH(name, mech)                                   \
-    {                                                        \
-        name, CKM_##mech, CKM_##mech##_HMAC,                 \
-            CKK_##mech##_HMAC, HASH_Alg##mech, mech##_LENGTH \
+#define MKHASH(name, mech)                               \
+    {                                                    \
+        name, CKM_##mech, CKM_##mech##_HMAC,             \
+        CKK_##mech##_HMAC, HASH_Alg##mech, mech##_LENGTH \
     }
 static HashTable hashTable[] = {
     MKHASH("sha-1", SHA1), MKHASH("sha1", SHA1), MKHASH("sha224", SHA224),
@@ -1558,7 +1558,7 @@ main(int argc, char **argv)
     CK_TOKEN_INFO tokenInfo;
     CK_FUNCTION_LIST_PTR pFunctionList = NULL;
     CK_RV crv = CKR_OK;
-    CK_SESSION_HANDLE hRwSession;
+    CK_SESSION_HANDLE hRwSession = CK_INVALID_HANDLE;
     CK_SLOT_ID *pSlotList = NULL;
     CK_ULONG slotIndex = 0;
 
@@ -1900,6 +1900,11 @@ main(int argc, char **argv)
 
 cleanup:
     if (pFunctionList) {
+        if (hRwSession != CK_INVALID_HANDLE) {
+            /* ignore the return code since we are closing in
+             * the next call anyway */
+            (void)pFunctionList->C_CloseSession(hRwSession);
+        }
         /* C_Finalize will automatically logout, close session, */
         /* and delete the temp objects on the token */
         crv = pFunctionList->C_Finalize(NULL);

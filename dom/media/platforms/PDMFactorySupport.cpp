@@ -70,6 +70,7 @@ constexpr const char* kInvalidatingPrefs_Android[] = {
 constexpr const char* kInvalidatingPrefs_FFmpeg[] = {
     "media.ffmpeg.enabled",
     "media.rdd-ffmpeg.enabled",
+    "media.hardware-video-decoding-vulkan.prefer-system-ffmpeg",
     nullptr,
 };
 #endif
@@ -112,6 +113,18 @@ media::DecodeSupportSet PDMFactorySupport::IsSupported(
     return media::DecodeSupportSet{};
   }
   return support->Supports(aParams, aDiagnostics);
+}
+
+/* static */
+RefPtr<PDMSupportsDecoderPromise> PDMFactorySupport::IsSupportedAsync(
+    const SupportDecoderParams& aParams) {
+  RefPtr<PDMFactorySupport> support = Instance();
+  if (!support) {
+    // Past `AppShutdownConfirmed`; report unsupported.
+    return PDMSupportsDecoderPromise::CreateAndResolve(
+        media::DecodeSupportSet{}, __func__);
+  }
+  return support->SupportsAsync(aParams);
 }
 
 /* static */

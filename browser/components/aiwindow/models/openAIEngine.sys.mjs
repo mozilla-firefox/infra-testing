@@ -114,6 +114,15 @@ export class openAIEngine {
   }
 
   /**
+   * Whether this engine instance sends requests to Mozilla's default endpoint.
+   *
+   * @returns {boolean}
+   */
+  get isDefaultEndpoint() {
+    return this.#baseURL === DEFAULT_ENDPOINT;
+  }
+
+  /**
    * Returns the endpoint and API key for a model choice.
    *
    * @param {string} [modelChoiceId] - Selected model choice id

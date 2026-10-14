@@ -34,6 +34,7 @@ import org.mozilla.fenix.utils.maybeShowAddSearchWidgetPrompt
 private const val EXTRA_TAB_TRAY_ANIMATION = "EXTRA_TAB_TRAY_ANIMATION"
 
 @VisibleForTesting internal const val HOME_DEEPLINK_TELEMETRY_SOURCE = "deeplink"
+@VisibleForTesting internal const val PRIVACY_REPORT_NOTIFICATION_TELEMETRY_SOURCE = "privacy_report_notification"
 
 /** Deep links in the form of `fenix://host` open different parts of the app. */
 class HomeDeepLinkIntentProcessor(
@@ -74,7 +75,7 @@ class HomeDeepLinkIntentProcessor(
                 "settings_accessibility" -> GlobalDirections.Accessibility
                 "settings_delete_browsing_data" -> GlobalDirections.DeleteData
                 "settings_addon_manager" -> GlobalDirections.SettingsAddonManager
-                "settings_logins" -> GlobalDirections.SettingsLogins
+                "settings_logins" -> if (settings.isAutofillSupported) GlobalDirections.SettingsLogins else return
                 "settings_tracking_protection" -> GlobalDirections.SettingsTrackingProtection
                 // We'd like to highlight views within the fragment
                 // https://github.com/mozilla-mobile/fenix/issues/11856
@@ -85,6 +86,7 @@ class HomeDeepLinkIntentProcessor(
                 "settings_private_browsing" -> GlobalDirections.SettingsPrivateBrowsing
                 "settings_app_icon" -> GlobalDirections.SettingsAppIcon
                 "settings_ai_controls" -> GlobalDirections.SettingsAIControls
+                "privacy_report",
                 "protections_dashboard" -> GlobalDirections.ProtectionsDashboard
                 "settings_ip_protection" -> GlobalDirections.SettingsIpProtection
 
@@ -155,6 +157,10 @@ class HomeDeepLinkIntentProcessor(
                 TrackingProtection.privacyReportTapped.record(
                     TrackingProtection.PrivacyReportTappedExtra(HOME_DEEPLINK_TELEMETRY_SOURCE)
                 )
+            "privacy_report" ->
+                TrackingProtection.privacyReportTapped.record(
+                    TrackingProtection.PrivacyReportTappedExtra(PRIVACY_REPORT_NOTIFICATION_TELEMETRY_SOURCE)
+                )
         }
     }
 
@@ -189,7 +195,7 @@ class HomeDeepLinkIntentProcessor(
             navigateToShareFragment = {
                 navController.navigate(
                     NavGraphDirections.actionGlobalShareFragment(
-                        data = arrayOf(ShareData(url = url, title = title, text = text)),
+                        data = arrayOf(ShareData(url = url, title = title, text = text, private = false)),
                         shareSubject = subject.ifEmpty { title },
                         showPage = false,
                         sessionId = null,

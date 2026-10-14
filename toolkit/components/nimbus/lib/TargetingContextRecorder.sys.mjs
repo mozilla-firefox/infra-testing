@@ -2,9 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const lazy = {};
+import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
-ChromeUtils.defineESModuleGetters(lazy, {
+const lazy = XPCOMUtils.declareLazy({
   ASRouterTargeting:
     // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
     "resource:///modules/asrouter/ASRouterTargeting.sys.mjs",
@@ -123,6 +123,7 @@ export const ATTRIBUTE_TRANSFORMS = Object.freeze({
     hasInstalledAddons: !!addonsInfo?.hasInstalledAddons,
   }),
   addressesSaved: typeAssertions.quantity,
+  allowedNotificationOrigins: typeAssertions.quantity,
   archBits: typeAssertions.quantity,
   attributionData: pick("medium", "source", "ua"),
   browserSettings: pickWith({
@@ -227,6 +228,7 @@ export const PREFS = Object.freeze({
   "browser.newtabpage.enabled": PREF_BOOL,
   "browser.profiles.created": PREF_BOOL,
   "browser.startup.page": PREF_INT,
+  "browser.tabs.splitview.hasUsed": PREF_BOOL,
   "browser.toolbars.bookmarks.visibility": PREF_STRING,
   "browser.urlbar.lastUrlbarSearchSeconds": PREF_INT,
   "browser.urlbar.showSearchSuggestionsFirst": PREF_BOOL,

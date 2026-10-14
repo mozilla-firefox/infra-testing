@@ -24,7 +24,7 @@
  * @property {string[]} [query]
  * @property {string[]} [cast]
  *
- * @property {*} [actor]
+ * @property {any} [actor]
  * @property {boolean} [verified]
  * @property {string} [url]
  * @property {number} [frameId]
@@ -74,16 +74,32 @@ const ADDON_ENV = new Set(["addon_child", "devtools_child"]);
  * Internal, keeps track of all parent and remote (child) conduits.
  */
 const Hub = {
-  /** @type {Map<ConduitID, ConduitAddress>} Info about all child conduits. */
+  /**
+   * Info about all child conduits.
+   *
+   * @type {Map<ConduitID, ConduitAddress>}
+   */
   remotes: new Map(),
 
-  /** @type {Map<ConduitID, BroadcastConduit>} All open parent conduits. */
+  /**
+   * All open parent conduits.
+   *
+   * @type {Map<ConduitID, BroadcastConduit>}
+   */
   conduits: new Map(),
 
-  /** @type {Map<string, BroadcastConduit>} Parent conduits by recvMethod. */
+  /**
+   * Parent conduits by recvMethod.
+   *
+   * @type {Map<string, BroadcastConduit>}
+   */
   byMethod: new Map(),
 
-  /** @type {WeakMap<ConduitsParent, Set<ConduitAddress>>} Conduits by actor. */
+  /**
+   * Conduits by actor.
+   *
+   * @type {WeakMap<ConduitsParent, Set<ConduitAddress>>}
+   */
   byActor: new ExtensionUtils.DefaultWeakMap(() => new Set()),
 
   /** @type {Map<string, BroadcastConduit>} */
@@ -219,6 +235,11 @@ const Hub = {
    * @param {ConduitsParent} actor
    */
   recvConduitOpened(address, actor) {
+    if (this.remotes.has(address.id)) {
+      Cu.reportError(`Duplicate conduit id ${address.id}`);
+      return;
+    }
+
     this.fillInAddress(address, actor);
 
     for (let [key, conduit] of this.reportOnOpened.entries()) {

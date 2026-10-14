@@ -10,11 +10,17 @@ from taskgraph.util.taskcluster import get_artifact_path
 
 transforms = TransformSequence()
 
+# Seconds reserved out of max-run-time for the checkout, the artifact download
+# and task teardown, so a stuck GHA run reports a timeout of its own rather than
+# being killed by the worker.
+POLL_TIMEOUT_PADDING = 600
+
 
 @transforms.add
 def update_env(config, tasks):
     for task in tasks:
         name = task["name"]
+        target_info_artifact = "target_info.txt"
         if "win" in name:
             input_key = "win_installer_link"
             artifact = "target.zip"
@@ -30,5 +36,9 @@ def update_env(config, tasks):
                 "artifact-reference": f"<build/{get_artifact_path(task, artifact)}>"
             },
             "INPUT_KEY": input_key,
+            "POLL_TIMEOUT": str(task["worker"]["max-run-time"] - POLL_TIMEOUT_PADDING),
+            "TARGET_INFO_LINK": {
+                "artifact-reference": f"<build/{get_artifact_path(task, target_info_artifact)}>"
+            },
         }
         yield task

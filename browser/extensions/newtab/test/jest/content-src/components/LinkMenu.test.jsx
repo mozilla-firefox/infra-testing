@@ -290,9 +290,18 @@ describe("<LinkMenu>", () => {
         is_sponsored: true,
       },
       "newtab-menu-open-new-private-window": {
+        card_type: FAKE_SITE.card_type,
         url: FAKE_SITE.url,
         referrer: FAKE_SITE.referrer,
         event_source: "CONTEXT_MENU",
+        topic: undefined,
+        tile_id: undefined,
+        scheduled_corpus_item_id: undefined,
+        corpus_item_id: undefined,
+        received_rank: undefined,
+        recommended_at: undefined,
+        format: undefined,
+        is_pocket_card: false,
       },
       "newtab-menu-dismiss": [
         {
@@ -477,7 +486,7 @@ describe("<LinkMenu>", () => {
 
       blockUrlOption.onClick(FAKE_EVENT);
 
-      expect(dispatch).toHaveBeenCalledTimes(3);
+      expect(dispatch).toHaveBeenCalledTimes(2);
       expect(dispatch).toHaveBeenNthCalledWith(1, blockUrlOption.action);
       const expected = {
         url: site.url,
@@ -521,7 +530,7 @@ describe("<LinkMenu>", () => {
 
       blockUrlOption.onClick(FAKE_EVENT);
 
-      expect(dispatch).toHaveBeenCalledTimes(3);
+      expect(dispatch).toHaveBeenCalledTimes(2);
       expect(dispatch).toHaveBeenNthCalledWith(1, blockUrlOption.action);
       const expected = {
         url: site.url,

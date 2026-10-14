@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 const lazy = {};
 
@@ -47,7 +48,7 @@ export class NewTabContentPing {
   /**
    * Set the maximum number of events to send in a 24 hour period
    *
-   * @param {int} maxEvents
+   * @param {number} maxEvents
    */
   setMaxEventsPerDay(maxEvents) {
     this.#maxDailyEvents = maxEvents || 0;
@@ -56,7 +57,7 @@ export class NewTabContentPing {
   /**
    * Set the maximum number of events to send in a 24 hour period
    *
-   * @param {int} maxEvents
+   * @param {number} maxEvents
    */
   setMaxClickEventsPerDay(maxEvents) {
     this.#maxDailyClickEvents = maxEvents || 0;
@@ -65,7 +66,7 @@ export class NewTabContentPing {
   /**
    * Set the maximum number of events to send in a 24 hour period
    *
-   * @param {int} maxEvents
+   * @param {number} maxEvents
    */
   setMaxClickEventsPerWeek(maxEvents) {
     this.#maxWeeklyClickEvents = maxEvents || 0;
@@ -81,7 +82,7 @@ export class NewTabContentPing {
    *   The extra data being recorded with the event.
    */
   recordEvent(name, data) {
-    this.#eventBuffer.push([name, this.sanitizeEventData(data)]);
+    this.#eventBuffer.push([name, this.sanitizeEventData(name, data)]);
   }
 
   /**
@@ -264,13 +265,19 @@ export class NewTabContentPing {
    * ensure we don't accidentally send these if copying information between
    * the newtab ping and the newtab-content ping.
    *
+   * @param {string} eventName
+   *   The name of the event being recorded.
    * @param {object} eventDataDict
    *   The Glean event data that would be passed to a `record` method.
    * @returns {object}
    *   The sanitized event data.
    */
-  sanitizeEventData(eventDataDict) {
+  sanitizeEventData(eventName, eventDataDict) {
     const {
+      // @backward-compat { version 159 }
+      // We can remove tile_id from this list once 159 hits release, since at that point,
+      // tile_id will have been removed from the newtab-content ping within metrics.yaml, and
+      // there will no longer be a chance of it accidentally slipping through extra_keys.
       // eslint-disable-next-line no-unused-vars
       tile_id,
       // eslint-disable-next-line no-unused-vars
@@ -284,9 +291,36 @@ export class NewTabContentPing {
       // eslint-disable-next-line no-unused-vars
       event_source,
       // eslint-disable-next-line no-unused-vars
-      layout_name,
+      card_column,
+      // eslint-disable-next-line no-unused-vars
+      is_ad_eligible_position,
       ...result
     } = eventDataDict;
+    // @backward-compat { version 157 } layout_name was added as an extra_key to
+    // the newtab_content impression/click events in 157. A train-hopped XPI can
+    // run on older platform builds whose schema lacks it, which would throw a
+    // Glean error, so drop it below 157.
+    if (Services.vc.compare(AppConstants.MOZ_APP_VERSION, "157.0a1") < 0) {
+      delete result.layout_name;
+    }
+    // @backward-compat { version 158 } variant_id and source_section_id were
+    // added as extra_keys to the newtab_content impression/click events in 158.
+    // A train-hopped XPI can run on older platform builds whose schema lacks
+    // them, which would throw a Glean error, so drop them below 158.
+    if (Services.vc.compare(AppConstants.MOZ_APP_VERSION, "158.0a1") < 0) {
+      delete result.variant_id;
+      delete result.source_section_id;
+    }
+    // @backward-compat { version 158 } Bug 2067937: section_position was
+    // removed from the newtab_content impression/click extra_keys in 157 and
+    // restored in 159. Drop it on 157 and 158 builds to avoid a Glean error.
+    if (
+      (eventName === "impression" || eventName === "click") &&
+      Services.vc.compare(AppConstants.MOZ_APP_VERSION, "157.0a1") >= 0 &&
+      Services.vc.compare(AppConstants.MOZ_APP_VERSION, "159.0a1") < 0
+    ) {
+      delete result.section_position;
+    }
     return result;
   }
 
@@ -323,8 +357,8 @@ export class NewTabContentPing {
   /**
    * Returns a secure random number between 0 and range
    *
-   * @param {int} range Integer value range
-   * @returns {int} Random value between 0 and range non-inclusive
+   * @param {number} range Integer value range
+   * @returns {number} Random value between 0 and range non-inclusive
    */
   static secureRandIntInRange(range) {
     // To ensure a uniform distribution, we discard values that could introduce
@@ -371,7 +405,7 @@ export class NewTabContentPing {
    *
    * This function is a no-op when not running in test automation.
    *
-   * @returns {number}
+   * @returns {Promise<number>}
    *   The originally selected random delay for submitting the newtab-content
    *   ping.
    * @throws {Error}

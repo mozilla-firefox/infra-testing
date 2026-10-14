@@ -29,7 +29,6 @@ import { createLocation } from "../../utils/location";
 import {
   getBlackBoxRanges,
   getSource,
-  getSourceFromId,
   hasSourceActor,
   getPendingSelectedLocation,
   getPendingBreakpointsForSource,
@@ -287,21 +286,12 @@ export function newOriginalSources(originalSourcesInfo) {
   };
 }
 
-// Wrapper around newGeneratedSources, only used by tests
-export function newGeneratedSource(sourceInfo) {
-  return async ({ dispatch }) => {
-    const sources = await dispatch(newGeneratedSources([sourceInfo]));
-    return sources[0];
-  };
-}
-
 export function newGeneratedSources(sourceResources) {
   return async ({ dispatch, getState }) => {
     if (!sourceResources.length) {
-      return [];
+      return;
     }
 
-    const resultIds = [];
     const newSourcesObj = {};
     const newSourceActors = [];
 
@@ -331,8 +321,6 @@ export function newGeneratedSources(sourceResources) {
           )
         );
       }
-
-      resultIds.push(id);
     }
 
     const newSources = Object.values(newSourcesObj);
@@ -351,6 +339,12 @@ export function newGeneratedSources(sourceResources) {
       // the breakable lines for any late coming inline <script> tag.
       const selectedLocation = getSelectedLocation(getState());
       for (const sourceActor of newSourceActors) {
+        // Loading the source maps is asynchronous, so a navigation may have
+        // destroyed this target in the meantime. Its source text can no longer
+        // be fetched and its sources are about to be destroyed.
+        if (sourceActor.targetFront.isDestroyed()) {
+          continue;
+        }
         if (
           selectedLocation?.source == sourceActor.sourceObject &&
           sourceActor.sourceObject.isHTML &&
@@ -368,13 +362,14 @@ export function newGeneratedSources(sourceResources) {
       // loading source maps as sometimes generated and original
       // files share the same paths.
       for (const sourceActor of newSourceActors) {
+        if (sourceActor.targetFront.isDestroyed()) {
+          continue;
+        }
         dispatch(
           checkPendingBreakpoints(sourceActor.sourceObject, sourceActor)
         );
       }
     })();
-
-    return resultIds.map(id => getSourceFromId(getState(), id));
   };
 }
 

@@ -20,19 +20,21 @@
 #ifndef ABSL_BASE_INTERNAL_THREAD_IDENTITY_H_
 #define ABSL_BASE_INTERNAL_THREAD_IDENTITY_H_
 
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
+
+#include "absl/base/attributes.h"
+#include "absl/base/config.h"
+#include "absl/base/internal/per_thread_tls.h"
+#include "absl/base/optimization.h"
+
 #ifndef _WIN32
 #include <pthread.h>
 // Defines __GOOGLE_GRTE_VERSION__ (via glibc-specific features.h) when
 // supported.
 #include <unistd.h>
 #endif
-
-#include <atomic>
-#include <cstdint>
-
-#include "absl/base/config.h"
-#include "absl/base/internal/per_thread_tls.h"
-#include "absl/base/optimization.h"
 
 namespace absl {
 ABSL_NAMESPACE_BEGIN
@@ -269,7 +271,7 @@ void ClearCurrentThreadIdentity();
 #error ABSL_THREAD_IDENTITY_MODE cannot be directly set
 #elif defined(ABSL_FORCE_THREAD_IDENTITY_MODE)
 #define ABSL_THREAD_IDENTITY_MODE ABSL_FORCE_THREAD_IDENTITY_MODE
-#elif defined(_WIN32)
+#elif defined(_WIN32) && !defined(__MINGW32__)
 #define ABSL_THREAD_IDENTITY_MODE ABSL_THREAD_IDENTITY_MODE_USE_CPP11
 #elif defined(__APPLE__) && defined(ABSL_HAVE_THREAD_LOCAL)
 #define ABSL_THREAD_IDENTITY_MODE ABSL_THREAD_IDENTITY_MODE_USE_CPP11

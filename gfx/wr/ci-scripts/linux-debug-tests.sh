@@ -33,6 +33,9 @@ pushd examples
 cargo build ${CARGOFLAGS}
 popd
 
+pushd wrshell
+cargo build ${CARGOFLAGS}
+popd
+
 cargo test ${CARGOFLAGS} \
-    --all --exclude compositor --exclude compositor-wayland \
-    --exclude compositor-windows --exclude glsl-to-cxx --exclude swgl
+    --all --exclude glsl-to-cxx --exclude swgl

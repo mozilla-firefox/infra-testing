@@ -17,8 +17,15 @@ autofill-edit-payment-method-os-prompt-macos = show stored payment method inform
 autofill-edit-payment-method-os-prompt-windows = { -brand-short-name } is trying to show stored payment method information. Confirm access to this Windows account below.
 autofill-edit-payment-method-os-prompt-other = { -brand-short-name } is trying to show stored payment method information.
 
-# The link leads users to Form Autofill browser preferences.
-autofill-options-link = Form autofill options
+# In macOS, this string is preceded by the operating system with "Firefox is trying to ",
+# and has a period added to its end. Make sure to test in your locale.
+autofill-delete-payment-method-os-prompt-macos = delete stored payment method information
+autofill-delete-payment-method-os-prompt-windows = { -brand-short-name } is trying to delete stored payment method information. Confirm access to this Windows account below.
+autofill-delete-payment-method-os-prompt-other = { -brand-short-name } is trying to delete stored payment method information.
+
+# The button leads users to Form Autofill browser preferences.
+credit-card-doorhanger-options-button =
+    .title = Form autofill options
 
 ## The credit card capture doorhanger
 
@@ -26,9 +33,15 @@ autofill-options-link = Form autofill options
 # this checkbox is displayed on the doorhanger shown when saving credit card.
 credit-card-doorhanger-credit-cards-sync-checkbox = Sync all saved cards across my devices
 
-# Used on the doorhanger when users submit payment with credit card.
+## Used on the doorhanger when users submit payment with credit card.
+
 credit-card-save-doorhanger-header = Securely save this card?
 credit-card-save-doorhanger-description = { -brand-short-name } encrypts your card number. Your security code won’t be saved.
+credit-card-save-doorhanger-description-security-code = { -brand-short-name } encrypts your card number and security code, so only you can use them to fill payment forms.
+credit-card-doorhanger-save-security-codes-checkbox =
+    .label = Always save security codes for payment methods.
+
+##
 
 credit-card-capture-save-button =
     .label = Save
@@ -60,6 +73,28 @@ autofill-manage-addresses-label = Manage addresses
 
 # Used as a label for the button, displayed at the bottom of the dropdown suggestion, to open Form Autofill browser preferences.
 autofill-manage-payment-methods-label = Manage payment methods
+
+# Used as the primary label of an autofill drop down suggestion when the focused
+# field is the card security code. The card's masked number is shown underneath
+# it as the secondary label. "CVC" is a common abbreviation for the code printed
+# on a payment card; use whichever abbreviation is most familiar in your locale.
+autofill-card-security-code-label = CVC
+
+## Details of the card shown on the credit card capture doorhanger, below the
+## masked card number. Each message is used for a different combination of the
+## available details.
+## Variables:
+##   $name (String): The cardholder name
+##   $month (String): Two-digit month the card expires
+##   $year (String): Two-digit year the card expires
+
+credit-card-doorhanger-details-name = { $name }
+credit-card-doorhanger-details-expiration = { $month }/{ $year }
+credit-card-doorhanger-details-cvv = CVV saved
+credit-card-doorhanger-details-name-expiration = { $name }, { $month }/{ $year }
+credit-card-doorhanger-details-name-cvv = { $name } | CVV saved
+credit-card-doorhanger-details-expiration-cvv = { $month }/{ $year } | CVV saved
+credit-card-doorhanger-details-name-expiration-cvv = { $name }, { $month }/{ $year } | CVV saved
 
 ## These are brand names and should only be translated when a locale-specific name for that brand is in common use
 

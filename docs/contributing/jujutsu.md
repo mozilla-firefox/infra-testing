@@ -1,7 +1,7 @@
 # Introduction to Jujutsu
 
 Jujutsu (`jj` on the command-line) is a modern DVCS, that uses `git`
-repositorie as its storage backend. It borrows extensively from Mercurial,
+repository as its storage backend. It borrows extensively from Mercurial,
 but has many more features.
 
 :::{note}
@@ -162,7 +162,7 @@ onto autoland or beta or other bookmarks if you want.
 ### Dropping/pruning/removing obsolete commits
 
 (Note: you may want to look at the [previous
-tip](<#rebasing-work-in-progress-(and-automatically-drop-changes-that-have-landed)>)!)
+tip](#rebasing-work-in-progress-and-automatically-drop-changes-that-have-landed)!)
 
 You can use any of:
 

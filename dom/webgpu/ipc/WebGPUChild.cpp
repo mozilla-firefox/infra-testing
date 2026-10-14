@@ -11,11 +11,7 @@
 #include "DeviceLostInfo.h"
 #include "PipelineLayout.h"
 #include "Sampler.h"
-#include "Utility.h"
-#include "js/RootingAPI.h"
-#include "js/String.h"
-#include "js/TypeDecls.h"
-#include "js/Value.h"
+#include "SupportedLimits.h"
 #include "js/Warnings.h"  // JS::WarnUTF8
 #include "mozilla/Assertions.h"
 #include "mozilla/ProfilerMarkers.h"
@@ -87,9 +83,9 @@ void wgpu_child_resolve_request_adapter_promise(
   }
 }
 
-void wgpu_child_resolve_request_device_promise(WGPUWebGPUChildPtr aChild,
-                                               RawId aDeviceId, RawId aQueueId,
-                                               const nsCString* aError) {
+void wgpu_child_resolve_request_device_promise(
+    WGPUWebGPUChildPtr aChild, RawId aDeviceId, RawId aQueueId,
+    const WGPULimits* aLimits, const ffi::WGPUFfiRequestDeviceError* aError) {
   auto* c = static_cast<WebGPUChild*>(aChild);
   auto pending_promise = c->DequeueRequestDevicePromise();
 
@@ -97,23 +93,37 @@ void wgpu_child_resolve_request_device_promise(WGPUWebGPUChildPtr aChild,
   MOZ_RELEASE_ASSERT(pending_promise.queue_id == aQueueId);
 
   if (aError == nullptr) {
+    MOZ_RELEASE_ASSERT(aLimits);
+    // Not `pending_promise.limits`: those are the limits we requested, which
+    // wgpu-core may have adjusted.
+    RefPtr<SupportedLimits> limits =
+        new SupportedLimits(pending_promise.adapter, *aLimits);
     RefPtr<Device> device =
         new Device(pending_promise.adapter, pending_promise.device_id,
-                   pending_promise.queue_id, pending_promise.features,
-                   pending_promise.limits, pending_promise.adapter_info,
-                   pending_promise.lost_promise);
+                   pending_promise.queue_id, pending_promise.features, limits,
+                   pending_promise.adapter_info, pending_promise.lost_promise);
     device->SetLabel(pending_promise.label);
     promise::MaybeResolve(std::move(pending_promise.promise),
                           std::move(device));
-  } else {
-    promise::MaybeRejectWithOperationError(std::move(pending_promise.promise),
-                                           nsCString(*aError));
+    return;
   }
+
+  switch (aError->ty) {
+    case ffi::WGPUFfiRequestDeviceErrorType_TypeError:
+      promise::MaybeRejectWithTypeError(std::move(pending_promise.promise),
+                                        nsCString(*aError->message));
+      return;
+    case ffi::WGPUFfiRequestDeviceErrorType_OperationError:
+      promise::MaybeRejectWithOperationError(std::move(pending_promise.promise),
+                                             nsCString(*aError->message));
+      return;
+  }
+  MOZ_CRASH("invalid WGPUFfiRequestDeviceErrorType");
 }
 
-void wgpu_child_resolve_pop_error_scope_promise(WGPUWebGPUChildPtr aChild,
-                                                RawId aDeviceId, uint8_t aTy,
-                                                const nsCString* aMessage) {
+void wgpu_child_resolve_pop_error_scope_promise(
+    WGPUWebGPUChildPtr aChild, RawId aDeviceId,
+    ffi::WGPUFfiPopErrorScopeResultType aTy, const nsCString* aMessage) {
   auto* c = static_cast<WebGPUChild*>(aChild);
   auto pending_promise = c->DequeuePopErrorScopePromise();
 
@@ -121,31 +131,27 @@ void wgpu_child_resolve_pop_error_scope_promise(WGPUWebGPUChildPtr aChild,
 
   RefPtr<Error> error;
 
-  switch ((PopErrorScopeResultType)aTy) {
-    case PopErrorScopeResultType::NoError:
+  switch (aTy) {
+    case ffi::WGPUFfiPopErrorScopeResultType_NoError:
       promise::MaybeResolveWithNull(std::move(pending_promise.promise));
       return;
 
-    case PopErrorScopeResultType::DeviceLost:
-      promise::MaybeResolveWithNull(std::move(pending_promise.promise));
-      return;
-
-    case PopErrorScopeResultType::ThrowOperationError:
+    case ffi::WGPUFfiPopErrorScopeResultType_EmptyErrorScopeStack:
       promise::MaybeRejectWithOperationError(std::move(pending_promise.promise),
                                              nsCString(*aMessage));
       return;
 
-    case PopErrorScopeResultType::OutOfMemory:
+    case ffi::WGPUFfiPopErrorScopeResultType_OutOfMemory:
       error = new OutOfMemoryError(pending_promise.device->GetParentObject(),
                                    *aMessage);
       break;
 
-    case PopErrorScopeResultType::ValidationError:
+    case ffi::WGPUFfiPopErrorScopeResultType_Validation:
       error = new ValidationError(pending_promise.device->GetParentObject(),
                                   *aMessage);
       break;
 
-    case PopErrorScopeResultType::InternalError:
+    case ffi::WGPUFfiPopErrorScopeResultType_Internal:
       error = new InternalError(pending_promise.device->GetParentObject(),
                                 *aMessage);
       break;
@@ -209,8 +215,17 @@ void wgpu_child_resolve_create_shader_module_promise(
     msg.offset = message.utf16_offset;
     msg.length = message.utf16_length;
     msg.message = message.message;
-    // wgpu currently only returns errors.
-    msg.messageType = WebGPUCompilationMessageType::Error;
+    switch (message.message_type) {
+      case WGPUCompilationMessageType_Error:
+        msg.messageType = WebGPUCompilationMessageType::Error;
+        break;
+      case WGPUCompilationMessageType_Warning:
+        msg.messageType = WebGPUCompilationMessageType::Warning;
+        break;
+      case WGPUCompilationMessageType_Info:
+        msg.messageType = WebGPUCompilationMessageType::Info;
+        break;
+    }
     messages.AppendElement(std::move(msg));
   }
 
@@ -248,6 +263,22 @@ void wgpu_child_resolve_on_submitted_work_done_promise(
 
   promise::MaybeResolveWithUndefined(std::move(pending_promise));
 };
+
+void wgpu_child_handle_uncaptured_error(WGPUWebGPUChildPtr aChild,
+                                        WGPUDeviceId aDeviceId,
+                                        ffi::WGPUFfiErrorFilter aTy,
+                                        const nsCString* aMessage) {
+  auto* c = static_cast<WebGPUChild*>(aChild);
+  c->HandleUncapturedError(aDeviceId, aTy, *aMessage);
+}
+
+void wgpu_child_handle_device_lost(WGPUWebGPUChildPtr aChild,
+                                   WGPUDeviceId aDeviceId,
+                                   ffi::WGPUFfiDeviceLostReason aReason,
+                                   const nsCString* aMessage) {
+  auto* c = static_cast<WebGPUChild*>(aChild);
+  c->HandleDeviceLost(aDeviceId, aReason, *aMessage);
+}
 }  // namespace ffi
 
 ipc::IPCResult WebGPUChild::RecvServerMessage(const ipc::ByteBuf& aByteBuf) {
@@ -314,9 +345,9 @@ void WebGPUChild::SendSerializedMessages(uint32_t aNrOfMessages,
   }
 }
 
-ipc::IPCResult WebGPUChild::RecvUncapturedError(RawId aDeviceId,
-                                                const dom::GPUErrorFilter aType,
-                                                const nsACString& aMessage) {
+void WebGPUChild::HandleUncapturedError(RawId aDeviceId,
+                                        ffi::WGPUFfiErrorFilter aType,
+                                        const nsACString& aMessage) {
   MOZ_RELEASE_ASSERT(aDeviceId);
 
   RefPtr<Device> device;
@@ -326,7 +357,7 @@ ipc::IPCResult WebGPUChild::RecvUncapturedError(RawId aDeviceId,
   }
 
   if (!device) {
-    return IPC_OK();
+    return;
   }
 
   // We don't want to spam the errors to the console indefinitely
@@ -335,13 +366,13 @@ ipc::IPCResult WebGPUChild::RecvUncapturedError(RawId aDeviceId,
 
     dom::GPUUncapturedErrorEventInit init;
     switch (aType) {
-      case dom::GPUErrorFilter::Validation:
+      case ffi::WGPUFfiErrorFilter_Validation:
         init.mError = new ValidationError(device->GetParentObject(), aMessage);
         break;
-      case dom::GPUErrorFilter::Out_of_memory:
+      case ffi::WGPUFfiErrorFilter_OutOfMemory:
         init.mError = new OutOfMemoryError(device->GetParentObject(), aMessage);
         break;
-      case dom::GPUErrorFilter::Internal:
+      case ffi::WGPUFfiErrorFilter_Internal:
         init.mError = new InternalError(device->GetParentObject(), aMessage);
         break;
     }
@@ -350,12 +381,11 @@ ipc::IPCResult WebGPUChild::RecvUncapturedError(RawId aDeviceId,
                                                   init);
     device->DispatchEvent(*event);
   }
-  return IPC_OK();
 }
 
-ipc::IPCResult WebGPUChild::RecvDeviceLost(RawId aDeviceId,
-                                           const GPUDeviceLostReason aReason,
-                                           const nsACString& aMessage) {
+void WebGPUChild::HandleDeviceLost(RawId aDeviceId,
+                                   ffi::WGPUFfiDeviceLostReason aReason,
+                                   const nsACString& aMessage) {
   // There might have been a race between getting back the response to a
   // `device.destroy()` call and actual device loss. If that was the case,
   // set the lost reason to "destroyed".
@@ -367,27 +397,34 @@ ipc::IPCResult WebGPUChild::RecvDeviceLost(RawId aDeviceId,
         promise->GetParentObject(), dom::GPUDeviceLostReason::Destroyed,
         u"Device destroyed"_ns);
     promise::MaybeResolve(std::move(promise), std::move(info));
-  } else {
-    auto message = NS_ConvertUTF8toUTF16(aMessage);
-
-    const auto itr = mDeviceMap.find(aDeviceId);
-    if (itr != mDeviceMap.end()) {
-      RefPtr<Device> device = itr->second.get();
-
-      if (!device) {
-        return IPC_OK();
-      }
-
-      device->ResolveLost(aReason, message);
-    }
+    return;
   }
 
-  return IPC_OK();
+  const auto itr = mDeviceMap.find(aDeviceId);
+  if (itr == mDeviceMap.end()) {
+    return;
+  }
+  RefPtr<Device> device = itr->second.get();
+  if (!device) {
+    return;
+  }
+
+  dom::GPUDeviceLostReason reason;
+  switch (aReason) {
+    case ffi::WGPUFfiDeviceLostReason_Unknown:
+      reason = dom::GPUDeviceLostReason::Unknown;
+      break;
+    case ffi::WGPUFfiDeviceLostReason_Destroyed:
+      reason = dom::GPUDeviceLostReason::Destroyed;
+      break;
+  }
+
+  device->ResolveLost(reason, NS_ConvertUTF8toUTF16(aMessage));
 }
 
-void WebGPUChild::SwapChainPresent(RawId aTextureId,
-                                   const RemoteTextureId& aRemoteTextureId,
-                                   const RemoteTextureOwnerId& aOwnerId) {
+void WebGPUChild::SwapChainPresent(
+    RawId aTextureId, const layers::RemoteTextureId& aRemoteTextureId,
+    const layers::RemoteTextureOwnerId& aOwnerId) {
   // The parent side needs to create a command encoder which will be submitted
   // and dropped right away so we create and release an encoder ID here.
   RawId commandEncoderId =
@@ -653,10 +690,10 @@ void WebGPUChild::ClearActorState() {
 }
 
 void WebGPUChild::QueueSubmit(
-    RawId aSelfId, RawId aDeviceId, nsTArray<RawId>& aCommandBuffers,
+    RawId aSelfId, nsTArray<RawId>& aCommandBuffers,
     const nsTArray<RawId>& aUsedExternalTextureSources) {
   ffi::wgpu_client_queue_submit(
-      GetClient(), aDeviceId, aSelfId,
+      GetClient(), aSelfId,
       {aCommandBuffers.Elements(), aCommandBuffers.Length()},
       {mSwapChainTexturesWaitingForSubmit.Elements(),
        mSwapChainTexturesWaitingForSubmit.Length()},

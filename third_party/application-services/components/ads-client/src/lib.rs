@@ -12,18 +12,25 @@ use parking_lot::Mutex;
 use url::Url as AdsClientUrl;
 
 use client::AdsClient;
-use error_support::error;
 use http_cache::CachePolicy;
 use mars::ad_request::{AdPlacementRequest, AdRequestFlags};
+mod ads;
+#[cfg(feature = "stateful")]
+pub mod ads_store;
+pub mod bytesize;
 mod client;
+pub mod clock;
 mod ffi;
 pub mod http_cache;
 mod mars;
+#[cfg(feature = "stateful")]
+pub mod request;
+pub mod shutdown;
 pub mod telemetry;
 
+use crate::shutdown::ShutdownReferences;
+pub use ffi::telemetry::MozAdsTelemetryWrapper;
 pub use ffi::*;
-
-use crate::ffi::telemetry::MozAdsTelemetryWrapper;
 
 #[cfg(test)]
 mod test_utils;
@@ -39,6 +46,7 @@ uniffi::custom_type!(AdsClientUrl, String, {
 #[derive(uniffi::Object)]
 pub struct MozAdsClient {
     inner: Mutex<AdsClient<MozAdsTelemetryWrapper>>,
+    shutdown_references: ShutdownReferences<MozAdsTelemetryWrapper>,
 }
 
 #[uniffi::export]
@@ -50,18 +58,6 @@ impl MozAdsClient {
             .map_err(|e| MozAdsClientApiError::Other {
                 reason: format!("Failed to clear cache: {}", e),
             })
-    }
-
-    // Allows the ads-client to unload some references and prepare for a safe shutdown.
-    // Other methods should not be called after this one.
-    #[uniffi::method()]
-    pub fn shutdown(&self) -> AdsClientApiResult<()> {
-        let mut inner = self.inner.lock();
-        if let Err(err) = inner.shutdown_client() {
-            // Log the error, but continue with shutdown.
-            error!("Failed to shutdown the ads client: {:?}", err);
-        }
-        Ok(())
     }
 
     #[handle_error(ComponentError)]
@@ -126,9 +122,10 @@ impl MozAdsClient {
         let options = options.unwrap_or_default();
         let flags = AdRequestFlags::from(&options);
         let ohttp = options.ohttp;
-        let cache_policy: CachePolicy = options.into();
+        let cache_policy = options.cache_policy.map(CachePolicy::from);
+        let blocks = options.blocks;
         let response = inner
-            .request_image_ads(requests, flags, Some(cache_policy), ohttp)
+            .request_image_ads(requests, flags, cache_policy, ohttp, blocks)
             .map_err(ComponentError::RequestAds)?;
         Ok(response.into_iter().map(|(k, v)| (k, v.into())).collect())
     }
@@ -145,9 +142,10 @@ impl MozAdsClient {
         let options = options.unwrap_or_default();
         let flags = AdRequestFlags::from(&options);
         let ohttp = options.ohttp;
-        let cache_policy: CachePolicy = options.into();
+        let cache_policy = options.cache_policy.map(CachePolicy::from);
+        let blocks = options.blocks;
         let response = inner
-            .request_spoc_ads(requests, flags, Some(cache_policy), ohttp)
+            .request_spoc_ads(requests, flags, cache_policy, ohttp, blocks)
             .map_err(ComponentError::RequestAds)?;
         Ok(response
             .into_iter()
@@ -167,10 +165,23 @@ impl MozAdsClient {
         let options = options.unwrap_or_default();
         let flags = AdRequestFlags::from(&options);
         let ohttp = options.ohttp;
-        let cache_policy: CachePolicy = options.into();
+        let cache_policy = options.cache_policy.map(CachePolicy::from);
+        let blocks = options.blocks;
         let response = inner
-            .request_tile_ads(requests, flags, Some(cache_policy), ohttp)
+            .request_tile_ads(requests, flags, cache_policy, ohttp, blocks)
             .map_err(ComponentError::RequestAds)?;
         Ok(response.into_iter().map(|(k, v)| (k, v.into())).collect())
+    }
+
+    // Allows the ads-client to unload some references and prepare for a safe shutdown.
+    // Other methods should not be called after this one.
+    // Currently, we attempt to shutdown and log any errors instead of returning them.
+    // However, we may yet want to do so, so we keep the Result.
+    #[uniffi::method()]
+    pub fn shutdown(&self) -> AdsClientApiResult<()> {
+        if let Err(e) = self.shutdown_references.shutdown() {
+            error_support::error!("Could not successfully shutdown ads-client: {e}");
+        }
+        Ok(())
     }
 }

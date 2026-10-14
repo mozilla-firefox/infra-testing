@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <memory>
+
 #include "GetAddrInfo.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/StaticPrefs_network.h"
@@ -28,7 +30,7 @@ mozilla::StaticMutex sMutex MOZ_ANNOTATED;
 nsresult ResolveHTTPSRecordImpl(const nsACString& aHost,
                                 nsIDNSService::DNSFlags aFlags,
                                 TypeRecordResultType& aResult, uint32_t& aTTL,
-                                nsACString& aAliasName) {
+                                HTTPSAliasTarget& aAlias) {
   DNSPacket packet;
   nsAutoCString host(aHost);
   nsAutoCString cname;
@@ -41,7 +43,8 @@ nsresult ResolveHTTPSRecordImpl(const nsACString& aHost,
 
 #if defined(HAVE_RES_NINIT)
   if (!sThreadRes.get()) {
-    UniquePtr<struct __res_state> resState(new struct __res_state);
+    UniquePtr<struct __res_state> resState =
+        std::make_unique<struct __res_state>();
     memset(resState.get(), 0, sizeof(struct __res_state));
     {
       StaticMutexAutoLock lock(sMutex);
@@ -78,10 +81,10 @@ nsresult ResolveHTTPSRecordImpl(const nsACString& aHost,
         return len;
       });
   if (NS_FAILED(rv)) {
-    return rv;
+    return NS_ERROR_UNKNOWN_HOST;
   }
 
-  return ParseHTTPSRecord(host, packet, aResult, aTTL, aAliasName);
+  return ParseHTTPSRecord(host, packet, aResult, aTTL, aAlias);
 }
 
 void DNSThreadShutdown() {

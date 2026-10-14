@@ -62,9 +62,6 @@ with Files("ExtensionsUI.sys.mjs"):
 with Files("LaterRun.sys.mjs"):
     BUG_COMPONENT = ("Firefox", "Tours")
 
-with Files("PartnerLinkAttribution.sys.mjs"):
-    BUG_COMPONENT = ("Firefox", "Search")
-
 with Files("PermissionUI.sys.mjs"):
     BUG_COMPONENT = ("Firefox", "Site Permissions")
 
@@ -111,6 +108,14 @@ BROWSER_CHROME_MANIFESTS += [
 ]
 XPCSHELL_TESTS_MANIFESTS += ["test/unit/xpcshell.toml"]
 
+if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
+    MOZ_SRC_FILES += [
+        "ASWebAuthSessionService.sys.mjs",
+    ]
+    XPCOM_MANIFESTS += [
+        "components.conf",
+    ]
+
 EXTRA_JS_MODULES += [
     "AboutNewTab.sys.mjs",
     "BrowserDOMWindow.sys.mjs",
@@ -119,7 +124,6 @@ EXTRA_JS_MODULES += [
     "BrowserWindowTracker.sys.mjs",
     "ContentCrashHandlers.sys.mjs",
     "Dedupe.sys.mjs",
-    "Discovery.sys.mjs",
     "EveryWindow.sys.mjs",
     "ExtensionsUI.sys.mjs",
     "FaviconLoader.sys.mjs",
@@ -130,7 +134,6 @@ EXTRA_JS_MODULES += [
     "LinksCache.sys.mjs",
     "MenuSectionLayout.sys.mjs",
     "PageActions.sys.mjs",
-    "PartnerLinkAttribution.sys.mjs",
     "PermissionPromptTargeting.sys.mjs",
     "PermissionUI.sys.mjs",
     "PopupAndRedirectBlockerObserver.sys.mjs",
@@ -153,6 +156,7 @@ MOZ_SRC_FILES += [
     "ObserverForwarder.sys.mjs",
     "PrivateBrowsingUI.sys.mjs",
     "SerialDeviceSharingHelper.sys.mjs",
+    "UIDensityTelemetry.sys.mjs",
 ]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":

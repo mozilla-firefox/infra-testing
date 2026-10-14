@@ -18,6 +18,7 @@
 
 namespace mozilla {
 
+class AllocPolicy;
 class CDMProxy;
 class MediaDataDecoder;
 class MediaResult;
@@ -28,6 +29,7 @@ struct SupportDecoderParams;
 enum class RemoteMediaIn;
 
 using PDMCreateDecoderPromise = PlatformDecoderModule::CreateDecoderPromise;
+using PDMSupportsDecoderPromise = PlatformDecoderModule::SupportsDecoderPromise;
 
 class PDMFactory final {
  public:
@@ -44,6 +46,25 @@ class PDMFactory final {
   media::DecodeSupportSet Supports(
       const SupportDecoderParams& aParams,
       DecoderDoctorDiagnostics* aDiagnostics) const;
+
+  // Asynchronous variant of Supports() that resolves once the module which
+  // would handle aParams is ready to report accurate (hardware-inclusive)
+  // support. For remote modules this waits until the relevant process has
+  // reported its codec support. Must be called off the main thread.
+  RefPtr<PDMSupportsDecoderPromise> SupportsAsync(
+      const SupportDecoderParams& aParams) const;
+
+  // Strictest support query: actually creates the decoder that would handle
+  // aParams, initializes it, and reports support reflecting whether that
+  // decoder is hardware-accelerated. Whereas SupportsAsync() trusts the
+  // reported codec support, this verifies it by briefly creating (and
+  // immediately destroying) a real decoder, so it is correspondingly more
+  // expensive. Resolves with an empty DecodeSupportSet if the decoder cannot
+  // be created or initialized. aPolicy throttles concurrent allocations; when
+  // null the per-track GlobalAllocPolicy is used. Must be called off the main
+  // thread.
+  static RefPtr<PDMSupportsDecoderPromise> StrictSupportsAsync(
+      const CreateDecoderParams& aParams, AllocPolicy* aPolicy = nullptr);
 
   // Creates a PlatformDecoderModule that uses a CDMProxy to decrypt or
   // decrypt-and-decode EME encrypted content. If the CDM only decrypts and

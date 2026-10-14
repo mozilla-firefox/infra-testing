@@ -41,6 +41,7 @@ EXPORTS.mozilla.net = [
 UNIFIED_SOURCES += [
     "Cookie.cpp",
     "CookieCommons.cpp",
+    "CookieDBWriteQueue.cpp",
     "CookieJarSettings.cpp",
     "CookieLogging.cpp",
     "CookieNotification.cpp",
@@ -95,3 +96,9 @@ XPCOM_MANIFESTS += [
 include("/ipc/chromium/chromium-config.mozbuild")
 
 FINAL_LIBRARY = "xul"
+
+SOURCE_HEADERS += [
+    "CookieDBWriteQueue.h",
+    "CookieDummyStorage.h",
+    "CookieLogging.h",
+]

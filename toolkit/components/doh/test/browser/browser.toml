@@ -3,17 +3,12 @@ head = "head.js"
 run-if = [
   "os != 'android'", # browser-chrome tests don't work on android
 ]
-skip-if = [
-  "socketprocess_networking", # bug 1849304 - high freq intermittent
-]
 
 ["browser_cleanFlow.js"]
 
 ["browser_dirtyEnable.js"]
 
 ["browser_doh_region.js"]
-
-["browser_doorhangerUserReject.js"]
 
 ["browser_platformDetection.js"]
 
@@ -37,3 +32,5 @@ skip-if = [
 ["browser_trrSelection_disable.js"]
 
 ["browser_userInterference.js"]
+
+["browser_userOptOut.js"]

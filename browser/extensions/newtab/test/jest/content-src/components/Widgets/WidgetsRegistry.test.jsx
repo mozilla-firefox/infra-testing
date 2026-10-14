@@ -5,6 +5,7 @@
 import {
   WIDGET_REGISTRY,
   getWidgetOrder,
+  isWeatherAvailable,
   isWidgetAddable,
   isWidgetEnabled,
   isWidgetToggleVisible,
@@ -53,6 +54,14 @@ describe("isWidgetToggleVisible", () => {
     ).toBe(true);
   });
 
+  it("is true via the legacy widgetsConfig override", () => {
+    expect(
+      isWidgetToggleVisible(listsWidget, {
+        widgetsConfig: { listsEnabled: true },
+      })
+    ).toBe(true);
+  });
+
   it("is additive only — a false widgetsSettings value cannot hide a system-enabled toggle", () => {
     expect(
       isWidgetToggleVisible(listsWidget, {
@@ -60,27 +69,6 @@ describe("isWidgetToggleVisible", () => {
         trainhopConfig: { widgetsSettings: { listsVisible: false } },
       })
     ).toBe(true);
-  });
-});
-
-// Bug 2063657: the sports widget is retired; removed in bug 2063656.
-describe("retired sports widget", () => {
-  const sportsWidget = WIDGET_REGISTRY.find(w => w.id === "sportsWidget");
-  const everythingOn = {
-    "widgets.enabled": true,
-    "widgets.sportsWidget.enabled": true,
-    "widgets.system.sportsWidget.enabled": true,
-    widgetsConfig: { sportsWidgetEnabled: true },
-    trainhopConfig: {
-      widgets: { sportsWidgetEnabled: true },
-      widgetsSettings: { sportsWidgetVisible: true },
-    },
-  };
-
-  it("is never addable, visible or enabled, whatever the prefs say", () => {
-    expect(isWidgetAddable(sportsWidget, everythingOn)).toBe(false);
-    expect(isWidgetToggleVisible(sportsWidget, everythingOn)).toBe(false);
-    expect(isWidgetEnabled(sportsWidget, everythingOn, true)).toBe(false);
   });
 });
 
@@ -129,6 +117,45 @@ describe("privacy widget on a profile with no history", () => {
   });
 });
 
+// Bug 2063718: the recent searches widget requires Firefox 157, so the widget is
+// hidden outright when newtab train-hops onto an older host.
+describe("recent searches widget on a host that predates its search access point", () => {
+  const recentSearches = WIDGET_REGISTRY.find(w => w.id === "recentSearches");
+  const everythingOn = {
+    "widgets.enabled": true,
+    "widgets.recentSearches.enabled": true,
+    "widgets.system.recentSearches.enabled": true,
+    widgetsConfig: { recentSearchesEnabled: true },
+    trainhopConfig: {
+      widgets: { recentSearchesEnabled: true },
+      widgetsSettings: { recentSearchesVisible: true },
+    },
+  };
+
+  it("is not addable, visible or enabled on an older host", () => {
+    const prefs = { ...everythingOn, supportsWidgetSearchSap: false };
+    expect(isWidgetAddable(recentSearches, prefs)).toBe(false);
+    expect(isWidgetToggleVisible(recentSearches, prefs)).toBe(false);
+    expect(isWidgetEnabled(recentSearches, prefs, true)).toBe(false);
+  });
+
+  it("is unaffected on a host that knows the access point", () => {
+    const prefs = { ...everythingOn, supportsWidgetSearchSap: true };
+    expect(isWidgetAddable(recentSearches, prefs)).toBe(true);
+    expect(isWidgetToggleVisible(recentSearches, prefs)).toBe(true);
+    expect(isWidgetEnabled(recentSearches, prefs, true)).toBe(true);
+  });
+
+  it("leaves widgets that do not search alone", () => {
+    expect(
+      isWidgetAddable(listsWidget, {
+        "widgets.system.lists.enabled": true,
+        supportsWidgetSearchSap: false,
+      })
+    ).toBe(true);
+  });
+});
+
 describe("isWidgetsContainerVisible", () => {
   it("is false when nothing enables it", () => {
     expect(isWidgetsContainerVisible({})).toBe(false);
@@ -169,20 +196,18 @@ describe("getWidgetOrder", () => {
 
   it("respects a fully-specified custom order", () => {
     expect(
-      getWidgetOrder(
-        "focusTimer,lists,weather,sportsWidget,clocks,privacy,crossword"
-      )
+      getWidgetOrder("focusTimer,lists,weather,clocks,privacy,crossword")
     ).toEqual([
       "focusTimer",
       "lists",
       "weather",
-      "sportsWidget",
       "clocks",
       "privacy",
       "crossword",
       "pictureOfTheDay",
       "stocks",
       "recentSearches",
+      "horoscopes",
     ]);
   });
 
@@ -190,7 +215,6 @@ describe("getWidgetOrder", () => {
     expect(getWidgetOrder("weather")).toEqual([
       "weather",
       "pictureOfTheDay",
-      "sportsWidget",
       "clocks",
       "lists",
       "focusTimer",
@@ -198,6 +222,7 @@ describe("getWidgetOrder", () => {
       "crossword",
       "stocks",
       "recentSearches",
+      "horoscopes",
     ]);
   });
 
@@ -206,13 +231,13 @@ describe("getWidgetOrder", () => {
       "lists",
       "weather",
       "pictureOfTheDay",
-      "sportsWidget",
       "clocks",
       "focusTimer",
       "privacy",
       "crossword",
       "stocks",
       "recentSearches",
+      "horoscopes",
     ]);
   });
 
@@ -228,13 +253,13 @@ describe("getWidgetOrder", () => {
       "focusTimer",
       "lists",
       "pictureOfTheDay",
-      "sportsWidget",
       "clocks",
       "weather",
       "privacy",
       "crossword",
       "stocks",
       "recentSearches",
+      "horoscopes",
     ]);
     expect(result.length).toBe(registryIds.length);
   });
@@ -255,12 +280,12 @@ describe("resolveWidgetOrder", () => {
       "lists",
       "focusTimer",
       "pictureOfTheDay",
-      "sportsWidget",
       "clocks",
       "privacy",
       "crossword",
       "stocks",
       "recentSearches",
+      "horoscopes",
     ]);
   });
 
@@ -275,12 +300,12 @@ describe("resolveWidgetOrder", () => {
       "weather",
       "lists",
       "pictureOfTheDay",
-      "sportsWidget",
       "clocks",
       "privacy",
       "crossword",
       "stocks",
       "recentSearches",
+      "horoscopes",
     ]);
   });
 
@@ -295,12 +320,12 @@ describe("resolveWidgetOrder", () => {
       "focusTimer",
       "weather",
       "pictureOfTheDay",
-      "sportsWidget",
       "clocks",
       "privacy",
       "crossword",
       "stocks",
       "recentSearches",
+      "horoscopes",
     ]);
   });
 });
@@ -373,12 +398,92 @@ describe("isWidgetAddable", () => {
     ).toBe(true);
   });
 
+  it.each([
+    ["widgets", { privacyEnabled: true }],
+    ["widgetsSettings", { privacyVisible: true }],
+  ])(
+    "makes privacy addable via %s despite its preffed-off default",
+    (type, payload) => {
+      const privacy = WIDGET_REGISTRY.find(w => w.id === "privacy");
+      const prefs = { [privacy.systemEnabledPref]: false };
+      expect(isWidgetAddable(privacy, prefs)).toBe(false);
+      expect(
+        isWidgetAddable(privacy, {
+          ...prefs,
+          trainhopConfig: { [type]: payload },
+        })
+      ).toBe(true);
+    }
+  );
+
   it("is addable when revealed via the dedicated widgetPrivacy namespace", () => {
     const privacy = WIDGET_REGISTRY.find(w => w.id === "privacy");
     expect(
       isWidgetAddable(privacy, {
         [privacy.systemEnabledPref]: false,
         trainhopConfig: { widgetPrivacy: { visible: true } },
+      })
+    ).toBe(true);
+  });
+
+  it.each([
+    ["widgets", { stocksEnabled: true }],
+    ["widgetsSettings", { stocksVisible: true }],
+  ])(
+    "makes stocks addable via %s despite its preffed-off default",
+    (type, payload) => {
+      const stocks = WIDGET_REGISTRY.find(w => w.id === "stocks");
+      const prefs = { [stocks.systemEnabledPref]: false };
+      expect(isWidgetAddable(stocks, prefs)).toBe(false);
+      expect(
+        isWidgetAddable(stocks, {
+          ...prefs,
+          trainhopConfig: { [type]: payload },
+        })
+      ).toBe(true);
+    }
+  );
+
+  it.each([
+    ["widgets", { recentSearchesEnabled: true }],
+    ["widgetsSettings", { recentSearchesVisible: true }],
+    ["widgetRecentSearches", { visible: true }],
+  ])(
+    "makes recent searches addable via %s despite its preffed-off default",
+    (type, payload) => {
+      const recentSearches = WIDGET_REGISTRY.find(
+        w => w.id === "recentSearches"
+      );
+      const prefs = {
+        [recentSearches.systemEnabledPref]: false,
+        supportsWidgetSearchSap: true,
+      };
+      expect(isWidgetAddable(recentSearches, prefs)).toBe(false);
+      expect(
+        isWidgetAddable(recentSearches, {
+          ...prefs,
+          trainhopConfig: { [type]: payload },
+        })
+      ).toBe(true);
+    }
+  );
+
+  it("is addable when revealed via the dedicated widgetRecentSearches namespace", () => {
+    const recentSearches = WIDGET_REGISTRY.find(w => w.id === "recentSearches");
+    expect(
+      isWidgetAddable(recentSearches, {
+        [recentSearches.systemEnabledPref]: false,
+        trainhopConfig: { widgetRecentSearches: { visible: true } },
+      })
+    ).toBe(true);
+  });
+
+  it("is addable when revealed via the dedicated widgetHoroscopes namespace", () => {
+    const horoscopes = WIDGET_REGISTRY.find(w => w.id === "horoscopes");
+    expect(
+      isWidgetAddable(horoscopes, {
+        [horoscopes.systemEnabledPref]: false,
+        trainhopConfig: { widgetHoroscopes: { visible: true } },
       })
     ).toBe(true);
   });
@@ -917,5 +1022,75 @@ describe("resolvePrivacyCelebrationThreshold", () => {
     ).toBe(20);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
+  });
+});
+
+describe("WIDGET_REGISTRY customize panel fields", () => {
+  const activeWidgets = WIDGET_REGISTRY.filter(w => !w.retired);
+
+  // Literal values, so a renamed source fails this test.
+  const EXPECTED_EVENT_SOURCES = {
+    pictureOfTheDay: "WIDGET_PICTURE_OF_THE_DAY",
+    clocks: "WIDGET_CLOCKS",
+    lists: "WIDGET_LISTS",
+    focusTimer: "WIDGET_TIMER",
+    weather: "WEATHER",
+    privacy: "WIDGET_PRIVACY",
+    crossword: "WIDGET_CROSSWORD",
+    stocks: "WIDGET_STOCKS",
+    recentSearches: "WIDGET_RECENT_SEARCHES",
+    horoscopes: "WIDGET_HOROSCOPES",
+  };
+
+  it("gives every active entry a customizeL10nId", () => {
+    for (const widget of activeWidgets) {
+      expect(typeof widget.customizeL10nId).toBe("string");
+      expect(widget.customizeL10nId).toMatch(/^newtab-custom-widget-/);
+    }
+  });
+
+  it("keeps customizeL10nId unique across entries", () => {
+    const ids = activeWidgets.map(w => w.customizeL10nId);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("carries today's customizeEventSource for every active entry", () => {
+    expect(
+      Object.fromEntries(activeWidgets.map(w => [w.id, w.customizeEventSource]))
+    ).toEqual(EXPECTED_EVENT_SOURCES);
+  });
+});
+
+describe("isWeatherAvailable", () => {
+  it("is false when nothing reveals the weather toggle", () => {
+    expect(isWeatherAvailable({})).toBe(false);
+  });
+
+  it("is true via the system.showWeather pref", () => {
+    expect(isWeatherAvailable({ "system.showWeather": true })).toBe(true);
+  });
+
+  it("is true via trainhopConfig.weather.enabled", () => {
+    expect(
+      isWeatherAvailable({
+        trainhopConfig: { weather: { enabled: true } },
+      })
+    ).toBe(true);
+  });
+
+  it("is true via trainhopConfig.widgetWeather.visible", () => {
+    expect(
+      isWeatherAvailable({
+        trainhopConfig: { widgetWeather: { visible: true } },
+      })
+    ).toBe(true);
+  });
+
+  it("is true via the widgetsSettings.weatherVisible override", () => {
+    expect(
+      isWeatherAvailable({
+        trainhopConfig: { widgetsSettings: { weatherVisible: true } },
+      })
+    ).toBe(true);
   });
 });

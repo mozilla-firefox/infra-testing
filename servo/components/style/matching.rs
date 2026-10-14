@@ -17,9 +17,9 @@ use crate::dom::TElement;
 #[cfg(feature = "servo")]
 use crate::dom::TNode;
 use crate::invalidation::element::restyle_hints::RestyleHint;
-use crate::properties::longhands::display::computed_value::T as Display;
 use crate::properties::ComputedValues;
 use crate::properties::PropertyDeclarationBlock;
+use crate::properties::longhands::display::computed_value::T as Display;
 #[cfg(feature = "servo")]
 use crate::rule_tree::RuleCascadeFlags;
 use crate::rule_tree::{CascadeLevel, CascadeOrigin, StrongRuleNode};
@@ -165,7 +165,7 @@ trait PrivateMatchMethods: TElement {
                     context.shared,
                     CascadeLevel::new(CascadeOrigin::Transitions),
                     LayerOrder::root(),
-                    self.transition_rule(&context.shared)
+                    self.transition_rule(context.shared)
                         .as_ref()
                         .map(|a| a.borrow_arc()),
                     primary_rules,
@@ -177,7 +177,7 @@ trait PrivateMatchMethods: TElement {
                     context.shared,
                     CascadeLevel::new(CascadeOrigin::Animations),
                     LayerOrder::root(),
-                    self.animation_rule(&context.shared)
+                    self.animation_rule(context.shared)
                         .as_ref()
                         .map(|a| a.borrow_arc()),
                     primary_rules,
@@ -199,9 +199,9 @@ trait PrivateMatchMethods: TElement {
         // This does not apply to `scroll(root)`, since the viewport scroller is always available, or `scroll(nearest)`,
         // which will go up to root.
         // [1]: https://drafts.csswg.org/css-overflow/#propdef-overflow
-        let scrollable_changed = old.clone_overflow_x().is_scrollable()
-            != new.clone_overflow_x().is_scrollable()
-            || old.clone_overflow_y().is_scrollable() != new.clone_overflow_y().is_scrollable();
+        let scrollable_changed = old.get_overflow_x().is_scrollable()
+            != new.get_overflow_x().is_scrollable()
+            || old.get_overflow_y().is_scrollable() != new.get_overflow_y().is_scrollable();
         if !scrollable_changed {
             return false;
         }
@@ -243,7 +243,7 @@ trait PrivateMatchMethods: TElement {
         let new_ui_style = new_style.get_ui();
         let new_style_specifies_animations = new_ui_style.specifies_animations();
 
-        let has_animations = self.has_css_animations(&context.shared, pseudo_element);
+        let has_animations = self.has_css_animations(context.shared, pseudo_element);
         if !new_style_specifies_animations && !has_animations {
             return false;
         }
@@ -291,8 +291,8 @@ trait PrivateMatchMethods: TElement {
             return true;
         }
 
-        let old_display = old_style.clone_display();
-        let new_display = new_style.clone_display();
+        let old_display = *old_style.get_display();
+        let new_display = *new_style.get_display();
 
         // If we were display: none, we may need to trigger animations.
         if old_display == Display::None && new_display != Display::None {
@@ -337,11 +337,11 @@ trait PrivateMatchMethods: TElement {
             return false;
         }
 
-        if old_style.clone_display().is_none() {
+        if old_style.get_display().is_none() {
             return false;
         }
 
-        return true;
+        true
     }
 
     #[cfg(feature = "gecko")]
@@ -374,7 +374,7 @@ trait PrivateMatchMethods: TElement {
         );
 
         let starting_style = resolver.resolve_starting_style(new_primary)?;
-        if starting_style.style().clone_display().is_none() {
+        if starting_style.style().get_display().is_none() {
             return None;
         }
 
@@ -419,7 +419,7 @@ trait PrivateMatchMethods: TElement {
         // side will really update transition.
         if !self.needs_transitions_update(
             before_change_or_starting.unwrap(),
-            after_change_style.as_ref().unwrap_or(&new_values),
+            after_change_style.as_ref().unwrap_or(new_values),
         ) {
             return None;
         }
@@ -516,7 +516,7 @@ trait PrivateMatchMethods: TElement {
             tasks.insert(UpdateAnimationsTasks::CSS_TRANSITIONS);
         }
 
-        if self.has_animations(&context.shared) {
+        if self.has_animations(context.shared) {
             tasks.insert(UpdateAnimationsTasks::EFFECT_PROPERTIES);
             if important_rules_changed {
                 tasks.insert(UpdateAnimationsTasks::CASCADE_RESULTS);
@@ -797,9 +797,11 @@ trait PrivateMatchMethods: TElement {
         pseudo: Option<&PseudoElement>,
     ) -> RestyleHint {
         debug!("accumulate_damage_for: {:?}", self);
-        debug_assert!(!shared_context
-            .traversal_flags
-            .contains(TraversalFlags::FinalAnimationTraversal));
+        debug_assert!(
+            !shared_context
+                .traversal_flags
+                .contains(TraversalFlags::FinalAnimationTraversal)
+        );
 
         let difference = self.compute_style_difference(old_values, new_values, pseudo);
 
@@ -833,8 +835,8 @@ trait PrivateMatchMethods: TElement {
             return children_hint;
         };
 
-        let new_container_name = new_values.clone_container_name();
-        if new_container_name != old_values.clone_container_name() {
+        let new_container_name = new_values.get_container_name();
+        if new_container_name != old_values.get_container_name() {
             // If we're becoming or stopped to become a named container, we need to potentially
             // restyle children.
             children_hint |= RestyleHint::RESTYLE_IF_AFFECTED_BY_NAMED_STYLE_CONTAINER;
@@ -872,8 +874,8 @@ fn need_to_unconditionally_recascade_for_reset_change(
     old_values: &ComputedValues,
     new_values: &ComputedValues,
 ) -> bool {
-    let old_display = old_values.clone_display();
-    let new_display = new_values.clone_display();
+    let old_display = *old_values.get_display();
+    let new_display = *new_values.get_display();
 
     if old_display != new_display {
         // If we used to be a display: none element, and no longer are, our
@@ -908,8 +910,8 @@ fn need_to_unconditionally_recascade_for_reset_change(
     {
         use crate::values::specified::align::AlignFlags;
 
-        let old_justify_items = old_values.get_position().clone_justify_items();
-        let new_justify_items = new_values.get_position().clone_justify_items();
+        let old_justify_items = *old_values.get_position().get_justify_items();
+        let new_justify_items = *new_values.get_position().get_justify_items();
 
         let was_legacy_justify_items = old_justify_items.computed.contains(AlignFlags::LEGACY);
 
@@ -942,7 +944,7 @@ pub trait MatchMethods: TElement {
     /// happen if we decide to not blockify for roots of disconnected subtrees,
     /// which is a kind of dubious behavior.
     fn layout_parent(&self) -> Self {
-        let mut current = self.clone();
+        let mut current = *self;
         loop {
             current = match current.traversal_parent() {
                 Some(el) => el,
@@ -971,8 +973,8 @@ pub trait MatchMethods: TElement {
         old_style: Option<&Arc<ComputedValues>>,
         new_style: &Arc<ComputedValues>,
     ) -> bool {
-        let old_line_height = old_style.map(|s| s.get_font().clone_line_height());
-        let new_line_height = new_style.get_font().clone_line_height();
+        let old_line_height = old_style.map(|s| *s.get_font().get_line_height());
+        let new_line_height = *new_style.get_font().get_line_height();
         // Return true if the old value was missing, or if the computed values are different.
         if old_line_height.is_none_or(|lh| lh != new_line_height) {
             return true;
@@ -984,16 +986,14 @@ pub trait MatchMethods: TElement {
         // Check the font-selection properties, which could affect metrics used to resolve
         // `normal` line-height.
         macro_rules! font_property_changed {
-            ($getter: ident) => {
-                old_style
-                    .map(|s| s.get_font().$getter())
-                    .is_none_or(|v| v != new_style.get_font().$getter())
+            ($equals: ident) => {
+                old_style.is_none_or(|s| !s.get_font().$equals(new_style.get_font()))
             };
         }
-        font_property_changed!(clone_font_family)
-            || font_property_changed!(clone_font_style)
-            || font_property_changed!(clone_font_weight)
-            || font_property_changed!(clone_font_width)
+        font_property_changed!(font_family_equals)
+            || font_property_changed!(font_style_equals)
+            || font_property_changed!(font_weight_equals)
+            || font_property_changed!(font_width_equals)
     }
 
     /// Updates the styles with the new ones, diffs them, and stores the restyle
@@ -1023,11 +1023,11 @@ pub trait MatchMethods: TElement {
             .contains(ComputedValueFlags::IS_ROOT_ELEMENT_STYLE);
 
         let device = context.shared.stylist.device();
-        let new_font_size = new_primary_style.get_font().clone_font_size();
-        let new_container_type = new_primary_style.clone_container_type();
+        let new_font_size = new_primary_style.get_font().slow_clone_font_size();
+        let new_container_type = *new_primary_style.get_container_type();
 
         let old_style = old_styles.primary.as_ref();
-        let old_font_size = old_style.map(|s| s.get_font().clone_font_size());
+        let old_font_size = old_style.map(|s| s.get_font().slow_clone_font_size());
         let font_size_changed = old_font_size.is_none_or(|fs| fs != new_font_size);
 
         let line_height_likely_changed =
@@ -1049,7 +1049,7 @@ pub trait MatchMethods: TElement {
             if line_height_likely_changed {
                 let new_line_height = device
                     .calc_line_height(
-                        &new_primary_style.get_font(),
+                        new_primary_style.get_font(),
                         new_primary_style.writing_mode,
                         None,
                     )
@@ -1073,18 +1073,18 @@ pub trait MatchMethods: TElement {
             child_restyle_hint |= RestyleHint::RESTYLE_IF_AFFECTED_BY_WM_OR_ANCESTOR_FONT;
         }
 
-        if context.shared.stylist.quirks_mode() == QuirksMode::Quirks {
-            if self.is_html_document_body_element() {
-                // NOTE(emilio): We _could_ handle dynamic changes to it if it
-                // changes and before we reach our children the cascade stops,
-                // but we don't track right now whether we use the document body
-                // color, and nobody else handles that properly anyway.
-                let device = context.shared.stylist.device();
+        if context.shared.stylist.quirks_mode() == QuirksMode::Quirks
+            && self.is_html_document_body_element()
+        {
+            // NOTE(emilio): We _could_ handle dynamic changes to it if it
+            // changes and before we reach our children the cascade stops,
+            // but we don't track right now whether we use the document body
+            // color, and nobody else handles that properly anyway.
+            let device = context.shared.stylist.device();
 
-                // Needed for the "inherit from body" quirk.
-                let text_color = new_primary_style.get_inherited_text().clone_color();
-                device.set_body_text_color(text_color);
-            }
+            // Needed for the "inherit from body" quirk.
+            let text_color = *new_primary_style.get_inherited_text().get_color();
+            device.set_body_text_color(text_color);
         }
 
         // Don't accumulate damage if we're in the final animation traversal.
@@ -1109,7 +1109,7 @@ pub trait MatchMethods: TElement {
             child_restyle_hint |= RestyleHint::RESTYLE_IF_AFFECTED_BY_WM_OR_ANCESTOR_FONT;
         }
 
-        let old_container_type = old_primary_style.clone_container_type();
+        let old_container_type = *old_primary_style.get_container_type();
         if old_container_type != new_container_type && !new_container_type.is_size_container_type()
         {
             // Stopped being a size container. Re-evaluate container queries and units on all our descendants.
@@ -1145,7 +1145,7 @@ pub trait MatchMethods: TElement {
 
         for (i, (old, new)) in pseudo_styles.enumerate() {
             match (old, new) {
-                (&Some(ref old), &Some(ref new)) => {
+                (Some(old), Some(new)) => {
                     self.accumulate_damage_for(
                         context.shared,
                         &mut data.damage,
@@ -1162,9 +1162,9 @@ pub trait MatchMethods: TElement {
                     // case.
                     let pseudo = PseudoElement::from_eager_index(i);
                     let new_pseudo_should_exist =
-                        new.as_ref().map_or(false, |s| pseudo.should_exist(s));
+                        new.as_ref().is_some_and(|s| pseudo.should_exist(s));
                     let old_pseudo_should_exist =
-                        old.as_ref().map_or(false, |s| pseudo.should_exist(s));
+                        old.as_ref().is_some_and(|s| pseudo.should_exist(s));
                     if new_pseudo_should_exist != old_pseudo_should_exist {
                         data.damage |= RestyleDamage::reconstruct();
                         return child_restyle_hint;
@@ -1211,7 +1211,7 @@ pub trait MatchMethods: TElement {
         new_values: &ComputedValues,
         pseudo: Option<&PseudoElement>,
     ) -> StyleDifference {
-        debug_assert!(pseudo.map_or(true, |p| p.is_eager()));
+        debug_assert!(pseudo.is_none_or(|p| p.is_eager()));
         #[cfg(feature = "gecko")]
         {
             RestyleDamage::compute_style_difference(old_values, new_values)

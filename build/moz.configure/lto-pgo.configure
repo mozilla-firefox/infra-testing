@@ -43,10 +43,19 @@ llvm_profdata = check_prog(
 # --call-graph-profile-sort is the default behavior for lld, and it proves to be
 # more efficient than pgo-based orderfile. Don't pass it explicitly because it's
 # option support differ from one version to the other (w/ or W: argument and the
-# argument value).
-@depends(select_linker, target)
-def pgo_cg_sort(linker, target):
-    return linker and linker.KIND == "lld" and target.os != "OSX"
+# argument value). Passing an orderfile disables it, so when this is true no
+# orderfile is generated.
+# select_linker is not evaluated for Windows targets, so clang-cl is handled
+# separately: it always links with lld-link.
+@depends(select_linker, target, c_compiler)
+@checking(
+    "whether the linker supports call-graph profile sorting",
+    lambda v: "yes" if v else "no, using a PGO orderfile",
+)
+def pgo_cg_sort(linker, target, compiler):
+    if compiler.type == "clang-cl":
+        return True
+    return bool(linker and linker.KIND == "lld" and target.os != "OSX")
 
 
 @depends_if(llvm_profdata, when=enable_profile_use & ~pgo_cg_sort)
@@ -87,9 +96,6 @@ def pgo_profile_path(path, pgo_use, profdata, build_env):
     if not os.path.isabs(path[0]):
         die("Argument to --with-pgo-profile-path must be an absolute path.")
     return path[0]
-
-
-set_config("PGO_PROFILE_PATH", pgo_profile_path)
 
 
 @depends(
@@ -205,7 +211,7 @@ set_config("PROFILE_USE_LDFLAGS", pgo_flags.use_ldflags)
 
 option(
     "--with-pgo-jarlog",
-    help="Use the provided jarlog file when packaging during a profile-use " "build",
+    help="Use the provided jarlog file when packaging during a profile-use build",
     nargs=1,
 )
 
@@ -236,8 +242,6 @@ def moz_pgo_rust(pgo, profile_use, profile_generate, c_compiler):
 
     return True
 
-
-set_config("MOZ_PGO_RUST", moz_pgo_rust)
 
 # LTO
 # ==============================================================
@@ -469,6 +473,7 @@ def remove_dead_symbols(dso_flags):
 
 set_config("MOZ_LTO", lto.enabled)
 set_define("MOZ_LTO", lto.enabled)
+set_config("MOZ_LTO_OBJECT_PATH", True, when=lto.enabled & target_is_darwin)
 set_config("MOZ_LTO_CFLAGS", lto.cflags)
 set_config("MOZ_LTO_LDFLAGS", lto.ldflags)
 set_config("MOZ_LTO_RUST_CROSS", lto.rust_lto)

@@ -86,17 +86,19 @@ networking:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1922606
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1989180
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2064975
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942#TDB
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1922606
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1989180
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2064975
     data_sensitivity:
       - technical
     notification_emails:
       - necko@mozilla.com
       - edgul@mozilla.com
-    expires: 157
+    expires: 168
 
   cookie_count_partitioned:
     type: custom_distribution
@@ -112,17 +114,19 @@ networking:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1922606
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1989180
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2064975
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942#TDB
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1922606
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1989180
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2064975
     data_sensitivity:
       - technical
     notification_emails:
       - necko@mozilla.com
       - edgul@mozilla.com
-    expires: 157
+    expires: 168
 
   cookie_count_unpartitioned:
     type: custom_distribution
@@ -138,17 +142,35 @@ networking:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1922606
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1989180
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2064975
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942#TDB
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1922606
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1989180
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2064975
     data_sensitivity:
       - technical
     notification_emails:
       - necko@mozilla.com
       - edgul@mozilla.com
-    expires: 157
+    expires: 168
+
+  cookie_file_present:
+    type: boolean
+    description: >
+      Whether this profile holds at least one cookie set by a file:// URL
+      document.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2069649
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2069649
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - baku@mozilla.com
+    expires: 166
 
   cookie_count_part_by_key:
     type: custom_distribution
@@ -165,17 +187,19 @@ networking:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1922606
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1989180
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2064975
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942#TDB
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1922606
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1989180
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2064975
     data_sensitivity:
       - technical
     notification_emails:
       - necko@mozilla.com
       - edgul@mozilla.com
-    expires: 157
+    expires: 168
 
   cookie_count_unpart_by_key:
     type: custom_distribution
@@ -192,17 +216,19 @@ networking:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1922606
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1989180
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2064975
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942#TDB
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1922606
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1989180
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2064975
     data_sensitivity:
       - technical
     notification_emails:
       - necko@mozilla.com
       - edgul@mozilla.com
-    expires: 157
+    expires: 168
 
   cookie_purge_max:
     type: custom_distribution
@@ -220,17 +246,19 @@ networking:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1922606
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1989180
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2064975
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942#TDB
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1922606
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1989180
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2064975
     data_sensitivity:
       - technical
     notification_emails:
       - necko@mozilla.com
       - edgul@mozilla.com
-    expires: 157
+    expires: 168
 
   cookie_purge_entry_max:
     type: custom_distribution
@@ -248,17 +276,19 @@ networking:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1922606
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1989180
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2064975
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942#TDB
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1892158
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1922606
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1989180
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2064975
     data_sensitivity:
       - technical
     notification_emails:
       - necko@mozilla.com
       - edgul@mozilla.com
-    expires: 157
+    expires: 168
 
   cookie_chips_partition_limit_overflow:
     type: custom_distribution
@@ -273,16 +303,18 @@ networking:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1878391
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1922606
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1989180
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2064975
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1878391
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1922606
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1989180
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2064975
     data_sensitivity:
       - technical
     notification_emails:
       - necko@mozilla.com
       - edgul@mozilla.com
-    expires: 157
+    expires: 168
 
   cookie_db_validation:
     type: labeled_counter
@@ -2397,13 +2429,14 @@ networking:
     - https://bugzilla.mozilla.org/show_bug.cgi?id=1960582
     - https://bugzilla.mozilla.org/show_bug.cgi?id=2010463
     - https://bugzilla.mozilla.org/show_bug.cgi?id=2048455
+    - https://bugzilla.mozilla.org/show_bug.cgi?id=2072828
     data_reviews:
     - https://bugzilla.mozilla.org/show_bug.cgi?id=1960582
     notification_emails:
      - smayya@mozilla.com
      - vgosu@mozilla.com
      - necko@gmail.com
-    expires: 160
+    expires: 166
     labels:
       - private_to_local_http
       - private_to_local_https
@@ -2424,13 +2457,14 @@ networking:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1960582
       - https://bugzilla.mozilla.org/show_bug.cgi?id=2010463
       - https://bugzilla.mozilla.org/show_bug.cgi?id=2048459
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2072832
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1960582
     notification_emails:
       - smayya@mozilla.com
       - vgosu@mozilla.com
       - necko@mozilla.com
-    expires: 160
+    expires: 166
     labels:
       - localhost
       - local_network
@@ -2443,13 +2477,14 @@ networking:
       Counts the number of times the channel was blocked because it's a LNA load triggered by a tracker
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1973500
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2072834
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1973500
     data_sensitivity:
       - technical
     notification_emails:
       - necko@mozilla.com
-    expires: 160
+    expires: 166
 
   local_network_access_connection:
     type: event
@@ -2459,6 +2494,7 @@ networking:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1989916
       - https://bugzilla.mozilla.org/show_bug.cgi?id=2010465
       - https://bugzilla.mozilla.org/show_bug.cgi?id=2048457
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2072830
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1989916#c5
     data_sensitivity:
@@ -2469,7 +2505,7 @@ networking:
       - necko@mozilla.com
     send_in_pings:
       - local-network-access
-    expires: 160
+    expires: 166
     extra_keys:
       top_level_site:
         description: The base domain (eTLD+1) of the top-level document/main window.
@@ -3069,6 +3105,28 @@ network:
     labels:
       - hit
       - miss
+    expires: never
+
+  ssl_token_resumption_outcome:
+    type: labeled_counter
+    description: >
+      The session resumption outcome of a connection that had at least one
+      cached token to try. Recorded once per connection.
+      'rejected' means the TLS stack refused every token. 'not_resumed' means a
+      token was accepted by the stack and sent, but the server declined it.
+      'resumed' means the server accepted it.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2066838
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2066838
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+    labels:
+      - resumed
+      - not_resumed
+      - rejected
     expires: never
 
   ssl_token_cache_expired:

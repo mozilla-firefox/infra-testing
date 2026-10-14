@@ -88,6 +88,16 @@ def common_setup(config, job, taskdesc, command):
         if clone_type(config, job) == "git" and run.get("shallow-clone", True):
             command.append("--gecko-shallow-clone")
 
+        # For Mercurial checkouts, point run-task at the decision task's source
+        # bundle artifact so robustcheckout can obtain the head revision without
+        # an expensive pull from hg.mozilla.org. clone_type() resolves to "hg"
+        # exactly when run-task-hg / robustcheckout will run (e.g. on try, where
+        # there is no git push info). A missing or unusable bundle is non-fatal.
+        if clone_type(config, job) == "hg":
+            taskdesc["worker"].setdefault("env", {})["GECKO_HEAD_BUNDLE"] = {
+                "artifact-reference": "<decision/public/checkout.bundle>"
+            }
+
         if run_cwd:
             run_cwd = path.normpath(run_cwd.format(checkout=gecko_path))
 
@@ -143,6 +153,10 @@ def docker_worker_run_task(config, job, taskdesc):
     run_task_bin = f"run-task-{clone_type(config, job)}"
     command = [f"/builds/worker/bin/{run_task_bin}"]
     common_setup(config, job, taskdesc, command)
+
+    worker.setdefault("env", {}).setdefault(
+        "RUN_TASK_PRE_COMMAND_HOOK", "/builds/worker/bin/run-task-setup.py"
+    )
 
     if run["tooltool-downloads"]:
         internal = run["tooltool-downloads"] == "internal"
@@ -215,6 +229,16 @@ def generic_worker_run_task(config, job, taskdesc):
             },
             "file": "./robustcheckout.py",
         })
+
+    worker["mounts"].append({
+        "content": {
+            "url": script_url(config, "run-task-setup.py"),
+        },
+        "file": "./run-task-setup.py",
+    })
+    worker.setdefault("env", {}).setdefault(
+        "RUN_TASK_PRE_COMMAND_HOOK", "./run-task-setup.py"
+    )
 
     run_command = run["command"]
 

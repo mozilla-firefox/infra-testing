@@ -2,9 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { html, nothing } from "chrome://global/content/vendor/lit.all.mjs";
+import {
+  html,
+  nothing,
+  styleMap,
+} from "chrome://global/content/vendor/lit.all.mjs";
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
-import { getScreenshotUrlForAddon } from "../aboutaddons-utils.mjs";
+import {
+  DEFAULT_THEME_PREVIEW_NOVA_URL,
+  getScreenshotForAddon,
+  getThemesModeColorScheme,
+} from "../aboutaddons-utils.mjs";
 import { isNovaThemesPickerEnabled } from "./aboutaddons-themes-picker.mjs";
 
 const lazy = {};
@@ -20,6 +28,9 @@ export class ThemePreview extends MozLitElement {
 
   #themesListManager = null;
 
+  #colorSchemeMediaQuery = window.matchMedia("(-moz-system-dark-theme)");
+  #onColorSchemeChange = () => this.requestUpdate();
+
   createRenderRoot() {
     return this;
   }
@@ -27,6 +38,18 @@ export class ThemePreview extends MozLitElement {
   connectedCallback() {
     super.connectedCallback();
     this.#getExtraThemesListManager();
+    this.#colorSchemeMediaQuery.addEventListener(
+      "change",
+      this.#onColorSchemeChange
+    );
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.#colorSchemeMediaQuery.removeEventListener(
+      "change",
+      this.#onColorSchemeChange
+    );
   }
 
   render() {
@@ -34,23 +57,34 @@ export class ThemePreview extends MozLitElement {
       return nothing;
     }
 
-    // Pick theme preview svg bundled into the omni jar
-    // if the theme is one of the official extra themes.
-    let screenshotUrl = this.#themesListManager?.getThemePreviewURL(
-      this.addon.id
-    );
-
-    // Use the AMO preview for default-theme and other themes
-    // that aren't in the official extra themes set.
-    screenshotUrl ??= getScreenshotUrlForAddon(this.addon);
-
-    if (!screenshotUrl) {
+    // The official extra themes reuse the default theme Nova preview svg
+    // bundled into the omni jar, recolored through link-parameters.
+    const linkParameters =
+      this.#themesListManager?.getThemePreviewLinkParameters(this.addon.id);
+    const screenshot = linkParameters
+      ? {
+          url: DEFAULT_THEME_PREVIEW_NOVA_URL,
+          linkParameters,
+          colorScheme: getThemesModeColorScheme(),
+        }
+      : getScreenshotForAddon(this.addon);
+    if (!screenshot.url) {
       return nothing;
+    }
+    if (screenshot.url === DEFAULT_THEME_PREVIEW_NOVA_URL) {
+      const rtlFlipParam = "param(--rtl-flip, var(--theme-preview-rtl-flip))";
+      screenshot.linkParameters = screenshot.linkParameters
+        ? `${screenshot.linkParameters}, ${rtlFlipParam}`
+        : rtlFlipParam;
     }
     return html`<img
       class="card-heading-image"
       role="presentation"
-      src=${screenshotUrl}
+      src=${screenshot.url}
+      style=${styleMap({
+        colorScheme: screenshot.colorScheme,
+        linkParameters: screenshot.linkParameters,
+      })}
     />`;
   }
 

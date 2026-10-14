@@ -65,6 +65,8 @@ class HomeDeepLinkIntentProcessorTest {
                 showAddSearchWidgetPrompt = ::showAddSearchWidgetPrompt,
                 shareUseCases = shareUseCases,
             )
+
+        every { settings.isAutofillSupported } returns true
     }
 
     @Test
@@ -187,6 +189,16 @@ class HomeDeepLinkIntentProcessorTest {
         assertTrue(processorHome.process(testIntent("settings_logins"), navController, out, settings))
 
         verify { navController.navigate(NavGraphDirections.actionGlobalSavedLoginsAuthFragment()) }
+        verify { out wasNot Called }
+    }
+
+    @Test
+    fun `do not process settings_logins deep link when autofill is unsupported`() {
+        every { settings.isAutofillSupported } returns false
+
+        assertTrue(processorHome.process(testIntent("settings_logins"), navController, out, settings))
+
+        verify(exactly = 0) { navController.navigate(NavGraphDirections.actionGlobalSavedLoginsAuthFragment()) }
         verify { out wasNot Called }
     }
 
@@ -437,6 +449,21 @@ class HomeDeepLinkIntentProcessorTest {
             )
         }
         verify { out wasNot Called }
+    }
+
+    @Test
+    fun `process privacy_report deep link`() {
+        assertTrue(processorHome.process(testIntent("privacy_report"), navController, out, settings))
+
+        verify { activity wasNot Called }
+        verify {
+            navController.navigate(NavGraphDirections.actionGlobalProtectionsDashboard(null))
+        }
+        verify { out wasNot Called }
+        assertEquals(
+            PRIVACY_REPORT_NOTIFICATION_TELEMETRY_SOURCE,
+            TrackingProtection.privacyReportTapped.testGetValue()?.last()?.extra?.get("source"),
+        )
     }
 
     private fun testIntent(uri: String) = Intent("", "$DEEP_LINK_SCHEME://$uri".toUri())

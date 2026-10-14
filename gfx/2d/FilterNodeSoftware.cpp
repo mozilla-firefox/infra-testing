@@ -1633,9 +1633,7 @@ int32_t FilterNodeTileSoftware::InputIndex(uint32_t aInputEnumIndex) {
 void FilterNodeTileSoftware::SetAttribute(uint32_t aIndex,
                                           const IntRect& aSourceRect) {
   MOZ_ASSERT(aIndex == ATT_TILE_SOURCE_RECT);
-  mSourceRect.SetRect(int32_t(aSourceRect.X()), int32_t(aSourceRect.Y()),
-                      int32_t(aSourceRect.Width()),
-                      int32_t(aSourceRect.Height()));
+  mSourceRect = aSourceRect;
   Invalidate();
 }
 
@@ -1673,14 +1671,24 @@ already_AddRefed<DataSourceSurface> FilterNodeTileSoftware::Render(
       InputMap;
   InputMap inputs;
 
+  auto IntRectToInt64Rect = [](const IntRect& aRect) {
+    return RectTyped<UnknownUnits, int64_t>(aRect.X(), aRect.Y(), aRect.Width(),
+                                            aRect.Height());
+  };
+
   IntPoint startIndex = TileIndex(mSourceRect, aRect.TopLeft());
   IntPoint endIndex = TileIndex(mSourceRect, aRect.BottomRight());
   for (int32_t ix = startIndex.x; ix <= endIndex.x; ix++) {
     for (int32_t iy = startIndex.y; iy <= endIndex.y; iy++) {
-      IntPoint sourceToDestOffset(ix * mSourceRect.Width(),
-                                  iy * mSourceRect.Height());
-      IntRect destRect = aRect.Intersect(mSourceRect + sourceToDestOffset);
-      IntRect srcRect = destRect - sourceToDestOffset;
+      auto sourceToDestOffset = PointTyped<UnknownUnits, int64_t>(
+          ix * mSourceRect.Width(), iy * mSourceRect.Height());
+      auto destRect64 = IntRectToInt64Rect(aRect).Intersect(
+          IntRectToInt64Rect(mSourceRect) + sourceToDestOffset);
+      auto srcRect64 = destRect64 - sourceToDestOffset;
+      IntRect destRect, srcRect;
+      if (!destRect64.ToIntRect(&destRect) || !srcRect64.ToIntRect(&srcRect)) {
+        return nullptr;
+      }
       if (srcRect.IsEmpty()) {
         continue;
       }
@@ -2382,34 +2390,13 @@ already_AddRefed<DataSourceSurface> FilterNodeConvolveMatrixSoftware::Render(
   return DoRender(aRect, mKernelUnitLength.width, mKernelUnitLength.height);
 }
 
-static std::vector<Float> ReversedVector(const std::vector<Float>& aVector) {
-  size_t length = aVector.size();
-  std::vector<Float> result(length, 0);
-  for (size_t i = 0; i < length; i++) {
-    result[length - 1 - i] = aVector[i];
-  }
-  return result;
-}
+static Float MaxResultAbs(const std::vector<Float>& aVector, Float aBias) {
+  std::array results{aBias, -aBias};
 
-static std::vector<Float> ScaledVector(const std::vector<Float>& aVector,
-                                       Float aDivisor) {
-  size_t length = aVector.size();
-  std::vector<Float> result(length, 0);
-  for (size_t i = 0; i < length; i++) {
-    result[i] = aVector[i] / aDivisor;
+  for (const auto& value : aVector) {
+    results[std::signbit(value)] += std::abs(value);
   }
-  return result;
-}
-
-static Float MaxVectorSum(const std::vector<Float>& aVector) {
-  Float sum = 0;
-  size_t length = aVector.size();
-  for (size_t i = 0; i < length; i++) {
-    if (aVector[i] > 0) {
-      sum += aVector[i];
-    }
-  }
-  return sum;
+  return std::max(results[0], results[1]);
 }
 
 // Returns shiftL and shiftR in such a way that
@@ -2470,28 +2457,34 @@ already_AddRefed<DataSourceSurface> FilterNodeConvolveMatrixSoftware::DoRender(
     return nullptr;
   }
 
-  IntPoint offset = aRect.TopLeft() - srcRect.TopLeft();
-
   DataSourceSurface::ScopedMap sourceMap(input, DataSourceSurface::READ);
   DataSourceSurface::ScopedMap targetMap(target, DataSourceSurface::WRITE);
   if (MOZ2D_WARN_IF(!sourceMap.IsMapped() || !targetMap.IsMapped())) {
     return nullptr;
   }
 
-  uint8_t* sourceData =
-      DataAtOffset(input, sourceMap.GetMappedSurface(), offset);
-  int32_t sourceStride = sourceMap.GetStride();
-  uint8_t* sourceBegin = sourceMap.GetData();
-  uint8_t* sourceEnd = sourceBegin + sourceStride * input->GetSize().height;
-  uint8_t* targetData = targetMap.GetData();
-  int32_t targetStride = targetMap.GetStride();
-
-  // Why exactly are we reversing the kernel?
-  std::vector<Float> kernel = ReversedVector(mKernelMatrix);
-  kernel = ScaledVector(kernel, mDivisor);
-  Float maxResultAbs = std::max(MaxVectorSum(kernel) + mBias,
-                                MaxVectorSum(ScaledVector(kernel, -1)) - mBias);
-  maxResultAbs = std::max(maxResultAbs, 1.0f);
+  std::vector<Float> kernel(mKernelMatrix.size());
+  // In the formulas SVG uses, the values in the kernel matrix are applied such
+  // that the kernel matrix is rotated 180 degrees relative to the source and
+  // destination images in order to match convolution theory as described in
+  // many computer graphics textbooks.
+  std::reverse_copy(mKernelMatrix.begin(), mKernelMatrix.end(), kernel.begin());
+  if (mDivisor != 1.0f) {
+    for (auto& value : kernel) {
+      value /= mDivisor;
+    }
+  }
+  static constexpr float kMaxScaledKernelMatrixValue = 1e6f;
+  for (const auto& value : kernel) {
+    if (std::abs(value) > kMaxScaledKernelMatrixValue) {
+      return nullptr;
+    }
+  }
+  static constexpr float kMaxBiasValue = 1e6f;
+  if (std::abs(mBias) > kMaxBiasValue) {
+    return nullptr;
+  }
+  Float maxResultAbs = std::max(MaxResultAbs(kernel, mBias), 1.0f);
 
   double idealFactor = INT32_MAX / 2.0 / maxResultAbs / 255.0 * 0.999;
   MOZ_ASSERT(255.0 * maxResultAbs * idealFactor <= INT32_MAX / 2.0,
@@ -2502,17 +2495,28 @@ already_AddRefed<DataSourceSurface> FilterNodeConvolveMatrixSoftware::DoRender(
   MOZ_ASSERT(255.0 * maxResultAbs * factorFromShifts <= INT32_MAX / 2.0,
              "badly chosen float-to-int scale");
 
-  auto intKernel = MakeUnique<int32_t[]>(kernel.size());
-  for (size_t i = 0; i < kernel.size(); i++) {
-    intKernel[i] = NS_lround(kernel[i] * factorFromShifts);
+  std::vector<int32_t> intKernel(kernel.size());
+  auto it = intKernel.begin();
+  for (const auto& value : kernel) {
+    *it++ = NS_lround(value * factorFromShifts);
   }
   int32_t bias = NS_lround(mBias * 255 * factorFromShifts);
+
+  IntPoint offset = aRect.TopLeft() - srcRect.TopLeft();
+
+  uint8_t* sourceData =
+      DataAtOffset(input, sourceMap.GetMappedSurface(), offset);
+  int32_t sourceStride = sourceMap.GetStride();
+  uint8_t* sourceBegin = sourceMap.GetData();
+  uint8_t* sourceEnd = sourceBegin + sourceStride * input->GetSize().height;
+  uint8_t* targetData = targetMap.GetData();
+  int32_t targetStride = targetMap.GetStride();
 
   for (int32_t y = 0; y < aRect.Height(); y++) {
     for (int32_t x = 0; x < aRect.Width(); x++) {
       ConvolvePixel(sourceData, targetData, aRect.Width(), aRect.Height(),
                     sourceStride, targetStride, sourceBegin, sourceEnd, x, y,
-                    intKernel.get(), bias, shiftL, shiftR, mPreserveAlpha,
+                    intKernel.data(), bias, shiftL, shiftR, mPreserveAlpha,
                     mKernelSize.width, mKernelSize.height, mTarget.x, mTarget.y,
                     aKernelUnitLengthX, aKernelUnitLengthY);
     }
@@ -2579,7 +2583,7 @@ IntRect FilterNodeConvolveMatrixSoftware::GetOutputRectInRect(
 }
 
 FilterNodeDisplacementMapSoftware::FilterNodeDisplacementMapSoftware()
-    : mScale(0.0f), mChannelX(COLOR_CHANNEL_R), mChannelY(COLOR_CHANNEL_G) {}
+    : mScale(Size{}), mChannelX(COLOR_CHANNEL_R), mChannelY(COLOR_CHANNEL_G) {}
 
 int32_t FilterNodeDisplacementMapSoftware::InputIndex(
     uint32_t aInputEnumIndex) {
@@ -2594,12 +2598,15 @@ int32_t FilterNodeDisplacementMapSoftware::InputIndex(
 }
 
 void FilterNodeDisplacementMapSoftware::SetAttribute(uint32_t aIndex,
-                                                     Float aScale) {
+                                                     const Size& aScale) {
   MOZ_ASSERT(aIndex == ATT_DISPLACEMENT_MAP_SCALE);
-  if (!std::isfinite(aScale)) {
-    aScale = 0.0f;
-  }
   mScale = aScale;
+  if (!std::isfinite(mScale.Width())) {
+    mScale.width = 0.0f;
+  }
+  if (!std::isfinite(mScale.Height())) {
+    mScale.height = 0.0f;
+  }
   Invalidate();
 }
 
@@ -2662,19 +2669,21 @@ already_AddRefed<DataSourceSurface> FilterNodeDisplacementMapSoftware::Render(
   uint16_t xChannel = channelMap[mChannelX];
   uint16_t yChannel = channelMap[mChannelY];
 
-  float scaleOver255 = mScale / 255.0f;
-  float scaleAdjustment = -0.5f * mScale;
+  float xScaleOver255 = mScale.Width() / 255.0f;
+  float xScaleAdjustment = -0.5f * mScale.Width();
+  float yScaleOver255 = mScale.Height() / 255.0f;
+  float yScaleAdjustment = -0.5f * mScale.Height();
 
   for (int32_t y = 0; y < aRect.Height(); y++) {
     for (int32_t x = 0; x < aRect.Width(); x++) {
       uint32_t mapIndex = y * mapStride + 4 * x;
       uint32_t targIndex = y * targetStride + 4 * x;
       int32_t sourceX =
-          x + int32_t(scaleOver255 * mapData[mapIndex + xChannel] +
-                      scaleAdjustment);
+          x + int32_t(xScaleOver255 * mapData[mapIndex + xChannel] +
+                      xScaleAdjustment);
       int32_t sourceY =
-          y + int32_t(scaleOver255 * mapData[mapIndex + yChannel] +
-                      scaleAdjustment);
+          y + int32_t(yScaleOver255 * mapData[mapIndex + yChannel] +
+                      yScaleAdjustment);
       *(uint32_t*)(targetData + targIndex) = ColorAtPoint(
           sourceData, sourceStride, sourceBegin, sourceEnd, sourceX, sourceY);
     }
@@ -2710,7 +2719,8 @@ IntRect FilterNodeDisplacementMapSoftware::InflatedSourceOrDestRect(
   }
 
   RectDouble destOrSourceRect(aDestOrSourceRect);
-  destOrSourceRect.Inflate(ceil(fabs(mScale) / 2));
+  destOrSourceRect.Inflate(ceil(fabs(mScale.Width()) / 2),
+                           ceil(fabs(mScale.Height()) / 2));
   if (!RectIsInt32Safe(destOrSourceRect)) {
     return IntRect();
   }

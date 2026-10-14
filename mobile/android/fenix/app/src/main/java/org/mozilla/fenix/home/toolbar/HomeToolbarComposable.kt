@@ -15,6 +15,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
@@ -49,10 +51,9 @@ import org.mozilla.fenix.components.appstate.AppAction.SearchAction.SearchEnded
 import org.mozilla.fenix.components.appstate.AppAction.SearchAction.SearchStarted
 import org.mozilla.fenix.components.appstate.VoiceSearchAction.VoiceInputRequested
 import org.mozilla.fenix.components.metrics.MetricsUtils
-import org.mozilla.fenix.components.toolbar.ToolbarPosition.BOTTOM
+import org.mozilla.fenix.components.toolbar.TopDividerColumn
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.utils.Settings
-import org.mozilla.fenix.wallpapers.Wallpaper
 import org.mozilla.fenix.wallpapers.WallpaperTheme
 
 // Speculative delay for putting the toolbar in edit mode after an initial voice search request.
@@ -109,21 +110,10 @@ internal class HomeToolbarComposable(
                 }
                 .value
         val currentQuery = toolbarStore.observeAsComposableState { it.editState.query.current }.value
-        val currentWallpaperName = appStore.observeAsComposableState { it.wallpaperState.currentWallpaper.name }.value
         val isPrivateMode = browsingModeManager.mode.isPrivate
         val isUniversalEdgeToEdge = settings.enableUniversalEdgeToEdgeWallpapers
-        // With the universal edge-to-edge treatment on, the wallpaper is drawn edge-to-edge behind
-        // the toolbar for any non-default wallpaper, so keep the toolbar background transparent to
-        // let it show through. When off, only the dedicated edge-to-edge wallpaper is treated this
-        // way (gated by its own feature flag).
         val hasWallpaperBackground =
-            if (isUniversalEdgeToEdge) {
-                !isPrivateMode
-            } else {
-                !isPrivateMode &&
-                    settings.enableHomepageEdgeToEdgeBackgroundFeature &&
-                    currentWallpaperName == Wallpaper.EDGE_TO_EDGE
-            }
+            hasWallpaperBackground(appStore = appStore, settings = settings, isPrivateMode = isPrivateMode)
         // Tint the browser action icons outside the address bar (tab counter, menu) with the
         // wallpaper's text color. The page actions inside the address bar (e.g. voice search) keep
         // the default color so they stay legible on the address bar background. Universal only.
@@ -159,8 +149,15 @@ internal class HomeToolbarComposable(
 
     @Composable
     private fun ToolbarContent(wallpaperTextColor: Color?) {
-        val shouldShowTabStrip: Boolean = remember { settings.isTabStripEnabled }
-        val isAddressBarVisible = remember { addressBarVisibility }
+        val shouldUseBottomToolbar = remember { settings.shouldUseBottomToolbar }
+        val shouldShowTabStrip = remember {
+            if (shouldUseBottomToolbar) {
+                settings.shouldShowTabStripAtBottom
+            } else {
+                settings.shouldShowTabStripAtTop
+            }
+        }
+        val isTabStripAtBottom = remember { shouldUseBottomToolbar && settings.shouldShowTabStripAtBottom }
 
         Column(
             modifier =
@@ -169,51 +166,65 @@ internal class HomeToolbarComposable(
                     testTag = context.resources.getResourceName(R.id.composable_toolbar)
                 }
         ) {
-            if (shouldShowTabStrip) {
-                tabStripContent()
-            }
-
-            if (settings.shouldUseBottomToolbar) {
+            if (shouldUseBottomToolbar) {
                 searchSuggestionsContent(Modifier.weight(1f))
             }
 
-            Box {
-                if (settings.enableHomepageSearchBar) {
-                    BrowserSimpleToolbar(toolbarStore, appStore)
+            TopDividerColumn(showDivider = isTabStripAtBottom, modifier = Modifier.fillMaxWidth()) {
+                if (shouldShowTabStrip) {
+                    tabStripContent()
                 }
 
-                this@Column.AnimatedVisibility(
-                    visible = isAddressBarVisible.value || appStore.state.searchState.isSearchActive,
-                    enter =
-                        fadeIn(
-                            animationSpec =
-                                tween(
-                                    durationMillis = 250,
-                                    easing = Easing { fraction -> fraction * fraction },
-                                )
-                        ),
-                    exit =
-                        fadeOut(
-                            animationSpec =
-                                tween(
-                                    durationMillis = 250,
-                                    easing = Easing { fraction -> 1f - (1f - fraction) * (1f - fraction) },
-                                )
-                        ),
-                ) {
-                    BrowserToolbar(
-                        store = toolbarStore,
-                        browserActionsColor = wallpaperTextColor,
-                    )
+                AddressBar(wallpaperTextColor = wallpaperTextColor)
+
+                if (shouldUseBottomToolbar) {
+                    navigationBarContent?.invoke()
                 }
             }
 
-            if (settings.toolbarPosition == BOTTOM) {
-                navigationBarContent?.invoke()
-            }
-
-            if (!settings.shouldUseBottomToolbar) {
+            if (!shouldUseBottomToolbar) {
                 searchSuggestionsContent(Modifier.weight(1f))
+            }
+        }
+    }
+
+    @Composable
+    private fun ColumnScope.AddressBar(wallpaperTextColor: Color?) {
+        val isAddressBarVisible = remember { addressBarVisibility }
+        val hasBottomStrip = remember {
+            settings.shouldUseBottomToolbar &&
+                (settings.shouldShowTabStripAtBottom || settings.shouldShowTabGroupsStrip)
+        }
+
+        Box {
+            if (settings.enableHomepageSearchBar) {
+                BrowserSimpleToolbar(toolbarStore, appStore)
+            }
+
+            this@AddressBar.AnimatedVisibility(
+                visible = isAddressBarVisible.value || appStore.state.searchState.isSearchActive,
+                enter =
+                    fadeIn(
+                        animationSpec =
+                            tween(
+                                durationMillis = 250,
+                                easing = Easing { fraction -> fraction * fraction },
+                            )
+                    ),
+                exit =
+                    fadeOut(
+                        animationSpec =
+                            tween(
+                                durationMillis = 250,
+                                easing = Easing { fraction -> 1f - (1f - fraction) * (1f - fraction) },
+                            )
+                    ),
+            ) {
+                BrowserToolbar(
+                    store = toolbarStore,
+                    browserActionsColor = wallpaperTextColor,
+                    showDivider = !hasBottomStrip,
+                )
             }
         }
     }
@@ -266,7 +277,7 @@ internal class HomeToolbarComposable(
     private fun handleTypedSearchRequest() {
         handleStartingSearch(directToSearchConfig)
 
-        if (directToSearchConfig.sessionId != null) {
+        if (directToSearchConfig.sessionId != null && !settings.showAddressBarInFocusMode) {
             browserStore.state.findTab(directToSearchConfig.sessionId)?.let {
                 toolbarStore.dispatch(
                     SearchQueryUpdated(

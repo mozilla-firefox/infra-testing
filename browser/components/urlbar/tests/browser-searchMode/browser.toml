@@ -9,6 +9,8 @@ prefs = [
   "browser.urlbar.trending.featureGate=false",
 ]
 
+["browser_addonsShortcutMoved.js"]
+
 ["browser_alias_replacement.js"]
 support-files = [
   "../browser/searchSuggestionEngine.xml",
@@ -63,6 +65,8 @@ https_first_disabled = true
 tags = "persisted-search"
 
 ["browser_searchModeSwitcher_basic.js"]
+
+["browser_searchModeSwitcher_bounds.js"]
 
 ["browser_searchModeSwitcher_dynamicUnifiedSearchButton.js"]
 support-files = ["has-a-link.html"]

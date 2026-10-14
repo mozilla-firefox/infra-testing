@@ -10,6 +10,10 @@
 
 import { UrlbarShared } from "chrome://browser/content/urlbar/UrlbarShared.mjs";
 
+/**
+ * @import { SearchMode } from "chrome://browser/content/urlbar/UrlbarInputBase.mjs"
+ */
+
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
@@ -94,7 +98,7 @@ export var UrlbarTokenizer = {
    *
    * @param {object} context
    * @param {string} context.searchString
-   * @param {string} [context.searchMode]
+   * @param {SearchMode} [context.searchMode]
    * @param {string} context.trimmedSearchString
    * @returns {UrlbarSearchStringTokenData[]}
    *  The tokens associated with the query.
@@ -139,7 +143,7 @@ const CHAR_TO_TYPE_MAP = new Map(
  *
  * @param {object} context
  * @param {string} context.searchString
- * @param {string} [context.searchMode]
+ * @param {SearchMode} [context.searchMode]
  * @returns {string[]} An array of string tokens.
  */
 function splitString({ searchString, searchMode }) {

@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import annotations
+
 import atexit
 import copy
 import logging
@@ -249,7 +251,11 @@ class LintRoller:
                     setupargs["virtualenv_manager"] = virtualenv_manager
                 start_time = time.monotonic()
                 res = (
-                    findobject(linter["setup"])(
+                    findobject(
+                        linter["setup"],
+                        linter["path"],
+                        self.lintargs.get("linter_paths"),
+                    )(
                         **setupargs,
                     )
                     or 0
@@ -324,6 +330,9 @@ class LintRoller:
 
             lpaths = list(lpaths) or __get_current_paths(os.getcwd())
             if self.lintargs.get("use_filters", True):
+                # Only the paths to lint are needed here. Workers filter their
+                # own chunk again and compute the excludes at that point, so
+                # skip the expensive glob expansion over the whole tree.
                 lpaths, _ = filterpaths(
                     self.root,
                     lpaths,
@@ -331,6 +340,7 @@ class LintRoller:
                     exclude=linter.get("exclude", []),
                     extensions=linter.get("extensions", []),
                     exclude_extensions=linter.get("exclude_extensions", []),
+                    expand_excludes=False,
                 )
                 if not lpaths:
                     continue

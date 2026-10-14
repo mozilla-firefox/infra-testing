@@ -779,7 +779,7 @@ impl YamlHelper for Yaml {
                     let scale = self["scale"].as_f32().unwrap();
                     let x_channel_selector = self["x_channel_selector"].as_i64().unwrap() as u32;
                     let y_channel_selector = self["y_channel_selector"].as_i64().unwrap() as u32;
-                    Some(FilterOp::SVGFEDisplacementMap{node, scale, x_channel_selector, y_channel_selector})
+                    Some(FilterOp::SVGFEDisplacementMap{node, scale_x: scale, scale_y: scale, x_channel_selector, y_channel_selector})
                 },
                 "dropshadow" => {
                     let color = self["color"].as_colorf().unwrap();
@@ -939,6 +939,18 @@ impl YamlHelper for Yaml {
                     let amount: f32 = args[0].parse().unwrap();
                     Some(FilterOp::Opacity(amount.into(), amount))
                 }
+                // A second argument is a property binding id, which makes the
+                // filter animated rather than static. The bound value is the
+                // amount above; nothing needs to update it for the binding to
+                // count as animating.
+                ("opacity", ref args, _) if args.len() == 2 => {
+                    let amount: f32 = args[0].parse().unwrap();
+                    let id: u64 = args[1].parse().unwrap();
+                    Some(FilterOp::Opacity(
+                        PropertyBinding::Binding(PropertyBindingKey::new(id), amount),
+                        amount,
+                    ))
+                }
                 ("saturate", ref args, _) if args.len() == 1 => {
                     Some(FilterOp::Saturate(args[0].parse().unwrap()))
                 }
@@ -1082,7 +1094,7 @@ impl YamlHelper for Yaml {
             ExtendMode::Clamp
         };
 
-        dl.create_gradient(start, end, stops, extend_mode)
+        dl.create_gradient(start.to_vector(), end.to_vector(), stops, extend_mode)
     }
 
     fn as_radial_gradient(&self, dl: &mut DisplayListBuilder) -> (RadialGradient, Vec<GradientStop>) {
@@ -1109,7 +1121,7 @@ impl YamlHelper for Yaml {
             ExtendMode::Clamp
         };
 
-        dl.create_radial_gradient(center, radius, stops, extend_mode)
+        dl.create_radial_gradient(center.to_vector(), radius, stops, extend_mode)
     }
 
     fn as_conic_gradient(&self, dl: &mut DisplayListBuilder) -> (ConicGradient, Vec<GradientStop>) {
@@ -1136,7 +1148,7 @@ impl YamlHelper for Yaml {
             ExtendMode::Clamp
         };
 
-        dl.create_conic_gradient(center, angle, stops, extend_mode)
+        dl.create_conic_gradient(center.to_vector(), angle, stops, extend_mode)
     }
 
     fn as_complex_clip_regions(&self) -> Vec<ComplexClipRegion> {

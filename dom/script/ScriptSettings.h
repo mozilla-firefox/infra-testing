@@ -195,6 +195,9 @@ class MOZ_STACK_CLASS AutoJSAPI : protected ScriptSettingsStackEntry {
 
   ~AutoJSAPI();
 
+  AutoJSAPI(const AutoJSAPI&) = delete;
+  AutoJSAPI& operator=(const AutoJSAPI&) = delete;
+
   // This uses the SafeJSContext (or worker equivalent), and enters a null
   // compartment, so that the consumer is forced to select a compartment to
   // enter before manipulating objects.
@@ -298,9 +301,6 @@ class MOZ_STACK_CLASS AutoJSAPI : protected ScriptSettingsStackEntry {
  private:
   void InitInternal(nsIGlobalObject* aGlobalObject, JSObject* aGlobal,
                     JSContext* aCx, bool aIsMainThread);
-
-  AutoJSAPI(const AutoJSAPI&) = delete;
-  AutoJSAPI& operator=(const AutoJSAPI&) = delete;
 };
 
 /*
@@ -334,14 +334,8 @@ class AutoNoJSAPI : protected ScriptSettingsStackEntry,
   // during construction.
   explicit AutoNoJSAPI(JSContext* aCx);
 
-  // Stashed JSContext* so we don't need to GetJSContext in our destructor.
-  // It's probably safe to hold on to this, in the sense that the world should
-  // not get torn down while we're on the stack, and if it's not, we'd need to
-  // fix JSAutoNullableRealm to not hold on to a JSContext either, or
-  // something.
-  JSContext* mCx;
-
   AutoYieldJSThreadExecution mExecutionYield;
+  JS::AutoHideScriptedCaller mCallerOverride;
 };
 
 }  // namespace dom

@@ -29,7 +29,8 @@ class APZCTreeManagerTester : public APZCTesterBase {
     APZThreadUtils::SetThreadAssertionsEnabled(false);
     APZThreadUtils::SetControllerThread(NS_GetCurrentThread());
 
-    manager = new TestAPZCTreeManager(mcc, std::move(mHitTester));
+    manager = new TestAPZCTreeManager(mcc, CSSToLayoutDeviceScale{1},
+                                      std::move(mHitTester));
     updater = new APZUpdater(manager, false);
     sampler = new APZSampler(manager, false);
   }
@@ -95,7 +96,7 @@ class APZCTreeManagerTester : public APZCTesterBase {
     // move the value out of mHitTester.
     mMockHitTester = static_cast<MockHitTester*>(mHitTester.get());
   }
-  void QueueMockHitResult(ScrollableLayerGuid::ViewID aScrollId,
+  void QueueMockHitResult(ViewID aScrollId,
                           gfx::CompositorHitTestInfo aHitInfo =
                               gfx::CompositorHitTestFlags::eVisibleToHitTest) {
     QueueMockHitResult(ScrollableLayerGuid(LayersId{0}, 0, aScrollId),
@@ -121,14 +122,14 @@ class APZCTreeManagerTester : public APZCTesterBase {
 
  protected:
   static ScrollMetadata BuildScrollMetadata(
-      ScrollableLayerGuid::ViewID aScrollId, const CSSRect& aScrollableRect,
+      ViewID aScrollId, const CSSRect& aScrollableRect,
       const ParentLayerRect& aCompositionBounds) {
     ScrollMetadata metadata;
     FrameMetrics& metrics = metadata.GetMetrics();
     metrics.SetScrollId(aScrollId);
     // By convention in this test file, START_SCROLL_ID is the root, so mark it
     // as such.
-    if (aScrollId == ScrollableLayerGuid::START_SCROLL_ID) {
+    if (aScrollId == START_SCROLL_ID) {
       metadata.SetIsLayersIdRoot(true);
     }
     metrics.SetCompositionBounds(aCompositionBounds);
@@ -167,7 +168,7 @@ class APZCTreeManagerTester : public APZCTesterBase {
   }
 
   void SetScrollableFrameMetrics(WebRenderLayerScrollData* aLayer,
-                                 ScrollableLayerGuid::ViewID aScrollId,
+                                 ViewID aScrollId,
                                  CSSRect aScrollableRect = CSSRect(-1, -1, -1,
                                                                    -1)) {
     auto localTransform = aLayer->GetTransformTyped() * AsyncTransformMatrix();
@@ -217,7 +218,7 @@ class APZCTreeManagerTester : public APZCTesterBase {
         LayerIntRect(0, 0, 200, 200),
     };
     CreateScrollData(treeShape, layerVisibleRect);
-    SetScrollableFrameMetrics(layers[0], ScrollableLayerGuid::START_SCROLL_ID,
+    SetScrollableFrameMetrics(layers[0], START_SCROLL_ID,
                               CSSRect(0, 0, 500, 500));
   }
 };

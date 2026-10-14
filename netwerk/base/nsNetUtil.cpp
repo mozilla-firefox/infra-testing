@@ -27,7 +27,9 @@
 #include "mozilla/StoragePrincipalHelper.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
+#include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/PolicyContainer.h"
 #include "mozilla/dom/nsCSPUtils.h"
 #include "mozilla/dom/nsHTTPSOnlyUtils.h"
 #include "mozilla/dom/nsMixedContentBlocker.h"
@@ -54,6 +56,7 @@
 #include "nsICertStorage.h"
 #include "nsIChannelEventSink.h"
 #include "nsIClassifiedChannel.h"
+#include "nsIConsoleReportCollector.h"
 #include "nsIContentSniffer.h"
 #include "nsIDownloader.h"
 #include "nsIEnterprisePolicies.h"
@@ -2150,6 +2153,31 @@ nsresult NS_GetSanitizedURIStringFromURI(nsIURI* aUri,
   return rv;
 }
 
+void NS_GetSanitizedSpecFromSpec(const nsACString& aSpec,
+                                 nsACString& aSanitizedSpec) {
+  aSanitizedSpec.Assign(aSpec);
+
+  // A password only ever reaches nsIURI through a userinfo component, and every
+  // nsIURI implementation that can report a non-empty password parses that
+  // component out of a literal '@' in the spec. Parsing a URI is far more
+  // expensive than scanning for that byte, so reject the common case first.
+  if (!aSpec.Contains('@')) {
+    return;
+  }
+
+  nsCOMPtr<nsIURI> uri;
+  nsAutoCString password;
+  if (NS_FAILED(NS_NewURI(getter_AddRefs(uri), aSpec)) ||
+      NS_FAILED(uri->GetPassword(password)) || password.IsEmpty()) {
+    return;
+  }
+
+  // The spec is known to carry a password, so never fall back to it.
+  if (NS_FAILED(NS_GetSanitizedURIStringFromURI(uri, aSanitizedSpec))) {
+    aSanitizedSpec.Truncate();
+  }
+}
+
 nsresult NS_LoadPersistentPropertiesFromURISpec(
     nsIPersistentProperties** outResult, const nsACString& aSpec) {
   nsCOMPtr<nsIURI> uri;
@@ -2948,6 +2976,38 @@ bool handleResultFunc(bool aAllowSTS, bool aIsStsHost) {
   }
   return false;
 };
+
+void NS_LogSecureUpgradeToConsole(nsIURI* aURI, nsILoadInfo* aLoadInfo,
+                                  nsIConsoleReportCollector* aReportCollector,
+                                  const nsACString& aMechanism) {
+  MOZ_ASSERT(aLoadInfo);
+  MOZ_ASSERT(aReportCollector);
+  if (!aLoadInfo || !aReportCollector) {
+    return;
+  }
+
+  // A WebSocket handshake runs on an http(s) channel; report the ws(s) URL
+  // the page opened.
+  nsCOMPtr<nsIURI> reportURI = aURI;
+  if (aLoadInfo->GetExternalContentPolicyType() ==
+      ExtContentPolicy::TYPE_WEBSOCKET) {
+    (void)NS_MutateURI(aURI).SetScheme("ws"_ns).Finalize(reportURI);
+  }
+
+  nsAutoCString scheme;
+  reportURI->GetScheme(scheme);
+  scheme.AppendLiteral("s");
+  nsAutoCString spec;
+  reportURI->GetSpec(spec);
+
+  aReportCollector->AddConsoleReport(
+      nsIScriptError::warningFlag, aMechanism,
+      PropertiesFile::SECURITY_PROPERTIES, spec, 0, 1,
+      "SecureUpgradeRequest"_ns,
+      {NS_ConvertUTF8toUTF16(aMechanism), NS_ConvertUTF8toUTF16(spec),
+       NS_ConvertUTF8toUTF16(scheme)});
+}
+
 // That function is a helper function of NS_ShouldSecureUpgrade to check if
 // CSP upgrade-insecure-requests, Mixed content auto upgrading, HTTPs-Only/-
 // First, or an enterprise HttpsOnly site policy should upgrade the given
@@ -3078,9 +3138,11 @@ static bool ShouldSecureUpgradeNoHSTS(nsIURI* aURI, nsILoadInfo* aLoadInfo) {
 // 5. Enterprise policy HttpsOnly
 // (6. Https RR - will be checked in nsHttpChannel)
 nsresult NS_ShouldSecureUpgrade(
-    nsIURI* aURI, nsILoadInfo* aLoadInfo, nsIPrincipal* aChannelResultPrincipal,
-    bool aAllowSTS, const OriginAttributes& aOriginAttributes,
-    bool& aShouldUpgrade, std::function<void(bool, nsresult)>&& aResultCallback,
+    nsIURI* aURI, nsILoadInfo* aLoadInfo,
+    nsIConsoleReportCollector* aReportCollector,
+    nsIPrincipal* aChannelResultPrincipal, bool aAllowSTS,
+    const OriginAttributes& aOriginAttributes, bool& aShouldUpgrade,
+    std::function<void(bool, nsresult)>&& aResultCallback,
     bool& aWillCallback) {
   MOZ_ASSERT(XRE_IsParentProcess());
   if (!XRE_IsParentProcess()) {
@@ -3102,9 +3164,10 @@ nsresult NS_ShouldSecureUpgrade(
     aShouldUpgrade = false;
     return NS_OK;
   }
-  // If it is a mixed content trustworthy loopback, then we shouldn't upgrade
-  // it.
-  if (nsMixedContentBlocker::IsPotentiallyTrustworthyLoopbackURL(aURI)) {
+  // If the target is already considered potentially trustworthy (loopback, a
+  // host on `dom.securecontext.allowlist`, or a .onion address), then it is
+  // not served over https and we shouldn't upgrade it.
+  if (nsMixedContentBlocker::IsPotentiallyTrustworthyOrigin(aURI)) {
     aShouldUpgrade = false;
     return NS_OK;
   }
@@ -3134,13 +3197,19 @@ nsresult NS_ShouldSecureUpgrade(
   static Atomic<bool, Relaxed> storageReady(false);
   if (!storageReady && gSocketTransportService && aResultCallback) {
     nsCOMPtr<nsILoadInfo> loadInfo = aLoadInfo;
+    nsCOMPtr<nsIConsoleReportCollector> reportCollector = aReportCollector;
     nsCOMPtr<nsIURI> uri = aURI;
     auto callbackWrapper = [resultCallback{std::move(aResultCallback)}, uri,
-                            loadInfo](bool aShouldUpgrade, nsresult aStatus) {
+                            loadInfo, reportCollector](bool aShouldUpgrade,
+                                                       nsresult aStatus) {
       MOZ_ASSERT(NS_IsMainThread());
 
       // 1. HSTS upgrade
       if (aShouldUpgrade || NS_FAILED(aStatus)) {
+        if (aShouldUpgrade && NS_SUCCEEDED(aStatus)) {
+          NS_LogSecureUpgradeToConsole(uri, loadInfo, reportCollector,
+                                       "HSTS"_ns);
+        }
         resultCallback(aShouldUpgrade, aStatus);
         return;
       }
@@ -3192,6 +3261,7 @@ nsresult NS_ShouldSecureUpgrade(
   // we can't pass the loadinfo to handleResultFunc since it's not threadsafe
   // hence we set the http telemetry information on the loadinfo here.
   if (aShouldUpgrade) {
+    NS_LogSecureUpgradeToConsole(aURI, aLoadInfo, aReportCollector, "HSTS"_ns);
     aLoadInfo->SetHttpsUpgradeTelemetry(nsILoadInfo::HSTS);
   }
   if (!aShouldUpgrade) {
@@ -4276,6 +4346,31 @@ nsresult AddExtraHeaders(nsIHttpChannel* aHttpChannel,
     NS_ENSURE_SUCCESS(rv, rv);
   }
   return NS_OK;
+}
+
+nsILoadInfo::IPAddressSpace GetParentIPAddressSpace(nsILoadInfo* aLoadInfo) {
+  MOZ_ASSERT(aLoadInfo);
+
+  RefPtr<mozilla::dom::BrowsingContext> bc;
+  aLoadInfo->GetBrowsingContext(getter_AddRefs(bc));
+  if (bc) {
+    return bc->GetCurrentIPAddressSpace();
+  }
+
+  // Loads that are not tied to a browsing context (worker requests, and
+  // notification icon loads which have no requesting node) read the address
+  // space from the policy container propagated from the parent document.
+  nsCOMPtr<nsIPolicyContainer> policyContainer =
+      aLoadInfo->GetPolicyContainer();
+  if (policyContainer) {
+    nsILoadInfo::IPAddressSpace addressSpace =
+        PolicyContainer::Cast(policyContainer)->GetIPAddressSpace();
+    if (addressSpace != nsILoadInfo::Unknown) {
+      return addressSpace;
+    }
+  }
+
+  return aLoadInfo->GetParentIpAddressSpace();
 }
 
 bool IsLocalHostAccess(

@@ -118,7 +118,9 @@ gfxSVGGlyphsDocument* gfxSVGGlyphs::FindOrCreateGlyphsDocument(
     auto doc = MakeUnique<gfxSVGGlyphsDocument>(
         data + mHeader->mDocIndexOffset + entry->mDocOffset, entry->mDocLength,
         this);
-    return mGlyphDocs.InsertOrUpdate(entry->mDocOffset, std::move(doc)).get();
+    // Similarly to the Lookup() call above, if we've already created a separate
+    // document, keep it rather than overriding it.
+    return mGlyphDocs.LookupOrInsert(entry->mDocOffset, std::move(doc)).get();
   }
 
   return nullptr;
@@ -321,8 +323,8 @@ gfxSVGGlyphsDocument::gfxSVGGlyphsDocument(const uint8_t* aBuffer,
 }
 
 gfxSVGGlyphsDocument::~gfxSVGGlyphsDocument() {
-  if (mDocument) {
-    mDocument->OnPageHide(false, nullptr);
+  if (const RefPtr<Document> doc = std::move(mDocument)) {
+    doc->OnPageHide(false, nullptr);
   }
   if (mPresShell) {
     mPresShell->RemovePostRefreshObserver(this);

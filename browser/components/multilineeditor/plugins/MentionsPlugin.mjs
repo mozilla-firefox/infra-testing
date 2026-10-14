@@ -10,9 +10,13 @@ import {
 
 /**
  * @typedef {object} MentionData
- * @property {string} type - Mention type
+ * @property {string} type - Mention type. Consumers render by type: a Smart
+ *   Window tab group, for instance, has no page and so has no favicon or link
+ *   to give its chip, and is drawn as a colored box instead
  * @property {string} id - Mention ID
  * @property {string} label - Mention label
+ * @property {string} [color] - Color the chip is tinted with, where the type
+ *   is drawn in a color
  */
 
 /**
@@ -20,6 +24,8 @@ import {
  */
 class Mentions {
   #editor;
+  #hasMentionCacheDoc = null;
+  #hasMentionCacheValue = false;
 
   /**
    * @param {object} editor - Multiline editor instance
@@ -78,6 +84,7 @@ class Mentions {
       type: mention.type,
       id: mention.id,
       label: mention.label,
+      color: mention.color ?? null,
     });
     return state.tr.replaceRangeWith(from, to, mentionNode);
   }
@@ -91,16 +98,21 @@ class Mentions {
     const { state } = this.#editor.view;
     const { doc, schema } = state;
 
-    let foundMention = false;
+    if (this.#hasMentionCacheDoc == doc) {
+      return this.#hasMentionCacheValue;
+    }
+
+    this.#hasMentionCacheDoc = doc;
+    this.#hasMentionCacheValue = false;
     doc.nodesBetween(0, doc.content.size, node => {
       if (node.type === schema.nodes.mention) {
-        foundMention = true;
+        this.#hasMentionCacheValue = true;
         return false;
       }
       return true;
     });
 
-    return foundMention;
+    return this.#hasMentionCacheValue;
   }
 
   /**
@@ -119,6 +131,7 @@ class Mentions {
           type: node.attrs.type,
           id: node.attrs.id,
           label: node.attrs.label,
+          color: node.attrs.color,
           pos,
         });
       }
@@ -141,6 +154,10 @@ class Mentions {
 function createMentionNodeSpec(toDOM) {
   return {
     ...mentionNodeSpec,
+    attrs: {
+      ...mentionNodeSpec.attrs,
+      color: { default: null },
+    },
     atom: true,
     selectable: true,
     toDOM: node => {
@@ -153,6 +170,7 @@ function createMentionNodeSpec(toDOM) {
           "data-mention-type": node.attrs.type,
           "data-mention-id": node.attrs.id,
           "data-mention-label": node.attrs.label,
+          "data-mention-color": node.attrs.color,
           class: classAttr ? `mention ${classAttr}` : "mention",
         },
         ...children,
@@ -165,6 +183,7 @@ function createMentionNodeSpec(toDOM) {
           type: dom.getAttribute("data-mention-type"),
           id: dom.getAttribute("data-mention-id"),
           label: dom.getAttribute("data-mention-label"),
+          color: dom.getAttribute("data-mention-color"),
         }),
       },
     ],
@@ -179,8 +198,14 @@ function createMentionNodeSpec(toDOM) {
 function markdownSerializer() {
   return (state, node) => {
     const label = state.esc(node.attrs.label ?? "");
-    const href = encodeURIComponent(node.attrs.id);
-    state.write(`[${label}](mention:?href=${href})`);
+    const params = new URLSearchParams({ href: node.attrs.id });
+    if (node.attrs.type) {
+      params.set("type", node.attrs.type);
+    }
+    if (node.attrs.color) {
+      params.set("color", node.attrs.color);
+    }
+    state.write(`[${label}](mention:?${params})`);
   };
 }
 

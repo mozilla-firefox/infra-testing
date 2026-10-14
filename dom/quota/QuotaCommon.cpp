@@ -595,8 +595,9 @@ void LogError(const nsACString& aExpr, const Maybe<nsresult> aMaybeRv,
     // match locations across versions, but they might be large.
 
     // New extra entries (with potentially sensitive content) can't be easily
-    // (accidentally) added because they would have to be added to Events.yaml
-    // under "dom.quota.try" which would require a data review.
+    // (accidentally) added because they would have to be added to the
+    // error_step extra_keys in dom/quota/metrics.yaml, which would require a
+    // data review.
 
     mozilla::glean::dom_quota_try::ErrorStepExtra extra;
     extra.context = Some(MOZ_NO_VALIDATE(
@@ -708,6 +709,23 @@ Result<bool, nsresult> WarnIfFileIsUnknown(nsIFile& aFile,
   return true;
 }
 #endif
+
+Result<bool, nsresult> DatabasePassesIntegrityCheck(
+    mozIStorageConnection& aConnection, IntegrityCheckMode aMode) {
+  const nsLiteralCString pragma = aMode == IntegrityCheckMode::Full
+                                      ? "PRAGMA integrity_check(1);"_ns
+                                      : "PRAGMA quick_check(1);"_ns;
+
+  QM_TRY_INSPECT(
+      const auto& stmt,
+      CreateAndExecuteSingleStepStatement<SingleStepResult::AssertHasResult>(
+          aConnection, pragma));
+
+  QM_TRY_INSPECT(const auto& result, MOZ_TO_RESULT_INVOKE_MEMBER_TYPED(
+                                         nsString, *stmt, GetString, 0));
+
+  return result.EqualsLiteral("ok");
+}
 
 }  // namespace dom::quota
 }  // namespace mozilla

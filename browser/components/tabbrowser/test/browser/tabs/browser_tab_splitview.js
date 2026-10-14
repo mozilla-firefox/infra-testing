@@ -923,10 +923,9 @@ add_task(async function test_show_hide_split_view_tab_affects_whole_view() {
     !splitView.visible,
     "Not all split view tabs are considered visible after hiding a tab"
   );
-  await BrowserTestUtils.waitForMutationCondition(
-    splitView,
-    { attributes: true, attributeFilter: ["hidden"] },
-    () => splitView.hasAttribute("hidden")
+  Assert.ok(
+    splitView.hasAttribute("hidden"),
+    "The split view container should be hidden"
   );
   Assert.ok(
     BrowserTestUtils.isHidden(splitView),
@@ -946,10 +945,9 @@ add_task(async function test_show_hide_split_view_tab_affects_whole_view() {
     splitView.visible,
     "All split view tabs are considered visible again after showing a tab"
   );
-  await BrowserTestUtils.waitForMutationCondition(
-    splitView,
-    { attributes: true, attributeFilter: ["hidden"] },
-    () => !splitView.hasAttribute("hidden")
+  Assert.ok(
+    !splitView.hasAttribute("hidden"),
+    "The split view container should no longer be hidden"
   );
   Assert.ok(
     BrowserTestUtils.isVisible(splitView),
@@ -987,10 +985,9 @@ add_task(async function test_hidden_split_view_sibling_keeps_active_tab() {
     !splitView.visible,
     "Not all split view tabs are considered visible after hiding the sibling tab"
   );
-  await BrowserTestUtils.waitForMutationCondition(
-    splitView,
-    { attributes: true, attributeFilter: ["hidden"] },
-    () => splitView.hasAttribute("hidden")
+  Assert.ok(
+    splitView.hasAttribute("hidden"),
+    "The split view container should be hidden"
   );
   Assert.ok(
     BrowserTestUtils.isHidden(splitView),

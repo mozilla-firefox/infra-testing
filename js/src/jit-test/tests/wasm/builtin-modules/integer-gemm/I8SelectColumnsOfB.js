@@ -42,6 +42,11 @@ function testInvalidAlignment() {
 
   // input: Not an integral multiple of ARRAY_ALIGNMENT
   assertErrorMessage(() => int8_select_columns_of_b(invalidAlignment, VALID.rows, VALID.cols, VALID.colIndexList, VALID.sizeColIndexList, VALID.output), WebAssembly.RuntimeError, /index out of bounds/);
+
+  // output: Not an integral multiple of ARRAY_ALIGNMENT. SelectColumnsB writes
+  // the output with aligned SIMD stores, so an unaligned output must be
+  // rejected rather than faulting on the store (bug 2075984).
+  assertErrorMessage(() => int8_select_columns_of_b(VALID.input, VALID.rows, VALID.cols, VALID.colIndexList, VALID.sizeColIndexList, VALID.output + 1), WebAssembly.RuntimeError, /index out of bounds/);
 }
 
 function testOutOfBounds() {
@@ -78,6 +83,21 @@ function testInvalidColumnIndex() {
   for (let i = 0; i < VALID.sizeColIndexList; i++) colIndex[base + i] = 0;
 }
 
+function testOverlapCheck() {
+  // The colIndexList region must not overlap the output region. gemmology reads
+  // indices in groups of 8 while writing output incrementally; overlap lets
+  // output writes corrupt not-yet-read indices, bypassing the column-index
+  // validation and enabling out-of-bounds reads.
+  //
+  // Place colIndexList at the start of the output region (full overlap).
+  assertErrorMessage(() => int8_select_columns_of_b(VALID.input, VALID.rows, VALID.cols, VALID.output, VALID.sizeColIndexList, VALID.output), WebAssembly.RuntimeError, /index out of bounds/);
+
+  // Partial overlap: colIndexList starts inside the output region.
+  let outputSize = VALID.rows * VALID.sizeColIndexList;
+  let partialOverlap = VALID.output + outputSize - 4;
+  assertErrorMessage(() => int8_select_columns_of_b(VALID.input, VALID.rows, VALID.cols, partialOverlap, VALID.sizeColIndexList, VALID.output), WebAssembly.RuntimeError, /index out of bounds/);
+}
+
 function testSuccessfulCall() {
   // We just test that with valid arguments the intrinsic executes without any error
   int8_select_columns_of_b(VALID.input, VALID.rows, VALID.cols, VALID.colIndexList, VALID.sizeColIndexList, VALID.output);
@@ -87,6 +107,7 @@ testInvalidSize();
 testInvalidAlignment();
 testOutOfBounds();
 testInvalidColumnIndex();
+testOverlapCheck();
 testSuccessfulCall();
 `
 

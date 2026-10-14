@@ -207,6 +207,10 @@ def _is_hg_try(remote):
     return HG_TRY_URL in remote
 
 
+def _is_git_try(remote):
+    return not _is_hg_try(remote)
+
+
 def push_to_git_backing(prefix: str) -> str:
     """Push the current head to the git-backing repo and return the git SHA."""
     print("Pushing to git-backing...")
@@ -259,6 +263,7 @@ def push_to_try(
     try_task_config=None,
     stage_changes=False,
     dry_run=False,
+    write_task_config=False,
     closed_tree=False,
     files_to_change=None,
     allow_log_capture=False,
@@ -326,13 +331,28 @@ def push_to_try(
             f"refs/heads/{prefix}/{backing_sha}"
         )
 
+    if _is_git_try(remote) and (try_task_config or {}).get("version") == 2:
+        # Github reports a null `before` revision for a push that creates the branch,
+        # so the decision task can't tell what the push changed. Record the real base
+        # for it.
+        try_task_config.setdefault("parameters", {})["base_rev"] = (
+            vcs.base_ref_as_commit()
+        )
+
     if try_task_config:
-        changed_files["try_task_config.json"] = (
+        try_task_config_file = (
             json.dumps(
                 try_task_config, indent=4, separators=(",", ": "), sort_keys=True
             )
             + "\n"
         )
+        changed_files["try_task_config.json"] = try_task_config_file
+        if write_task_config:
+            path = os.path.join(vcs.path, "try_task_config.json")
+            with open(path, "w") as fh:
+                fh.write(try_task_config_file)
+            print(f"Wrote {path}")
+            return
         if method not in ("again", "auto", "empty"):
             write_task_config_history(msg, try_task_config)
 

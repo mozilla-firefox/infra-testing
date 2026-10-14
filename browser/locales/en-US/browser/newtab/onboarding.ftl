@@ -456,16 +456,16 @@ onboarding-checklist-remove-2 = Remove checklist
 tab-groups-onboarding-feature-callout-title = Try tab groups for less clutter, more focus
 tab-groups-onboarding-feature-callout-subtitle = Get organized by dragging one tab on top of another to create your first group.
 
-# The text "list all tabs" refers to the string tabs-toolbar-list-all-tabs
-tab-groups-onboarding-create-group-title-3 = Find your tab groups in the List All Tabs menu anytime.
+# The text "Search and Manage Tabs" refers to the string tabs-toolbar-list-all-tabs-2
+tab-groups-onboarding-create-group-title-4 = Find your tab groups in the “Search and manage tabs” menu anytime.
 tab-groups-onboarding-create-group-no-alltabs-button-title = Find your groups by searching for them in the address bar.
 
-# The text "list all tabs" refers to the string tabs-toolbar-list-all-tabs
-tab-groups-onboarding-saved-groups-title-3 = When you close a tab group, reopen it from the List All Tabs menu anytime.
+# The text "Search and manage tabs" refers to the string tabs-toolbar-list-all-tabs-2
+tab-groups-onboarding-saved-groups-title-4 = When you close a tab group, reopen it from the “Search and manage tabs” menu anytime.
 tab-groups-onboarding-saved-groups-no-alltabs-button-title-2 = Find your closed groups by searching for them in the address bar.
 
-# The text "list all tabs" refers to the string tabs-toolbar-list-all-tabs
-tab-groups-onboarding-session-restore-title-2 = Reopen your tab groups from the List All Tabs menu anytime.
+# The text "Search and manage tabs" refers to the string tabs-toolbar-list-all-tabs-2
+tab-groups-onboarding-session-restore-title-3 = Reopen your tab groups from the “Search and manage tabs” menu anytime.
 tab-groups-onboarding-dismiss = OK
 
 ## Multi Profiles feature onboarding messages
@@ -608,6 +608,41 @@ onboarding-refresh-gratitude-subtitle = Thank you for using { -brand-short-name 
 # "has your back" is an idiom suggesting support and protection
 onboarding-refresh-gratitude-title = { -brand-short-name } has your back
 
+## First Run Onboarding refresh strings
+
+# "has your back" is an idiom suggesting support and protection
+onboarding-refresh-splash-screen-title = { -brand-product-name } has your back, starting now
+onboarding-refresh-hero-text = Built to protect you, not track you.
+onboarding-refresh-tou-default = Open all links with { -brand-short-name }
+onboarding-refresh-tou-pin = { PLATFORM() ->
+    [macos] Keep { -brand-short-name } in Dock
+   *[other] Add { -brand-short-name } to your taskbar
+}
+onboarding-refresh-tou-default-unchecked = Keep built-in protection every time you browse
+onboarding-refresh-tou-pin-unchecked = Keep the only major independent browser a click away
+onboarding-refresh-terms-of-use-with-links = By continuing, you agree to the <a data-l10n-name="terms_of_use">{ -brand-product-name } Terms of Use</a> and our <a data-l10n-name="privacy_notice">Privacy Notice</a>. To help improve the browser, { -brand-product-name } sends diagnostic and interaction data to { -vendor-short-name }.
+onboarding-refresh-data-collection-link = Manage data collection settings
+
+onboarding-refresh-primary-button = Continue
+
+onboarding-refresh-fro-import-header = Bring in your data
+onboarding-refresh-fro-import-body = Your personal data stays personal. { -brand-product-name } will never sell it.
+onboarding-refresh-fro-skip-button = Skip
+
+onboarding-refresh-fro-theme-header = Play with your look
+
+onboarding-refresh-tab-layout-header = Try a different tab layout
+onboarding-refresh-tab-layout-top = On top
+onboarding-refresh-tab-layout-side = On the side
+onboarding-refresh-tab-layout-minimal = Minimal
+# Tooltip displayed on hover for minimal tabs image
+onboarding-minimal-tabs-tooltip =
+    .title = A browser window displaying tabs as small icons along the side of the screen, in a minimized sidebar.
+
+# Description for minimal tabs image
+onboarding-minimal-tabs-description =
+    .aria-description = A browser window displaying tabs as small icons along the side of the screen, in a minimized sidebar.
+
 ## Smart window switcher callout
 
 smartwindow-switcher-callout = Switch between Smart and Classic Windows anytime.
@@ -645,3 +680,24 @@ smartwindow-sidebar-auto-open-callout-rejected-subtitle = If you change your min
 onboarding-theme-picker-title = Pick a theme
 onboarding-theme-picker-subtitle = Bring a little more color into { -brand-short-name }.
 onboarding-theme-picker-button-label = Save and continue
+
+## Carousel navigation
+
+# Default accessible name for the row of pills used to move between carousel
+# cards. String means `Highlights of a feature` (feature is a noun).
+onboarding-carousel-nav =
+  .aria-label = Feature highlights
+
+## Welcome Back Onboarding
+
+welcome-back-onboarding-title = New features built to help you do more
+welcome-back-onboarding-primary-button-label = Start browsing
+welcome-back-onboarding-secondary-button-label = See what else is new
+# Pill label for features that allow you to tidy up your tabs
+welcome-back-onboarding-pill-label-tabs = Tidy Tabs
+welcome-back-onboarding-pill-label-vpn = Built-in VPN
+welcome-back-onboarding-pill-label-pdf = PDF Tools
+welcome-back-onboarding-card-label-tabs = Tidy up with vertical tabs and groups
+welcome-back-onboarding-card-label-vpn = Stay hidden with built-in VPN
+welcome-back-onboarding-card-label-pdf = Highlight, sign, and work with PDFs
+welcome-back-onboarding-card-tilebutton-label = Try it

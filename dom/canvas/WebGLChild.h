@@ -42,8 +42,8 @@ class WebGLChild final : public PWebGLChild, public SupportsWeakPtr {
 
   explicit WebGLChild(ClientWebGLContext&);
 
-  Maybe<Range<uint8_t>> AllocPendingCmdBytes(size_t,
-                                             size_t fyiAlignmentOverhead);
+  Maybe<mozilla::Range<uint8_t>> AllocPendingCmdBytes(
+      size_t, size_t fyiAlignmentOverhead);
   void FlushPendingCmds();
   void Destroy();
   void ActorDestroy(ActorDestroyReason why) override;
@@ -56,7 +56,8 @@ class WebGLChild final : public PWebGLChild, public SupportsWeakPtr {
 
  public:
   mozilla::ipc::IPCResult RecvJsWarning(const std::string&) const;
-  mozilla::ipc::IPCResult RecvOnContextLoss(webgl::ContextLossReason) const;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY mozilla::ipc::IPCResult RecvOnContextLoss(
+      webgl::ContextLossReason) const;
   mozilla::ipc::IPCResult RecvOnSyncComplete(webgl::ObjectId) const;
 };
 

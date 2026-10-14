@@ -13,6 +13,19 @@ import {
   buildConversation,
   loadPrompt,
 } from "moz-src:///browser/components/aiwindow/models/PromptLoader.sys.mjs";
+import {
+  expandUrlTokens,
+  stripUnresolvedUrlTokens,
+  UrlTokenizer,
+} from "moz-src:///browser/components/aiwindow/ui/modules/UrlTokenizer.sys.mjs";
+
+/**
+ * Reports the model and prompt version a request is about to be sent with.
+ * Called after both are resolved and before the request leaves, so callers can
+ * record it whether or not a response ever arrives.
+ *
+ * @typedef {(info: {model: string, promptVersion: string}) => void} ModelInfoCallback
+ */
 
 /**
  * @typedef {object} FieldClassification
@@ -62,12 +75,16 @@ import {
  * field
  * @property {string} [localGuess] Result from local deterministic
  * heuristics/local model. The LLM may keep or override it
+ * @property {string} [localSource] Which heuristic produced localGuess, one of
+ * autocomplete, ml, fathom or regex-heuristic. Recorded in telemetry only
  * @property {number} [localConfidence] Confidence score from local model
  */
 
 /**
- * @typedef {Omit<FieldData, "formHistoryName">} FieldDataForClassification
- * Field data sent in a classification request
+ * @typedef {Omit<
+ *   FieldData,
+ *   "formHistoryName" | "localSource"
+ * >} FieldDataForClassification Field data sent in a classification request
  */
 
 /**
@@ -134,10 +151,16 @@ import {
  */
 
 /**
+ * @typedef {object} MemoryDataForValueGen
+ * @property {string} id Memory ID
+ * @property {string} memory_summary Memory summary
+ */
+
+/**
  * @typedef {object} Context
  * @property {string} [pageText] Text of the current page
  * @property {Array<TabCandidate>} [relevantTabs] Tabs for context
- * @property {Array<string>} [memories] List of memories
+ * @property {Array<MemoryDataForValueGen>} [memories] List of memories
  */
 
 /**
@@ -153,23 +176,105 @@ import {
  * @typedef {object} FieldValue
  * @property {string} id The stable field ID
  * @property {"fill_from_token" | "select_option" | "generate" | "skip"} action The action the LLM decided for the value
- * @property {string} [token] Candidate token, present only when action is
- * "fill_from_token"
  * @property {"high" | "medium" | "low"} confidence The LLM's value confidence
- * @property {string} [optionId] Select option stable ID, present only when
- * action is
- * "select_option"
- * @property {string} [value] Generated value, present only when action is
- * "generate"
+ * @property {string} value Candidate token, option ID, generated value, or an
+ * empty string when the action is "skip"
  */
 
 /**
- * @typedef {object} GenerateFormValuesResponse
+ * @typedef {object} GenerateFormValuesBatchResponse
  * @property {Array<FieldValue>} fields The field decisions from the LLM
- * @property {Array<string>} memories_used List of memories that were used
+ * @property {Array<string>} memories_used Ids of the memories the model says it
+ * used
+ * @property {Array<string>} tabs_used Urls of the context tabs the model says
+ * it used
+ */
+
+/**
+ * @typedef {object} GenerateFormValuesBatchSummary
+ * @property {number} total The total overall number of batches
+ * @property {number} failed The number of batches that failed
+ */
+
+/**
+ * @typedef {GenerateFormValuesBatchResponse & {batches: GenerateFormValuesBatchSummary}} GenerateFormValuesResponse
  */
 
 const MAX_FIELDS_PER_GENERATION_REQUEST = 20;
+const MAX_CONCURRENT_VALUES_BATCH_REQUESTS = 2;
+
+let activeValuesBatchRequests = 0;
+const pendingValuesBatchRequests = [];
+
+/**
+ * Starts executing queued batches from generateFormValues()
+ */
+function startPendingValuesBatchRequests() {
+  while (
+    activeValuesBatchRequests < MAX_CONCURRENT_VALUES_BATCH_REQUESTS &&
+    pendingValuesBatchRequests.length
+  ) {
+    const pendingRequest = pendingValuesBatchRequests.shift();
+    const { request, options, resolve, reject } = pendingRequest;
+
+    options.signal?.removeEventListener("abort", pendingRequest.onAbort);
+    activeValuesBatchRequests++;
+
+    generateFormValuesBatch(request, options).then(
+      value => {
+        activeValuesBatchRequests--;
+        resolve(value);
+        startPendingValuesBatchRequests();
+      },
+      error => {
+        activeValuesBatchRequests--;
+        reject(error);
+        startPendingValuesBatchRequests();
+      }
+    );
+  }
+}
+
+/**
+ * Adds a request to the queue for generating values.
+ *
+ * @param {GenerateFormValuesRequestBody} request
+ * @param {object} [options={}]
+ * @param {AbortSignal} [options.signal]
+ *
+ * @returns {Promise<GenerateFormValuesBatchResponse>}
+ */
+function queueValuesBatchRequest(request, options) {
+  const { signal } = options;
+  signal?.throwIfAborted();
+
+  const { promise, resolve, reject } = Promise.withResolvers();
+  const pendingRequest = {
+    request,
+    options,
+    resolve,
+    reject,
+    onAbort: null,
+  };
+
+  if (signal) {
+    pendingRequest.onAbort = () => {
+      const index = pendingValuesBatchRequests.indexOf(pendingRequest);
+      if (index === -1) {
+        return;
+      }
+      pendingValuesBatchRequests.splice(index, 1);
+      reject(signal.reason);
+    };
+    signal.addEventListener("abort", pendingRequest.onAbort, { once: true });
+  }
+
+  pendingValuesBatchRequests.push(pendingRequest);
+  startPendingValuesBatchRequests();
+  return promise;
+}
+
+const TITLE_CHAR_LIMIT = 100;
 
 const FIELD_CLASSIFICATION_RESPONSE_SCHEMA = {
   type: "object",
@@ -226,95 +331,81 @@ const FORM_VALUES_RESPONSE_SCHEMA = {
       type: "array",
       items: { type: "string" },
     },
+    tabs_used: {
+      type: "array",
+      items: { type: "string" },
+    },
     fields: {
       type: "array",
       items: {
-        oneOf: [
-          {
-            type: "object",
-            properties: {
-              id: { type: "string" },
-              action: {
-                type: "string",
-                enum: ["fill_from_token"],
-              },
-              token: { type: "string" },
-              confidence: {
-                type: "string",
-                enum: ["high", "medium", "low"],
-              },
-            },
-            required: ["id", "action", "token", "confidence"],
-            additionalProperties: false,
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          action: {
+            type: "string",
+            enum: ["fill_from_token", "select_option", "generate", "skip"],
           },
-          {
-            type: "object",
-            properties: {
-              id: { type: "string" },
-              action: {
-                type: "string",
-                enum: ["generate"],
-              },
-              value: { type: "string" },
-              confidence: {
-                type: "string",
-                enum: ["high", "medium", "low"],
-              },
-            },
-            required: ["id", "action", "value", "confidence"],
-            additionalProperties: false,
+          confidence: {
+            type: "string",
+            enum: ["high", "medium", "low"],
           },
-          {
-            type: "object",
-            properties: {
-              id: { type: "string" },
-              action: {
-                type: "string",
-                enum: ["select_option"],
-              },
-              optionId: { type: "string" },
-              confidence: {
-                type: "string",
-                enum: ["high", "medium", "low"],
-              },
-            },
-            required: ["id", "action", "optionId", "confidence"],
-            additionalProperties: false,
-          },
-          {
-            type: "object",
-            properties: {
-              id: { type: "string" },
-              action: {
-                type: "string",
-                enum: ["skip"],
-              },
-              confidence: {
-                type: "string",
-                enum: ["high", "medium", "low"],
-              },
-            },
-            required: ["id", "action", "confidence"],
-            additionalProperties: false,
-          },
-        ],
+          value: { type: "string" },
+        },
+        required: ["id", "action", "confidence", "value"],
+        additionalProperties: false,
       },
     },
   },
-  required: ["memories_used", "fields"],
+  required: ["memories_used", "tabs_used", "fields"],
   additionalProperties: false,
 };
 
 /**
- * Generates values for one batch of fields.
+ * Shortens a URL into the sentinel form the model is asked to echo back, so
+ * that any URL it repeats can be resolved again on the way out.
+ *
+ * @param {UrlTokenizer} urlTokenizer
+ * @param {string} url
+ *
+ * @returns {string} e.g. "§url_token: EXAMPLE_COM_JOBS_APPLY_1§"
+ */
+function tokenizeUrl(urlTokenizer, url) {
+  return `§url_token: ${urlTokenizer.encodeToken(url)}§`;
+}
+
+/**
+ * Turns the URL tokens the model was given back into the URLs they stand for.
+ * A token the model invented resolves to nothing, so it is removed rather than
+ * handed to the caller as text to type into a field.
+ *
+ * @param {unknown} text
+ * @param {Map<string, string>} tokenToUrl
+ *
+ * @returns {string}
+ */
+function resolveUrlTokens(text, tokenToUrl) {
+  if (typeof text !== "string") {
+    return "";
+  }
+  return stripUnresolvedUrlTokens(expandUrlTokens(text, tokenToUrl));
+}
+
+/**
+ * Generates values for one batch of fields. URLs the batch reports back are
+ * still URL tokens: generateFormValues() resolves them once every batch is in.
  *
  * @param {GenerateFormValuesRequestBody} request
  * @param {object} [param1={}]
  * @param {AbortSignal} [param1.signal]
+ * @param {ModelInfoCallback} [param1.onDispatch]
+ * @param {UrlTokenizer} param1.urlTokenizer
  *
- * @returns {Promise<GenerateFormValuesResponse>}
+ * @returns {Promise<GenerateFormValuesBatchResponse>}
  */
-async function generateFormValuesBatch(request, { signal } = {}) {
+async function generateFormValuesBatch(
+  request,
+  { signal, onDispatch, urlTokenizer } = {}
+) {
   signal?.throwIfAborted();
 
   const conversation = await buildConversation(MODEL_FEATURES.SMART_FORM_FILL);
@@ -334,12 +425,21 @@ async function generateFormValuesBatch(request, { signal } = {}) {
     ]);
   signal?.throwIfAborted();
 
+  const url = tokenizeUrl(urlTokenizer, request.page.url);
+  const relevantTabs = request.context.relevantTabs.map(tab => {
+    return {
+      ...tab,
+      title: tab.title.substring(0, TITLE_CHAR_LIMIT),
+      url: tokenizeUrl(urlTokenizer, tab.url),
+    };
+  });
+
   const userPrompt = renderPrompt(userPromptTemplate, {
-    title: request.page.title,
-    url: request.page.url,
+    url,
+    title: request.page.title.substring(0, TITLE_CHAR_LIMIT),
     pageText: request.context.pageText ?? "",
     memories: JSON.stringify(request.context.memories ?? []),
-    pageContext: JSON.stringify(request.context.relevantTabs ?? []),
+    pageContext: JSON.stringify(relevantTabs ?? []),
     candidateTokens: JSON.stringify(request.candidates),
     fields: JSON.stringify(request.fields),
   });
@@ -349,6 +449,8 @@ async function generateFormValuesBatch(request, { signal } = {}) {
     version,
   });
   conversation.addUserMessage(userPrompt);
+
+  onDispatch?.({ model, promptVersion: version });
 
   const response = await conversation.run({
     fxAccountToken: await openAIEngine.getFxAccountToken(),
@@ -364,6 +466,7 @@ async function generateFormValuesBatch(request, { signal } = {}) {
   signal?.throwIfAborted();
   return parseAndExtractJSON(response, {
     memories_used: [],
+    tabs_used: [],
     fields: [],
   });
 }
@@ -389,10 +492,11 @@ export const SmartFormFillModel = {
    * @param {ClassifyFieldsRequestBody} request
    * @param {object} [param1={}]
    * @param {AbortSignal} [param1.signal]
+   * @param {ModelInfoCallback} [param1.onDispatch]
    *
    * @returns {Promise<ClassificationResponse>}
    */
-  async classifyFields(request, { signal } = {}) {
+  async classifyFields(request, { signal, onDispatch } = {}) {
     signal?.throwIfAborted();
 
     const conversation = await buildConversation(
@@ -414,9 +518,11 @@ export const SmartFormFillModel = {
       ]);
     signal?.throwIfAborted();
 
+    const urlTokenizer = new UrlTokenizer();
+    const url = urlTokenizer.encodeToken(request.page.url);
     const userPrompt = renderPrompt(userPromptTemplate, {
-      title: request.page.title,
-      url: request.page.url,
+      url,
+      title: request.page.title.substring(0, TITLE_CHAR_LIMIT),
       fields: JSON.stringify(request.fields),
     });
 
@@ -425,6 +531,8 @@ export const SmartFormFillModel = {
       version,
     });
     conversation.addUserMessage(userPrompt);
+
+    onDispatch?.({ model, promptVersion: version });
 
     const response = await conversation.run({
       fxAccountToken: await openAIEngine.getFxAccountToken(),
@@ -447,10 +555,11 @@ export const SmartFormFillModel = {
    * @param {RelevantTabRequestBody} request
    * @param {object} [param1={}]
    * @param {AbortSignal} [param1.signal]
+   * @param {ModelInfoCallback} [param1.onDispatch]
    *
    * @returns {Promise<RelevantTabsResponse>}
    */
-  async findRelevantTabs(request, { signal } = {}) {
+  async findRelevantTabs(request, { signal, onDispatch } = {}) {
     signal?.throwIfAborted();
 
     const conversation = await buildConversation(
@@ -472,11 +581,21 @@ export const SmartFormFillModel = {
       ]);
     signal?.throwIfAborted();
 
+    const urlTokenizer = new UrlTokenizer();
+    const url = urlTokenizer.encodeToken(request.page.url);
+    const tabs = request.tabs.map(tab => {
+      return {
+        ...tab,
+        title: tab.title.substring(0, TITLE_CHAR_LIMIT),
+        url: urlTokenizer.encodeToken(tab.url),
+      };
+    });
+
     const userPrompt = renderPrompt(userPromptTemplate, {
-      title: request.page.title,
-      url: request.page.url,
+      url,
+      title: request.page.title.substring(0, TITLE_CHAR_LIMIT),
       fields: JSON.stringify(request.fields),
-      tabs: JSON.stringify(request.tabs),
+      tabs: JSON.stringify(tabs),
       max_selected_tabs: request.maxSelectedTabs,
     });
 
@@ -485,6 +604,8 @@ export const SmartFormFillModel = {
       version,
     });
     conversation.addUserMessage(userPrompt);
+
+    onDispatch?.({ model, promptVersion: version });
 
     const response = await conversation.run({
       fxAccountToken: await openAIEngine.getFxAccountToken(),
@@ -509,12 +630,17 @@ export const SmartFormFillModel = {
    * @param {GenerateFormValuesRequestBody} request
    * @param {object} [param1={}]
    * @param {AbortSignal} [param1.signal]
+   * @param {ModelInfoCallback} [param1.onDispatch] Called by every batch that
+   * gets as far as sending, so a batch failing before that does not cost the
+   * caller its report. Every batch resolves the same feature config, so callers
+   * should keep the first call and ignore the rest.
    *
    * @returns {Promise<GenerateFormValuesResponse>}
    */
-  async generateFormValues(request, { signal } = {}) {
+  async generateFormValues(request, { signal, onDispatch } = {}) {
     signal?.throwIfAborted();
 
+    const urlTokenizer = new UrlTokenizer();
     const requests = [];
     for (
       let index = 0;
@@ -522,7 +648,7 @@ export const SmartFormFillModel = {
       index += MAX_FIELDS_PER_GENERATION_REQUEST
     ) {
       requests.push(
-        generateFormValuesBatch(
+        queueValuesBatchRequest(
           {
             ...request,
             fields: request.fields.slice(
@@ -530,20 +656,45 @@ export const SmartFormFillModel = {
               index + MAX_FIELDS_PER_GENERATION_REQUEST
             ),
           },
-          { signal }
+          { signal, onDispatch, urlTokenizer }
         )
       );
     }
 
-    // TODO - Bug 2059870 cap for fields/concurrency
-    const responses = await Promise.all(requests);
+    const results = await Promise.allSettled(requests);
     signal?.throwIfAborted();
 
+    // A batch that fails only costs its own fields, so the ones that answered
+    // still get filled. Nothing answering is a failed request, not an empty one.
+    const fulfilled = results.filter(({ status }) => status === "fulfilled");
+    if (!fulfilled.length) {
+      throw results[0].reason;
+    }
+
+    const { tokenToUrl } = urlTokenizer;
+    const tabsUsed = new Set();
+    for (const tab of fulfilled.flatMap(({ value }) => value.tabs_used ?? [])) {
+      const tabUrl = resolveUrlTokens(tab, tokenToUrl);
+      if (tabUrl) {
+        tabsUsed.add(tabUrl);
+      }
+    }
+
     return {
-      fields: responses.flatMap(response => response.fields),
+      fields: fulfilled
+        .flatMap(({ value }) => value.fields ?? [])
+        .map(field => ({
+          ...field,
+          value: resolveUrlTokens(field.value, tokenToUrl),
+        })),
       memories_used: [
-        ...new Set(responses.flatMap(response => response.memories_used)),
+        ...new Set(fulfilled.flatMap(({ value }) => value.memories_used ?? [])),
       ],
+      tabs_used: [...tabsUsed],
+      batches: {
+        total: results.length,
+        failed: results.length - fulfilled.length,
+      },
     };
   },
 };

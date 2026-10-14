@@ -77,6 +77,8 @@ wr::WrExternalImage wr_renderer_lock_external_image(void* aObj,
     return InvalidToWrExternalImage();
   }
 
+  renderer->GetCompositor()->MaybeWaitingForPendingReadFence(texture);
+
 #if defined(MOZ_WAYLAND)
   // Wayland native compositor doesn't use textures for direct compositing.
   if (aIsComposited && texture->AsRenderDMABUFTextureHost() &&
@@ -350,8 +352,8 @@ void RendererOGL::WaitForGPU() {
   }
 }
 
-RefPtr<layers::Fence> RendererOGL::GetAndResetReleaseFence() {
-  return mCompositor->GetAndResetReleaseFence();
+RefPtr<layers::Fence> RendererOGL::GetAndResetReadFence() {
+  return mCompositor->GetAndResetReadFence();
 }
 
 RenderedFrameId RendererOGL::GetLastCompletedFrameId() {

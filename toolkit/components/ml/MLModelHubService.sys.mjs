@@ -6,7 +6,8 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = XPCOMUtils.declareLazy({
   ModelHub: "chrome://global/content/ml/ModelHub.sys.mjs",
-  MLEngineParent: "resource://gre/actors/MLEngineParent.sys.mjs",
+  MLEngineParent:
+    "moz-src:///toolkit/components/ml/actors/MLEngineParent.sys.mjs",
   console: () => {
     return console.createInstance({
       maxLogLevelPref: "browser.ml.logLevel",
@@ -148,6 +149,7 @@ export class MLModelHubService {
       revision: aRevision,
       files: Array.from(aFiles),
       progressToken: aProgressToken,
+      abortController: new AbortController(),
       progressCallback: aProgressCallback,
       completionCallback: aCompletionCallback,
       downloadedFiles: new Map(),
@@ -169,6 +171,18 @@ export class MLModelHubService {
     return sessionId;
   }
 
+  cancelDownload(aProgressToken) {
+    for (const downloadInfo of this._activeDownloads.values()) {
+      if (downloadInfo.progressToken === aProgressToken) {
+        lazy.console.debug(
+          `Cancelling download session ${downloadInfo.sessionId}`
+        );
+        downloadInfo.abortController.abort();
+        return;
+      }
+    }
+  }
+
   async _startDownload(downloadInfo) {
     const modelHub = await this._getModelHub();
     const {
@@ -179,6 +193,7 @@ export class MLModelHubService {
       revision,
       files,
       progressCallback,
+      abortController,
     } = downloadInfo;
 
     lazy.console.debug(
@@ -252,9 +267,9 @@ export class MLModelHubService {
           revision,
           file,
           progressCallback: progressWrapper,
-          featureId: "ml-model-hub-service",
+          abortSignal: abortController.signal,
+          featureId: taskName,
           sessionId,
-          telemetryData: { component: "MLModelHubService" },
         });
 
         downloadInfo.downloadedFiles.set(file, { localPath, headers });

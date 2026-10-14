@@ -6,6 +6,7 @@ package org.mozilla.fenix.ui.efficiency.tests
 
 import org.junit.Test
 import org.mozilla.fenix.R
+import org.mozilla.fenix.customannotations.Critical
 import org.mozilla.fenix.customannotations.SmokeTest
 import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
 import org.mozilla.fenix.helpers.TestAssetHelper
@@ -13,17 +14,16 @@ import org.mozilla.fenix.helpers.TestAssetHelper.firstForeignWebPageAsset
 import org.mozilla.fenix.helpers.TestAssetHelper.secondForeignWebPageAsset
 import org.mozilla.fenix.ui.efficiency.helpers.BaseTest
 import org.mozilla.fenix.ui.efficiency.helpers.SwipeDirection
+import org.mozilla.fenix.ui.efficiency.navigation.LaunchConfig
 import org.mozilla.fenix.ui.efficiency.selectors.BrowserPageSelectors
+import org.mozilla.fenix.ui.efficiency.selectors.CustomTabsSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.MainMenuSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.SearchBarSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.SettingsTranslationSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.TabDrawerSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.TranslationsSelectors
 
-class TranslationsTest : BaseTest(isPageLoadTranslationsPromptEnabled = true) {
-
-    private val mockWebServer
-        get() = fenixTestRule.mockWebServer
+class TranslationsTest : BaseTest(LaunchConfig(isPageLoadTranslationsPromptEnabled = true)) {
 
     @SmokeTest
     @Test
@@ -40,13 +40,13 @@ class TranslationsTest : BaseTest(isPageLoadTranslationsPromptEnabled = true) {
             .openMainMenu()
             .mozClick(MainMenuSelectors.MORE_BUTTON)
             .mozClick(MainMenuSelectors.TRANSLATE_BUTTON)
-            .mozVerifyElementsByGroup("notTranslatedPageTranslationSheet")
+            .mozVerifyElementsByGroup(BrowserPageSelectors.Group.NOT_TRANSLATED_PAGE_TRANSLATION_SHEET)
             .mozSwipeElementUntilAbsent(BrowserPageSelectors.TRANSLATION_SHEET, SwipeDirection.DOWN, maxSwipes = 3)
         on.browserPage
             .openMainMenu()
             .mozClick(MainMenuSelectors.MORE_BUTTON)
             .mozClick(MainMenuSelectors.TRANSLATE_BUTTON)
-            .mozVerifyElementsByGroup("notTranslatedPageTranslationSheet")
+            .mozVerifyElementsByGroup(BrowserPageSelectors.Group.NOT_TRANSLATED_PAGE_TRANSLATION_SHEET)
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2439667
@@ -145,7 +145,7 @@ class TranslationsTest : BaseTest(isPageLoadTranslationsPromptEnabled = true) {
             .openMainMenu()
             .mozClick(MainMenuSelectors.MORE_BUTTON)
             .mozClick(MainMenuSelectors.TRANSLATE_BUTTON)
-            .mozVerifyElementsByGroup("notTranslatedPageTranslationSheet")
+            .mozVerifyElementsByGroup(BrowserPageSelectors.Group.NOT_TRANSLATED_PAGE_TRANSLATION_SHEET)
             .mozClickIfPresent(BrowserPageSelectors.TRANSLATION_SHEET_TRANSLATE_BUTTON)
             .mozWaitUntilAbsent(
                 BrowserPageSelectors.TRANSLATION_SHEET_TRANSLATE_BUTTON,
@@ -154,11 +154,62 @@ class TranslationsTest : BaseTest(isPageLoadTranslationsPromptEnabled = true) {
         on.browserPage.verifyPageContent("Article of the day")
     }
 
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2532977
+    @Critical
+    @Test
+    fun verifyATranslatableCustomTabTest() {
+        val customTabPage = mockWebServer.firstForeignWebPageAsset
+
+        on.customTabs.launchCustomTab(customTabPage.url.toString(), "TestMenuItem")
+        on.customTabs.openMainMenu().mozClick(CustomTabsSelectors.MENU_OPEN_IN_APP)
+        on.browserPage
+            .navigateToPage()
+            .openMainMenu()
+            .mozClick(MainMenuSelectors.MORE_BUTTON)
+            .mozClick(MainMenuSelectors.TRANSLATE_BUTTON)
+        on.browserPage.verifyTranslationSheetWithReload(customTabPage.url.toString())
+    }
+
     private companion object {
         // The legacy test hardcodes Bosnian; it must be an offered translations model.
         const val LANGUAGE_TO_DOWNLOAD = "Bosnian"
 
         // The mock page is fr-FR, so the engine reports French as the detected source language.
         const val LANGUAGE_TO_NEVER_TRANSLATE = "French"
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3105343
+    @Critical
+    @Test
+    fun verifyTranslationBottomSheetNotDisplayedWhenPageIsOnAlwaysListTest() {
+        val testPage = mockWebServer.firstForeignWebPageAsset
+
+        on.browserPage
+            .navigateToPage(testPage.url.toString())
+            .verifyTranslationSheetWithReload(testPage.url.toString())
+            .mozClick(TranslationsSelectors.TRANSLATIONS_OPTIONS_BUTTON)
+            .mozClick(TranslationsSelectors.ALWAYS_TRANSLATE_LANGUAGE("French"))
+            .mozClick(TranslationsSelectors.TRANSLATION_SHEET_BACK_BUTTON)
+            .mozSwipeElementUntilAbsent(
+                TranslationsSelectors.TRANSLATION_SHEET_HANDLE,
+                SwipeDirection.DOWN,
+                maxSwipes = 3,
+            )
+            .mozWaitUntilAbsent(
+                TranslationsSelectors.TRANSLATION_IN_PROGRESS_SNACK_BAR,
+                TestAssetHelper.waitingTimeLong,
+            )
+        on.browserPage.verifyPageContent("Article of the day")
+        on.tabDrawer.navigateToPage().closeAllTabs()
+        on.home.navigateToPage()
+        on.browserPage
+            .navigateToPage(testPage.url.toString())
+            .verifyPageContent("Article of the day")
+            .verifyTranslationSheetIsDisplayed(isDisplayed = false)
+        on.mainMenu
+            .navigateToPage()
+            .mozClick(MainMenuSelectors.MORE_BUTTON)
+            .mozClick(MainMenuSelectors.TRANSLATE_BUTTON)
+        on.browserPage.verifyTranslationSheetWithReload(testPage.url.toString())
     }
 }

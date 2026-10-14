@@ -5,8 +5,13 @@
 :root {
   /* Compact mode */
   &[uidensity="compact"] {
-    --panel-menuitem-margin-inline: var(--dimension-4);
-    --panel-menuitem-padding-block: var(--dimension-4);
+    --panel-menuitem-margin-inline: 4px;
+    --panel-menuitem-padding-block: 6px;
     --panel-separator-padding-inline: 4px;
+
+    @media -moz-pref("browser.nova.enabled") {
+      --panel-border-radius: calc(var(--panel-menuitem-border-radius) + var(--panel-menuitem-margin-inline));
+      --panel-menuitem-border-radius: calc((var(--icon-size) + 2 * var(--panel-menuitem-padding-block)) / 2);
+    }
   }
 }

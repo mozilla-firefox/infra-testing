@@ -77,7 +77,7 @@ void HTMLEmbedElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
   }
 
   if (aName == nsGkAtoms::src) {
-    RefreshFeaturePolicy();
+    RefreshPermissionsPolicy();
   }
 
   if (aNamespaceID == kNameSpaceID_None &&
@@ -184,8 +184,7 @@ void HTMLEmbedElement::MapAttributesIntoRule(
   nsGenericHTMLElement::MapCommonAttributesInto(aBuilder);
 }
 
-NS_IMETHODIMP_(bool)
-HTMLEmbedElement::IsAttributeMapped(const nsAtom* aAttribute) const {
+bool HTMLEmbedElement::IsNoNamespaceAttrMapped(const nsAtom* aAttribute) const {
   static const MappedAttributeEntry* const map[] = {
       sCommonAttributeMap,
       sImageMarginSizeAttributeMap,

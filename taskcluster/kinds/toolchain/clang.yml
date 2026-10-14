@@ -11,64 +11,12 @@ task-defaults:
         resources:
             - 'build/build-clang/build-clang.py'
 
-linux64-clang-14-stage1:
-    description: "Clang 14 toolchain build"
-    treeherder:
-        symbol: TL(clang-14-stage1)
-    run:
-        clone-with: hg
-        using: toolchain-script
-        script: build-clang.sh
-        arguments:
-            - 'build/build-clang/use-system-clang.json'
-            - 'build/build-clang/clang-14.json'
-            - 'build/build-clang/stage-1.json'
-        resources:
-            - 'build/build-clang/use-system-clang.json'
-            - 'build/build-clang/clang-14.json'
-            - 'build/build-clang/stage-1.json'
-        toolchain-artifact: public/build/clang.tar.zst
-    fetches:
-        fetch:
-            - clang-14
-        toolchain:
-            - linux64-toolchain-sysroot
-
-macosx64-clang-14-raw:
-    description: "Clang 14 toolchain build"
-    treeherder:
-        symbol: TM(clang-14-raw)
-    worker-type: b-linux-docker-large-amd
-    worker:
-        max-run-time: 3600
-    run:
-        clone-with: hg
-        script: build-clang.sh
-        arguments:
-            - 'build/build-clang/use-clang-artifact.json'
-            - 'build/build-clang/macosx64.json'
-            - 'build/build-clang/clang-14.json'
-            - 'build/build-clang/stage-1.json'
-        resources:
-            - 'build/build-clang/use-clang-artifact.json'
-            - 'build/build-clang/macosx64.json'
-            - 'build/build-clang/clang-14.json'
-            - 'build/build-clang/stage-1.json'
-        toolchain-artifact: public/build/clang.tar.zst
-    fetches:
-        fetch:
-            - clang-14
-        toolchain:
-            - linux64-clang-14-stage1
-            - macosx64-sdk-13.3
-
 linux64-clang-19-raw:
     description: "Clang 19 toolchain build"
     treeherder:
         symbol: TL(clang-19-raw)
     worker-type: b-linux-docker-large-amd
     run:
-        clone-with: hg
         script: build-clang.sh
         arguments:
             - 'build/build-clang/use-system-clang.json'
@@ -93,7 +41,6 @@ linux64-clang-19:
     worker:
         max-run-time: 600
     run:
-        clone-with: hg
         script: repack-clang.sh
         toolchain-alias: linux64-clang-base
         toolchain-artifact: public/build/clang.tar.zst
@@ -102,648 +49,12 @@ linux64-clang-19:
             - linux64-clang-19-raw
             - wasm32-wasi-compiler-rt-19
 
-linux64-clang-21-mingw-x86:
-    description: "MinGW-Clang 21 x86 toolchain build"
-    treeherder:
-        symbol: TMW(clang-21-x86)
-    worker-type: b-linux-docker-amd
-    run:
-        clone-with: hg
-        script: build-clang-mingw.sh
-        arguments:
-            - 'x86'
-        resources:
-            - 'taskcluster/scripts/misc/mingw-*.patch'
-        toolchain-artifact: public/build/clangmingw.tar.zst
-    fetches:
-        fetch:
-            - clang-21
-            - mingw-w64
-            - llvm-mingw
-            - gcc-9.5.0
-        toolchain:
-            - linux64-clang-21
-
-linux64-clang-21-mingw-x64:
-    description: "MinGW-Clang 21 x64 toolchain build"
-    treeherder:
-        symbol: TMW(clang-21-x64)
-        tier: 1
-    worker-type: b-linux-docker-amd
-    run:
-        clone-with: hg
-        script: build-clang-mingw.sh
-        arguments:
-            - 'x64'
-        resources:
-            - 'taskcluster/scripts/misc/mingw-*.patch'
-        toolchain-artifact: public/build/clangmingw.tar.zst
-    fetches:
-        fetch:
-            - clang-21
-            - mingw-w64
-            - llvm-mingw
-            - gcc-9.5.0
-        toolchain:
-            - linux64-clang-21
-
-linux64-clang-21-stage1:
-    description: "Clang 21 toolchain build"
-    treeherder:
-        symbol: TL(clang-21-stage1)
-    run:
-        clone-with: hg
-        using: toolchain-script
-        script: build-clang.sh
-        arguments:
-            - 'build/build-clang/use-system-clang.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-1.json'
-        resources:
-            - 'build/build-clang/use-system-clang.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-1.json'
-        toolchain-artifact: public/build/clang.tar.zst
-    fetches:
-        fetch:
-            - clang-21
-        toolchain:
-            - linux64-toolchain-sysroot
-
-linux64-clang-21-profile:
-    description: "Clang 21 toolchain build"
-    treeherder:
-        symbol: TL(clang-21-profile)
-    run:
-        clone-with: hg
-        using: toolchain-script
-        script: build-clang.sh
-        arguments:
-            - 'build/build-clang/use-clang-artifact.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-2-3-pgo.json'
-        resources:
-            - 'build/build-clang/use-clang-artifact.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-2-3-pgo.json'
-        toolchain-artifact: public/build/merged.profdata
-    fetches:
-        fetch:
-            - clang-21
-        toolchain:
-            - linux64-clang-21-stage1
-            - linux64-x64-compiler-rt-21
-            - linux64-toolchain-sysroot
-
-linux64-clang-21-raw:
-    description: "Clang 21 toolchain build"
-    treeherder:
-        symbol: TL(clang-21-raw)
-    run:
-        clone-with: hg
-        script: build-clang.sh
-        arguments:
-            - 'build/build-clang/use-clang-artifact.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-4-pgo.json'
-        resources:
-            - 'build/build-clang/use-clang-artifact.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-4-pgo.json'
-        toolchain-artifact: public/build/clang.tar.zst
-    fetches:
-        fetch:
-            - clang-21
-        toolchain:
-            - linux64-clang-21-stage1
-            - linux64-clang-21-profile
-            - linux64-libxml2
-            - linux64-toolchain-sysroot
-
-linux64-clang-21:
-    description: "Clang 21 toolchain build"
-    attributes:
-        local-toolchain: true
-    treeherder:
-        symbol: TL(clang-21)
-    worker-type: b-linux-docker-amd
-    worker:
-        max-run-time: 600
-    run:
-        clone-with: hg
-        script: repack-clang.sh
-        toolchain-artifact: public/build/clang.tar.zst
-    fetches:
-        toolchain:
-            - linux64-cctools-port
-            - linux64-clang-21-raw
-            - android-aarch64-compiler-rt-21
-            - android-aarch64-libunwind-21
-            - android-arm-compiler-rt-21
-            - android-arm-libunwind-21
-            - android-x64-compiler-rt-21
-            - android-x64-libunwind-21
-            - linux64-aarch64-compiler-rt-21
-            - linux64-x64-compiler-rt-21
-            - linux64-x86-compiler-rt-21
-            - macosx64-aarch64-compiler-rt-21
-            - macosx64-x64-compiler-rt-21
-            - wasm32-wasi-compiler-rt-21
-            - win32-compiler-rt-21
-            - win64-compiler-rt-21
-            - win64-aarch64-compiler-rt-21
-
-linux64-aarch64-clang-21-raw:
-    description: "Clang 21 toolchain build"
-    treeherder:
-        symbol: TLA64(clang-21-raw)
-    run:
-        clone-with: hg
-        script: build-clang.sh
-        arguments:
-            - 'build/build-clang/use-clang-artifact.json'
-            - 'build/build-clang/linux64-aarch64.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-4-pgo.json'
-        resources:
-            - 'build/build-clang/use-clang-artifact.json'
-            - 'build/build-clang/linux64-aarch64.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-4-pgo.json'
-        toolchain-artifact: public/build/clang.tar.zst
-    fetches:
-        fetch:
-            - clang-21
-        toolchain:
-            - linux64-clang-21-stage1
-            - linux64-clang-21-profile
-            - linux64-aarch64-libxml2
-            - linux64-aarch64-toolchain-sysroot
-
-linux64-aarch64-clang-21:
-    description: "Clang 21 toolchain build"
-    attributes:
-        local-toolchain: true
-    treeherder:
-        symbol: TLA64(clang-21)
-    worker-type: b-linux-docker-amd
-    worker:
-        max-run-time: 600
-    run:
-        clone-with: hg
-        script: repack-clang.sh
-        toolchain-artifact: public/build/clang.tar.zst
-    fetches:
-        toolchain:
-            - linux64-cctools-port
-            - linux64-aarch64-clang-21-raw
-            - android-aarch64-compiler-rt-21
-            - android-aarch64-libunwind-21
-            - android-arm-compiler-rt-21
-            - android-arm-libunwind-21
-            - android-x64-compiler-rt-21
-            - android-x64-libunwind-21
-            - linux64-aarch64-compiler-rt-21
-            - linux64-x64-compiler-rt-21
-            - linux64-x86-compiler-rt-21
-            - macosx64-aarch64-compiler-rt-21
-            - macosx64-x64-compiler-rt-21
-            - wasm32-wasi-compiler-rt-21
-            - win32-compiler-rt-21
-            - win64-compiler-rt-21
-            - win64-aarch64-compiler-rt-21
-
-macosx64-clang-21-stage2:
-    description: "Clang 21 toolchain build"
-    treeherder:
-        symbol: TM(clang-21-stage2)
-    run:
-        clone-with: hg
-        using: toolchain-script
-        script: build-clang.sh
-        arguments:
-            - 'build/build-clang/use-clang-artifact.json'
-            - 'build/build-clang/macosx64.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-2-pgo.json'
-        resources:
-            - 'build/build-clang/use-clang-artifact.json'
-            - 'build/build-clang/macosx64.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-2-pgo.json'
-        toolchain-artifact: public/build/clang.tar.zst
-    fetches:
-        fetch:
-            - clang-21
-        toolchain:
-            - linux64-clang-21-stage1
-            - macosx64-x64-compiler-rt-21
-            - macosx64-sdk-toolchain
-
-macosx64-clang-21-profile:
-    description: "Clang 21 toolchain build"
-    treeherder:
-        symbol: TM(clang-21-profile)
-    worker-type: b-osx-arm64
-    worker:
-        max-run-time: 7210
-    run:
-        clone-with: hg
-        using: toolchain-script
-        script: build-clang.sh
-        arguments:
-            - 'build/build-clang/use-clang-artifact.json'
-            - 'build/build-clang/macosx64.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-3-pgo.json'
-        resources:
-            - 'build/build-clang/use-clang-artifact.json'
-            - 'build/build-clang/macosx64.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-3-pgo.json'
-        toolchain-artifact: public/build/merged.profdata
-    fetches:
-        fetch:
-            - clang-21
-            - macosx64-cmake
-            - macosx64-ninja
-        toolchain:
-            - macosx64-clang-21-stage2
-            - macosx64-sdk-toolchain
-
-macosx64-clang-21-raw:
-    description: "Clang 21 toolchain build"
-    treeherder:
-        symbol: TM(clang-21-raw)
-    worker:
-        max-run-time: 3600
-    run:
-        clone-with: hg
-        script: build-clang.sh
-        arguments:
-            - 'build/build-clang/use-clang-artifact.json'
-            - 'build/build-clang/macosx64.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-4-pgo.json'
-        resources:
-            - 'build/build-clang/use-clang-artifact.json'
-            - 'build/build-clang/macosx64.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-4-pgo.json'
-        toolchain-artifact: public/build/clang.tar.zst
-    fetches:
-        fetch:
-            - clang-21
-        toolchain:
-            - linux64-clang-21-stage1
-            - macosx64-clang-21-profile
-            - macosx64-sdk-toolchain
-            - macosx64-x64-compiler-rt-21
-
-macosx64-clang-21:
-    description: "Clang 21 toolchain repack with MacOS Compiler RT libs"
-    attributes:
-        local-toolchain: true
-    treeherder:
-        symbol: TM(clang-21)
-    worker-type: b-linux-docker-amd
-    worker:
-        max-run-time: 600
-    run:
-        clone-with: hg
-        script: repack-clang.sh
-        toolchain-artifact: public/build/clang.tar.zst
-    fetches:
-        toolchain:
-            - linux64-cctools-port
-            - macosx64-clang-21-raw
-            - android-aarch64-compiler-rt-21
-            - android-aarch64-libunwind-21
-            - android-arm-compiler-rt-21
-            - android-arm-libunwind-21
-            - android-x64-compiler-rt-21
-            - android-x64-libunwind-21
-            - linux64-aarch64-compiler-rt-21
-            - linux64-x64-compiler-rt-21
-            - linux64-x86-compiler-rt-21
-            - macosx64-aarch64-compiler-rt-21
-            - macosx64-x64-compiler-rt-21
-            - wasm32-wasi-compiler-rt-21
-            - win32-compiler-rt-21
-            - win64-compiler-rt-21
-            - win64-aarch64-compiler-rt-21
-
-macosx64-aarch64-clang-21-stage2:
-    description: "Clang 21 toolchain build"
-    treeherder:
-        symbol: TMA64(clang-21-stage2)
-    run:
-        clone-with: hg
-        using: toolchain-script
-        script: build-clang.sh
-        arguments:
-            - 'build/build-clang/use-clang-artifact.json'
-            - 'build/build-clang/macosx64-aarch64.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-2-pgo.json'
-        resources:
-            - 'build/build-clang/use-clang-artifact.json'
-            - 'build/build-clang/macosx64-aarch64.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-2-pgo.json'
-        toolchain-artifact: public/build/clang.tar.zst
-    fetches:
-        fetch:
-            - clang-21
-        toolchain:
-            - linux64-clang-21-stage1
-            - macosx64-aarch64-compiler-rt-21
-            - macosx64-sdk-toolchain
-
-macosx64-aarch64-clang-21-profile:
-    description: "Clang 21 toolchain build"
-    treeherder:
-        symbol: TMA64(clang-21-profile)
-    worker-type: b-osx-arm64
-    worker:
-        max-run-time: 7210
-    run:
-        clone-with: hg
-        using: toolchain-script
-        script: build-clang.sh
-        arguments:
-            - 'build/build-clang/use-clang-artifact.json'
-            - 'build/build-clang/macosx64-aarch64.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-3-pgo.json'
-        resources:
-            - 'build/build-clang/use-clang-artifact.json'
-            - 'build/build-clang/macosx64-aarch64.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-3-pgo.json'
-        toolchain-artifact: public/build/merged.profdata
-    fetches:
-        fetch:
-            - clang-21
-            - macosx64-cmake
-            - macosx64-ninja
-        toolchain:
-            - macosx64-aarch64-clang-21-stage2
-            - macosx64-sdk-toolchain
-
-macosx64-aarch64-clang-21-raw:
-    description: "Clang 21 toolchain build"
-    treeherder:
-        symbol: TMA64(clang-21-raw)
-    worker:
-        max-run-time: 3600
-    run:
-        clone-with: hg
-        script: build-clang.sh
-        arguments:
-            - 'build/build-clang/use-clang-artifact.json'
-            - 'build/build-clang/macosx64-aarch64.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-4-pgo.json'
-        resources:
-            - 'build/build-clang/use-clang-artifact.json'
-            - 'build/build-clang/macosx64-aarch64.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-4-pgo.json'
-        toolchain-artifact: public/build/clang.tar.zst
-    fetches:
-        fetch:
-            - clang-21
-        toolchain:
-            - linux64-clang-21-stage1
-            - macosx64-aarch64-clang-21-profile
-            - macosx64-aarch64-compiler-rt-21
-            - macosx64-sdk-toolchain
-
-macosx64-aarch64-clang-21:
-    description: "Clang 21 toolchain repack with MacOS Compiler RT libs"
-    attributes:
-        local-toolchain: true
-    treeherder:
-        symbol: TMA64(clang-21)
-    worker-type: b-linux-docker-amd
-    worker:
-        max-run-time: 600
-    run:
-        clone-with: hg
-        script: repack-clang.sh
-        toolchain-artifact: public/build/clang.tar.zst
-    fetches:
-        toolchain:
-            - linux64-cctools-port
-            - macosx64-aarch64-clang-21-raw
-            - android-aarch64-compiler-rt-21
-            - android-aarch64-libunwind-21
-            - android-arm-compiler-rt-21
-            - android-arm-libunwind-21
-            - android-x64-compiler-rt-21
-            - android-x64-libunwind-21
-            - linux64-aarch64-compiler-rt-21
-            - linux64-x64-compiler-rt-21
-            - linux64-x86-compiler-rt-21
-            - macosx64-aarch64-compiler-rt-21
-            - macosx64-x64-compiler-rt-21
-            - wasm32-wasi-compiler-rt-21
-            - win32-compiler-rt-21
-            - win64-compiler-rt-21
-            - win64-aarch64-compiler-rt-21
-
-win64-clang-21-stage2:
-    description: "Clang-cl 21 toolchain build"
-    treeherder:
-        symbol: TW64(clang-21-stage2)
-    run:
-        clone-with: hg
-        script: build-clang.sh
-        arguments:
-            - 'build/build-clang/use-clang-cl-artifact.json'
-            - 'build/build-clang/win64.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-2-pgo.json'
-        resources:
-            - 'build/build-clang/use-clang-cl-artifact.json'
-            - 'build/build-clang/win64.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-2-pgo.json'
-        toolchain-artifact: public/build/clang.tar.zst
-    fetches:
-        fetch:
-            - clang-21
-        toolchain:
-            - linux64-clang-21-stage1
-            - vs-toolchain
-            - win64-compiler-rt-21
-            - win64-libxml2
-
-win64-clang-21-profile:
-    description: "Clang-cl 21 toolchain build"
-    treeherder:
-        symbol: TW64(clang-21-profile)
-    worker-type: b-win2022
-    worker:
-        max-run-time: 9000
-    run:
-        clone-with: hg
-        script: build-clang.sh
-        arguments:
-            - 'build/build-clang/use-clang-cl-artifact.json'
-            - 'build/build-clang/win64.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-3-pgo.json'
-        resources:
-            - 'build/build-clang/use-clang-cl-artifact.json'
-            - 'build/build-clang/win64.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-3-pgo.json'
-        toolchain-artifact: public/build/merged.profdata
-    fetches:
-        fetch:
-            - clang-21
-            - win64-ninja
-        toolchain:
-            - win64-clang-21-stage2
-            - win64-cmake
-            - vs-toolchain
-            - win64-libxml2
-
-win64-clang-21-raw:
-    description: "Clang-cl 21 toolchain build"
-    treeherder:
-        symbol: TW64(clang-21-raw)
-    run:
-        clone-with: hg
-        script: build-clang.sh
-        arguments:
-            - 'build/build-clang/use-clang-cl-artifact.json'
-            - 'build/build-clang/win64.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-4-pgo.json'
-            - 'build/build-clang/llvm-config.json'
-        resources:
-            - 'build/build-clang/use-clang-cl-artifact.json'
-            - 'build/build-clang/win64.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-4-pgo.json'
-            - 'build/build-clang/llvm-config.json'
-        toolchain-artifact: public/build/clang.tar.zst
-    fetches:
-        fetch:
-            - clang-21
-        toolchain:
-            - linux64-clang-21-stage1
-            - win64-clang-21-profile
-            - win64-compiler-rt-21
-            - vs-toolchain
-            - win64-libxml2
-
-win64-clang-21:
-    description: "Clang-cl 21 toolchain build"
-    attributes:
-        local-toolchain: true
-    treeherder:
-        symbol: TW64(clang-21)
-    worker-type: b-linux-docker-amd
-    worker:
-        max-run-time: 600
-    run:
-        clone-with: hg
-        script: repack-clang.sh
-        toolchain-artifact: public/build/clang.tar.zst
-    fetches:
-        toolchain:
-            - linux64-cctools-port
-            - win64-clang-21-raw
-            - android-aarch64-compiler-rt-21
-            - android-aarch64-libunwind-21
-            - android-arm-compiler-rt-21
-            - android-arm-libunwind-21
-            - android-x64-compiler-rt-21
-            - android-x64-libunwind-21
-            - linux64-aarch64-compiler-rt-21
-            - linux64-x64-compiler-rt-21
-            - linux64-x86-compiler-rt-21
-            - macosx64-aarch64-compiler-rt-21
-            - macosx64-x64-compiler-rt-21
-            - wasm32-wasi-compiler-rt-21
-            - win32-compiler-rt-21
-            - win64-compiler-rt-21
-            - win64-aarch64-compiler-rt-21
-
-win64-aarch64-clang-21-raw:
-    description: "Clang-cl 21 toolchain build"
-    treeherder:
-        symbol: TWA64(clang-21-raw)
-    worker:
-        max-run-time: 3600
-    run:
-        clone-with: hg
-        script: build-clang.sh
-        arguments:
-            - 'build/build-clang/use-clang-cl-artifact.json'
-            - 'build/build-clang/win64-aarch64.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-4-pgo.json'
-        resources:
-            - 'build/build-clang/use-clang-cl-artifact.json'
-            - 'build/build-clang/win64-aarch64.json'
-            - 'build/build-clang/clang-21.json'
-            - 'build/build-clang/stage-4-pgo.json'
-        toolchain-artifact: public/build/clang.tar.zst
-    fetches:
-        fetch:
-            - clang-21
-        toolchain:
-            - linux64-clang-21-stage1
-            - linux64-clang-21-profile
-            - win64-aarch64-compiler-rt-21
-            - vs-toolchain
-            - win64-aarch64-libxml2
-
-win64-aarch64-clang-21:
-    description: "Clang-cl 21 toolchain build"
-    attributes:
-        local-toolchain: true
-    treeherder:
-        symbol: TWA64(clang-21)
-    worker-type: b-linux-docker-amd
-    worker:
-        max-run-time: 600
-    run:
-        clone-with: hg
-        script: repack-clang.sh
-        toolchain-artifact: public/build/clang.tar.zst
-    fetches:
-        toolchain:
-            - linux64-cctools-port
-            - win64-aarch64-clang-21-raw
-            - android-aarch64-compiler-rt-21
-            - android-aarch64-libunwind-21
-            - android-arm-compiler-rt-21
-            - android-arm-libunwind-21
-            - android-x64-compiler-rt-21
-            - android-x64-libunwind-21
-            - linux64-aarch64-compiler-rt-21
-            - linux64-x64-compiler-rt-21
-            - linux64-x86-compiler-rt-21
-            - macosx64-aarch64-compiler-rt-21
-            - macosx64-x64-compiler-rt-21
-            - wasm32-wasi-compiler-rt-21
-            - win32-compiler-rt-21
-            - win64-compiler-rt-21
-            - win64-aarch64-compiler-rt-21
-
 linux64-clang-22-mingw-x86:
     description: "MinGW-Clang 22 x86 toolchain build"
     treeherder:
-        symbol: TMW(clang-22-x86)
+        symbol: TWM(clang-22-x86)
     worker-type: b-linux-docker-amd
     run:
-        clone-with: hg
         script: build-clang-mingw.sh
         arguments:
             - 'x86'
@@ -758,19 +69,16 @@ linux64-clang-22-mingw-x86:
         fetch:
             - clang-22
             - mingw-w64
-            - llvm-mingw
-            - gcc-9.5.0
         toolchain:
             - linux64-clang-22
 
 linux64-clang-22-mingw-x64:
     description: "MinGW-Clang 22 x64 toolchain build"
     treeherder:
-        symbol: TMW(clang-22-x64)
+        symbol: TWM(clang-22-x64)
         tier: 1
     worker-type: b-linux-docker-amd
     run:
-        clone-with: hg
         script: build-clang-mingw.sh
         arguments:
             - 'x64'
@@ -785,8 +93,6 @@ linux64-clang-22-mingw-x64:
         fetch:
             - clang-22
             - mingw-w64
-            - llvm-mingw
-            - gcc-9.5.0
         toolchain:
             - linux64-clang-22
 
@@ -795,7 +101,6 @@ linux64-clang-22-stage1:
     treeherder:
         symbol: TL(clang-22-stage1)
     run:
-        clone-with: hg
         using: toolchain-script
         script: build-clang.sh
         arguments:
@@ -822,7 +127,6 @@ linux64-clang-22-profile:
     treeherder:
         symbol: TL(clang-22-profile)
     run:
-        clone-with: hg
         using: toolchain-script
         script: build-clang.sh
         arguments:
@@ -847,7 +151,6 @@ linux64-clang-22-raw:
     treeherder:
         symbol: TL(clang-22-raw)
     run:
-        clone-with: hg
         script: build-clang.sh
         arguments:
             - 'build/build-clang/use-clang-artifact.json'
@@ -877,7 +180,6 @@ linux64-clang-22:
     worker:
         max-run-time: 600
     run:
-        clone-with: hg
         script: repack-clang.sh
         toolchain-alias:
             by-project:
@@ -894,9 +196,9 @@ linux64-clang-22:
             - android-arm-libunwind-22
             - android-x64-compiler-rt-22
             - android-x64-libunwind-22
+            - linux32-compiler-rt-22
             - linux64-aarch64-compiler-rt-22
             - linux64-x64-compiler-rt-22
-            - linux64-x86-compiler-rt-22
             - macosx64-aarch64-compiler-rt-22
             - macosx64-x64-compiler-rt-22
             - wasm32-wasi-compiler-rt-22
@@ -909,7 +211,6 @@ linux64-aarch64-clang-22-raw:
     treeherder:
         symbol: TLA64(clang-22-raw)
     run:
-        clone-with: hg
         script: build-clang.sh
         arguments:
             - 'build/build-clang/use-clang-artifact.json'
@@ -941,7 +242,6 @@ linux64-aarch64-clang-22:
     worker:
         max-run-time: 600
     run:
-        clone-with: hg
         script: repack-clang.sh
         toolchain-alias:
             by-project:
@@ -958,9 +258,9 @@ linux64-aarch64-clang-22:
             - android-arm-libunwind-22
             - android-x64-compiler-rt-22
             - android-x64-libunwind-22
+            - linux32-compiler-rt-22
             - linux64-aarch64-compiler-rt-22
             - linux64-x64-compiler-rt-22
-            - linux64-x86-compiler-rt-22
             - macosx64-aarch64-compiler-rt-22
             - macosx64-x64-compiler-rt-22
             - wasm32-wasi-compiler-rt-22
@@ -973,7 +273,6 @@ macosx64-clang-22-stage2:
     treeherder:
         symbol: TM(clang-22-stage2)
     run:
-        clone-with: hg
         using: toolchain-script
         script: build-clang.sh
         arguments:
@@ -1003,7 +302,6 @@ macosx64-clang-22-profile:
     worker:
         max-run-time: 7210
     run:
-        clone-with: hg
         using: toolchain-script
         script: build-clang.sh
         arguments:
@@ -1033,7 +331,6 @@ macosx64-clang-22-raw:
     worker:
         max-run-time: 3600
     run:
-        clone-with: hg
         script: build-clang.sh
         arguments:
             - 'build/build-clang/use-clang-artifact.json'
@@ -1065,7 +362,6 @@ macosx64-clang-22:
     worker:
         max-run-time: 600
     run:
-        clone-with: hg
         script: repack-clang.sh
         toolchain-alias:
             by-project:
@@ -1084,9 +380,9 @@ macosx64-clang-22:
             - android-arm-libunwind-22
             - android-x64-compiler-rt-22
             - android-x64-libunwind-22
+            - linux32-compiler-rt-22
             - linux64-aarch64-compiler-rt-22
             - linux64-x64-compiler-rt-22
-            - linux64-x86-compiler-rt-22
             - macosx64-aarch64-compiler-rt-22
             - macosx64-x64-compiler-rt-22
             - wasm32-wasi-compiler-rt-22
@@ -1099,7 +395,6 @@ macosx64-aarch64-clang-22-stage2:
     treeherder:
         symbol: TMA64(clang-22-stage2)
     run:
-        clone-with: hg
         using: toolchain-script
         script: build-clang.sh
         arguments:
@@ -1129,7 +424,6 @@ macosx64-aarch64-clang-22-profile:
     worker:
         max-run-time: 7210
     run:
-        clone-with: hg
         using: toolchain-script
         script: build-clang.sh
         arguments:
@@ -1159,7 +453,6 @@ macosx64-aarch64-clang-22-raw:
     worker:
         max-run-time: 3600
     run:
-        clone-with: hg
         script: build-clang.sh
         arguments:
             - 'build/build-clang/use-clang-artifact.json'
@@ -1191,7 +484,6 @@ macosx64-aarch64-clang-22:
     worker:
         max-run-time: 600
     run:
-        clone-with: hg
         script: repack-clang.sh
         toolchain-alias:
             by-project:
@@ -1208,9 +500,9 @@ macosx64-aarch64-clang-22:
             - android-arm-libunwind-22
             - android-x64-compiler-rt-22
             - android-x64-libunwind-22
+            - linux32-compiler-rt-22
             - linux64-aarch64-compiler-rt-22
             - linux64-x64-compiler-rt-22
-            - linux64-x86-compiler-rt-22
             - macosx64-aarch64-compiler-rt-22
             - macosx64-x64-compiler-rt-22
             - wasm32-wasi-compiler-rt-22
@@ -1223,7 +515,6 @@ win64-clang-22-stage2:
     treeherder:
         symbol: TW64(clang-22-stage2)
     run:
-        clone-with: hg
         script: build-clang.sh
         arguments:
             - 'build/build-clang/use-clang-cl-artifact.json'
@@ -1253,7 +544,6 @@ win64-clang-22-profile:
     worker:
         max-run-time: 9000
     run:
-        clone-with: hg
         script: build-clang.sh
         arguments:
             - 'build/build-clang/use-clang-cl-artifact.json'
@@ -1281,7 +571,6 @@ win64-clang-22-raw:
     treeherder:
         symbol: TW64(clang-22-raw)
     run:
-        clone-with: hg
         script: build-clang.sh
         arguments:
             - 'build/build-clang/use-clang-cl-artifact.json'
@@ -1316,7 +605,6 @@ win64-clang-22:
     worker:
         max-run-time: 600
     run:
-        clone-with: hg
         script: repack-clang.sh
         toolchain-alias:
             by-project:
@@ -1335,9 +623,9 @@ win64-clang-22:
             - android-arm-libunwind-22
             - android-x64-compiler-rt-22
             - android-x64-libunwind-22
+            - linux32-compiler-rt-22
             - linux64-aarch64-compiler-rt-22
             - linux64-x64-compiler-rt-22
-            - linux64-x86-compiler-rt-22
             - macosx64-aarch64-compiler-rt-22
             - macosx64-x64-compiler-rt-22
             - wasm32-wasi-compiler-rt-22
@@ -1352,7 +640,6 @@ win64-aarch64-clang-22-raw:
     worker:
         max-run-time: 3600
     run:
-        clone-with: hg
         script: build-clang.sh
         arguments:
             - 'build/build-clang/use-clang-cl-artifact.json'
@@ -1385,7 +672,6 @@ win64-aarch64-clang-22:
     worker:
         max-run-time: 600
     run:
-        clone-with: hg
         script: repack-clang.sh
         toolchain-alias:
             by-project:
@@ -1402,9 +688,9 @@ win64-aarch64-clang-22:
             - android-arm-libunwind-22
             - android-x64-compiler-rt-22
             - android-x64-libunwind-22
+            - linux32-compiler-rt-22
             - linux64-aarch64-compiler-rt-22
             - linux64-x64-compiler-rt-22
-            - linux64-x86-compiler-rt-22
             - macosx64-aarch64-compiler-rt-22
             - macosx64-x64-compiler-rt-22
             - wasm32-wasi-compiler-rt-22
@@ -1412,15 +698,623 @@ win64-aarch64-clang-22:
             - win64-compiler-rt-22
             - win64-aarch64-compiler-rt-22
 
+linux64-clang-23-mingw-x86:
+    description: "MinGW-Clang 23 x86 toolchain build"
+    treeherder:
+        symbol: TWM(clang-23-x86)
+    worker-type: b-linux-docker-amd
+    run:
+        script: build-clang-mingw.sh
+        arguments:
+            - 'x86'
+        resources:
+            - 'taskcluster/scripts/misc/mingw-*.patch'
+        toolchain-artifact: public/build/clangmingw.tar.zst
+    fetches:
+        fetch:
+            - clang-23
+            - mingw-w64
+        toolchain:
+            - linux64-clang-23
+
+linux64-clang-23-mingw-x64:
+    description: "MinGW-Clang 23 x64 toolchain build"
+    treeherder:
+        symbol: TWM(clang-23-x64)
+        tier: 1
+    worker-type: b-linux-docker-amd
+    run:
+        script: build-clang-mingw.sh
+        arguments:
+            - 'x64'
+        resources:
+            - 'taskcluster/scripts/misc/mingw-*.patch'
+        toolchain-artifact: public/build/clangmingw.tar.zst
+    fetches:
+        fetch:
+            - clang-23
+            - mingw-w64
+        toolchain:
+            - linux64-clang-23
+
+linux64-clang-23-stage1:
+    description: "Clang 23 toolchain build"
+    treeherder:
+        symbol: TL(clang-23-stage1)
+    run:
+        using: toolchain-script
+        script: build-clang.sh
+        arguments:
+            - 'build/build-clang/use-system-clang.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-1.json'
+        resources:
+            - 'build/build-clang/use-system-clang.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-1.json'
+        toolchain-artifact: public/build/clang.tar.zst
+    fetches:
+        fetch:
+            - clang-23
+        toolchain:
+            - linux64-toolchain-sysroot
+
+linux64-clang-23-profile:
+    description: "Clang 23 toolchain build"
+    treeherder:
+        symbol: TL(clang-23-profile)
+    run:
+        using: toolchain-script
+        script: build-clang.sh
+        arguments:
+            - 'build/build-clang/use-clang-artifact.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-2-3-pgo.json'
+        resources:
+            - 'build/build-clang/use-clang-artifact.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-2-3-pgo.json'
+        toolchain-artifact: public/build/merged.profdata
+    fetches:
+        fetch:
+            - clang-23
+        toolchain:
+            - linux64-clang-23-stage1
+            - linux64-x64-compiler-rt-23
+            - linux64-toolchain-sysroot
+
+linux64-clang-23-raw:
+    description: "Clang 23 toolchain build"
+    treeherder:
+        symbol: TL(clang-23-raw)
+    run:
+        script: build-clang.sh
+        arguments:
+            - 'build/build-clang/use-clang-artifact.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-4-pgo.json'
+        resources:
+            - 'build/build-clang/use-clang-artifact.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-4-pgo.json'
+        toolchain-artifact: public/build/clang.tar.zst
+    fetches:
+        fetch:
+            - clang-23
+        toolchain:
+            - linux64-clang-23-stage1
+            - linux64-clang-23-profile
+            - linux64-libxml2
+            - linux64-toolchain-sysroot
+
+linux64-clang-23:
+    description: "Clang 23 toolchain build"
+    attributes:
+        local-toolchain: true
+    treeherder:
+        symbol: TL(clang-23)
+    worker-type: b-linux-docker-amd
+    worker:
+        max-run-time: 600
+    run:
+        script: repack-clang.sh
+        toolchain-artifact: public/build/clang.tar.zst
+    fetches:
+        toolchain:
+            - linux64-cctools-port
+            - linux64-clang-23-raw
+            - android-aarch64-compiler-rt-23
+            - android-aarch64-libunwind-23
+            - android-arm-compiler-rt-23
+            - android-arm-libunwind-23
+            - android-x64-compiler-rt-23
+            - android-x64-libunwind-23
+            - linux32-compiler-rt-23
+            - linux64-aarch64-compiler-rt-23
+            - linux64-x64-compiler-rt-23
+            - macosx64-aarch64-compiler-rt-23
+            - macosx64-x64-compiler-rt-23
+            - wasm32-wasi-compiler-rt-23
+            - win32-compiler-rt-23
+            - win64-compiler-rt-23
+            - win64-aarch64-compiler-rt-23
+
+linux64-aarch64-clang-23-raw:
+    description: "Clang 23 toolchain build"
+    treeherder:
+        symbol: TLA64(clang-23-raw)
+    run:
+        script: build-clang.sh
+        arguments:
+            - 'build/build-clang/use-clang-artifact.json'
+            - 'build/build-clang/linux64-aarch64.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-4-pgo.json'
+        resources:
+            - 'build/build-clang/use-clang-artifact.json'
+            - 'build/build-clang/linux64-aarch64.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-4-pgo.json'
+        toolchain-artifact: public/build/clang.tar.zst
+    fetches:
+        fetch:
+            - clang-23
+        toolchain:
+            - linux64-clang-23-stage1
+            - linux64-clang-23-profile
+            - linux64-aarch64-libxml2
+            - linux64-aarch64-toolchain-sysroot
+
+linux64-aarch64-clang-23:
+    description: "Clang 23 toolchain build"
+    attributes:
+        local-toolchain: true
+    treeherder:
+        symbol: TLA64(clang-23)
+    worker-type: b-linux-docker-amd
+    worker:
+        max-run-time: 600
+    run:
+        script: repack-clang.sh
+        toolchain-artifact: public/build/clang.tar.zst
+    fetches:
+        toolchain:
+            - linux64-cctools-port
+            - linux64-aarch64-clang-23-raw
+            - android-aarch64-compiler-rt-23
+            - android-aarch64-libunwind-23
+            - android-arm-compiler-rt-23
+            - android-arm-libunwind-23
+            - android-x64-compiler-rt-23
+            - android-x64-libunwind-23
+            - linux32-compiler-rt-23
+            - linux64-aarch64-compiler-rt-23
+            - linux64-x64-compiler-rt-23
+            - macosx64-aarch64-compiler-rt-23
+            - macosx64-x64-compiler-rt-23
+            - wasm32-wasi-compiler-rt-23
+            - win32-compiler-rt-23
+            - win64-compiler-rt-23
+            - win64-aarch64-compiler-rt-23
+
+macosx64-clang-23-stage2:
+    description: "Clang 23 toolchain build"
+    treeherder:
+        symbol: TM(clang-23-stage2)
+    run:
+        using: toolchain-script
+        script: build-clang.sh
+        arguments:
+            - 'build/build-clang/use-clang-artifact.json'
+            - 'build/build-clang/macosx64.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-2-pgo.json'
+        resources:
+            - 'build/build-clang/use-clang-artifact.json'
+            - 'build/build-clang/macosx64.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-2-pgo.json'
+        toolchain-artifact: public/build/clang.tar.zst
+    fetches:
+        fetch:
+            - clang-23
+        toolchain:
+            - linux64-clang-23-stage1
+            - macosx64-x64-compiler-rt-23
+            - macosx64-sdk-toolchain
+
+macosx64-clang-23-profile:
+    description: "Clang 23 toolchain build"
+    treeherder:
+        symbol: TM(clang-23-profile)
+    worker-type: b-osx-arm64
+    worker:
+        max-run-time: 7210
+    run:
+        using: toolchain-script
+        script: build-clang.sh
+        arguments:
+            - 'build/build-clang/use-clang-artifact.json'
+            - 'build/build-clang/macosx64.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-3-pgo.json'
+        resources:
+            - 'build/build-clang/use-clang-artifact.json'
+            - 'build/build-clang/macosx64.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-3-pgo.json'
+        toolchain-artifact: public/build/merged.profdata
+    fetches:
+        fetch:
+            - clang-23
+            - macosx64-cmake
+            - macosx64-ninja
+        toolchain:
+            - macosx64-clang-23-stage2
+            - macosx64-sdk-toolchain
+
+macosx64-clang-23-raw:
+    description: "Clang 23 toolchain build"
+    treeherder:
+        symbol: TM(clang-23-raw)
+    worker:
+        max-run-time: 3600
+    run:
+        script: build-clang.sh
+        arguments:
+            - 'build/build-clang/use-clang-artifact.json'
+            - 'build/build-clang/macosx64.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-4-pgo.json'
+        resources:
+            - 'build/build-clang/use-clang-artifact.json'
+            - 'build/build-clang/macosx64.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-4-pgo.json'
+        toolchain-artifact: public/build/clang.tar.zst
+    fetches:
+        fetch:
+            - clang-23
+        toolchain:
+            - linux64-clang-23-stage1
+            - macosx64-clang-23-profile
+            - macosx64-sdk-toolchain
+            - macosx64-x64-compiler-rt-23
+
+macosx64-clang-23:
+    description: "Clang 23 toolchain repack with MacOS Compiler RT libs"
+    attributes:
+        local-toolchain: true
+    treeherder:
+        symbol: TM(clang-23)
+    worker-type: b-linux-docker-amd
+    worker:
+        max-run-time: 600
+    run:
+        script: repack-clang.sh
+        toolchain-artifact: public/build/clang.tar.zst
+    fetches:
+        toolchain:
+            - linux64-cctools-port
+            - macosx64-clang-23-raw
+            - android-aarch64-compiler-rt-23
+            - android-aarch64-libunwind-23
+            - android-arm-compiler-rt-23
+            - android-arm-libunwind-23
+            - android-x64-compiler-rt-23
+            - android-x64-libunwind-23
+            - linux32-compiler-rt-23
+            - linux64-aarch64-compiler-rt-23
+            - linux64-x64-compiler-rt-23
+            - macosx64-aarch64-compiler-rt-23
+            - macosx64-x64-compiler-rt-23
+            - wasm32-wasi-compiler-rt-23
+            - win32-compiler-rt-23
+            - win64-compiler-rt-23
+            - win64-aarch64-compiler-rt-23
+
+macosx64-aarch64-clang-23-stage2:
+    description: "Clang 23 toolchain build"
+    treeherder:
+        symbol: TMA64(clang-23-stage2)
+    run:
+        using: toolchain-script
+        script: build-clang.sh
+        arguments:
+            - 'build/build-clang/use-clang-artifact.json'
+            - 'build/build-clang/macosx64-aarch64.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-2-pgo.json'
+        resources:
+            - 'build/build-clang/use-clang-artifact.json'
+            - 'build/build-clang/macosx64-aarch64.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-2-pgo.json'
+        toolchain-artifact: public/build/clang.tar.zst
+    fetches:
+        fetch:
+            - clang-23
+        toolchain:
+            - linux64-clang-23-stage1
+            - macosx64-aarch64-compiler-rt-23
+            - macosx64-sdk-toolchain
+
+macosx64-aarch64-clang-23-profile:
+    description: "Clang 23 toolchain build"
+    treeherder:
+        symbol: TMA64(clang-23-profile)
+    worker-type: b-osx-arm64
+    worker:
+        max-run-time: 7210
+    run:
+        using: toolchain-script
+        script: build-clang.sh
+        arguments:
+            - 'build/build-clang/use-clang-artifact.json'
+            - 'build/build-clang/macosx64-aarch64.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-3-pgo.json'
+        resources:
+            - 'build/build-clang/use-clang-artifact.json'
+            - 'build/build-clang/macosx64-aarch64.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-3-pgo.json'
+        toolchain-artifact: public/build/merged.profdata
+    fetches:
+        fetch:
+            - clang-23
+            - macosx64-cmake
+            - macosx64-ninja
+        toolchain:
+            - macosx64-aarch64-clang-23-stage2
+            - macosx64-sdk-toolchain
+
+macosx64-aarch64-clang-23-raw:
+    description: "Clang 23 toolchain build"
+    treeherder:
+        symbol: TMA64(clang-23-raw)
+    worker:
+        max-run-time: 3600
+    run:
+        script: build-clang.sh
+        arguments:
+            - 'build/build-clang/use-clang-artifact.json'
+            - 'build/build-clang/macosx64-aarch64.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-4-pgo.json'
+        resources:
+            - 'build/build-clang/use-clang-artifact.json'
+            - 'build/build-clang/macosx64-aarch64.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-4-pgo.json'
+        toolchain-artifact: public/build/clang.tar.zst
+    fetches:
+        fetch:
+            - clang-23
+        toolchain:
+            - linux64-clang-23-stage1
+            - macosx64-aarch64-clang-23-profile
+            - macosx64-aarch64-compiler-rt-23
+            - macosx64-sdk-toolchain
+
+macosx64-aarch64-clang-23:
+    description: "Clang 23 toolchain repack with MacOS Compiler RT libs"
+    attributes:
+        local-toolchain: true
+    treeherder:
+        symbol: TMA64(clang-23)
+    worker-type: b-linux-docker-amd
+    worker:
+        max-run-time: 600
+    run:
+        script: repack-clang.sh
+        toolchain-artifact: public/build/clang.tar.zst
+    fetches:
+        toolchain:
+            - linux64-cctools-port
+            - macosx64-aarch64-clang-23-raw
+            - android-aarch64-compiler-rt-23
+            - android-aarch64-libunwind-23
+            - android-arm-compiler-rt-23
+            - android-arm-libunwind-23
+            - android-x64-compiler-rt-23
+            - android-x64-libunwind-23
+            - linux32-compiler-rt-23
+            - linux64-aarch64-compiler-rt-23
+            - linux64-x64-compiler-rt-23
+            - macosx64-aarch64-compiler-rt-23
+            - macosx64-x64-compiler-rt-23
+            - wasm32-wasi-compiler-rt-23
+            - win32-compiler-rt-23
+            - win64-compiler-rt-23
+            - win64-aarch64-compiler-rt-23
+
+win64-clang-23-stage2:
+    description: "Clang-cl 23 toolchain build"
+    treeherder:
+        symbol: TW64(clang-23-stage2)
+    run:
+        script: build-clang.sh
+        arguments:
+            - 'build/build-clang/use-clang-cl-artifact.json'
+            - 'build/build-clang/win64.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-2-pgo.json'
+        resources:
+            - 'build/build-clang/use-clang-cl-artifact.json'
+            - 'build/build-clang/win64.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-2-pgo.json'
+        toolchain-artifact: public/build/clang.tar.zst
+    fetches:
+        fetch:
+            - clang-23
+        toolchain:
+            - linux64-clang-23-stage1
+            - vs-toolchain
+            - win64-compiler-rt-23
+            - win64-libxml2
+
+win64-clang-23-profile:
+    description: "Clang-cl 23 toolchain build"
+    treeherder:
+        symbol: TW64(clang-23-profile)
+    worker-type: b-win2022
+    worker:
+        max-run-time: 9000
+    run:
+        script: build-clang.sh
+        arguments:
+            - 'build/build-clang/use-clang-cl-artifact.json'
+            - 'build/build-clang/win64.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-3-pgo.json'
+        resources:
+            - 'build/build-clang/use-clang-cl-artifact.json'
+            - 'build/build-clang/win64.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-3-pgo.json'
+        toolchain-artifact: public/build/merged.profdata
+    fetches:
+        fetch:
+            - clang-23
+            - win64-ninja
+        toolchain:
+            - win64-clang-23-stage2
+            - win64-cmake
+            - vs-toolchain
+            - win64-libxml2
+
+win64-clang-23-raw:
+    description: "Clang-cl 23 toolchain build"
+    treeherder:
+        symbol: TW64(clang-23-raw)
+    run:
+        script: build-clang.sh
+        arguments:
+            - 'build/build-clang/use-clang-cl-artifact.json'
+            - 'build/build-clang/win64.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-4-pgo.json'
+            - 'build/build-clang/llvm-config.json'
+        resources:
+            - 'build/build-clang/use-clang-cl-artifact.json'
+            - 'build/build-clang/win64.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-4-pgo.json'
+            - 'build/build-clang/llvm-config.json'
+        toolchain-artifact: public/build/clang.tar.zst
+    fetches:
+        fetch:
+            - clang-23
+        toolchain:
+            - linux64-clang-23-stage1
+            - win64-clang-23-profile
+            - win64-compiler-rt-23
+            - vs-toolchain
+            - win64-libxml2
+
+win64-clang-23:
+    description: "Clang-cl 23 toolchain build"
+    attributes:
+        local-toolchain: true
+    treeherder:
+        symbol: TW64(clang-23)
+    worker-type: b-linux-docker-amd
+    worker:
+        max-run-time: 600
+    run:
+        script: repack-clang.sh
+        toolchain-artifact: public/build/clang.tar.zst
+    fetches:
+        toolchain:
+            - linux64-cctools-port
+            - win64-clang-23-raw
+            - android-aarch64-compiler-rt-23
+            - android-aarch64-libunwind-23
+            - android-arm-compiler-rt-23
+            - android-arm-libunwind-23
+            - android-x64-compiler-rt-23
+            - android-x64-libunwind-23
+            - linux32-compiler-rt-23
+            - linux64-aarch64-compiler-rt-23
+            - linux64-x64-compiler-rt-23
+            - macosx64-aarch64-compiler-rt-23
+            - macosx64-x64-compiler-rt-23
+            - wasm32-wasi-compiler-rt-23
+            - win32-compiler-rt-23
+            - win64-compiler-rt-23
+            - win64-aarch64-compiler-rt-23
+
+win64-aarch64-clang-23-raw:
+    description: "Clang-cl 23 toolchain build"
+    treeherder:
+        symbol: TWA64(clang-23-raw)
+    worker:
+        max-run-time: 3600
+    run:
+        script: build-clang.sh
+        arguments:
+            - 'build/build-clang/use-clang-cl-artifact.json'
+            - 'build/build-clang/win64-aarch64.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-4-pgo.json'
+        resources:
+            - 'build/build-clang/use-clang-cl-artifact.json'
+            - 'build/build-clang/win64-aarch64.json'
+            - 'build/build-clang/clang-23.json'
+            - 'build/build-clang/stage-4-pgo.json'
+        toolchain-artifact: public/build/clang.tar.zst
+    fetches:
+        fetch:
+            - clang-23
+        toolchain:
+            - linux64-clang-23-stage1
+            - linux64-clang-23-profile
+            - win64-aarch64-compiler-rt-23
+            - vs-toolchain
+            - win64-aarch64-libxml2
+
+win64-aarch64-clang-23:
+    description: "Clang-cl 23 toolchain build"
+    attributes:
+        local-toolchain: true
+    treeherder:
+        symbol: TWA64(clang-23)
+    worker-type: b-linux-docker-amd
+    worker:
+        max-run-time: 600
+    run:
+        script: repack-clang.sh
+        toolchain-artifact: public/build/clang.tar.zst
+    fetches:
+        toolchain:
+            - linux64-cctools-port
+            - win64-aarch64-clang-23-raw
+            - android-aarch64-compiler-rt-23
+            - android-aarch64-libunwind-23
+            - android-arm-compiler-rt-23
+            - android-arm-libunwind-23
+            - android-x64-compiler-rt-23
+            - android-x64-libunwind-23
+            - linux32-compiler-rt-23
+            - linux64-aarch64-compiler-rt-23
+            - linux64-x64-compiler-rt-23
+            - macosx64-aarch64-compiler-rt-23
+            - macosx64-x64-compiler-rt-23
+            - wasm32-wasi-compiler-rt-23
+            - win32-compiler-rt-23
+            - win64-compiler-rt-23
+            - win64-aarch64-compiler-rt-23
+
 linux64-clang-trunk-mingw-x86:
     description: "MinGW-Clang trunk x86 toolchain build"
     attributes:
         cached_task: false
     treeherder:
-        symbol: TMW(clang-trunk-x86)
+        symbol: TWM(clang-trunk-x86)
     worker-type: b-linux-docker-amd
     run:
-        clone-with: hg
         script: build-clang-mingw.sh
         arguments:
             - 'x86'
@@ -1435,8 +1329,6 @@ linux64-clang-trunk-mingw-x86:
         fetch:
             - clang-trunk
             - mingw-w64-trunk
-            - llvm-mingw
-            - gcc-9.5.0
         toolchain:
             - linux64-clang-trunk
 
@@ -1445,11 +1337,10 @@ linux64-clang-trunk-mingw-x64:
     attributes:
         cached_task: false
     treeherder:
-        symbol: TMW(clang-trunk-x64)
+        symbol: TWM(clang-trunk-x64)
         tier: 1
     worker-type: b-linux-docker-amd
     run:
-        clone-with: hg
         script: build-clang-mingw.sh
         arguments:
             - 'x64'
@@ -1464,8 +1355,6 @@ linux64-clang-trunk-mingw-x64:
         fetch:
             - clang-trunk
             - mingw-w64-trunk
-            - llvm-mingw
-            - gcc-9.5.0
         toolchain:
             - linux64-clang-trunk
 
@@ -1476,7 +1365,6 @@ linux64-clang-trunk-stage1:
     treeherder:
         symbol: TL(clang-trunk-stage1)
     run:
-        clone-with: hg
         using: toolchain-script
         script: build-clang.sh
         arguments:
@@ -1505,7 +1393,6 @@ linux64-clang-trunk-profile:
     treeherder:
         symbol: TL(clang-trunk-profile)
     run:
-        clone-with: hg
         using: toolchain-script
         script: build-clang.sh
         arguments:
@@ -1532,7 +1419,6 @@ linux64-clang-trunk-raw:
     treeherder:
         symbol: TL(clang-trunk-raw)
     run:
-        clone-with: hg
         script: build-clang.sh
         arguments:
             - 'build/build-clang/use-clang-artifact.json'
@@ -1562,7 +1448,6 @@ linux64-clang-trunk:
     worker:
         max-run-time: 600
     run:
-        clone-with: hg
         script: repack-clang.sh
         toolchain-alias:
             by-project:
@@ -1579,9 +1464,9 @@ linux64-clang-trunk:
             - android-arm-libunwind-trunk
             - android-x64-compiler-rt-trunk
             - android-x64-libunwind-trunk
+            - linux32-compiler-rt-trunk
             - linux64-aarch64-compiler-rt-trunk
             - linux64-x64-compiler-rt-trunk
-            - linux64-x86-compiler-rt-trunk
             - macosx64-aarch64-compiler-rt-trunk
             - macosx64-x64-compiler-rt-trunk
             - wasm32-wasi-compiler-rt-trunk
@@ -1596,7 +1481,6 @@ linux64-aarch64-clang-trunk-raw:
     treeherder:
         symbol: TLA64(clang-trunk-raw)
     run:
-        clone-with: hg
         script: build-clang.sh
         arguments:
             - 'build/build-clang/use-clang-artifact.json'
@@ -1628,7 +1512,6 @@ linux64-aarch64-clang-trunk:
     worker:
         max-run-time: 600
     run:
-        clone-with: hg
         script: repack-clang.sh
         toolchain-alias:
             by-project:
@@ -1645,9 +1528,9 @@ linux64-aarch64-clang-trunk:
             - android-arm-libunwind-trunk
             - android-x64-compiler-rt-trunk
             - android-x64-libunwind-trunk
+            - linux32-compiler-rt-trunk
             - linux64-aarch64-compiler-rt-trunk
             - linux64-x64-compiler-rt-trunk
-            - linux64-x86-compiler-rt-trunk
             - macosx64-aarch64-compiler-rt-trunk
             - macosx64-x64-compiler-rt-trunk
             - wasm32-wasi-compiler-rt-trunk
@@ -1662,7 +1545,6 @@ macosx64-clang-trunk-stage2:
     treeherder:
         symbol: TM(clang-trunk-stage2)
     run:
-        clone-with: hg
         using: toolchain-script
         script: build-clang.sh
         arguments:
@@ -1694,7 +1576,6 @@ macosx64-clang-trunk-profile:
     worker:
         max-run-time: 7200
     run:
-        clone-with: hg
         using: toolchain-script
         script: build-clang.sh
         arguments:
@@ -1716,6 +1597,7 @@ macosx64-clang-trunk-profile:
         toolchain:
             - macosx64-clang-trunk-stage2
             - macosx64-sdk-toolchain
+            - macosx64-x64-compiler-rt-trunk
 
 macosx64-clang-trunk-raw:
     description: "Clang trunk toolchain build"
@@ -1726,7 +1608,6 @@ macosx64-clang-trunk-raw:
     worker:
         max-run-time: 3600
     run:
-        clone-with: hg
         script: build-clang.sh
         arguments:
             - 'build/build-clang/use-clang-artifact.json'
@@ -1758,7 +1639,6 @@ macosx64-clang-trunk:
     worker:
         max-run-time: 600
     run:
-        clone-with: hg
         script: repack-clang.sh
         toolchain-alias:
             by-project:
@@ -1777,9 +1657,9 @@ macosx64-clang-trunk:
             - android-arm-libunwind-trunk
             - android-x64-compiler-rt-trunk
             - android-x64-libunwind-trunk
+            - linux32-compiler-rt-trunk
             - linux64-aarch64-compiler-rt-trunk
             - linux64-x64-compiler-rt-trunk
-            - linux64-x86-compiler-rt-trunk
             - macosx64-aarch64-compiler-rt-trunk
             - macosx64-x64-compiler-rt-trunk
             - wasm32-wasi-compiler-rt-trunk
@@ -1794,7 +1674,6 @@ macosx64-aarch64-clang-trunk-stage2:
     treeherder:
         symbol: TMA64(clang-trunk-stage2)
     run:
-        clone-with: hg
         using: toolchain-script
         script: build-clang.sh
         arguments:
@@ -1826,7 +1705,6 @@ macosx64-aarch64-clang-trunk-profile:
     worker:
         max-run-time: 7200
     run:
-        clone-with: hg
         using: toolchain-script
         script: build-clang.sh
         arguments:
@@ -1858,7 +1736,6 @@ macosx64-aarch64-clang-trunk-raw:
     worker:
         max-run-time: 3600
     run:
-        clone-with: hg
         script: build-clang.sh
         arguments:
             - 'build/build-clang/use-clang-artifact.json'
@@ -1890,7 +1767,6 @@ macosx64-aarch64-clang-trunk:
     worker:
         max-run-time: 600
     run:
-        clone-with: hg
         script: repack-clang.sh
         toolchain-alias:
             by-project:
@@ -1907,9 +1783,9 @@ macosx64-aarch64-clang-trunk:
             - android-arm-libunwind-trunk
             - android-x64-compiler-rt-trunk
             - android-x64-libunwind-trunk
+            - linux32-compiler-rt-trunk
             - linux64-aarch64-compiler-rt-trunk
             - linux64-x64-compiler-rt-trunk
-            - linux64-x86-compiler-rt-trunk
             - macosx64-aarch64-compiler-rt-trunk
             - macosx64-x64-compiler-rt-trunk
             - wasm32-wasi-compiler-rt-trunk
@@ -1924,7 +1800,6 @@ win64-clang-trunk-stage2:
     treeherder:
         symbol: TW64(clang-trunk-stage2)
     run:
-        clone-with: hg
         script: build-clang.sh
         arguments:
             - 'build/build-clang/use-clang-cl-artifact.json'
@@ -1956,7 +1831,6 @@ win64-clang-trunk-profile:
     worker:
         max-run-time: 9000
     run:
-        clone-with: hg
         script: build-clang.sh
         arguments:
             - 'build/build-clang/use-clang-cl-artifact.json'
@@ -1986,7 +1860,6 @@ win64-clang-trunk-raw:
     treeherder:
         symbol: TW64(clang-trunk-raw)
     run:
-        clone-with: hg
         script: build-clang.sh
         arguments:
             - 'build/build-clang/use-clang-cl-artifact.json'
@@ -2019,7 +1892,6 @@ win64-clang-trunk:
     worker:
         max-run-time: 600
     run:
-        clone-with: hg
         script: repack-clang.sh
         toolchain-alias:
             by-project:
@@ -2038,9 +1910,9 @@ win64-clang-trunk:
             - android-arm-libunwind-trunk
             - android-x64-compiler-rt-trunk
             - android-x64-libunwind-trunk
+            - linux32-compiler-rt-trunk
             - linux64-aarch64-compiler-rt-trunk
             - linux64-x64-compiler-rt-trunk
-            - linux64-x86-compiler-rt-trunk
             - macosx64-aarch64-compiler-rt-trunk
             - macosx64-x64-compiler-rt-trunk
             - wasm32-wasi-compiler-rt-trunk
@@ -2057,7 +1929,6 @@ win64-aarch64-clang-trunk-raw:
     worker:
         max-run-time: 3600
     run:
-        clone-with: hg
         script: build-clang.sh
         arguments:
             - 'build/build-clang/use-clang-cl-artifact.json'
@@ -2090,7 +1961,6 @@ win64-aarch64-clang-trunk:
     worker:
         max-run-time: 600
     run:
-        clone-with: hg
         script: repack-clang.sh
         toolchain-alias:
             by-project:
@@ -2107,9 +1977,9 @@ win64-aarch64-clang-trunk:
             - android-arm-libunwind-trunk
             - android-x64-compiler-rt-trunk
             - android-x64-libunwind-trunk
+            - linux32-compiler-rt-trunk
             - linux64-aarch64-compiler-rt-trunk
             - linux64-x64-compiler-rt-trunk
-            - linux64-x86-compiler-rt-trunk
             - macosx64-aarch64-compiler-rt-trunk
             - macosx64-x64-compiler-rt-trunk
             - wasm32-wasi-compiler-rt-trunk

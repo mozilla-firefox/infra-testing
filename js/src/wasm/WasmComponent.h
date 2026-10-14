@@ -26,6 +26,7 @@ namespace wasm {
 // names are always ASCII, so this is safe.
 #  define ComponentName_Printf(n) \
     (int)(n).utf8Bytes().Length(), (n).utf8Bytes().data()
+#  define ComponentNameSpan_Printf(n) (int)(n).Length(), (n).data()
 
 // A "sort", or "kind", of item in the component model, used for all cases where
 // we must refer to a different item.
@@ -209,6 +210,12 @@ class ComponentType {
   const ComponentFuncType& asFunc() const;
   const ComponentResourceType& asResource() const;
 
+  // Whether the type is any kind of resource type (defined or `(sub resource)`)
+  bool isAnyResource() const {
+    return kind_ == ComponentTypeKind::Resource ||
+           kind_ == ComponentTypeKind::SubResource;
+  }
+
   // Cheaply checks if two canonicalized component types are equal under the
   // rules of the component model. This is fully general and handles resource
   // types, but because it compares ComponentTypeDef pointers for equality, only
@@ -376,33 +383,66 @@ mozilla::Maybe<FuncType> FlattenFuncType(const ComponentFuncType& funcType,
                                          CanonMode mode, bool* memoryRequired,
                                          bool* reallocRequired, bool* tooDeep);
 
-// A hash policy for StronglyUniqueNameSet that hashes items based on their
-// trimmed, lowercased versions, but matches based on the full strongly-unique
-// rules.
-//
-// The full strongly-unique rules are not hash-friendly; we have not yet figured
-// out any way to "normalize" the name to a unique key that satisfies the
-// strange carve-out rules for constructor and method names. But, we don't want
-// to quadratically check each new name against every other name, so we take a
-// disappointing halfway approach of hashing only the base part of the name, and
-// then running the full strongly-unique logic in `match`. This results in more
-// hash collisions and a less-inexpensive `match` method, but at least it keeps
-// things from growing quadratically.
-struct StronglyUniqueNameHasher {
-  using Key = CacheableName;
-  using Lookup = mozilla::Span<const char>;
+enum class ComponentNameAttribute : uint8_t {
+  Constructor,
+  Method,
+  Static,
+  Get,
+  Set,
+};
+using ComponentNameAttributes = mozilla::EnumSet<ComponentNameAttribute>;
 
-  static HashNumber hash(const Lookup& aLookup);
-  static bool match(const Key& aKey, const Lookup& aLookup);
+// Takes a valid component-model name and creates a "canonical" version of it
+// that can be used to check strong uniqueness.
+[[nodiscard]] bool CanonicalizeName(mozilla::Span<const char> name,
+                                    CacheableName* result);
+
+// Augments a component-model name with any attributes present on the name. Note
+// that this is generally not necessary for e.g. field names; you can just use
+// CacheableName for that purpose.
+struct ComponentName {
+  CacheableName name;
+  ComponentNameAttributes attributes;
+
+  uint8_t attributesLength;
+  uint32_t resourceNameLength;
+
+  explicit ComponentName() = default;
+  explicit ComponentName(CacheableName&& name,
+                         ComponentNameAttributes attributes,
+                         uint8_t attributesLength, uint32_t resourceNameLength)
+      : name(std::move(name)),
+        attributes(attributes),
+        attributesLength(attributesLength),
+        resourceNameLength(resourceNameLength) {}
+
+  mozilla::Span<const char> resourceName() const {
+    MOZ_ASSERT(attributes.contains(ComponentNameAttribute::Constructor) ||
+               attributes.contains(ComponentNameAttribute::Method) ||
+               attributes.contains(ComponentNameAttribute::Static));
+    MOZ_ASSERT(resourceNameLength > 0);
+    return mozilla::Span<const char>(name.utf8Bytes().data() + attributesLength,
+                                     resourceNameLength);
+  };
+  bool getterForSetter(CacheableName* out) const;
+
+  bool operator==(const ComponentName& other) const {
+    return name == other.name;
+  }
+  bool operator==(mozilla::Span<const char> other) const {
+    return name.utf8Bytes() == other;
+  }
 };
 
 // A class which can be used to check if a set of component model names is
 // strongly-unique. The set owns its keys.
 class StronglyUniqueNameSet {
-  mozilla::HashSet<CacheableName, StronglyUniqueNameHasher, SystemAllocPolicy>
-      data_;
+  // A set that simply stores canonicalized names.
+  mozilla::HashSet<CacheableName, CacheableNameHasher, SystemAllocPolicy> data_;
 
  public:
+  // Add a name to the set. The name should not be canonicalized; this method
+  // will create a canonicalized copy of the name.
   [[nodiscard]] bool add(mozilla::Span<const char> name, bool* duplicate);
 };
 
@@ -835,27 +875,29 @@ class ComponentExternDesc {
 static_assert(std::is_default_constructible_v<ComponentExternDesc>);
 
 class ComponentImport {
-  CacheableName name_;
+  // Be aware that the Component::importsByName_ stores a view into this name.
+  ComponentName name_;
   ComponentExternDesc externDesc_;
 
  public:
-  explicit ComponentImport(CacheableName&& name,
+  explicit ComponentImport(ComponentName&& name,
                            const ComponentExternDesc& externDesc)
       : name_(std::move(name)), externDesc_(externDesc) {}
 
-  const CacheableName& name() const { return name_; }
+  const ComponentName& name() const { return name_; }
   const ComponentExternDesc& externDesc() const { return externDesc_; }
 };
 
 class ComponentExport {
-  CacheableName name_;
+  // Be aware that the Component::exportsByName_ stores a view into this name.
+  ComponentName name_;
   ComponentExternDesc externDesc_;
 
  public:
-  explicit ComponentExport(CacheableName&& name, ComponentExternDesc externDesc)
+  explicit ComponentExport(ComponentName&& name, ComponentExternDesc externDesc)
       : name_(std::move(name)), externDesc_(externDesc) {}
 
-  const CacheableName& name() const { return name_; }
+  const ComponentName& name() const { return name_; }
   const ComponentExternDesc& externDesc() const { return externDesc_; }
 };
 
@@ -880,6 +922,8 @@ class Component : public JS::WasmComponent {
   using AliasNameMap =
       mozilla::HashMap<ComponentSortIndex, CacheableName,
                        ComponentSortIndexHasher, SystemAllocPolicy>;
+  using ImportExportMap = mozilla::HashMap<mozilla::Span<const char>, size_t,
+                                           NameHasher, SystemAllocPolicy>;
 
  private:
   CoreModuleVector definedCoreModules_;
@@ -889,6 +933,15 @@ class Component : public JS::WasmComponent {
   CoreFuncVector definedCoreFuncs_;
   ImportVector imports_;
   ExportVector exports_;
+
+  // Because these maps exist to accelerate lookups in `imports_` and
+  // `exports_`, their keys are slices of the names stored in those vectors.
+  // Because the names are themselves vectors, the only thing that will ever
+  // invalidate a span is mutating the names themselves, which should never
+  // happen. Mutating the `imports_` and `exports_` vectors themselves is fine,
+  // but of course because they own the names, these maps share their lifetime.
+  ImportExportMap importsByName_;
+  ImportExportMap exportsByName_;
 
   ItemVector funcs_;
   ItemVector types_;
@@ -934,9 +987,13 @@ class Component : public JS::WasmComponent {
   // Accessors and adders for each index space
 
   const ImportVector& imports() const { return imports_; }
+  bool hasImportWithName(mozilla::Span<const char> name) const;
+  const ComponentImport& getImportByName(mozilla::Span<const char> name) const;
   [[nodiscard]] bool addImport(ComponentImport&& import);
 
   const ExportVector& exports() const { return exports_; }
+  bool hasExportWithName(mozilla::Span<const char> name) const;
+  const ComponentExport& getExportByName(mozilla::Span<const char> name) const;
   [[nodiscard]] bool addExport(ComponentExport&& exp);
 
   const ItemVector& funcs() const { return funcs_; }

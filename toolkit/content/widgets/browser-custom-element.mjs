@@ -14,6 +14,10 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
+/**
+ * @import { PopupAndRedirectBlocker } from "moz-src:///toolkit/actors/PopupAndRedirectBlockingParent.sys.mjs";
+ */
+
 let lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -22,8 +26,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   Finder: "resource://gre/modules/Finder.sys.mjs",
   FinderParent: "resource://gre/modules/FinderParent.sys.mjs",
   PopupAndRedirectBlocker:
-    "resource://gre/actors/PopupAndRedirectBlockingParent.sys.mjs",
-  SelectParentHelper: "resource://gre/actors/SelectParent.sys.mjs",
+    "moz-src:///toolkit/actors/PopupAndRedirectBlockingParent.sys.mjs",
+  SelectParentHelper: "moz-src:///toolkit/actors/SelectParent.sys.mjs",
   RemoteWebNavigation:
     "moz-src:///toolkit/components/remotebrowserutils/RemoteWebNavigation.sys.mjs",
 });
@@ -94,6 +98,21 @@ window.addEventListener(
  * @implements {nsIBrowser}
  */
 export class MozBrowser extends MozElements.MozElementMixin(XULFrameElement) {
+  /**
+   * The URI the tabbrowser has registered with UrlbarProviderOpenTabs.
+   *
+   * @type {nsIURI}
+   */
+  registeredOpenURI;
+
+  /**
+   * The device sharing state, set by the WebRTC parent actor and read by the
+   * tabbrowser and the site permission panel.
+   *
+   * @type {any}
+   */
+  _sharingState;
+
   static get observedAttributes() {
     return ["remote"];
   }
@@ -125,6 +144,10 @@ export class MozBrowser extends MozElements.MozElementMixin(XULFrameElement) {
     this.mIconURL = null;
     this.lastURI = null;
 
+    /**
+     * @type {PopupAndRedirectBlocker}
+     */
+    this.popupAndRedirectBlocker;
     ChromeUtils.defineLazyGetter(this, "popupAndRedirectBlocker", () => {
       return new lazy.PopupAndRedirectBlocker(this);
     });

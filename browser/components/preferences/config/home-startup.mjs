@@ -8,11 +8,6 @@
 // extension as part of Bug 2048379 so downstream builds without the
 // newtab extension still get homepage configuration UI. The `home`
 // group (Firefox Home content) stays in newtab.
-//
-// @backward-compat { version 155 }
-// On Firefox <155 the newtab extension still registers homepage and
-// customHomepage itself via a version-guarded path in
-// AboutPreferences.sys.mjs. Drop that path once 155 reaches Release.
 
 import { SettingGroupManager } from "chrome://browser/content/preferences/config/SettingGroupManager.mjs";
 import { Preferences } from "chrome://global/content/preferences/Preferences.mjs";
@@ -35,8 +30,7 @@ const URL_OVERRIDES_TYPE = "url_overrides";
 const NEW_TAB_KEY = "newTabURL";
 const PREF_SETTING_TYPE = "prefs";
 
-// Exported for the legacy home pane renderer in home.js.
-export const BLANK_HOMEPAGE_URL = "chrome://browser/content/blanktab.html";
+const BLANK_HOMEPAGE_URL = "chrome://browser/content/blanktab.html";
 
 /*
  * Preferences:
@@ -143,6 +137,14 @@ function forceSelectValue(prefWindow, settingId, value) {
 /** @param {Window} prefWindow */
 function setupHomepageGroup(prefWindow) {
   const { Preferences: panelPrefs } = prefWindow;
+
+  // Extension APIs load on demand, and opening a settings page does not load
+  // the ones that own the homepage and new tab overrides. Without this, the
+  // dropdowns can show Firefox Home while an extension is in control, and will
+  // not update when that extension is enabled or disabled.
+  lazy.Management.asyncLoadSettingsModules().catch(e =>
+    console.error("Failed to load extension settings modules", e)
+  );
 
   // Set up `browser.startup.homepage` to show homepage options for Homepage / New Windows
   let homepageExtOptions = [];
@@ -783,6 +785,10 @@ function setupCustomHomepageGroup(prefWindow) {
                 l10nId: "home-custom-homepage-bookmarks-button",
                 control: "moz-button",
                 slot: "actions",
+                controlAttrs: {
+                  "search-l10n-ids":
+                    "select-bookmark-window2.title, select-bookmark-desc",
+                },
               },
             ],
           },
@@ -831,11 +837,9 @@ function setupCustomHomepageGroup(prefWindow) {
   };
 }
 
-if (Services.prefs.getBoolPref("browser.settings-redesign.enabled")) {
-  SettingGroupManager.registerGroups({
-    defaultBrowserHome: window.createDefaultBrowserConfig(),
-    startupHome: window.createStartupConfig(),
-    homepage: setupHomepageGroup(window),
-    customHomepage: setupCustomHomepageGroup(window),
-  });
-}
+SettingGroupManager.registerGroups({
+  defaultBrowserHome: window.createDefaultBrowserConfig(),
+  startupHome: window.createStartupConfig(),
+  homepage: setupHomepageGroup(window),
+  customHomepage: setupCustomHomepageGroup(window),
+});

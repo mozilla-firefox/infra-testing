@@ -6,7 +6,7 @@ import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 let lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
-  BrowserInitState: "resource:///modules/BrowserGlue.sys.mjs",
+  BrowserInitState: "moz-src:///browser/components/BrowserGlue.sys.mjs",
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.sys.mjs",
   FormAutofillUtils: "resource://gre/modules/shared/FormAutofillUtils.sys.mjs",
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
@@ -89,8 +89,6 @@ export let StartupTelemetry = {
       );
     } else if (AppConstants.platform == "macosx") {
       tasks.push(() => this.macDockStatus());
-    } else if (AppConstants.platform == "linux") {
-      tasks.push(() => this.desktopEntryStatus());
     }
 
     this._runIdleTasks(tasks, "startupTelemetryIdleTask");
@@ -339,21 +337,15 @@ export let StartupTelemetry = {
 
   globalPrivacyControl() {
     const FEATURE_PREF_ENABLED = "privacy.globalprivacycontrol.enabled";
-    const FUNCTIONALITY_PREF_ENABLED =
-      "privacy.globalprivacycontrol.functionality.enabled";
     const PREF_WAS_ENABLED = "privacy.globalprivacycontrol.was_ever_enabled";
     const _checkGPCPref = async () => {
       const feature_enabled = Services.prefs.getBoolPref(
         FEATURE_PREF_ENABLED,
         false
       );
-      const functionality_enabled = Services.prefs.getBoolPref(
-        FUNCTIONALITY_PREF_ENABLED,
-        false
-      );
       const was_enabled = Services.prefs.getBoolPref(PREF_WAS_ENABLED, false);
       let value = 0;
-      if (feature_enabled && functionality_enabled) {
+      if (feature_enabled) {
         value = 1;
         Services.prefs.setBoolPref(PREF_WAS_ENABLED, true);
       } else if (was_enabled) {
@@ -363,7 +355,6 @@ export let StartupTelemetry = {
     };
 
     Services.prefs.addObserver(FEATURE_PREF_ENABLED, _checkGPCPref);
-    Services.prefs.addObserver(FUNCTIONALITY_PREF_ENABLED, _checkGPCPref);
     _checkGPCPref();
   },
 
@@ -376,6 +367,7 @@ export let StartupTelemetry = {
       "browser.ai.control.linkPreviewKeyPoints": "linkPreviewKeyPoints",
       "browser.ai.control.sidebarChatbot": "sidebarChatbot",
       "browser.ai.control.smartWindow": "smartWindow",
+      "browser.ai.control.speechRecognition": "speechRecognition",
     };
     const _checkAiControlPrefs = async () => {
       const globalIsBlocked =
@@ -514,28 +506,6 @@ export let StartupTelemetry = {
         Ci.nsIMacDockSupport
       ).isAppInDock
     );
-  },
-
-  desktopEntryStatus(gioServiceForTestingOnly) {
-    // Get it here so it can be mocked out.
-    let gioService =
-      gioServiceForTestingOnly ??
-      Cc["@mozilla.org/gio-service;1"].getService(Ci.nsIGIOService);
-    if (gioService.isRunningUnderFlatpak || gioService.isRunningUnderSnap) {
-      Glean.osEnvironment.desktopEntryExists.set("sandboxed");
-      return;
-    }
-
-    let labels = {
-      [Ci.nsIGNOMEShellService.DESKTOP_ENTRY_ABSENT]: "absent",
-      [Ci.nsIGNOMEShellService.DESKTOP_ENTRY_INVISIBLE]: "invisible",
-      [Ci.nsIGNOMEShellService.DESKTOP_ENTRY_VISIBLE]: "visible",
-    };
-    let status = lazy.ShellService.getDesktopEntryStatus(
-      lazy.ShellService.getGlibPrgname() + ".desktop"
-    );
-
-    Glean.osEnvironment.desktopEntryExists.set(labels[status] ?? "other");
   },
 
   sslKeylogFile() {

@@ -10,6 +10,7 @@ support-files = [
   "doc_rich_listbox.xhtml",
   "doc_menulist.xhtml",
   "doc_tree.xhtml",
+  "doc_xul_grid.xhtml",
   "!/accessible/tests/browser/shared-head.js",
   "!/accessible/tests/mochitest/*.js",
   "!/accessible/tests/mochitest/letters.gif",
@@ -31,13 +32,12 @@ https_first_disabled = true
 ["browser_aria_busy.js"]
 
 ["browser_aria_current.js"]
-skip-if = [
-  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1802555
-]
 
 ["browser_aria_errormessage.js"]
 
 ["browser_aria_expanded.js"]
+
+["browser_aria_grabbed.js"]
 
 ["browser_aria_haspopup.js"]
 
@@ -115,8 +115,6 @@ skip-if = [
 
 ["browser_text_input.js"]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1778821
-  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1778821
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1778821
 ]
 
@@ -127,3 +125,5 @@ skip-if = [
 ["browser_toggle_radio_check.js"]
 
 ["browser_webarea.js"]
+
+["browser_xul_role_grid.js"]

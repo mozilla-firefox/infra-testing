@@ -123,11 +123,11 @@ class SVGDocumentWrapper final : public nsIStreamListener,
  private:
   friend class AutoRestoreSVGState;
 
-  ~SVGDocumentWrapper();
+  MOZ_CAN_RUN_SCRIPT ~SVGDocumentWrapper();
 
   nsresult SetupViewer(nsIRequest* aRequest, nsIDocumentViewer** aViewer,
                        nsILoadGroup** aLoadGroup);
-  void DestroyViewer();
+  MOZ_CAN_RUN_SCRIPT void DestroyViewer();
   void RegisterForXPCOMShutdown();
   void UnregisterForXPCOMShutdown();
 

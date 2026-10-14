@@ -86,6 +86,7 @@ class CSSNumericValue : public CSSStyleValue {
   already_AddRefed<CSSNumericValue> Max(
       const Sequence<OwningCSSNumberish>& aValues, ErrorResult& aRv);
 
+  // https://drafts.css-houdini.org/css-typed-om-1/#dom-cssnumericvalue-equals
   bool Equals(const Sequence<OwningCSSNumberish>& aValue);
 
   // https://drafts.css-houdini.org/css-typed-om-1/#dom-cssnumericvalue-to
@@ -170,6 +171,14 @@ class CSSNumericValue : public CSSStyleValue {
   // https://drafts.css-houdini.org/css-typed-om-1/#dom-cssnumericvalue-to
   StyleOptional<StyleUnitValue> ToStyleUnitValue(const nsACString& aUnit,
                                                  ErrorResult& aRv) const;
+
+  // Infallible variant for callers where the conversion is known to succeed.
+  // Asserts if the conversion fails.
+  StyleUnitValue ToStyleUnitValue(const nsACString& aUnit) const;
+
+  // https://drafts.css-houdini.org/css-typed-om-1/#equal-numeric-value
+  static bool EqualNumericValues(const CSSNumericValue& aValue1,
+                                 const CSSNumericValue& aValue2);
 
  protected:
   virtual ~CSSNumericValue() = default;

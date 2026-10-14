@@ -478,7 +478,7 @@ class TextPropertyEditor {
     );
 
     if (gridFront) {
-      const gridFragments = gridFront.gridFragments;
+      const gridFragments = await gridFront.getFragments();
 
       for (const gridFragment of gridFragments) {
         for (const rowLine of gridFragment.rows.lines) {
@@ -620,10 +620,16 @@ class TextPropertyEditor {
           this.rule.pseudoElement
         ),
       getAttributeValue: attrName => {
-        const nodeFront = this.rule.elementStyle.element.isPseudoElement
-          ? // get the closest non pseudo element
-            this.rule.elementStyle.element.getUltimateOriginatingElement()
-          : this.rule.elementStyle.element;
+        let nodeFront;
+        if (this.rule.inherited) {
+          nodeFront = this.rule.inherited;
+        } else if (this.rule.elementStyle.element.isPseudoElement) {
+          // get the closest non pseudo element
+          nodeFront =
+            this.rule.elementStyle.element.getUltimateOriginatingElement();
+        } else {
+          nodeFront = this.rule.elementStyle.element;
+        }
 
         const attribute = nodeFront.attributes.find(
           attr => attr.name === attrName
@@ -957,10 +963,6 @@ class TextPropertyEditor {
   }
 
   get #shouldShowWarning() {
-    if (this.prop.name.startsWith("--")) {
-      return false;
-    }
-
     return !this.editing && !this.isValid();
   }
 
@@ -1152,10 +1154,7 @@ class TextPropertyEditor {
       this.expander.hidden = true;
     }
 
-    if (
-      !this.editing &&
-      (this.prop.overridden || !this.prop.enabled || !this.prop.isKnownProperty)
-    ) {
+    if (!this.editing && (this.prop.overridden || !this.prop.enabled)) {
       this.element.classList.add("ruleview-overridden");
     } else {
       this.element.classList.remove("ruleview-overridden");

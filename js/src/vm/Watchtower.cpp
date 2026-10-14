@@ -10,6 +10,7 @@
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
 #include "vm/NativeObject.h"
+#include "vm/ObjectFuse.h"
 #include "vm/PlainObject.h"
 #include "vm/Realm.h"
 #include "vm/TypedArrayObject.h"
@@ -329,6 +330,17 @@ bool Watchtower::watchProtoChangeSlow(JSContext* cx, HandleObject obj) {
   return true;
 }
 
+void Watchtower::watchGlobalLexicalRedeclaration(JSContext* cx,
+                                                 Handle<NativeObject*> obj) {
+  if (!obj->hasObjectFuse()) {
+    return;
+  }
+
+  if (ObjectFuse* fuse = obj->zone()->objectFuses.get(obj)) {
+    fuse->handleGlobalLexicalMutation(cx);
+  }
+}
+
 static void MaybePopArrayConstructorFuses(JSContext* cx, NativeObject* obj,
                                           jsid id) {
   if (obj != obj->global().maybeGetConstructor(JSProto_Array)) {
@@ -646,6 +658,15 @@ bool Watchtower::watchPropertyRemoveSlow(JSContext* cx,
   }
 
   return true;
+}
+
+// static
+void Watchtower::finishPropertyRemove(JSContext* cx, NativeObject* obj,
+                                      PropertyInfo propInfo) {
+  MOZ_ASSERT(obj->hasObjectFuse());
+  if (auto* objFuse = cx->zone()->objectFuses.get(obj)) {
+    objFuse->finishPropertyRemove(propInfo);
+  }
 }
 
 // static

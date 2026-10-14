@@ -24,6 +24,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/CORSMode.h"
+#include "mozilla/Directionality.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/FlushType.h"
 #include "mozilla/Maybe.h"
@@ -31,12 +32,14 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/Result.h"
 #include "mozilla/RustCell.h"
+// FIXME: ScrollState is only needed for older libstdc++ versions, remove,
+// eventually...
+#include "mozilla/ScrollState.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/AtomAttributes.h"
 #include "mozilla/dom/BorrowedAttrInfo.h"
 #include "mozilla/dom/DOMString.h"
 #include "mozilla/dom/DOMTokenListSupportedTokens.h"
-#include "mozilla/dom/DirectionalityUtils.h"
 #include "mozilla/dom/FragmentOrElement.h"
 #include "mozilla/dom/NameSpaceConstants.h"
 #include "mozilla/dom/NodeInfo.h"
@@ -62,6 +65,7 @@ class JSObject;
 class mozAutoDocUpdate;
 class nsAttrName;
 class nsAttrValueOrString;
+class nsAutoScriptBlocker;
 class nsDOMAttributeMap;
 class nsDOMCSSAttributeDeclaration;
 class nsDOMStringMap;
@@ -313,7 +317,9 @@ class Element : public FragmentOrElement {
 
   ~Element() {
     NS_ASSERTION(!HasServoData(), "expected ServoData to be cleared earlier");
-    UnlinkCustomElementRegistry(this);
+    MOZ_DIAGNOSTIC_ASSERT(
+        GetCustomElementRegistryState() != CustomElementRegistryState::Scoped,
+        "Scoped registry should have been removed in LastRelease or Unlink");
   }
 
   NS_INLINE_DECL_STATIC_IID(NS_ELEMENT_IID)
@@ -519,13 +525,21 @@ class Element : public FragmentOrElement {
   virtual bool IsInteractiveHTMLContent() const;
 
   /**
-   * Is the attribute named aAttribute a mapped attribute?
+   * Is the attribute named aAttribute in the null namespace a mapped attribute?
    */
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const;
+  virtual bool IsNoNamespaceAttrMapped(const nsAtom* aAttribute) const;
+  bool IsAttrMapped(int32_t aNamespaceID, const nsAtom* aAttribute) const {
+    if (aNamespaceID == kNameSpaceID_None) {
+      return IsNoNamespaceAttrMapped(aAttribute);
+    }
+    // xml:lang is always mapped.
+    return aNamespaceID == kNameSpaceID_XML && aAttribute == nsGkAtoms::lang;
+  }
 
   nsresult BindToTree(BindContext&, nsINode& aParent) override;
   void UnbindFromTree(UnbindContext&) override;
   using nsIContent::UnbindFromTree;
+  void NodeInfoChanged(Document* aOldDoc) override;
 
   // Container Timing (https://wicg.github.io/container-timing/).
   // Returns the nearest strict-ancestor element carrying a `containertiming`
@@ -540,7 +554,7 @@ class Element : public FragmentOrElement {
   void RecomputeContainerTimingRootForSubtree();
 
   virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction() const;
-  static void MapNoAttributesInto(mozilla::MappedDeclarationsBuilder&);
+  static void MapXmlLangAttrInto(mozilla::MappedDeclarationsBuilder&);
 
   /**
    * Get a hint that tells the style system what to do when
@@ -963,9 +977,10 @@ class Element : public FragmentOrElement {
    * `AttrArray::InfallibleMarkAsPendingPresAttributeEvaluation` at
    * most once.
    */
-  nsresult SetNoNameSpaceAttrOnNewlyCreatedElement(
+  MOZ_CAN_RUN_SCRIPT nsresult SetNoNameSpaceAttrOnNewlyCreatedElement(
       already_AddRefed<nsAtom> aName, nsHtml5String& aValue,
-      bool& aIsPendingMappedAttributeEvaluation);
+      bool& aIsPendingMappedAttributeEvaluation,
+      const nsAutoScriptBlocker& aGuard);
 
   /**
    * Get the current value of the attribute. This returns a form that is
@@ -1271,7 +1286,7 @@ class Element : public FragmentOrElement {
   /**
    * A common method where you can just pass in a list of maps to check
    * for attribute dependence. Most implementations of
-   * IsAttributeMapped should use this function as a default
+   * IsNoNamespaceAttrMapped should use this function as a default
    * handler.
    */
   template <size_t N>
@@ -1478,6 +1493,21 @@ class Element : public FragmentOrElement {
       nsAtom* aAttr, bool* aUseCachedValue,
       Nullable<nsTArray<RefPtr<Element>>>& aElements);
 
+ private:
+  /**
+   * Get the unresolved attribute target elements.
+   * https://whatpr.org/html/10995/common-microsyntaxes.html#unresolved-attribute-target-elements
+   */
+  Maybe<nsTArray<RefPtr<Element>>> GetUnresolvedAttributeTargetElements(
+      nsAtom* aAttr);
+  /**
+   * Get the resolved attribute target elements.
+   * https://whatpr.org/html/10995/common-microsyntaxes.html#resolved-attribute-target-elements
+   */
+  Maybe<nsTArray<RefPtr<Element>>> GetResolvedAttributeTargetElements(
+      nsAtom* aAttr);
+
+ public:
   typedef bool (*AttrTargetObserver)(Element* aOldElement, Element* aNewElement,
                                      Element* thisElement);
   /**
@@ -1654,8 +1684,8 @@ class Element : public FragmentOrElement {
 
   void ReleaseCapture();
 
-  already_AddRefed<Promise> RequestFullscreen(const FullscreenOptions&,
-                                              CallerType, ErrorResult&);
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> RequestFullscreen(
+      const FullscreenOptions&, CallerType, ErrorResult&);
   already_AddRefed<Promise> RequestPointerLock(
       const PointerLockOptions& aOptions, CallerType aCallerType,
       ErrorResult& aRv);
@@ -1723,21 +1753,47 @@ class Element : public FragmentOrElement {
       const Maybe<RefPtr<CustomElementRegistry>>& aRegistry,
       CustomSlotDispatch = CustomSlotDispatch::No, bool aNotify = true);
 
-  // Attach UA Shadow Root if it is not attached.
   enum class NotifyUAWidget : bool { No, Yes };
-  void AttachAndSetUAShadowRoot(NotifyUAWidget = NotifyUAWidget::Yes,
+
+  /**
+   * Attach a UA shadow root if no one is attached. If aNotifyUAWidget is "Yes",
+   * this will dispatch a chrome event to UAWidgetsChild via the script runner
+   * to trigger construction or onchange callback on the existing widget.
+   *
+   * Be aware, the caller must have to block script if aNotifyUAWidget is "Yes"
+   * because this may be called by methods which should not run script, e.g.,
+   * BindToTree and UnbindFromTree, and we don't want to mark them as
+   * MOZ_CAN_RUN_SCRIPT.
+   */
+  void AttachAndSetUAShadowRoot(NotifyUAWidget aNotifyUAWidget,
                                 DelegatesFocus = DelegatesFocus::No,
                                 CustomSlotDispatch = CustomSlotDispatch::No,
                                 bool aNotify = true);
 
-  // Dispatch an event to UAWidgetsChild, triggering construction
-  // or onchange callback on the existing widget.
-  void NotifyUAWidgetSetupOrChange();
+  /**
+   * Dispatch a chrome event to UAWidgetsChild via the script runner. The event
+   * will trigger construction or onchange callback on the existing widget.
+   *
+   * Be aware, the caller must have to block script because this may be called
+   * by methods which should not run script, e.g., * BindToTree and
+   * UnbindFromTree, and we don't want to mark them as MOZ_CAN_RUN_SCRIPT.
+   */
+  void AddScriptRunnerToNotifyUAWidgetSetupOrChange();
 
   enum class UnattachShadowRoot : bool { No, Yes };
-  // Dispatch an event to UAWidgetsChild, triggering UA Widget destruction.
-  // and optionally remove the shadow root.
-  void TeardownUAShadowRoot(NotifyUAWidget = NotifyUAWidget::Yes,
+
+  /**
+   * Remove the UA shadow root. If aNOtifyUAWidget is "Yes", this will dispatch
+   * a chrome event to UAWidgetChild, triggering UA widget destruction and
+   * optionally remove the shadow root.
+   *
+   * Be aware, the caller must have to block script if aNotifyUAWidget is "Yes"
+   * because this may be called by methods which should not run script, e.g.,
+   * UnbindFromTree, and we don't want to mark them as MOZ_CAN_RUN_SCRIPT.
+   *
+   * @return true if this actually unattach a shadow.
+   */
+  void TeardownUAShadowRoot(NotifyUAWidget aNotifyUAWidget,
                             UnattachShadowRoot = UnattachShadowRoot::Yes);
 
   void UnattachShadow();
@@ -1799,7 +1855,6 @@ class Element : public FragmentOrElement {
   void SetNullCustomElementRegistry();
   static void TraverseCustomElementRegistry(
       Element* aElement, nsCycleCollectionTraversalCallback& aCb);
-  static void UnlinkCustomElementRegistry(Element* aElement);
 
   Maybe<float> GetLastRememberedBSize() const {
     const nsExtendedDOMSlots* slots = GetExistingExtendedDOMSlots();
@@ -1840,6 +1895,16 @@ class Element : public FragmentOrElement {
     }
   }
 
+  // Scroll state saved from a scroll container frame of this element that got
+  // destroyed for reconstruction, to be restored by the new frame.
+  void SetSavedScrollState(UniquePtr<ScrollState> aState);
+  UniquePtr<ScrollState> TakeSavedScrollState() {
+    if (auto* slots = GetExistingExtendedDOMSlots()) {
+      return std::move(slots->mSavedScrollState);
+    }
+    return nullptr;
+  }
+
   bool TemporarilyVisibleForScrolledIntoViewDescendant() const {
     const auto* slots = GetExistingExtendedDOMSlots();
     return slots && slots->mTemporarilyVisibleForScrolledIntoViewDescendant;
@@ -1873,6 +1938,7 @@ class Element : public FragmentOrElement {
   MOZ_CAN_RUN_SCRIPT void SetScrollLeft(double aScrollLeft);
   MOZ_CAN_RUN_SCRIPT int32_t ScrollWidth();
   MOZ_CAN_RUN_SCRIPT int32_t ScrollHeight();
+  MOZ_CAN_RUN_SCRIPT nsSize GetScrollSize();
   MOZ_CAN_RUN_SCRIPT void MozScrollSnap();
   MOZ_CAN_RUN_SCRIPT int32_t ClientTop() {
     return CSSPixel::FromAppUnits(GetClientAreaRect().y).Rounded();
@@ -2118,6 +2184,9 @@ class Element : public FragmentOrElement {
 
     return mAttrs.AttrInfoAt(index);
   }
+
+  static bool ParseReferrerAttribute(const nsAString& aString,
+                                     nsAttrValue& aResult);
 
   /**
    * Parse a string into an nsAttrValue for a CORS attribute.  This
@@ -2605,6 +2674,10 @@ class Element : public FragmentOrElement {
   void VerifySubtreeBloomFilter() const;
 #endif
 
+  // Prevent people from doing pointless checks/casts on Element instances.
+  void IsElement() = delete;
+  void AsElement() = delete;
+
  protected:
   /**
    * Copy attributes and state to another element
@@ -2625,10 +2698,6 @@ class Element : public FragmentOrElement {
    */
   virtual void RegUnRegAccessKey(bool aDoReg);
 
-  // Prevent people from doing pointless checks/casts on Element instances.
-  void IsElement() = delete;
-  void AsElement() = delete;
-
  private:
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
   void AssertInvariantsOnNodeInfoChange();
@@ -2645,8 +2714,6 @@ class Element : public FragmentOrElement {
    */
   MOZ_CAN_RUN_SCRIPT nsRect GetClientAreaRect();
 
-  /** Gets the scroll size as for the scroll{Width,Height} APIs */
-  MOZ_CAN_RUN_SCRIPT nsSize GetScrollSize();
   /** Gets the scroll position as for the scroll{Top,Left} APIs */
   MOZ_CAN_RUN_SCRIPT nsPoint GetScrollOrigin();
   /** Gets the scroll range as for the scroll{Top,Left}{Min,Max} APIs */

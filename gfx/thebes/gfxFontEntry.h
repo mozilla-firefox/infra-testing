@@ -25,6 +25,7 @@
 #include "mozilla/Mutex.h"
 #include "mozilla/RWLock.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/TypedEnumBits.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/intl/UnicodeScriptCodes.h"
@@ -326,12 +327,11 @@ class gfxFontEntry {
     if (map) {
       if (mShmemFace && TrySetShmemCharacterMap()) {
         // Forget our temporary local copy, now we can use the shared cmap.
-        // Ignore the MOZ_GUARDED_BY of mCharacterMap as we're doing an
-        // atomic exchange.
-        MOZ_PUSH_IGNORE_THREAD_SAFETY
-        auto* oldCmap = mCharacterMap.exchange(nullptr);
-        MOZ_POP_THREAD_SAFETY
-        NS_IF_RELEASE(oldCmap);
+        {
+          mozilla::AutoWriteLock lock(mLock);
+          auto* oldCmap = mCharacterMap.exchange(nullptr);
+          NS_IF_RELEASE(oldCmap);
+        }
         return GetShmemCharacterMap()->test(ch);
       }
       if (map->test(ch)) {
@@ -522,16 +522,16 @@ class gfxFontEntry {
    * Font-variation query methods. These will call through to ...Internal()
    * implementation methods if we don't have a Skrifa font to query.
    */
-  bool HasVariations();
+  bool HasVariations() MOZ_EXCLUDES(mLock);
   void GetVariationAxes(nsTArray<gfxFontVariationAxis>& aVariationAxes);
   void GetVariationInstances(nsTArray<gfxFontVariationInstance>& aInstances);
 
-  bool HasBoldVariableWeight();
-  bool HasItalicVariation();
-  bool HasSlantVariation();
-  bool HasOpticalSize();
+  bool HasBoldVariableWeight() MOZ_EXCLUDES(mLock);
+  bool HasItalicVariation() MOZ_EXCLUDES(mLock);
+  bool HasSlantVariation() MOZ_EXCLUDES(mLock);
+  bool HasOpticalSize() MOZ_EXCLUDES(mLock);
 
-  void CheckForVariationAxes();
+  void CheckForVariationAxes() MOZ_EXCLUDES(mLock);
 
   // Set up the entry's weight/width/style ranges according to axes found
   // by GetVariationAxes (for installed fonts; do NOT call this for user
@@ -591,7 +591,8 @@ class gfxFontEntry {
 
   // Return a new strong ref to mCharacterMap. This can safely be dereferenced
   // by the caller as long as it keeps its reference alive.
-  already_AddRefed<gfxCharacterMap> GetCharacterMapAddRefed() const {
+  already_AddRefed<gfxCharacterMap> GetCharacterMapAddRefed() const
+      MOZ_EXCLUDES(mLock) {
     mozilla::AutoReadLock lock(mLock);
     RefPtr map = static_cast<gfxCharacterMap*>(mCharacterMap);
     return map.forget();
@@ -600,7 +601,7 @@ class gfxFontEntry {
   // Check for presence of either shmem or local charmap.
   bool HasCharacterMap() const MOZ_NO_THREAD_SAFETY_ANALYSIS {
     // Although mCharacterMap is MOZ_GUARDED_BY(mLock), we don't lock here
-    // as it is an atomic var, and we're not holding on to dereferencing it,
+    // as it is an atomic var, and we're not holding on to or dereferencing it,
     // just checking whether it's non-null.
     return mShmemCharacterMap || mCharacterMap;
   }
@@ -751,7 +752,10 @@ class gfxFontEntry {
     if (!mSkrifaFontInitialized) {
       mozilla::AutoWriteLock lock(mLock);
       if (!mSkrifaFontInitialized) {
-        InitSkrifaFontFace();
+        if (mozilla::StaticPrefs::
+                gfx_font_rendering_fontations_enabled_AtStartup()) {
+          InitSkrifaFontFace();
+        }
         mSkrifaFontInitialized = true;
       }
     }
@@ -793,7 +797,7 @@ class gfxFontEntry {
   // Caller is responsible to call hb_blob_destroy() on the returned blob
   // (if non-nullptr) when no longer required. For transient access to a
   // table, use of AutoTable (below) is generally preferred.
-  virtual hb_blob_t* GetFontTableInternal(uint32_t aTag);
+  virtual hb_blob_t* GetFontTableInternal(uint32_t aTag) MOZ_EXCLUDES(mLock);
 
   // Check for presence of a given table.
   virtual bool HasFontTableInternal(uint32_t aTableTag);
@@ -818,7 +822,7 @@ class gfxFontEntry {
       FontInfoData* aFontInfoData, uint32_t& aUVSOffset);
 
   // helper for HasCharacter(), which is what client code should call
-  virtual bool TestCharacterMap(uint32_t aCh) MOZ_EXCLUDES(mLock);
+  bool TestCharacterMap(uint32_t aCh) MOZ_EXCLUDES(mLock);
 
   // Try to set mShmemCharacterMap, based on the char map in mShmemFace;
   // return true if successful, false if it remains null (maybe the parent
@@ -834,12 +838,13 @@ class gfxFontEntry {
   // Set the Skrifa font ref and hold on to the memory mapping, unless the
   // face has already been set, in which case the passed font and mapping
   // are discarded.
-  void SetSkrifaFont(SkrifaFontRef* aSkrifaFont,
+  // Returns true if the font was set, false if it was discarded.
+  bool SetSkrifaFont(SkrifaFontRef* aSkrifaFont,
                      mozilla::MemoryMappedFile&& aSkrifaFontFile);
 
   // Set the Skrifa font ref with no memmap'd file. Used for webfonts when
   // mIsDataUserFont is true.
-  void SetSkrifaFont(SkrifaFontRef* aSkrifaFont);
+  bool SetSkrifaFont(SkrifaFontRef* aSkrifaFont);
 
   // Attempt to initialize a SkrifaFontRef for this resource, and record it
   // via SetSkrifaFont.

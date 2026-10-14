@@ -100,3 +100,9 @@ XPCSHELL_TESTS_MANIFESTS += ["test/xpcshell/xpcshell.toml"]
 TEST_DIRS += ["test/gtest"]
 
 SPHINX_TREES["anti-tracking"] = "docs"
+
+SOURCE_HEADERS += [
+    "AntiTrackingLog.h",
+    "SettingsChangeObserver.h",
+    "TemporaryAccessGrantObserver.h",
+]

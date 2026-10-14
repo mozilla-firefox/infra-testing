@@ -30,17 +30,20 @@
       'target_name': 'freebl_gtest',
       'type': 'executable',
       'sources': [
+        'aes_ctr_unittest.cc',
         'blake2b_unittest.cc',
         'shake_unittest.cc',
         'cmac_unittests.cc',
         'ecl_unittest.cc',
         'ghash_unittest.cc',
         'kyber_unittest.cc',
+        'mldsa_unittest.cc',
         'mpi_unittest.cc',
         'prng_kat_unittest.cc',
         'rsa_unittest.cc',
         'ed25519_unittest.cc',
-        '<(DEPTH)/gtests/common/gtests.cc'
+        '<(DEPTH)/gtests/common/gtests.cc',
+        '<(DEPTH)/gtests/common/json_reader.cc'
       ],
       'dependencies': [
         'freebl_gtest_deps',

@@ -100,6 +100,13 @@ class nsHttpConnectionMgr final : public HttpConnectionMgrShell,
   void ReportSpdyConnection(nsHttpConnection*, bool usingSpdy,
                             bool disallowHttp3);
 
+  // Move an established h3 connection out of an Http3Policy::Only entry (eager
+  // Alt-Svc h3 validation) and into the origin's entry, re-keying it onto an
+  // Http3Policy::Allowed connection info. Returns the entry the connection now
+  // lives in, or nullptr if it was left where it was.
+  already_AddRefed<ConnectionEntry> HandOffHttp3OnlyConnection(
+      HttpConnectionBase* aConn, ConnectionEntry* aFromEnt);
+
   void ReportHttp3Connection(HttpConnectionBase* conn,
                              ConnectionEntry* entry = nullptr);
 
@@ -305,17 +312,23 @@ class nsHttpConnectionMgr final : public HttpConnectionMgrShell,
       ConnectionEntry* ent, PendingTransactionInfo* pendingTransInfo);
 
   // Manage h2/3 connection coalescing
-  // The hashtable contains arrays of weak pointers to HttpConnectionBases
-  nsClassHashtable<nsUint32HashKey, nsTArray<nsWeakPtr>> mCoalescingHash;
+  // The hashtable is indexed by the coalescing key's 32-bit hash and holds a
+  // weak pointer to each coalescable HttpConnectionBase together with the full
+  // key string it was registered under. Since distinct keys can share a hash,
+  // the string is used to confirm a bucket hit with an exact comparison.
+  struct CoalescedConnection {
+    nsWeakPtr mConn;
+    nsCString mKey;
+  };
+  nsClassHashtable<nsUint32HashKey, nsTArray<CoalescedConnection>>
+      mCoalescingHash;
 
   HttpConnectionBase* FindCoalescableConnection(ConnectionEntry* ent,
                                                 bool justKidding, bool aNoHttp2,
                                                 bool aNoHttp3);
-  HttpConnectionBase* FindCoalescableConnectionByHashKey(ConnectionEntry* ent,
-                                                         HashNumber key,
-                                                         bool justKidding,
-                                                         bool aNoHttp2,
-                                                         bool aNoHttp3);
+  HttpConnectionBase* FindCoalescableConnectionByHashKey(
+      ConnectionEntry* ent, const CoalescingKey& key, bool justKidding,
+      bool aNoHttp2, bool aNoHttp3);
   void UpdateCoalescingForNewConn(HttpConnectionBase* conn,
                                   ConnectionEntry* ent, bool aNoHttp3);
 

@@ -2,10 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { BrowserTestUtils } from "resource://testing-common/BrowserTestUtils.sys.mjs";
 import { Assert } from "resource://testing-common/Assert.sys.mjs";
 import { TestUtils } from "resource://testing-common/TestUtils.sys.mjs";
 
+const lazy = XPCOMUtils.declareLazy({
+  BookmarksSidebarTestUtils:
+    "resource://testing-common/BookmarksSidebarTestUtils.sys.mjs",
+});
 const initialStates = new WeakMap();
 let gTestScope;
 
@@ -28,6 +33,10 @@ class _SidebarTestUtils {
     scope.registerCleanupFunction?.(() => {
       gTestScope = null;
     });
+  }
+
+  get bookmarks() {
+    return lazy.BookmarksSidebarTestUtils;
   }
 
   /**
@@ -57,8 +66,27 @@ class _SidebarTestUtils {
         );
         this.closePanel(win);
       }
+      // SidebarPopupNotifications is created when chat sidebar opens.
+      // Clean up here as sidebar may close before content fully loads.
+      if (win.SidebarPopupNotifications) {
+        win.SidebarPopupNotifications._currentAnchorElement = null;
+        delete win.SidebarPopupNotifications;
+      }
       await this.restoreToInitialState(win);
     });
+  }
+
+  /**
+   * Drop the user-preferred tools heights, so that a test which resized the
+   * tools container does not leak its height into the tests that follow.
+   *
+   * @param {ChromeWindow} win
+   */
+  restoreToolsHeights(win) {
+    const state = win.SidebarController._state;
+    state.expandedToolsHeight = undefined;
+    state.collapsedToolsHeight = undefined;
+    state.updateToolsHeight();
   }
 
   /**
@@ -75,6 +103,14 @@ class _SidebarTestUtils {
       win.SidebarController.lastOpenedId = null;
       // Restore sidebar launcher back to whatever state it was in initially.
       await win.SidebarController.updateUIState(state);
+      // getProperties() omits properties that were unset, and updateUIState()
+      // skips the ones it is not given, so a width a test stored would outlive
+      // it. Put those back to unset too.
+      for (const prop of ["launcherWidth", "expandedLauncherWidth"]) {
+        if (state[prop] === undefined) {
+          win.SidebarController._state[prop] = undefined;
+        }
+      }
       initialStates.delete(win);
     }
   }
@@ -111,6 +147,7 @@ class _SidebarTestUtils {
     let { promiseInitialized, sidebarContainer } = win.SidebarController;
     await promiseInitialized;
     let hidden = !visible;
+
     if (sidebarContainer.hidden !== hidden) {
       // The command handler for the sidebar-button sets up the sidebar and button
       // state we want. But we can't always guarantee the sidebar-button is present,
@@ -119,7 +156,10 @@ class _SidebarTestUtils {
       await BrowserTestUtils.waitForMutationCondition(
         sidebarContainer,
         { attributes: true, attributeFilter: ["hidden"] },
-        () => sidebarContainer.hidden === hidden
+        () => sidebarContainer.hidden === hidden,
+        {
+          msg: `Button clicked, waiting for sidebarContainer.hidden to be ${hidden}`,
+        }
       );
       await win.SidebarController.waitUntilStable();
     }
@@ -131,6 +171,10 @@ class _SidebarTestUtils {
    * @param {ChromeWindow} win
    */
   async ensureLauncherVisible(win, message = "Sidebar launcher is visible") {
+    if (!win.SidebarController.sidebarRevampEnabled) {
+      // there is no launcher when revamp is false
+      return;
+    }
     await this._ensureLauncherShowing(win, true);
     Assert.ok(
       BrowserTestUtils.isVisible(win.SidebarController.sidebarContainer),
@@ -180,6 +224,12 @@ class _SidebarTestUtils {
       () => win.gBrowser.tabContainer.getAttribute("orient") == toOrientation
     );
     await win.SidebarController.sidebarMain?.updateComplete;
+    // Same wait as waitForRepaint() in head.js. The theme change that carries
+    // -moz-pref() invalidation runs at the top of the next rendering update,
+    // and the dispatched runnable resumes only once that update has finished.
+    await new Promise(resolve =>
+      win.requestAnimationFrame(() => Services.tm.dispatchToMainThread(resolve))
+    );
   }
 }
 

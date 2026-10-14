@@ -1,4 +1,11 @@
 {
+  "border": {
+    "radius": {
+      "focus": {
+        "value": "{border.radius.small}"
+      }
+    }
+  },
   "color": {
     "@base": {
       "value": {
@@ -31,7 +38,7 @@
   "focus": {
     "outline": {
       "offset": {
-        "comment": "Not using --force-outline-offset for links because that's intended for\nelements with a background, and we only want a slight offset here while\nnot overlapping adjacent text",
+        "comment": "Not using --force-outline-offset for links because that's intended for elements with a background, and we only want a slight offset here while not overlapping adjacent text",
         "value": "1px"
       }
     }
